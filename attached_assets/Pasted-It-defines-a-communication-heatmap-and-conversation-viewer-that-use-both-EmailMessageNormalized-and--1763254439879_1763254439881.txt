@@ -1,0 +1,486 @@
+It defines a communication heatmap and conversation viewer that use both EmailMessageNormalized and ChatMessageNormalized.
+You are a senior full-stack engineer extending the Sentinel evidence app.
+
+Goal: Build a unified **Communication Analytics Dashboard** that uses:
+- Email: `EmailMessageNormalized`
+- Chat: `ChatMessageNormalized`
+and shows:
+- Top communicators (bar chart)
+- Pairwise communication heatmap
+- Unified conversation timeline viewer
+
+Tech stack:
+- Backend: FastAPI (Python)
+- Frontend: Static HTML/CSS/JS (no framework)
+- Charts: Chart.js via CDN
+- Style: blue/gray enterprise theme
+
+====================================
+1. BACKEND: ANALYTICS + TIMELINE APIs
+====================================
+
+Assume we already have:
+- `EMAIL_MESSAGES: list[EmailMessageNormalized]` (in memory)
+- `CHAT_MESSAGES: list[ChatMessageNormalized]` (in memory)
+
+1.1 Add analytics helpers (e.g., in `analytics/communication.py`)
+
+Implement functions that work over both lists:
+
+- `get_participant_key_from_email(email_msg) -> list[str]`
+  - Derive participant IDs from email addresses, e.g. `"email:john@example.com"`.
+  - Include `from_` and recipients.
+
+- `get_participant_key_from_chat(chat_msg) -> str`
+  - Use `ChatParticipant.id` and/or phone number, e.g. `"chat:+13051234567"`.
+
+- `build_communication_summary(email_messages, chat_messages) -> list[dict]`
+  Each dict:
+  - `participant_id: str`
+  - `display_name: str | None`
+  - `channels: list[str]`  # e.g. ["email", "whatsapp", "sms_ios"]
+  - `sent_count: int`
+  - `received_count: int`
+  - `total_count: int`
+  - `percent_of_total: float`
+  - `first_activity_at: datetime | None`
+  - `last_activity_at: datetime | None`
+
+- `build_communication_matrix(email_messages, chat_messages) -> dict`
+  Return:
+  ```python
+  {
+    "participants": [
+      {"id": "email:john@example.com", "display_name": "John"},
+      ...
+    ],
+    "matrix": [
+      # 2D array, rows = sender index, cols = receiver index
+      # each cell: {"total": int, "email": int, "chat": int}
+    ],
+    "max_total": int  # max value in any cell, for heatmap scaling
+  }
+
+Logic:
+
+
+For each email:
+
+
+Sender = from_
+
+
+Receivers = all in to + cc + bcc
+
+
+Increment sender→receiver edges.
+
+
+
+
+For each chat message:
+
+
+Sender = sender_id
+
+
+Receivers = all other participants in the conversation.
+
+
+Increment sender→receiver edges.
+
+
+
+
+Track whether counts came from email or chat for each cell.
+
+
+build_unified_timeline(email_messages, chat_messages) -> list[dict]
+Output a list sorted by timestamp:
+{
+  "id": str,
+  "channel_type": "email" | "chat",
+  "channel_subtype": "email" | "whatsapp" | "sms_ios" | "sms_android" | "other_chat",
+  "sent_at": datetime.isoformat(),
+  "sender_display": str,
+  "recipients_display": list[str],
+  "subject_or_preview": str,
+  "has_attachments": bool,
+  "direction": "inbound" | "outbound" | "unknown"
+}
+
+
+
+For email:
+
+
+channel_type = "email", channel_subtype = "email"
+
+
+subject_or_preview = subject if present else first 100 chars of body_text.
+
+
+
+
+For chat:
+
+
+channel_type = "chat", channel_subtype from source_type
+
+
+subject_or_preview = first 100 chars of text.
+
+
+
+
+1.2 FastAPI endpoints (in main.py)
+Add:
+
+
+GET /analytics/communication-summary
+
+
+Optional query params: min_messages (int, default 1)
+
+
+Uses build_communication_summary.
+
+
+Filters out participants with total_count < min_messages.
+
+
+Sort by total_count descending.
+
+
+
+
+GET /analytics/communication-matrix
+
+
+Uses build_communication_matrix.
+
+
+Optional top_n (default 10) to limit to top N participants by total_count before building matrix. This keeps the heatmap manageable.
+
+
+Return structure:
+{
+  "participants": [...],
+  "matrix": [...],
+  "max_total": 42
+}
+
+
+
+
+
+GET /timeline
+
+
+Optional query params: channel_type ("all" | "email" | "chat"), limit (int, default 200).
+
+
+Uses build_unified_timeline, filters by channel_type, sorts by sent_at descending, then applies limit.
+
+
+
+
+All endpoints return JSON suitable for direct consumption by the frontend.
+===============================
+2. FRONTEND LAYOUT & COMPONENTS
+Use existing static folder. Add a new dashboard page or expand index.html with a dedicated section.
+2.1 Layout (index.html)
+Under the main content, create a section:
+
+
+A top filter bar:
+
+
+Date range (for now, simple dropdown: "Last 7 days", "Last 30 days", "All time" – you can wire later).
+
+
+Channel filter: checkboxes for Email, Chat.
+
+
+Min messages slider or input (e.g., minMessages).
+
+
+
+
+Main content area (three cards, responsive grid):
+Card 1: Key Stats
+
+
+Total messages
+
+
+Total participants
+
+
+Distinct channels
+
+
+Last activity date
+
+
+Card 2: Top Communicators (Bar Chart)
+
+
+Horizontal bar chart showing top N participants by total_count.
+
+
+Display labels as display_name or truncated ID.
+
+
+Use Chart.js horizontal bar (indexAxis: 'y').
+
+
+Card 3: Communication Heatmap
+
+
+Square or rectangular grid (top N x top N participants).
+
+
+Rows: senders. Columns: receivers.
+
+
+Each cell’s background opacity maps to total / max_total.
+
+
+On hover: show tooltip with sender, receiver, email count, chat count, total.
+
+
+
+
+Below the charts:
+Card 4: Conversation Timeline Viewer
+
+
+Scrollable list of unified events.
+
+
+Each row shows:
+
+
+Timestamp.
+
+
+Channel badge (Email, WhatsApp, SMS iOS, SMS Android).
+
+
+Direction pill (In / Out).
+
+
+Sender → recipients line.
+
+
+Subject or preview text.
+
+
+Attachment icon if has_attachments.
+
+
+
+
+Style: blue/gray enterprise.
+
+
+Use a dark blue/gray navbar or header.
+
+
+Cards with light backgrounds, subtle shadows, rounded corners.
+
+
+Typography professional and clean.
+
+
+2.2 Chart.js integration (static/index.html + static/app.js)
+
+
+Include Chart.js via CDN in index.html:
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+
+
+Add <canvas> elements:
+<section id="analytics-dashboard">
+  <div class="filters"> ... </div>
+
+  <div class="cards-grid">
+    <div class="card" id="card-stats">
+      <h3>Communication Overview</h3>
+      <div id="stats-summary"></div>
+    </div>
+
+    <div class="card" id="card-top-communicators">
+      <h3>Top Communicators</h3>
+      <canvas id="topCommunicatorsChart"></canvas>
+    </div>
+
+    <div class="card" id="card-heatmap">
+      <h3>Communication Heatmap</h3>
+      <div id="heatmapGrid" class="heatmap-grid"></div>
+    </div>
+  </div>
+
+  <div class="card" id="card-timeline">
+    <h3>Conversation Timeline</h3>
+    <div id="timelineList" class="timeline-list"></div>
+  </div>
+</section>
+
+
+
+2.3 JS logic (static/app.js)
+
+
+On page load:
+
+
+Fetch /analytics/communication-summary:
+
+
+Compute total messages, participants, channels.
+
+
+Render in #stats-summary.
+
+
+Build data arrays for bar chart:
+
+
+labels: participant display names
+
+
+data: total_count
+
+
+
+
+
+
+Initialize topCommunicatorsChart as horizontal bar chart.
+
+
+
+
+Fetch /analytics/communication-matrix:
+
+
+Build a grid in #heatmapGrid.
+
+
+For each cell:
+
+
+Create a <div> with a CSS class, set inline background-color or opacity based on total / max_total.
+
+
+Add title attribute or JS hover tooltip: "Sender → Receiver: X total (Y email, Z chat)".
+
+
+
+
+
+
+Fetch /timeline:
+
+
+Render each event as a row in #timelineList.
+
+
+Use channel badges:
+
+
+Email: blue badge “Email”
+
+
+WhatsApp: green badge “WhatsApp”
+
+
+sms_ios: gray/blue “iOS SMS”
+
+
+sms_android: gray “Android SMS”
+
+
+
+
+Direction labels:
+
+
+inbound: “In”
+
+
+outbound: “Out”
+
+
+
+
+Show short preview (truncate to ~120 chars).
+
+
+
+
+Add basic functions:
+
+
+loadAnalytics(minMessages) → calls both analytics endpoints and updates UI.
+
+
+loadTimeline(channelType) → calls /timeline?channel_type=... and updates timeline.
+
+
+Hook filter controls (e.g., min messages input, channel filter) to re-fetch/update.
+
+
+2.4 CSS (in static/styles.css or <style>)
+Create classes for:
+
+
+.cards-grid – responsive grid, gap between cards.
+
+
+.card – white/very light gray background, border-radius, box-shadow.
+
+
+.heatmap-grid – CSS grid; equal-sized square cells; small fonts for labels on sides or show labels only on hover.
+
+
+.timeline-list – vertical flex column; each item with border-bottom, padding.
+
+
+Badges: .badge, .badge-email, .badge-chat-whatsapp, .badge-sms-ios, .badge-sms-android, .badge-direction.
+
+
+==================
+3. WIRES & SAFETY
+
+
+All endpoints must handle empty data gracefully:
+
+
+If no messages, return empty arrays and UI should show “No data available” states.
+
+
+
+
+Use try/except in analytics builders to avoid crashes on malformed records.
+
+
+Document TODOs for:
+
+
+Date-range filtering.
+
+
+Case-specific filtering (e.g., case_id query param) for future multi-case support.
+
+
+
+
+Keep everything runnable with python main.py inside Replit.
+
+
+
+If you want, next I can give you example **response JSON** for each endpoint and a tiny sample dataset you can hardcode to test the charts before you have real data.

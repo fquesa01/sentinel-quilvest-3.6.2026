@@ -1,0 +1,180 @@
+Gramm-Leach-Bliley Act (GLBA) Compliance Rule Library v1.0
+Aspect	Coverage
+Regulators	FTC, CFPB, OCC, FDIC, NCUA, Federal Reserve
+Governing Parts	15 U.S.C. §§ 6801–6809; 16 CFR Parts 313 & 314
+Purpose	Protect the confidentiality and integrity of consumer financial information, require safeguards and privacy disclosures, and prevent unauthorized access (“pretexting”).
+Applies To	Financial institutions, lenders, mortgage servicers, fintechs, insurance and investment advisers, and any entity that collects non-public personal information (NPI).
+________________________________________
+⚙️ 1 | Privacy Rule (16 CFR Part 313)
+- code: MISSING_PRIVACY_NOTICE
+  category: Privacy Rule
+  description: "No initial or annual privacy notice provided to customer."
+  trigger: "customer.created = true AND (initial_notice_sent = false OR annual_notice_sent=false)"
+  score: 70
+  examples: ["Account opened but no GLBA privacy notice delivered."]
+  investigation: "Send compliant notice immediately; document late delivery; update CRM workflow."
+
+- code: INCOMPLETE_DISCLOSURE
+  category: Privacy Rule
+  description: "Privacy notice omits required elements (categories of NPI shared, affiliates, opt-out rights)."
+  trigger: "notice_template missing ['categories_shared','opt_out_method','policy_changes']"
+  score: 60
+  investigation: "Revise notice; confirm distribution; legal review before reissue."
+
+- code: OPT_OUT_NOT_PROCESSED
+  category: Privacy Rule
+  description: "Customer opt-out request not implemented within 30 days."
+  trigger: "optout_request_date + 30 < current_date AND share_status='active'"
+  score: 75
+  investigation: "Cease sharing immediately; confirm data removal; report control failure to Privacy Officer."
+________________________________________
+🛡️ 2 | Safeguards Rule (16 CFR Part 314)
+- code: NO_RISK_ASSESSMENT
+  category: Safeguards
+  description: "Required risk assessment missing or older than 12 months."
+  trigger: "last_risk_assessment_date > 365 days OR null"
+  score: 55
+  investigation: "Schedule assessment; update safeguards plan; retain signed report."
+
+- code: UNENCRYPTED_CUSTOMER_DATA
+  category: Safeguards
+  description: "Sensitive NPI stored or transmitted without encryption."
+  trigger: "storage.encryption=false OR transmission.TLS=false"
+  score: 80
+  investigation: "Encrypt files; validate key-management logs; disciplinary review if negligent."
+
+- code: ACCESS_CONTROL_FAILURE
+  category: Safeguards
+  description: "Shared credentials or stale user access to customer data."
+  trigger: "user.last_login > 90 days AND access_revoked=false"
+  score: 70
+  investigation: "Revoke inactive accounts; run entitlement review; implement MFA."
+
+- code: THIRD_PARTY_SECURITY_GAP
+  category: Vendor Risk
+  description: "Vendor with NPI access lacks security questionnaire or due-diligence review."
+  trigger: "vendor.access_scope includes 'NPI' AND vendor.assessment_date > 12 months"
+  score: 65
+  investigation: "Suspend data exchange; obtain SOC 2/ISO cert; update vendor-risk register."
+
+- code: INCIDENT_RESPONSE_GAP
+  category: Safeguards
+  description: "No incident-response test or tabletop exercise in last 12 months."
+  trigger: "last_IR_test_date > 365 days OR null"
+  score: 45
+  investigation: "Schedule IR test; record lessons learned; integrate into training."
+________________________________________
+🔒 3 | Pretexting & Unauthorized Access
+- code: SOCIAL_ENGINEERING_CALL
+  category: Pretexting
+  description: "Attempt to obtain customer info via impersonation or phishing."
+  trigger: "Call_log.keyword in ['verify SSN','account reset','wire confirmation'] AND caller_auth_failed=true"
+  score: 80
+  investigation: "Block request; alert security; log in threat register; notify customer if breach."
+
+- code: INTERNAL_DATA_SNOOPING
+  category: Insider Misuse
+  description: "Employee accessed > 50 customer records unrelated to job function."
+  trigger: "Access_log.records_viewed > 50 AND not assigned_customer_list"
+  score: 75
+  investigation: "Disable user; HR/legal review; breach risk analysis per 314.4(h)."
+________________________________________
+🧾 4 | Service Provider & Vendor Oversight
+- code: MISSING_SERVICE_PROVIDER_CLAUSE
+  category: Vendor Risk
+  description: "Contract lacks required clause obligating provider to maintain GLBA safeguards."
+  trigger: "contract.template_missing 'data_safeguard_clause'"
+  score: 60
+  investigation: "Amend contract; obtain certification; verify safeguard alignment."
+
+- code: HIGH_RISK_VENDOR_NO_MONITORING
+  category: Vendor Oversight
+  description: "Critical vendor’s annual review or audit missing."
+  trigger: "vendor.tier='critical' AND review_date > 12 months"
+  score: 55
+  investigation: "Conduct remote audit; obtain updated reports; escalate to Vendor Committee."
+________________________________________
+⚕️ 5 | Data Retention & Disposal
+- code: RECORD_RETENTION_VIOLATION
+  category: Records Management
+  description: "NPI retained beyond policy retention period."
+  trigger: "file.retention_days > policy_limit"
+  score: 45
+  investigation: "Securely purge data; document disposal certificate."
+
+- code: IMPROPER_DISPOSAL
+  category: Records Management
+  description: "Customer data disposed without shredding, wiping, or certification."
+  trigger: "disposal_method not in ['shred','wipe','secure_delete']"
+  score: 60
+  investigation: "Quarantine materials; retrain staff; update disposal vendor SLA."
+________________________________________
+📣 6 | Incident Response & Consumer Notification
+- code: BREACH_UNREPORTED
+  category: Incident Response
+  description: "Security incident compromising NPI not reported within required timeframe."
+  trigger: "breach_detected=true AND report_time > 10 days"
+  score: 80
+  investigation: "Prepare FTC/OCC notice; notify customers; file state breach reports."
+
+- code: UNAUTHORIZED_DATA_SHARE
+  category: Incident Response
+  description: "Data shared with unapproved recipient or without contract."
+  trigger: "recipient_id not in approved_partners AND data_type = 'NPI'"
+  score: 75
+  investigation: "Cease sharing; audit logs; report to Privacy Officer."
+________________________________________
+📊 7 | Governance & Training
+- code: MISSING_CISO_DESIGNATION
+  category: Governance
+  description: "Institution lacks formally appointed qualified security officer."
+  trigger: "CISO_role = null"
+  score: 60
+  investigation: "Appoint qualified officer; board approval; update org chart."
+
+- code: EMPLOYEE_TRAINING_LAPSE
+  category: Awareness
+  description: "Employee missed annual GLBA/privacy training."
+  trigger: "training.last_completion > 365 days"
+  score: 50
+  investigation: "Assign refresher; track completion metrics."
+________________________________________
+🧮 8 | Workflow Automation & Escalation
+- code: AUTO_CREATE_GLBACASE
+  description: "Automatically create GLBA compliance case when score ≥ 70."
+  trigger: "score ≥ 70"
+  action: "Create 'GLBA Safeguards' case; attach system logs; assign Privacy Officer."
+
+- code: AUTO_ESCALATE_FTC_NOTICE
+  description: "Notify legal if breach or pretexting event detected."
+  trigger: "flag.code in [BREACH_UNREPORTED, SOCIAL_ENGINEERING_CALL, INTERNAL_DATA_SNOOPING]"
+  action: "Send alert; initiate legal hold; begin notification drafting."
+
+- code: QUARTERLY_GLBARISK_REPORT
+  description: "Generate board-level quarterly GLBA compliance dashboard."
+  trigger: "quarter_close = true"
+  action: "Aggregate all flags; summarize incidents, training, vendor reviews."
+________________________________________
+💬 9 | Explain-This-Flag Prompt Template
+prompt_template: |
+  You are a GLBA compliance analyst.
+  Explain why this event triggered a red flag under the Gramm-Leach-Bliley Act.
+  Include:
+  1. Summary of event and data involved (type of NPI, system, party).
+  2. Applicable GLBA Rule (Privacy, Safeguards, or Pretexting).
+  3. Risk typology (data breach, vendor weakness, notice failure, access control, etc.).
+  4. Severity level and potential regulatory exposure (FTC consent order, civil penalties).
+  5. Recommended actions:
+     - Secure and isolate affected data
+     - Notify Privacy Officer and regulators
+     - Implement encryption / training remediation
+     - Document corrective actions in Audit Ledger
+  Produce a concise, factual, regulator-ready explanation.
+________________________________________
+🧩 10 | Monitored Data Sources
+Domain	Systems to Integrate
+Customer Info	CRM, loan-origination, core-banking, KYC systems
+Security Logs	SIEM, DLP, endpoint, email-gateway logs
+Vendor Risk	Vendor-management, SOC 2 repositories
+Training Records	LMS / HRIS
+Document Retention	File-storage and content-management APIs

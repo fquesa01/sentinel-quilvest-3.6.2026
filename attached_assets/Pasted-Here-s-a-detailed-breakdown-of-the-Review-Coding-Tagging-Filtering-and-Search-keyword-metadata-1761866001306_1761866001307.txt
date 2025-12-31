@@ -1,0 +1,212 @@
+Here’s a detailed breakdown of the Review / Coding, Tagging/Filtering, and Search (keyword, metadata, full-text) capabilities in RelativityOne (by Relativity). This should help you map how the system supports review workflows and how these features can fit into your data-intensive environment (for example, integrating with your life-chain/medical-records context).
+
+1. Review Interface & Coding
+Layout & Viewer
+
+The Review Interface is the primary workspace for document review: it includes the Viewer, navigation controls, coding forms/layouts, related items panel, document list, and more. 
+help.relativity.com
++1
+
+The Viewer supports different display modes (Native Viewer, Extracted Text Viewer, Image Viewer, Productions Viewer) depending on document type. 
+help.relativity.com
++1
+
+While viewing a document, users can navigate among pages, zoom, switch layout modes (single page, continuous scroll, facing pages) and proceed to next/previous documents in a queue. 
+help.relativity.com
++1
+
+Coding / Metadata Population
+
+“Coding” in Relativity means applying values to fields (metadata, single-choice, multi-choice) to classify, tag, or analyze documents. 
+help.relativity.com
++1
+
+The coding layout (often called “layout” or “coding form”) is a configurable form which may contain:
+
+Read-only fields (for metadata or extracted information)
+
+Single‐choice (radio button / dropdown) fields
+
+Multi‐choice (checkbox) fields. 
+help.relativity.com
++1
+
+Reviewers may click Edit on a layout, make coding decisions, then Save or Save & Next to move to the next document. 
+help.relativity.com
+
+If configured, a “Copy from Previous” function allows applying the same coding values from the previous document to the next, improving consistency and speed. 
+help.relativity.com
+
+Related Items / Family / Context
+
+In the Review Interface, there is a “Related Items” card that shows documents related to the currently viewed document (e.g., family group, duplicates, similar docs) so reviewers can quickly navigate associated items and apply coding en masse if desired. 
+help.relativity.com
++1
+
+This supports consistent coding across a family (e.g., email + attachments) and helps maintain contextual awareness.
+
+Review Queues / Batches
+
+Review workflows can be organized into batches or queues. Reviewers check out a batch, review documents, then check in the batch as “Pending” or “Completed.” 
+help.relativity.com
+
+The workflow is configurable so you can assign batches, track progress, and enforce review protocols.
+
+Viewer-centric search & navigation
+
+Within the Viewer, a search bar allows reviewers to search within the currently open document (extracted text viewer) for terms, using dtSearch syntax (including proximity, fuzziness, stemming). 
+help.relativity.com
++1
+
+Navigation controls allow jumping between hits, pages, and related documents to facilitate fast review.
+
+Summary of Benefits for Your Use-case
+
+Given your life-chain/medical-records context, these features translate into:
+
+Ability for reviewers (attorneys, paralegals, clinicians) to apply structured tags to medical-records documents (e.g., device present, drug interaction, adverse event) via a configurable layout.
+
+Reviewers can work through large volumes of records, navigating families (e.g., patient files, e-mails, device logs) and apply coding consistently.
+
+The interface supports document-level search/navigation to quickly zero in on relevant terms (e.g., “contraindication”, “implant failure”) while coding.
+
+2. Filtering / Tagging / Views
+Filters
+
+Filters are available on item lists (e.g., Documents tab) to quickly reduce the set of displayed documents based on field values. You can show/hide filter rows above columns. 
+help.relativity.com
+
+Depending on field type (text, date, number, choice list) the filter type changes (text box, drop-down picker, etc). 
+help.relativity.com
+
+Filters apply to the active view (i.e., the list of documents defined by a column selection + sorting + filters). If you had filters applied and then apply a search, the filters may still restrict results unless cleared. 
+help.relativity.com
+
+Tagging / Coding as “Tags”
+
+In Relativity parlance, “coding” fields effectively serve as tags (single/multi‐choice fields) for classification.
+
+Additionally, persistent highlight sets (lists of terms to highlight) and search term reports function like tagging layers in the viewer. 
+scribd.com
++1
+
+Views & Column Configuration
+
+You can configure views (which columns appear, sort order) in the document list to support your workflow (e.g., show “Custodian”, “Date”, “DeviceType”, “AdverseEvent” fields).
+
+Saved filters + views + layouts let you tailor the workspace for distinct reviewer roles (e.g., attorney vs clinician vs QA reviewer).
+
+Tag/Filter Use Case for Your Context
+
+Suppose you have records of patients with medical device implants and need to filter to those marked “High Risk”, “Device Failure”, “Medical Device Present”. You could:
+
+Configure a multi-choice field “Device Status” with choices: “No Device”, “Device Intact”, “Device Failure”.
+
+Use list filters on “Device Status = Device Failure” to quickly focus review.
+
+Combine with date filters (e.g., implant date older than 5 yrs) using the filters feature.
+
+3. Search – Keyword, Metadata, Full Text & Advanced
+Keyword Search
+
+Users can run keyword searches from the Documents tab (and other dynamic object tabs). These are standard full-text/metadata queries against the SQL full-text index. Supports Boolean operators and wildcards. 
+help.relativity.com
++1
+
+Example: “implant failure” AND (device* OR “medical device”).
+
+dtSearch Index
+
+In addition to the keyword index, Relativity supports a dtSearch index which provides advanced search features: proximity, fuzziness, stemming, and wildcarding. Admins can create dtSearch indexes for specific document sets and assign security. 
+help.relativity.com
+
+Analytics / Conceptual Search
+
+Beyond keyword/dtSearch, Relativity includes Analytics search functionality (conceptual searching, clustering) that finds documents based on conceptual similarity rather than explicit terms. 
+help.relativity.com
+
+This is valuable when you want to find documents about an idea or theme (e.g., “adverse event communication”) rather than specific words.
+
+Regular expression (RegEx) searches may also be supported (via dtSearch) for pattern matching (e.g., serial numbers, device IDs). 
+help.relativity.com
++1
+
+Saved Searches
+
+You can create and save complex search queries (Saved Searches) which can include conditions on any field (metadata), index search (keyword/dtSearch/Analytics), folder scope, etc. These saved searches can be reused, shared, organized in folders, and can be set to “requires manual rerun” to control performance. 
+help.relativity.com
++1
+
+In the Saved Search definition, you can specify: Name, Owner (public/private), Scope (entire workspace or selected folders) and set logic groups/conditions. 
+help.relativity.com
+
+Search Conditions & Operators
+
+When building a saved search (or advanced search) you define conditions: Field + Operator + Value. Operators vary by field type (text, number, date, choice). For example: “Extracted Text Contains (‘device malfunction’)”, or “Date > 2020-01-01”. 
+help.relativity.com
+
+Avoid over‐complex nested saved searches (they may timeout or cause performance issues). 
+help.relativity.com
+
+Scope & Result Sets
+
+Searches execute dynamically: you define the criteria, save the search, then when you run it the system returns the live set of documents matching those criteria (not a static snapshot). 
+help.relativity.com
+
+You can configure whether related items (e.g., family documents) are included in the result set via the “Includes Family” or related-items setting in search. 
+help.relativity.com
+
+Use Cases for Your Scenario
+
+Full-text search: find all records where extracted text contains phrases like “implant failure”, “device removed”, “adverse reaction”.
+
+Metadata search: find all documents with “DeviceType = XYZModel” AND “ReviewStatus = Needs Further Review”.
+
+Combined search: Use saved search with conditions: DeviceStatus = Device Failure AND Extracted Text Contains (“recall”) AND Date > 2020-01-01.
+
+Conceptual search: Use Analytics to find communications around “device performance issues” even if they don’t explicitly say “failure”.
+
+Filtering: after running a search you can apply filters (e.g., show only documents reviewed by “Reviewer A” or “CodingStatus = Not Reviewed”).
+
+4. Integration of Review + Search + Coding
+
+Bringing it all together, the workflow typically proceeds as:
+
+Configure document list/view: decide which columns (fields) appear, what filters are default.
+
+Use search (keyword, dtSearch, Analytics) or saved search to isolate a relevant subset of documents (e.g., all device implant cases from 2018-2023).
+
+Apply filters further on field values (e.g., DeviceStatus, Custodian, ReviewStatus).
+
+Launch Review Interface on the selected documents (either via batch, queue, or list).
+
+Reviewer opens document in Viewer, uses intra-doc search to locate key terms, then applies coding via layout (e.g., marking “AdverseEvent = Yes”, “Severity = High”).
+
+Use Related Items card to capture attachments/family docs and apply consistent coding across the set.
+
+Save coding decisions, then move to next document (or Save & Next).
+
+Throughout, admins/managers can run dashboards or saved searches that monitor progress (e.g., number of “High Severity” flagged docs, percentage reviewed).
+
+Export or produce documents based on coded fields (e.g., all docs tagged “AdverseEvent = Yes” for further analysis or legal production).
+
+5. Tips & Considerations
+
+Indexing: Ensure extracted text indexing (keyword, dtSearch) is set up and kept current; full-text search performance depends on good indexing.
+
+View design: For large datasets (e.g., medical records + device logs + email communications) tailor views so only necessary columns display to reduce clutter.
+
+Coding consistency: Use multi-choice fields, default values, and “Copy from Previous” where applicable to maintain consistency among reviewers.
+
+Performance: Avoid overly complex nested saved searches or extremely broad dtSearches (they may slow environments). Use logic groups efficiently. 
+help.relativity.com
+
+Security & permissions: Properly configure permissions so only appropriate users can view/edit coding fields, view privileged docs, etc.
+
+Family groups: Make sure family relationships (e.g., email + attachment + excel log) are identified so reviewers see full context and the “Includes Family” option is used when searching.
+
+Audit/tracking: Review history is captured (who coded, when, what changes) so you have accountability and defensibility.
+
+Training & review template setup: Especially for a specialized domain like medical records, you’ll want to define coding schemas, layout templates, reviewer instructions, highlight sets (e.g., terms like “implant”, “failure”, “recall”) so the system supports domain filtering.
+
+Analytics + concept search: Since medical/device data may use varied terminology, conceptual/cluster search (via Analytics) can surface hidden connections (e.g., similar cases where “device extraction” is implied but not spelled out).

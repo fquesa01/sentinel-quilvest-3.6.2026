@@ -1,0 +1,316 @@
+1. Core behavior: “Bulk Tag from Search”
+
+User flow
+
+User runs a search:
+
+Example: "kickback" OR "off-the-books" OR codeName:CARROT
+
+Results view shows N hits (emails, chats, docs, WhatsApp, etc.).
+
+User clicks: Bulk Tag → Apply Tag.
+
+Modal appears:
+
+Scope
+
+“Selected only (X items)”
+
+“All results in this search (Y items)”
+
+Tag to apply
+
+Choose existing tag (dropdown/typeahead)
+
+Or create new tag ("Kickback Indicators")
+
+Propagation options (if you want them in this flow)
+
+☐ Include email families
+
+☐ Include exact duplicates
+
+☐ Include message-thread neighbors (same chat thread or SMS conversation)
+
+Conflict behavior (if tag already present) – default is safe:
+
+“Add even if already present”
+
+“Skip documents that already have this tag”
+
+User confirms → background job applies the tag to all matched items, logs one bulk action record.
+
+2. Logic rules you should bake in
+A. Exact scope semantics
+
+When user selects “All results in this search”, you’re not just tagging the current page—you’re tagging the entire result set as defined by:
+
+The query string
+
+Plus filters (date, custodian, channel type, matter, etc.)
+
+Implementation-wise:
+
+Build a stable Search Snapshot ID (serialized query + filter JSON) at the moment of bulk action.
+
+Execute a streamed iteration over that snapshot to apply the tag to each item.
+
+This gives you:
+
+Reproducibility (“show me what that bulk action touched”).
+
+Defense if a user later changes the saved search—your bulk action remains tied to the old snapshot, not whatever the search looks like now.
+
+B. Propagation rules (even if you already have family/thread logic elsewhere)
+
+For this specific feature, keep it very explicit:
+
+includeFamilies = true/false
+
+If true: for each document in the result set, tag every doc in its family_id.
+
+includeDuplicates = true/false
+
+If true: tag every doc in duplicate_group_id.
+
+includeThreads = true/false
+
+If true: tag every doc in thread_id (or just inclusive messages if you have that concept).
+
+The key: never silently propagate in this bulk-search mode. Always driven by visible toggles.
+
+3. Guardrails: how to avoid wrecking your corpus
+
+Bulk tagging off a keyword search is powerful and dangerous. Here’s how to harden it:
+
+A. Preview & sampling
+
+In the confirmation modal, show a summary + sample:
+
+“This action will apply tag Kickback Indicators to:
+
+2,314 existing items (search results)
+
+1,020 family members (due to ‘include families’)
+
+340 duplicates
+= 3,674 total items”
+
+Offer a “View sample (20 docs)” button:
+
+Pops an overlay with a random sample of the to-be-tagged docs so the user can sanity check.
+
+B. Permissions
+
+Restrict who can do search-driven mass tag:
+
+Only roles like Matter Admin / Lead Investigator / GC.
+
+Optionally, require a second confirmation for more than X documents (e.g., >10,000).
+
+C. Audit log
+
+Every bulk search-tag action should write a single, rich audit entry:
+
+{
+  "bulk_action_id": "BA-2025-11-23-0012",
+  "type": "bulk_tag_from_search",
+  "user_id": "frank",
+  "timestamp": "2025-11-23T17:00:00Z",
+  "search_snapshot": {
+    "query": "\"kickback\" OR \"off-the-books\" OR codeName:CARROT",
+    "filters": { "matterId": "M-123", "dateRange": "2024-01-01..2024-12-31" },
+    "result_count_at_execution": 2314
+  },
+  "tag_applied": "Kickback Indicators",
+  "include_families": true,
+  "include_duplicates": true,
+  "include_threads": false,
+  "total_documents_tagged": 3674
+}
+
+
+And for each document, a compact coding_history entry that references bulk_action_id instead of duplicating all that.
+
+4. Conflict resolution & merging logic
+
+You already have tagging per doc; bulk tagging should never remove tags unless explicitly requested.
+
+Rules:
+
+If tag already present:
+
+No-op; don’t create duplicate entries.
+
+If tag conflicts with another field (e.g., responsiveness, privilege):
+
+For this feature, stick to additive tags only, not changes to structured fields like Responsiveness/Privilege.
+
+If you eventually allow “bulk set responsiveness=Responsive by search,” that needs a separate, scarier flow.
+
+5. Search modes you should support
+
+Think in terms of how the search is defined for this bulk action:
+
+Keyword / phrase search
+
+text:"kickback" or natural-language queries.
+
+Pattern / regex search
+
+e.g., account numbers, bank routing numbers, internal code names.
+
+Metadata search
+
+Channel type (email vs WhatsApp vs Teams)
+
+Sender/recipient, custodian, domain, country.
+
+Semantic search / AI search
+
+“Communications suggesting bribery or kickbacks.”
+
+For Sentinel, the interesting twist is using semantic/AI search as the input, then tagging the whole semantic cluster. That’s where this becomes very powerful vs standard tools.
+
+6. Sentinel-specific enhancements on top of bulk search tagging
+
+Here’s how you can push past what Relativity/Reveal are doing:
+
+A. AI “query + scope” assistant
+
+When user types:
+
+Find all messages where people are hinting about paying doctors off the books.
+
+You:
+
+Translate it into a compound search:
+
+Keyword list
+
+Semantic vector query
+
+Maybe pattern match for code names your system has learned.
+
+Show a clustered result view (themes) with checkboxes:
+
+“Doctor gifts & entertainment”
+
+“Rebates & marketing allowances”
+
+“Cash or wire references”
+
+Let the user select clusters and then bulk-tag only those clusters.
+
+B. “Bulk tag + watch future matches”
+
+Turn the action into an ongoing rule:
+
+After tagging, offer:
+
+☐ “Also auto-tag future items that match this search with Kickback Indicators”
+
+Behind the scenes:
+
+Store the search definition as a saved rule; new docs ingested run through that rule; matching docs get auto-tagged and logged.
+
+This turns bulk tagging into standing pattern detection.
+
+C. “Inverse tagging” off the same search
+
+Once the user’s comfortable, you can add:
+
+“Also tag all non-matching docs in this matter as Not Kickback-Related.”
+
+I’d treat that as a separate, explicit feature—but it’s powerful for building training sets and for quickly creating “NOT responsive to this issue” corpora.
+
+7. UI design you can drop into Sentinel
+Bulk Tag Button & Modal
+
+On the search results page:
+
+Top bar:
+
+Bulk Actions ▾
+
+Apply Tag…
+
+(later) Bulk Assign Reviewer… etc.
+
+When Apply Tag… clicked:
+
+Modal layout
+
+Section 1: Scope
+
+● Selected documents only (X)
+
+○ All results in this search (Y)
+
+Advanced:
+
+☐ Include families
+
+☐ Include duplicates
+
+☐ Include threads
+
+Section 2: Tag
+
+Tag selector (typeahead to existing tags)
+
++ Create new tag: [________]
+
+Section 3: Impact
+
+“Estimated affected documents: 3,674”
+
+Preview sample (20) link (opens sample overlay)
+
+Buttons:
+
+Confirm & Tag (primary)
+
+Cancel
+
+8. Implementation notes (for your devs)
+
+At a high level:
+
+API endpoint
+
+POST /matters/{matterId}/bulk-tag-from-search
+
+Payload:
+
+{
+  "searchSnapshot": {
+    "query": "...",
+    "filters": { "..." : "..." }
+  },
+  "scope": "selected" | "all_results",
+  "selectedIds": ["doc1", "doc2"],
+  "tag": "Kickback Indicators",
+  "options": {
+    "includeFamilies": true,
+    "includeDuplicates": true,
+    "includeThreads": false
+  }
+}
+
+
+Backend job
+
+Resolve searchSnapshot to an ID list.
+
+Expand with families/dupes/threads based on options.
+
+Deduplicate document IDs.
+
+Apply tag to each document; upsert into tags array.
+
+Write a single bulk-action log + per-doc history entries referencing the bulk-action ID.
+
+Safety thresholds
+
+If total_documents > 50,000, require extra confirmation text (TYPE: CONFIRM) or admin override.

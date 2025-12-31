@@ -1,0 +1,2458 @@
+# Sentinel Business Transactions & Due Diligence Module
+
+## Overview
+This module extends Sentinel to handle business transaction due diligence including M&A, investments, debt transactions, joint ventures, and other business deals. It integrates with existing Sentinel infrastructure (document review, communications analysis, AI capabilities) while adding transaction-specific workflows.
+
+---
+
+## NAVIGATION UPDATE
+
+### Add New Section to Left Sidebar
+Add "BUSINESS TRANSACTIONS" section to the left navigation ribbon, positioned after "INVESTIGATIONS":
+
+```
+🏛 My Queue
+
+INVESTIGATIONS ▼
+BUSINESS TRANSACTIONS ▼  ← NEW SECTION
+INTAKE & MONITORING ▼
+DISCOVERY & PRODUCTIONS ▼
+GRC & COMPLIANCE ▼
+ANALYTICS & INTELLIGENCE ▼
+KNOWLEDGE CENTER ▼
+ADMINISTRATION ▼
+```
+
+### Business Transactions Section Structure
+```
+BUSINESS TRANSACTIONS ▼
+├── 📊 Transaction Dashboard
+├── 📁 Active Deals
+├── 📋 Deal Templates
+├── 📄 Request Lists (DRL)
+├── 🔒 Data Rooms
+├── ✅ Due Diligence Checklists
+├── 📑 Contract Analysis
+├── ⚠️ Issue Tracker
+├── 💬 Q&A Management
+├── 📈 Financial Analysis
+├── 🔍 Background Research
+├── 📝 Closing Management
+└── 📊 Transaction Reports
+```
+
+---
+
+## DATABASE SCHEMA
+
+### Core Tables
+
+```sql
+-- =====================================================
+-- DEALS / TRANSACTIONS
+-- =====================================================
+
+CREATE TABLE deals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_number VARCHAR(50) UNIQUE NOT NULL, -- e.g., "DEAL-2025-0001"
+    title VARCHAR(500) NOT NULL,
+    deal_type VARCHAR(100) NOT NULL, -- 'ma_asset', 'ma_stock', 'merger', 'investment', 'debt', 'jv', 'real_estate', 'franchise'
+    sub_type VARCHAR(100), -- More specific categorization
+    status VARCHAR(50) DEFAULT 'active', -- 'pipeline', 'active', 'on_hold', 'closed', 'terminated'
+    priority VARCHAR(20) DEFAULT 'medium', -- 'critical', 'high', 'medium', 'low'
+    
+    -- Deal Details
+    deal_value DECIMAL(20, 2),
+    deal_currency VARCHAR(10) DEFAULT 'USD',
+    deal_structure TEXT, -- JSON with structure details
+    description TEXT,
+    
+    -- Key Dates
+    loi_date DATE,
+    signing_target_date DATE,
+    closing_target_date DATE,
+    actual_signing_date DATE,
+    actual_closing_date DATE,
+    exclusivity_expiration DATE,
+    
+    -- Parties (JSON arrays)
+    buyer_parties JSONB DEFAULT '[]',
+    seller_parties JSONB DEFAULT '[]',
+    target_entities JSONB DEFAULT '[]',
+    advisors JSONB DEFAULT '[]', -- {role, firm, contacts}
+    
+    -- Linked Resources
+    case_id UUID REFERENCES cases(id), -- Link to existing Sentinel case if needed
+    data_room_id UUID,
+    
+    -- Risk & Scoring
+    overall_risk_score INTEGER, -- 1-100
+    risk_summary JSONB DEFAULT '{}',
+    
+    -- Metadata
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    closed_at TIMESTAMP,
+    
+    -- Settings
+    settings JSONB DEFAULT '{}'
+);
+
+CREATE INDEX idx_deals_status ON deals(status);
+CREATE INDEX idx_deals_type ON deals(deal_type);
+CREATE INDEX idx_deals_created ON deals(created_at DESC);
+
+-- =====================================================
+-- DEAL TEAM / PARTICIPANTS
+-- =====================================================
+
+CREATE TABLE deal_participants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id),
+    
+    role VARCHAR(100) NOT NULL, -- 'lead', 'reviewer', 'advisor', 'observer', 'counterparty'
+    team VARCHAR(100), -- 'buyer', 'seller', 'lender', 'external_counsel'
+    permissions JSONB DEFAULT '{}', -- granular permissions
+    workstreams TEXT[], -- assigned workstreams
+    
+    added_at TIMESTAMP DEFAULT NOW(),
+    added_by UUID REFERENCES users(id),
+    is_active BOOLEAN DEFAULT true
+);
+
+CREATE INDEX idx_deal_participants_deal ON deal_participants(deal_id);
+CREATE INDEX idx_deal_participants_user ON deal_participants(user_id);
+
+-- =====================================================
+-- DEAL MILESTONES & TIMELINE
+-- =====================================================
+
+CREATE TABLE deal_milestones (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    milestone_type VARCHAR(100), -- 'signing', 'closing', 'regulatory', 'financing', 'custom'
+    
+    target_date DATE,
+    actual_date DATE,
+    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'in_progress', 'completed', 'delayed', 'cancelled'
+    
+    dependencies UUID[], -- other milestone IDs
+    assignee_id UUID REFERENCES users(id),
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    completed_at TIMESTAMP
+);
+
+CREATE INDEX idx_deal_milestones_deal ON deal_milestones(deal_id);
+
+-- =====================================================
+-- DUE DILIGENCE REQUEST LISTS (DRL)
+-- =====================================================
+
+CREATE TABLE drl_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(500) NOT NULL,
+    deal_type VARCHAR(100), -- applicable deal types
+    industry VARCHAR(100),
+    description TEXT,
+    
+    categories JSONB DEFAULT '[]', -- [{name, items: [{request_text, priority, category}]}]
+    
+    is_system BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE deal_request_lists (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    name VARCHAR(500) NOT NULL,
+    version INTEGER DEFAULT 1,
+    status VARCHAR(50) DEFAULT 'draft', -- 'draft', 'sent', 'in_progress', 'complete'
+    
+    template_id UUID REFERENCES drl_templates(id),
+    
+    sent_to JSONB DEFAULT '[]', -- external parties
+    sent_at TIMESTAMP,
+    due_date DATE,
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE drl_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_list_id UUID REFERENCES deal_request_lists(id) ON DELETE CASCADE,
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    item_number VARCHAR(50), -- e.g., "1.1", "1.2.3"
+    category VARCHAR(200) NOT NULL,
+    subcategory VARCHAR(200),
+    
+    request_text TEXT NOT NULL,
+    notes TEXT,
+    
+    priority VARCHAR(20) DEFAULT 'medium', -- 'critical', 'high', 'medium', 'low'
+    status VARCHAR(50) DEFAULT 'requested', -- 'requested', 'received', 'partial', 'under_review', 'flagged', 'cleared', 'na', 'does_not_exist'
+    
+    assignee_id UUID REFERENCES users(id),
+    reviewer_id UUID REFERENCES users(id),
+    
+    due_date DATE,
+    received_date DATE,
+    cleared_date DATE,
+    
+    -- Linked documents
+    document_ids UUID[] DEFAULT '{}',
+    
+    -- Flags
+    has_issues BOOLEAN DEFAULT false,
+    issue_count INTEGER DEFAULT 0,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_drl_items_list ON drl_items(request_list_id);
+CREATE INDEX idx_drl_items_deal ON drl_items(deal_id);
+CREATE INDEX idx_drl_items_status ON drl_items(status);
+CREATE INDEX idx_drl_items_category ON drl_items(category);
+
+-- =====================================================
+-- DATA ROOMS
+-- =====================================================
+
+CREATE TABLE data_rooms (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    name VARCHAR(500) NOT NULL,
+    status VARCHAR(50) DEFAULT 'active', -- 'setup', 'active', 'locked', 'archived'
+    
+    -- Access settings
+    watermark_enabled BOOLEAN DEFAULT true,
+    watermark_template VARCHAR(500),
+    download_enabled BOOLEAN DEFAULT true,
+    print_enabled BOOLEAN DEFAULT false,
+    copy_text_enabled BOOLEAN DEFAULT false,
+    
+    -- Folder structure template
+    folder_structure JSONB DEFAULT '[]',
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE data_room_folders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    data_room_id UUID REFERENCES data_rooms(id) ON DELETE CASCADE,
+    parent_folder_id UUID REFERENCES data_room_folders(id),
+    
+    name VARCHAR(500) NOT NULL,
+    folder_number VARCHAR(50), -- e.g., "1.0", "1.1"
+    description TEXT,
+    
+    sort_order INTEGER DEFAULT 0,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_dr_folders_room ON data_room_folders(data_room_id);
+CREATE INDEX idx_dr_folders_parent ON data_room_folders(parent_folder_id);
+
+CREATE TABLE data_room_documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    data_room_id UUID REFERENCES data_rooms(id) ON DELETE CASCADE,
+    folder_id UUID REFERENCES data_room_folders(id),
+    
+    -- Document info
+    document_id UUID, -- Reference to main documents table
+    file_name VARCHAR(500) NOT NULL,
+    file_type VARCHAR(100),
+    file_size BIGINT,
+    
+    -- Data room specific
+    dr_index VARCHAR(50), -- Index number in data room
+    version INTEGER DEFAULT 1,
+    
+    -- AI Analysis
+    ai_summary TEXT,
+    ai_key_terms JSONB DEFAULT '{}',
+    ai_risk_flags JSONB DEFAULT '[]',
+    ai_category_suggestion VARCHAR(200),
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'active',
+    
+    uploaded_by UUID REFERENCES users(id),
+    uploaded_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_dr_docs_room ON data_room_documents(data_room_id);
+CREATE INDEX idx_dr_docs_folder ON data_room_documents(folder_id);
+
+CREATE TABLE data_room_access (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    data_room_id UUID REFERENCES data_rooms(id) ON DELETE CASCADE,
+    
+    -- Access grant
+    user_id UUID REFERENCES users(id),
+    email VARCHAR(500), -- for external users
+    access_type VARCHAR(50), -- 'full', 'limited', 'view_only'
+    
+    -- Permissions
+    can_download BOOLEAN DEFAULT false,
+    can_print BOOLEAN DEFAULT false,
+    can_copy BOOLEAN DEFAULT false,
+    folder_access UUID[], -- specific folders, null = all
+    
+    -- Access window
+    access_granted_at TIMESTAMP DEFAULT NOW(),
+    access_expires_at TIMESTAMP,
+    
+    granted_by UUID REFERENCES users(id),
+    is_active BOOLEAN DEFAULT true
+);
+
+CREATE TABLE data_room_activity (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    data_room_id UUID REFERENCES data_rooms(id) ON DELETE CASCADE,
+    document_id UUID REFERENCES data_room_documents(id),
+    user_id UUID REFERENCES users(id),
+    
+    action VARCHAR(100) NOT NULL, -- 'view', 'download', 'print', 'upload', 'delete'
+    
+    -- Details
+    ip_address VARCHAR(50),
+    user_agent TEXT,
+    duration_seconds INTEGER, -- for views
+    
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_dr_activity_room ON data_room_activity(data_room_id);
+CREATE INDEX idx_dr_activity_doc ON data_room_activity(document_id);
+CREATE INDEX idx_dr_activity_user ON data_room_activity(user_id);
+CREATE INDEX idx_dr_activity_time ON data_room_activity(created_at DESC);
+
+-- =====================================================
+-- DUE DILIGENCE CHECKLISTS
+-- =====================================================
+
+CREATE TABLE dd_checklist_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(500) NOT NULL,
+    
+    category VARCHAR(200), -- 'legal', 'financial', 'operational', 'ip', 'hr', 'it', 'regulatory', 'environmental', 'tax'
+    deal_types VARCHAR(100)[], -- applicable deal types
+    industries VARCHAR(100)[],
+    
+    description TEXT,
+    items JSONB DEFAULT '[]', -- [{section, items: [{text, guidance, priority, conditional_logic}]}]
+    
+    is_system BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE deal_checklists (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    template_id UUID REFERENCES dd_checklist_templates(id),
+    
+    name VARCHAR(500) NOT NULL,
+    category VARCHAR(200),
+    
+    status VARCHAR(50) DEFAULT 'not_started', -- 'not_started', 'in_progress', 'under_review', 'complete'
+    progress_percent INTEGER DEFAULT 0,
+    
+    assignee_id UUID REFERENCES users(id),
+    reviewer_id UUID REFERENCES users(id),
+    
+    due_date DATE,
+    completed_at TIMESTAMP,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE dd_checklist_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    checklist_id UUID REFERENCES deal_checklists(id) ON DELETE CASCADE,
+    
+    section VARCHAR(200),
+    item_number VARCHAR(50),
+    
+    item_text TEXT NOT NULL,
+    guidance TEXT,
+    
+    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'in_progress', 'complete', 'na', 'flagged'
+    priority VARCHAR(20) DEFAULT 'medium',
+    
+    -- Review
+    finding TEXT,
+    finding_severity VARCHAR(20), -- 'critical', 'high', 'medium', 'low', 'info'
+    
+    -- Links
+    document_ids UUID[] DEFAULT '{}',
+    issue_ids UUID[] DEFAULT '{}',
+    drl_item_ids UUID[] DEFAULT '{}',
+    
+    assignee_id UUID REFERENCES users(id),
+    completed_by UUID REFERENCES users(id),
+    completed_at TIMESTAMP,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_dd_items_checklist ON dd_checklist_items(checklist_id);
+CREATE INDEX idx_dd_items_status ON dd_checklist_items(status);
+
+-- =====================================================
+-- CONTRACT ANALYSIS
+-- =====================================================
+
+CREATE TABLE contract_analyses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    document_id UUID, -- Reference to document
+    data_room_doc_id UUID REFERENCES data_room_documents(id),
+    
+    contract_type VARCHAR(200), -- 'customer_agreement', 'supplier_agreement', 'employment', 'lease', 'license', 'loan', 'insurance'
+    contract_name VARCHAR(500),
+    
+    -- Parties
+    parties JSONB DEFAULT '[]', -- [{name, role, entity_type}]
+    
+    -- Key Terms (extracted)
+    effective_date DATE,
+    expiration_date DATE,
+    term_description TEXT,
+    auto_renewal BOOLEAN,
+    renewal_terms TEXT,
+    
+    -- Value
+    contract_value DECIMAL(20, 2),
+    value_currency VARCHAR(10),
+    payment_terms TEXT,
+    
+    -- Critical Provisions
+    change_of_control JSONB, -- {exists, trigger_type, consequences, consent_required}
+    assignment_provisions JSONB, -- {assignable, consent_required, restrictions}
+    termination_provisions JSONB, -- {for_cause, for_convenience, notice_period, termination_fees}
+    
+    non_compete JSONB,
+    non_solicit JSONB,
+    exclusivity JSONB,
+    mfn_clause JSONB,
+    
+    indemnification JSONB,
+    liability_cap JSONB,
+    insurance_requirements JSONB,
+    
+    -- IP Provisions
+    ip_ownership JSONB,
+    license_grants JSONB,
+    
+    -- Risk Assessment
+    risk_score INTEGER, -- 1-100
+    risk_factors JSONB DEFAULT '[]',
+    flags JSONB DEFAULT '[]',
+    
+    -- AI Analysis
+    ai_summary TEXT,
+    ai_analysis JSONB DEFAULT '{}',
+    ai_confidence_score DECIMAL(5, 2),
+    
+    -- Review
+    review_status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'in_progress', 'reviewed', 'flagged'
+    reviewed_by UUID REFERENCES users(id),
+    reviewed_at TIMESTAMP,
+    review_notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_contract_analysis_deal ON contract_analyses(deal_id);
+CREATE INDEX idx_contract_analysis_type ON contract_analyses(contract_type);
+CREATE INDEX idx_contract_analysis_risk ON contract_analyses(risk_score DESC);
+
+-- =====================================================
+-- ISSUE TRACKER
+-- =====================================================
+
+CREATE TABLE deal_issues (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    issue_number VARCHAR(50), -- e.g., "ISS-001"
+    
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    
+    category VARCHAR(200), -- 'legal', 'financial', 'operational', 'regulatory', 'reputational', 'integration', 'tax', 'environmental', 'ip', 'hr', 'it'
+    subcategory VARCHAR(200),
+    
+    severity VARCHAR(20) NOT NULL, -- 'critical', 'high', 'medium', 'low', 'info'
+    status VARCHAR(50) DEFAULT 'open', -- 'open', 'investigating', 'pending_resolution', 'resolved', 'accepted', 'closed'
+    
+    -- Impact Assessment
+    is_deal_breaker BOOLEAN DEFAULT false,
+    financial_impact DECIMAL(20, 2),
+    financial_impact_notes TEXT,
+    
+    -- Mitigation
+    mitigation_strategy TEXT,
+    recommended_action VARCHAR(100), -- 'price_adjustment', 'indemnity', 'escrow', 'holdback', 'rep_warranty', 'condition_precedent', 'accept_risk', 'terminate'
+    
+    -- Links
+    source_document_ids UUID[] DEFAULT '{}',
+    related_checklist_item_ids UUID[] DEFAULT '{}',
+    related_drl_item_ids UUID[] DEFAULT '{}',
+    related_contract_ids UUID[] DEFAULT '{}',
+    
+    -- Assignment
+    reported_by UUID REFERENCES users(id),
+    assignee_id UUID REFERENCES users(id),
+    
+    -- Dates
+    due_date DATE,
+    resolved_at TIMESTAMP,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_deal_issues_deal ON deal_issues(deal_id);
+CREATE INDEX idx_deal_issues_severity ON deal_issues(severity);
+CREATE INDEX idx_deal_issues_status ON deal_issues(status);
+CREATE INDEX idx_deal_issues_category ON deal_issues(category);
+
+CREATE TABLE deal_issue_comments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    issue_id UUID REFERENCES deal_issues(id) ON DELETE CASCADE,
+    
+    comment_text TEXT NOT NULL,
+    
+    author_id UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- =====================================================
+-- Q&A MANAGEMENT
+-- =====================================================
+
+CREATE TABLE deal_questions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    question_number VARCHAR(50), -- e.g., "Q-001"
+    
+    question_text TEXT NOT NULL,
+    category VARCHAR(200),
+    
+    -- Routing
+    from_party VARCHAR(100), -- 'buyer', 'seller', 'lender', etc.
+    to_party VARCHAR(100),
+    
+    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'assigned', 'answered', 'follow_up', 'closed'
+    priority VARCHAR(20) DEFAULT 'medium',
+    
+    -- Assignment
+    asked_by UUID REFERENCES users(id),
+    assigned_to UUID REFERENCES users(id),
+    
+    -- Dates
+    asked_at TIMESTAMP DEFAULT NOW(),
+    due_date DATE,
+    answered_at TIMESTAMP,
+    
+    -- Links
+    related_drl_items UUID[] DEFAULT '{}',
+    related_documents UUID[] DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE deal_question_responses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    question_id UUID REFERENCES deal_questions(id) ON DELETE CASCADE,
+    
+    response_text TEXT NOT NULL,
+    
+    -- Attachments
+    document_ids UUID[] DEFAULT '{}',
+    
+    responder_id UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_deal_questions_deal ON deal_questions(deal_id);
+CREATE INDEX idx_deal_questions_status ON deal_questions(status);
+
+-- =====================================================
+-- FINANCIAL ANALYSIS
+-- =====================================================
+
+CREATE TABLE deal_financials (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    financial_type VARCHAR(100), -- 'historical', 'projected', 'pro_forma'
+    period_type VARCHAR(50), -- 'annual', 'quarterly', 'monthly', 'ytd', 'ltm'
+    period_end_date DATE,
+    
+    -- Income Statement
+    revenue DECIMAL(20, 2),
+    cost_of_goods_sold DECIMAL(20, 2),
+    gross_profit DECIMAL(20, 2),
+    operating_expenses DECIMAL(20, 2),
+    ebitda DECIMAL(20, 2),
+    ebitda_adjustments JSONB DEFAULT '[]',
+    adjusted_ebitda DECIMAL(20, 2),
+    depreciation DECIMAL(20, 2),
+    amortization DECIMAL(20, 2),
+    ebit DECIMAL(20, 2),
+    interest_expense DECIMAL(20, 2),
+    tax_expense DECIMAL(20, 2),
+    net_income DECIMAL(20, 2),
+    
+    -- Balance Sheet
+    cash DECIMAL(20, 2),
+    accounts_receivable DECIMAL(20, 2),
+    inventory DECIMAL(20, 2),
+    total_current_assets DECIMAL(20, 2),
+    total_assets DECIMAL(20, 2),
+    accounts_payable DECIMAL(20, 2),
+    total_current_liabilities DECIMAL(20, 2),
+    total_debt DECIMAL(20, 2),
+    total_liabilities DECIMAL(20, 2),
+    total_equity DECIMAL(20, 2),
+    
+    -- Working Capital
+    working_capital DECIMAL(20, 2),
+    working_capital_target DECIMAL(20, 2),
+    
+    -- Additional Metrics
+    additional_metrics JSONB DEFAULT '{}',
+    
+    -- Source
+    source_document_ids UUID[] DEFAULT '{}',
+    notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_deal_financials_deal ON deal_financials(deal_id);
+
+CREATE TABLE deal_financial_analysis (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    analysis_type VARCHAR(100), -- 'qoe', 'working_capital', 'debt_analysis', 'customer_concentration', 'revenue_analysis'
+    
+    title VARCHAR(500),
+    findings TEXT,
+    adjustments JSONB DEFAULT '[]',
+    
+    ai_analysis JSONB DEFAULT '{}',
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- =====================================================
+-- BACKGROUND RESEARCH
+-- =====================================================
+
+CREATE TABLE deal_research (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    research_type VARCHAR(100), -- 'entity_verification', 'ucc_search', 'litigation_search', 'lien_search', 'regulatory_search', 'media_search', 'sanctions_screening'
+    subject_name VARCHAR(500),
+    subject_type VARCHAR(100), -- 'company', 'individual', 'property'
+    
+    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'in_progress', 'complete', 'flagged'
+    
+    -- Results
+    search_results JSONB DEFAULT '{}',
+    findings_summary TEXT,
+    flags JSONB DEFAULT '[]',
+    
+    -- Source
+    source VARCHAR(200),
+    search_date DATE,
+    
+    reviewed_by UUID REFERENCES users(id),
+    reviewed_at TIMESTAMP,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_deal_research_deal ON deal_research(deal_id);
+CREATE INDEX idx_deal_research_type ON deal_research(research_type);
+
+-- =====================================================
+-- CLOSING MANAGEMENT
+-- =====================================================
+
+CREATE TABLE closing_conditions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    condition_number VARCHAR(50),
+    condition_type VARCHAR(100), -- 'buyer_condition', 'seller_condition', 'mutual_condition', 'regulatory', 'financing', 'third_party_consent'
+    
+    description TEXT NOT NULL,
+    
+    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'in_progress', 'satisfied', 'waived', 'failed'
+    
+    responsible_party VARCHAR(100),
+    assignee_id UUID REFERENCES users(id),
+    
+    target_date DATE,
+    satisfied_at TIMESTAMP,
+    
+    notes TEXT,
+    document_ids UUID[] DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_closing_conditions_deal ON closing_conditions(deal_id);
+CREATE INDEX idx_closing_conditions_status ON closing_conditions(status);
+
+CREATE TABLE closing_documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    document_name VARCHAR(500) NOT NULL,
+    document_type VARCHAR(200), -- 'purchase_agreement', 'disclosure_schedule', 'ancillary_agreement', 'certificate', 'consent', 'opinion', 'financing_document'
+    
+    status VARCHAR(50) DEFAULT 'draft', -- 'draft', 'review', 'final', 'executed'
+    
+    -- Signature tracking
+    requires_signatures BOOLEAN DEFAULT false,
+    signature_parties JSONB DEFAULT '[]', -- [{party_name, signed, signed_at, signature_page_id}]
+    all_signatures_complete BOOLEAN DEFAULT false,
+    
+    -- Document
+    document_id UUID,
+    version INTEGER DEFAULT 1,
+    
+    assignee_id UUID REFERENCES users(id),
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_closing_docs_deal ON closing_documents(deal_id);
+CREATE INDEX idx_closing_docs_status ON closing_documents(status);
+
+CREATE TABLE post_closing_obligations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    obligation_type VARCHAR(100), -- 'earnout', 'holdback_release', 'indemnity_period', 'covenant', 'filing', 'integration_milestone'
+    
+    description TEXT NOT NULL,
+    
+    due_date DATE,
+    reminder_date DATE,
+    
+    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'in_progress', 'complete', 'expired'
+    
+    responsible_party VARCHAR(100),
+    assignee_id UUID REFERENCES users(id),
+    
+    amount DECIMAL(20, 2),
+    
+    completed_at TIMESTAMP,
+    notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_post_closing_deal ON post_closing_obligations(deal_id);
+CREATE INDEX idx_post_closing_due ON post_closing_obligations(due_date);
+
+-- =====================================================
+-- TRANSACTION REPORTS
+-- =====================================================
+
+CREATE TABLE deal_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID REFERENCES deals(id) ON DELETE CASCADE,
+    
+    report_type VARCHAR(100), -- 'executive_summary', 'full_dd_report', 'issue_list', 'closing_checklist', 'bring_down'
+    
+    title VARCHAR(500),
+    
+    -- Content
+    content JSONB DEFAULT '{}',
+    generated_content TEXT, -- AI-generated content
+    
+    -- Generation
+    template_id UUID,
+    generation_settings JSONB DEFAULT '{}',
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'draft', -- 'draft', 'in_progress', 'review', 'final'
+    
+    -- Output
+    output_document_id UUID,
+    output_format VARCHAR(50), -- 'pdf', 'docx', 'html'
+    
+    generated_by UUID REFERENCES users(id),
+    generated_at TIMESTAMP,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_deal_reports_deal ON deal_reports(deal_id);
+```
+
+---
+
+## API ENDPOINTS
+
+### Deals
+```
+GET    /api/deals                        - List all deals (with filters)
+POST   /api/deals                        - Create new deal
+GET    /api/deals/:id                    - Get deal details
+PUT    /api/deals/:id                    - Update deal
+DELETE /api/deals/:id                    - Delete deal
+GET    /api/deals/:id/dashboard          - Get deal dashboard data
+GET    /api/deals/:id/timeline           - Get deal timeline/milestones
+POST   /api/deals/:id/milestones         - Create milestone
+PUT    /api/deals/:id/milestones/:mid    - Update milestone
+GET    /api/deals/:id/participants       - Get deal team
+POST   /api/deals/:id/participants       - Add participant
+DELETE /api/deals/:id/participants/:pid  - Remove participant
+GET    /api/deals/:id/activity           - Get deal activity log
+```
+
+### Request Lists (DRL)
+```
+GET    /api/deals/:id/request-lists              - Get all DRLs for deal
+POST   /api/deals/:id/request-lists              - Create DRL
+GET    /api/deals/:id/request-lists/:rid         - Get DRL details
+PUT    /api/deals/:id/request-lists/:rid         - Update DRL
+POST   /api/deals/:id/request-lists/:rid/send    - Send DRL to parties
+GET    /api/deals/:id/request-lists/:rid/items   - Get DRL items
+POST   /api/deals/:id/request-lists/:rid/items   - Add DRL item
+PUT    /api/drl-items/:iid                        - Update DRL item
+PUT    /api/drl-items/:iid/status                 - Update item status
+GET    /api/drl-templates                         - Get DRL templates
+POST   /api/drl-templates                         - Create template
+```
+
+### Data Rooms
+```
+GET    /api/deals/:id/data-room                  - Get data room
+POST   /api/deals/:id/data-room                  - Create data room
+PUT    /api/data-rooms/:drid                     - Update data room settings
+GET    /api/data-rooms/:drid/folders             - Get folder structure
+POST   /api/data-rooms/:drid/folders             - Create folder
+PUT    /api/data-rooms/:drid/folders/:fid        - Update folder
+DELETE /api/data-rooms/:drid/folders/:fid        - Delete folder
+GET    /api/data-rooms/:drid/documents           - Get all documents
+POST   /api/data-rooms/:drid/documents           - Upload document
+PUT    /api/data-rooms/:drid/documents/:did      - Update document
+DELETE /api/data-rooms/:drid/documents/:did      - Delete document
+GET    /api/data-rooms/:drid/access              - Get access list
+POST   /api/data-rooms/:drid/access              - Grant access
+DELETE /api/data-rooms/:drid/access/:aid         - Revoke access
+GET    /api/data-rooms/:drid/activity            - Get activity log
+GET    /api/data-rooms/:drid/analytics           - Get analytics
+```
+
+### Checklists
+```
+GET    /api/deals/:id/checklists                 - Get all checklists
+POST   /api/deals/:id/checklists                 - Create checklist
+GET    /api/checklists/:cid                      - Get checklist details
+PUT    /api/checklists/:cid                      - Update checklist
+GET    /api/checklists/:cid/items                - Get checklist items
+PUT    /api/checklist-items/:iid                 - Update item
+PUT    /api/checklist-items/:iid/status          - Update item status
+GET    /api/dd-templates                         - Get checklist templates
+POST   /api/dd-templates                         - Create template
+```
+
+### Contract Analysis
+```
+GET    /api/deals/:id/contracts                  - Get all contract analyses
+POST   /api/deals/:id/contracts                  - Create contract analysis
+GET    /api/contracts/:cid                       - Get contract analysis
+PUT    /api/contracts/:cid                       - Update analysis
+POST   /api/contracts/:cid/analyze               - Run AI analysis
+GET    /api/deals/:id/contracts/summary          - Get contracts summary
+GET    /api/deals/:id/contracts/risks            - Get all contract risks
+```
+
+### Issues
+```
+GET    /api/deals/:id/issues                     - Get all issues
+POST   /api/deals/:id/issues                     - Create issue
+GET    /api/issues/:iid                          - Get issue details
+PUT    /api/issues/:iid                          - Update issue
+PUT    /api/issues/:iid/status                   - Update status
+POST   /api/issues/:iid/comments                 - Add comment
+GET    /api/deals/:id/issues/summary             - Get issues summary
+GET    /api/deals/:id/risk-matrix                - Get risk heat map data
+```
+
+### Q&A
+```
+GET    /api/deals/:id/questions                  - Get all questions
+POST   /api/deals/:id/questions                  - Create question
+GET    /api/questions/:qid                       - Get question details
+PUT    /api/questions/:qid                       - Update question
+POST   /api/questions/:qid/responses             - Add response
+PUT    /api/questions/:qid/status                - Update status
+GET    /api/deals/:id/questions/stats            - Get Q&A statistics
+```
+
+### Financial Analysis
+```
+GET    /api/deals/:id/financials                 - Get all financial data
+POST   /api/deals/:id/financials                 - Add financial period
+PUT    /api/financials/:fid                      - Update financials
+GET    /api/deals/:id/financial-analysis         - Get analyses
+POST   /api/deals/:id/financial-analysis         - Create analysis
+GET    /api/deals/:id/financial-summary          - Get financial summary
+```
+
+### Background Research
+```
+GET    /api/deals/:id/research                   - Get all research
+POST   /api/deals/:id/research                   - Create research request
+GET    /api/research/:rid                        - Get research details
+PUT    /api/research/:rid                        - Update research
+POST   /api/research/:rid/run                    - Run search
+```
+
+### Closing
+```
+GET    /api/deals/:id/closing/conditions         - Get conditions precedent
+POST   /api/deals/:id/closing/conditions         - Add condition
+PUT    /api/closing-conditions/:cid              - Update condition
+GET    /api/deals/:id/closing/documents          - Get closing documents
+POST   /api/deals/:id/closing/documents          - Add closing document
+PUT    /api/closing-documents/:did               - Update document
+PUT    /api/closing-documents/:did/signatures    - Update signatures
+GET    /api/deals/:id/post-closing               - Get post-closing obligations
+POST   /api/deals/:id/post-closing               - Add obligation
+PUT    /api/post-closing/:oid                    - Update obligation
+```
+
+### Reports
+```
+GET    /api/deals/:id/reports                    - Get all reports
+POST   /api/deals/:id/reports                    - Create report
+GET    /api/reports/:rid                         - Get report
+PUT    /api/reports/:rid                         - Update report
+POST   /api/reports/:rid/generate                - Generate report content
+POST   /api/reports/:rid/export                  - Export to PDF/DOCX
+```
+
+---
+
+## REACT COMPONENT STRUCTURE
+
+```
+src/
+├── components/
+│   └── business-transactions/
+│       ├── index.ts
+│       │
+│       ├── navigation/
+│       │   └── TransactionsNav.tsx
+│       │
+│       ├── dashboard/
+│       │   ├── TransactionDashboard.tsx
+│       │   ├── DealCard.tsx
+│       │   ├── DealTimeline.tsx
+│       │   ├── DealMetrics.tsx
+│       │   └── DealActivityFeed.tsx
+│       │
+│       ├── deals/
+│       │   ├── ActiveDeals.tsx
+│       │   ├── DealsList.tsx
+│       │   ├── DealDetail.tsx
+│       │   ├── CreateDealModal.tsx
+│       │   ├── EditDealModal.tsx
+│       │   ├── DealTeam.tsx
+│       │   ├── DealMilestones.tsx
+│       │   └── DealTemplates.tsx
+│       │
+│       ├── request-lists/
+│       │   ├── RequestLists.tsx
+│       │   ├── DRLDetail.tsx
+│       │   ├── DRLItemRow.tsx
+│       │   ├── CreateDRLModal.tsx
+│       │   ├── DRLTemplates.tsx
+│       │   └── DRLProgress.tsx
+│       │
+│       ├── data-room/
+│       │   ├── DataRoom.tsx
+│       │   ├── FolderTree.tsx
+│       │   ├── DocumentGrid.tsx
+│       │   ├── DocumentUploader.tsx
+│       │   ├── AccessManager.tsx
+│       │   ├── ActivityLog.tsx
+│       │   └── DataRoomAnalytics.tsx
+│       │
+│       ├── checklists/
+│       │   ├── Checklists.tsx
+│       │   ├── ChecklistDetail.tsx
+│       │   ├── ChecklistItemRow.tsx
+│       │   ├── CreateChecklistModal.tsx
+│       │   ├── ChecklistTemplates.tsx
+│       │   └── ChecklistProgress.tsx
+│       │
+│       ├── contract-analysis/
+│       │   ├── ContractAnalysis.tsx
+│       │   ├── ContractsList.tsx
+│       │   ├── ContractDetail.tsx
+│       │   ├── ContractTermsPanel.tsx
+│       │   ├── RiskAssessment.tsx
+│       │   └── ContractComparison.tsx
+│       │
+│       ├── issues/
+│       │   ├── IssueTracker.tsx
+│       │   ├── IssuesList.tsx
+│       │   ├── IssueDetail.tsx
+│       │   ├── CreateIssueModal.tsx
+│       │   ├── RiskMatrix.tsx
+│       │   └── IssueComments.tsx
+│       │
+│       ├── qa/
+│       │   ├── QAManagement.tsx
+│       │   ├── QuestionsList.tsx
+│       │   ├── QuestionThread.tsx
+│       │   ├── CreateQuestionModal.tsx
+│       │   └── QAStats.tsx
+│       │
+│       ├── financial/
+│       │   ├── FinancialAnalysis.tsx
+│       │   ├── FinancialsInput.tsx
+│       │   ├── FinancialCharts.tsx
+│       │   ├── EBITDAAnalysis.tsx
+│       │   ├── WorkingCapital.tsx
+│       │   └── CustomerConcentration.tsx
+│       │
+│       ├── research/
+│       │   ├── BackgroundResearch.tsx
+│       │   ├── ResearchList.tsx
+│       │   ├── ResearchDetail.tsx
+│       │   ├── EntitySearch.tsx
+│       │   └── LitigationSearch.tsx
+│       │
+│       ├── closing/
+│       │   ├── ClosingManagement.tsx
+│       │   ├── ConditionsPrecedent.tsx
+│       │   ├── ClosingDocuments.tsx
+│       │   ├── SignatureTracker.tsx
+│       │   ├── ClosingBinder.tsx
+│       │   └── PostClosingObligations.tsx
+│       │
+│       ├── reports/
+│       │   ├── TransactionReports.tsx
+│       │   ├── ReportBuilder.tsx
+│       │   ├── ReportPreview.tsx
+│       │   └── ReportTemplates.tsx
+│       │
+│       └── shared/
+│           ├── DealSelector.tsx
+│           ├── PartySelector.tsx
+│           ├── StatusBadge.tsx
+│           ├── SeverityBadge.tsx
+│           ├── ProgressBar.tsx
+│           ├── DocumentLinker.tsx
+│           └── DatePicker.tsx
+│
+├── pages/
+│   └── business-transactions/
+│       ├── index.tsx                    - Dashboard
+│       ├── deals/
+│       │   ├── index.tsx                - Active Deals list
+│       │   ├── [dealId]/
+│       │   │   ├── index.tsx            - Deal detail
+│       │   │   ├── request-lists.tsx
+│       │   │   ├── data-room.tsx
+│       │   │   ├── checklists.tsx
+│       │   │   ├── contracts.tsx
+│       │   │   ├── issues.tsx
+│       │   │   ├── qa.tsx
+│       │   │   ├── financials.tsx
+│       │   │   ├── research.tsx
+│       │   │   ├── closing.tsx
+│       │   │   └── reports.tsx
+│       │   └── templates.tsx
+│       └── settings.tsx
+│
+├── hooks/
+│   └── business-transactions/
+│       ├── useDeals.ts
+│       ├── useDeal.ts
+│       ├── useRequestLists.ts
+│       ├── useDataRoom.ts
+│       ├── useChecklists.ts
+│       ├── useContractAnalysis.ts
+│       ├── useIssues.ts
+│       ├── useQA.ts
+│       ├── useFinancials.ts
+│       ├── useResearch.ts
+│       ├── useClosing.ts
+│       └── useReports.ts
+│
+└── lib/
+    └── business-transactions/
+        ├── types.ts                     - TypeScript interfaces
+        ├── constants.ts                 - Enums, defaults
+        ├── api.ts                       - API functions
+        ├── utils.ts                     - Helper functions
+        └── templates/
+            ├── drl-templates.ts
+            ├── checklist-templates.ts
+            └── report-templates.ts
+```
+
+---
+
+## NAVIGATION COMPONENT UPDATE
+
+Update your main navigation component to include the Business Transactions section:
+
+```tsx
+// components/layout/Sidebar.tsx or similar
+
+import {
+  Briefcase,
+  LayoutDashboard,
+  FolderOpen,
+  FileText,
+  ClipboardList,
+  FileSearch,
+  AlertTriangle,
+  MessageSquare,
+  TrendingUp,
+  Search,
+  CheckSquare,
+  FileOutput,
+  Scale,
+  // ... existing icons
+} from 'lucide-react';
+
+// Add to your navigation config
+const businessTransactionsNav = {
+  title: 'BUSINESS TRANSACTIONS',
+  icon: Briefcase,
+  items: [
+    {
+      title: 'Transaction Dashboard',
+      href: '/business-transactions',
+      icon: LayoutDashboard,
+    },
+    {
+      title: 'Active Deals',
+      href: '/business-transactions/deals',
+      icon: FolderOpen,
+    },
+    {
+      title: 'Deal Templates',
+      href: '/business-transactions/deals/templates',
+      icon: FileText,
+    },
+    {
+      title: 'Request Lists (DRL)',
+      href: '/business-transactions/request-lists',
+      icon: ClipboardList,
+    },
+    {
+      title: 'Data Rooms',
+      href: '/business-transactions/data-rooms',
+      icon: FolderOpen,
+    },
+    {
+      title: 'Due Diligence Checklists',
+      href: '/business-transactions/checklists',
+      icon: CheckSquare,
+    },
+    {
+      title: 'Contract Analysis',
+      href: '/business-transactions/contracts',
+      icon: FileSearch,
+    },
+    {
+      title: 'Issue Tracker',
+      href: '/business-transactions/issues',
+      icon: AlertTriangle,
+    },
+    {
+      title: 'Q&A Management',
+      href: '/business-transactions/qa',
+      icon: MessageSquare,
+    },
+    {
+      title: 'Financial Analysis',
+      href: '/business-transactions/financials',
+      icon: TrendingUp,
+    },
+    {
+      title: 'Background Research',
+      href: '/business-transactions/research',
+      icon: Search,
+    },
+    {
+      title: 'Closing Management',
+      href: '/business-transactions/closing',
+      icon: Scale,
+    },
+    {
+      title: 'Transaction Reports',
+      href: '/business-transactions/reports',
+      icon: FileOutput,
+    },
+  ],
+};
+
+// Insert after INVESTIGATIONS in your navigation array
+const navigationSections = [
+  investigationsNav,
+  businessTransactionsNav, // <-- ADD HERE
+  intakeMonitoringNav,
+  discoveryProductionsNav,
+  grcComplianceNav,
+  analyticsIntelligenceNav,
+  knowledgeCenterNav,
+  administrationNav,
+];
+```
+
+---
+
+## DEFAULT TEMPLATES
+
+### DRL Templates by Deal Type
+
+```typescript
+// lib/business-transactions/templates/drl-templates.ts
+
+export const drlTemplates = {
+  ma_asset: {
+    name: 'Asset Purchase Due Diligence',
+    categories: [
+      {
+        name: 'Corporate & Organization',
+        items: [
+          'Certificate of Incorporation/Formation and all amendments',
+          'Bylaws/Operating Agreement and all amendments',
+          'Good standing certificates (state of formation and all states where qualified)',
+          'List of all jurisdictions where qualified to do business',
+          'Organizational chart showing all subsidiaries and affiliates',
+          'List of all officers and directors with titles',
+          'Minutes of Board and shareholder meetings (last 3 years)',
+          'Written consents in lieu of meetings (last 3 years)',
+          'Shareholder/Member agreements',
+          'Voting agreements or arrangements',
+          'List of authorized signatories',
+        ],
+      },
+      {
+        name: 'Financial Information',
+        items: [
+          'Audited financial statements (last 3 years)',
+          'Unaudited interim financial statements (current YTD)',
+          'Monthly financial statements (last 24 months)',
+          'Annual operating budgets (current and prior 2 years)',
+          'Financial projections and assumptions',
+          'Accounts receivable aging report',
+          'Accounts payable aging report',
+          'Inventory reports and valuation methodology',
+          'Schedule of prepaid expenses',
+          'Bank statements (last 12 months)',
+          'Bank reconciliations',
+          'Credit facility agreements and amendments',
+          'Debt schedules with maturity dates',
+          'Capital expenditure reports',
+          'Related party transaction details',
+        ],
+      },
+      {
+        name: 'Material Contracts',
+        items: [
+          'List of all material contracts (>$50,000 annual value)',
+          'Top 20 customer contracts',
+          'Top 20 supplier/vendor contracts',
+          'Distribution agreements',
+          'Sales representative agreements',
+          'Joint venture agreements',
+          'Partnership agreements',
+          'Licensing agreements (in and out)',
+          'Franchise agreements',
+          'Government contracts',
+          'Contracts with related parties',
+          'Contracts with change of control provisions',
+          'Contracts requiring consent to assign',
+        ],
+      },
+      {
+        name: 'Real Property',
+        items: [
+          'List of all owned real property',
+          'Deeds and title insurance policies',
+          'Real property leases and amendments',
+          'Subleases',
+          'Lease assignments',
+          'Property tax assessments',
+          'Environmental reports and assessments',
+          'Zoning and land use permits',
+          'Survey reports',
+          'Property insurance policies',
+        ],
+      },
+      {
+        name: 'Personal Property & Equipment',
+        items: [
+          'Fixed asset register',
+          'Equipment leases',
+          'Vehicle titles and leases',
+          'UCC filings',
+          'Security agreements',
+        ],
+      },
+      {
+        name: 'Intellectual Property',
+        items: [
+          'List of all patents (issued and pending)',
+          'List of all trademarks (registered and common law)',
+          'List of all copyrights',
+          'List of domain names',
+          'IP assignment agreements from employees/contractors',
+          'IP license agreements (in and out)',
+          'Technology transfer agreements',
+          'Software license agreements',
+          'Open source software usage',
+          'IP litigation history',
+          'Cease and desist letters sent/received',
+        ],
+      },
+      {
+        name: 'Employment & Benefits',
+        items: [
+          'Employee census (name, title, hire date, salary, bonus)',
+          'Organization chart',
+          'Employment agreements',
+          'Offer letter templates',
+          'Employee handbook',
+          'Independent contractor agreements',
+          'Consulting agreements',
+          'Non-compete/Non-solicitation agreements',
+          'Confidentiality/NDA agreements',
+          'Commission plans and agreements',
+          'Bonus plans',
+          'Equity incentive plans and agreements',
+          'Retirement/401k plan documents',
+          'Health insurance plan documents',
+          'Other benefit plan documents',
+          'COBRA compliance documentation',
+          'I-9 compliance audit',
+          'Workers compensation policies and claims',
+          'OSHA citations or violations',
+          'Labor union contracts',
+          'NLRB proceedings',
+          'Employment litigation history',
+          'EEOC charges',
+          'Severance agreements',
+        ],
+      },
+      {
+        name: 'Litigation & Legal',
+        items: [
+          'List of pending litigation',
+          'List of threatened litigation',
+          'List of litigation settled in last 5 years',
+          'Judgment and settlement agreements',
+          'Correspondence with regulators',
+          'Subpoenas received',
+          'Product liability claims',
+          'Insurance claims history',
+          'Legal opinions',
+        ],
+      },
+      {
+        name: 'Regulatory & Compliance',
+        items: [
+          'List of all permits, licenses, approvals',
+          'Regulatory filings',
+          'Correspondence with regulatory agencies',
+          'Compliance audit reports',
+          'Industry certifications',
+          'Export licenses',
+          'FDA registrations (if applicable)',
+          'EPA permits and compliance',
+          'Privacy policy',
+          'Data security policies',
+          'GDPR/CCPA compliance documentation',
+          'PCI compliance (if applicable)',
+          'SOC reports',
+        ],
+      },
+      {
+        name: 'Insurance',
+        items: [
+          'General liability insurance',
+          'Professional liability/E&O insurance',
+          'Product liability insurance',
+          "Directors & Officers insurance",
+          'Cyber liability insurance',
+          'Property insurance',
+          'Workers compensation insurance',
+          'Key person insurance',
+          'Claims history (last 5 years)',
+        ],
+      },
+      {
+        name: 'Tax',
+        items: [
+          'Federal tax returns (last 3 years)',
+          'State tax returns (last 3 years)',
+          'Local tax returns (last 3 years)',
+          'Sales/use tax returns',
+          'Payroll tax returns',
+          'Tax audit reports',
+          'IRS correspondence',
+          'State tax authority correspondence',
+          'Transfer pricing documentation',
+          'Tax elections',
+        ],
+      },
+      {
+        name: 'Information Technology',
+        items: [
+          'IT system architecture diagram',
+          'List of critical software applications',
+          'Software license agreements',
+          'SaaS/cloud service agreements',
+          'Data center/hosting agreements',
+          'IT security policies',
+          'Disaster recovery plan',
+          'Business continuity plan',
+          'Penetration test results',
+          'Security incident history',
+          'Data breach notification history',
+        ],
+      },
+      {
+        name: 'Environmental',
+        items: [
+          'Phase I environmental assessments',
+          'Phase II environmental assessments',
+          'Environmental permits',
+          'Hazardous materials inventory',
+          'Waste disposal records',
+          'Underground storage tank documentation',
+          'Environmental compliance audit reports',
+          'EPA correspondence',
+          'State environmental agency correspondence',
+        ],
+      },
+    ],
+  },
+  
+  investment_equity: {
+    name: 'Equity Investment Due Diligence',
+    categories: [
+      {
+        name: 'Corporate & Capitalization',
+        items: [
+          'Certificate of Incorporation and all amendments',
+          'Bylaws and all amendments',
+          'Current capitalization table',
+          'Fully diluted cap table with all options, warrants, convertibles',
+          'Stock option plan documents',
+          'Option grant agreements',
+          'Warrant agreements',
+          'Convertible note documents',
+          'SAFE agreements',
+          'Shareholder agreements',
+          'Voting agreements',
+          'Right of first refusal agreements',
+          'Co-sale agreements',
+          'Investor rights agreements',
+          'Prior financing documents',
+          '409A valuation reports',
+          'Board and stockholder consents',
+          'Stock certificates and ledger',
+        ],
+      },
+      // ... additional categories specific to equity investments
+    ],
+  },
+  
+  debt_financing: {
+    name: 'Debt Financing Due Diligence',
+    categories: [
+      {
+        name: 'Corporate & Financial',
+        items: [
+          'Corporate organization documents',
+          'Audited financial statements (3 years)',
+          'Monthly financial statements (24 months)',
+          'Financial projections with assumptions',
+          'Cash flow forecasts',
+          'Existing debt agreements',
+          'Subordination agreements',
+          'Intercreditor agreements',
+          'UCC search results',
+          'Judgment/lien search results',
+          'Collateral descriptions and appraisals',
+        ],
+      },
+      // ... additional categories specific to debt
+    ],
+  },
+};
+```
+
+### Checklist Templates
+
+```typescript
+// lib/business-transactions/templates/checklist-templates.ts
+
+export const checklistTemplates = {
+  legal_dd: {
+    name: 'Legal Due Diligence Checklist',
+    category: 'legal',
+    sections: [
+      {
+        name: 'Corporate Organization',
+        items: [
+          {
+            text: 'Verify legal existence and good standing in state of formation',
+            guidance: 'Obtain certificates of good standing dated within 30 days',
+            priority: 'high',
+          },
+          {
+            text: 'Verify qualification in all states where conducting business',
+            guidance: 'Check if business activities require qualification',
+            priority: 'medium',
+          },
+          {
+            text: 'Review organizational documents for restrictions on transaction',
+            guidance: 'Look for supermajority requirements, prohibited transactions',
+            priority: 'high',
+          },
+          {
+            text: 'Confirm authorized signatories',
+            guidance: 'Match against transaction documents',
+            priority: 'high',
+          },
+          {
+            text: 'Review capitalization and confirm ownership percentages',
+            guidance: 'Reconcile cap table with stock ledger and certificates',
+            priority: 'high',
+          },
+        ],
+      },
+      {
+        name: 'Material Contracts',
+        items: [
+          {
+            text: 'Identify all contracts with change of control provisions',
+            guidance: 'Flag contracts requiring consent or termination rights',
+            priority: 'critical',
+          },
+          {
+            text: 'Identify all contracts requiring consent to assign',
+            guidance: 'Determine if consent is reasonably withholdable',
+            priority: 'critical',
+          },
+          {
+            text: 'Review key customer contracts for unusual terms',
+            guidance: 'Focus on termination, MFN, exclusivity provisions',
+            priority: 'high',
+          },
+          {
+            text: 'Review key supplier contracts for dependency risks',
+            guidance: 'Identify sole source suppliers and term expiration',
+            priority: 'high',
+          },
+          {
+            text: 'Review non-compete and exclusivity provisions',
+            guidance: 'Assess impact on post-closing operations',
+            priority: 'medium',
+          },
+        ],
+      },
+      {
+        name: 'Intellectual Property',
+        items: [
+          {
+            text: 'Verify ownership of all material IP',
+            guidance: 'Confirm assignment chain from inventors/creators',
+            priority: 'high',
+          },
+          {
+            text: 'Review IP license agreements for restrictions',
+            guidance: 'Check for restrictions on assignment, sublicensing',
+            priority: 'high',
+          },
+          {
+            text: 'Identify any IP infringement claims or risks',
+            guidance: 'Review cease and desist letters, freedom to operate',
+            priority: 'high',
+          },
+          {
+            text: 'Verify trademark registrations and maintenance',
+            guidance: 'Confirm renewal dates and geographic coverage',
+            priority: 'medium',
+          },
+          {
+            text: 'Review open source software usage and compliance',
+            guidance: 'Identify copyleft licenses that may affect proprietary code',
+            priority: 'medium',
+          },
+        ],
+      },
+      {
+        name: 'Employment',
+        items: [
+          {
+            text: 'Review key employee agreements and retention risk',
+            guidance: 'Identify change of control triggers, key person dependency',
+            priority: 'high',
+          },
+          {
+            text: 'Verify IP assignment from all employees and contractors',
+            guidance: 'Check for gaps in assignment coverage',
+            priority: 'high',
+          },
+          {
+            text: 'Review non-compete agreements for enforceability',
+            guidance: 'Consider geographic scope and applicable state law',
+            priority: 'medium',
+          },
+          {
+            text: 'Identify any employment litigation or claims',
+            guidance: 'Include EEOC charges, wage/hour claims',
+            priority: 'high',
+          },
+          {
+            text: 'Review benefit plans for compliance and liability',
+            guidance: 'Focus on 401k, health plans, ERISA compliance',
+            priority: 'medium',
+          },
+        ],
+      },
+      {
+        name: 'Litigation & Compliance',
+        items: [
+          {
+            text: 'Review all pending and threatened litigation',
+            guidance: 'Assess exposure, insurance coverage, likelihood of recovery',
+            priority: 'critical',
+          },
+          {
+            text: 'Review regulatory compliance status',
+            guidance: 'Identify any violations, remediation plans',
+            priority: 'high',
+          },
+          {
+            text: 'Verify all required permits and licenses',
+            guidance: 'Confirm transferability or reapplication requirements',
+            priority: 'high',
+          },
+          {
+            text: 'Review data privacy and security compliance',
+            guidance: 'GDPR, CCPA, industry-specific requirements',
+            priority: 'high',
+          },
+        ],
+      },
+    ],
+  },
+  
+  financial_dd: {
+    name: 'Financial Due Diligence Checklist',
+    category: 'financial',
+    sections: [
+      {
+        name: 'Quality of Earnings',
+        items: [
+          {
+            text: 'Analyze revenue recognition policies and consistency',
+            guidance: 'Compare to industry standards and ASC 606 requirements',
+            priority: 'critical',
+          },
+          {
+            text: 'Identify non-recurring revenue and expenses',
+            guidance: 'Adjust EBITDA for one-time items',
+            priority: 'critical',
+          },
+          {
+            text: 'Review customer concentration and revenue by customer',
+            guidance: 'Flag customers >10% of revenue',
+            priority: 'high',
+          },
+          {
+            text: 'Analyze gross margin trends and drivers',
+            guidance: 'Understand product mix, pricing, cost changes',
+            priority: 'high',
+          },
+          {
+            text: 'Review related party transactions',
+            guidance: 'Verify arm\'s length pricing',
+            priority: 'high',
+          },
+        ],
+      },
+      {
+        name: 'Working Capital',
+        items: [
+          {
+            text: 'Analyze accounts receivable aging and collectability',
+            guidance: 'Review allowance for doubtful accounts adequacy',
+            priority: 'high',
+          },
+          {
+            text: 'Review inventory valuation and obsolescence',
+            guidance: 'Assess inventory reserve adequacy',
+            priority: 'high',
+          },
+          {
+            text: 'Analyze accounts payable and accrued expenses',
+            guidance: 'Identify stretched payables or understated accruals',
+            priority: 'high',
+          },
+          {
+            text: 'Calculate normalized working capital',
+            guidance: 'Exclude non-operating items, seasonal adjustments',
+            priority: 'critical',
+          },
+        ],
+      },
+      // ... additional sections
+    ],
+  },
+  
+  it_dd: {
+    name: 'IT Due Diligence Checklist',
+    category: 'it',
+    sections: [
+      {
+        name: 'Infrastructure',
+        items: [
+          {
+            text: 'Document IT infrastructure architecture',
+            guidance: 'Include servers, networks, cloud services',
+            priority: 'high',
+          },
+          {
+            text: 'Review disaster recovery and business continuity plans',
+            guidance: 'Verify RTO/RPO capabilities and testing',
+            priority: 'high',
+          },
+          {
+            text: 'Assess technical debt and system modernization needs',
+            guidance: 'Identify legacy systems requiring investment',
+            priority: 'medium',
+          },
+        ],
+      },
+      {
+        name: 'Security',
+        items: [
+          {
+            text: 'Review security policies and procedures',
+            guidance: 'Compare to industry frameworks (NIST, ISO 27001)',
+            priority: 'high',
+          },
+          {
+            text: 'Review penetration test and vulnerability assessment results',
+            guidance: 'Identify critical findings and remediation status',
+            priority: 'high',
+          },
+          {
+            text: 'Review security incident history',
+            guidance: 'Include data breaches, ransomware, unauthorized access',
+            priority: 'critical',
+          },
+        ],
+      },
+      // ... additional sections
+    ],
+  },
+};
+```
+
+---
+
+## KEY PAGE IMPLEMENTATIONS
+
+### Transaction Dashboard
+
+```tsx
+// pages/business-transactions/index.tsx
+
+import React, { useState } from 'react';
+import { useDeals } from '@/hooks/business-transactions/useDeals';
+import { DealCard } from '@/components/business-transactions/dashboard/DealCard';
+import { DealMetrics } from '@/components/business-transactions/dashboard/DealMetrics';
+import { DealTimeline } from '@/components/business-transactions/dashboard/DealTimeline';
+import { DealActivityFeed } from '@/components/business-transactions/dashboard/DealActivityFeed';
+import { CreateDealModal } from '@/components/business-transactions/deals/CreateDealModal';
+import { Button } from '@/components/ui/button';
+import { Plus, Briefcase, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+
+export default function TransactionDashboard() {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const { deals, metrics, loading } = useDeals();
+
+  const activeDeals = deals.filter(d => d.status === 'active');
+  const criticalIssues = deals.reduce((sum, d) => sum + (d.critical_issues_count || 0), 0);
+  const upcomingDeadlines = deals.filter(d => {
+    const closingDate = new Date(d.closing_target_date);
+    const daysUntil = (closingDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    return daysUntil <= 30 && daysUntil > 0;
+  });
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold">Transaction Dashboard</h1>
+          <p className="text-gray-500">Manage and track your business transactions</p>
+        </div>
+        <Button onClick={() => setShowCreateModal(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          New Deal
+        </Button>
+      </div>
+
+      {/* Metrics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <MetricCard
+          title="Active Deals"
+          value={activeDeals.length}
+          icon={Briefcase}
+          color="blue"
+        />
+        <MetricCard
+          title="Critical Issues"
+          value={criticalIssues}
+          icon={AlertTriangle}
+          color="red"
+        />
+        <MetricCard
+          title="Closing in 30 Days"
+          value={upcomingDeadlines.length}
+          icon={Clock}
+          color="amber"
+        />
+        <MetricCard
+          title="Closed This Quarter"
+          value={metrics?.closedThisQuarter || 0}
+          icon={CheckCircle}
+          color="green"
+        />
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Active Deals */}
+        <div className="lg:col-span-2 space-y-4">
+          <h2 className="text-lg font-semibold">Active Deals</h2>
+          <div className="space-y-3">
+            {activeDeals.map(deal => (
+              <DealCard key={deal.id} deal={deal} />
+            ))}
+            {activeDeals.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                No active deals. Create your first deal to get started.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          {/* Upcoming Deadlines */}
+          <div className="bg-white rounded-lg border p-4">
+            <h3 className="font-semibold mb-3">Upcoming Deadlines</h3>
+            <DealTimeline deals={deals} />
+          </div>
+
+          {/* Recent Activity */}
+          <div className="bg-white rounded-lg border p-4">
+            <h3 className="font-semibold mb-3">Recent Activity</h3>
+            <DealActivityFeed />
+          </div>
+        </div>
+      </div>
+
+      {/* Create Deal Modal */}
+      <CreateDealModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+      />
+    </div>
+  );
+}
+
+function MetricCard({ title, value, icon: Icon, color }) {
+  const colorClasses = {
+    blue: 'bg-blue-50 text-blue-600',
+    red: 'bg-red-50 text-red-600',
+    amber: 'bg-amber-50 text-amber-600',
+    green: 'bg-green-50 text-green-600',
+  };
+
+  return (
+    <div className="bg-white rounded-lg border p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-gray-500">{title}</p>
+          <p className="text-2xl font-bold">{value}</p>
+        </div>
+        <div className={`p-3 rounded-lg ${colorClasses[color]}`}>
+          <Icon className="w-6 h-6" />
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### Deal Detail Page
+
+```tsx
+// pages/business-transactions/deals/[dealId]/index.tsx
+
+import React from 'react';
+import { useRouter } from 'next/router';
+import { useDeal } from '@/hooks/business-transactions/useDeal';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import {
+  Briefcase,
+  Calendar,
+  Users,
+  FileText,
+  AlertTriangle,
+  MessageSquare,
+  Settings,
+} from 'lucide-react';
+
+export default function DealDetailPage() {
+  const router = useRouter();
+  const { dealId } = router.query;
+  const { deal, loading, error } = useDeal(dealId as string);
+
+  if (loading) return <div>Loading...</div>;
+  if (error || !deal) return <div>Deal not found</div>;
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-start">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">{deal.title}</h1>
+            <Badge variant={deal.status === 'active' ? 'default' : 'secondary'}>
+              {deal.status}
+            </Badge>
+            <Badge variant="outline">{deal.deal_type}</Badge>
+          </div>
+          <p className="text-gray-500 mt-1">{deal.deal_number}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline">
+            <Settings className="w-4 h-4 mr-2" />
+            Settings
+          </Button>
+        </div>
+      </div>
+
+      {/* Key Metrics Bar */}
+      <div className="grid grid-cols-5 gap-4 bg-white rounded-lg border p-4">
+        <div>
+          <p className="text-sm text-gray-500">Deal Value</p>
+          <p className="text-xl font-semibold">
+            ${(deal.deal_value / 1000000).toFixed(1)}M
+          </p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Target Close</p>
+          <p className="text-xl font-semibold">
+            {new Date(deal.closing_target_date).toLocaleDateString()}
+          </p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">DRL Progress</p>
+          <Progress value={deal.drl_progress || 0} className="mt-2" />
+          <p className="text-sm mt-1">{deal.drl_progress || 0}% complete</p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Open Issues</p>
+          <p className="text-xl font-semibold text-amber-600">
+            {deal.open_issues_count || 0}
+          </p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-500">Risk Score</p>
+          <p className={`text-xl font-semibold ${
+            deal.overall_risk_score > 70 ? 'text-red-600' :
+            deal.overall_risk_score > 40 ? 'text-amber-600' : 'text-green-600'
+          }`}>
+            {deal.overall_risk_score || 'N/A'}
+          </p>
+        </div>
+      </div>
+
+      {/* Main Tabs */}
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="request-lists">Request Lists</TabsTrigger>
+          <TabsTrigger value="data-room">Data Room</TabsTrigger>
+          <TabsTrigger value="checklists">Checklists</TabsTrigger>
+          <TabsTrigger value="contracts">Contracts</TabsTrigger>
+          <TabsTrigger value="issues">Issues</TabsTrigger>
+          <TabsTrigger value="qa">Q&A</TabsTrigger>
+          <TabsTrigger value="closing">Closing</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <DealOverview deal={deal} />
+        </TabsContent>
+        
+        <TabsContent value="request-lists">
+          <RequestListsTab dealId={deal.id} />
+        </TabsContent>
+        
+        <TabsContent value="data-room">
+          <DataRoomTab dealId={deal.id} />
+        </TabsContent>
+        
+        <TabsContent value="checklists">
+          <ChecklistsTab dealId={deal.id} />
+        </TabsContent>
+        
+        <TabsContent value="contracts">
+          <ContractsTab dealId={deal.id} />
+        </TabsContent>
+        
+        <TabsContent value="issues">
+          <IssuesTab dealId={deal.id} />
+        </TabsContent>
+        
+        <TabsContent value="qa">
+          <QATab dealId={deal.id} />
+        </TabsContent>
+        
+        <TabsContent value="closing">
+          <ClosingTab dealId={deal.id} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+```
+
+### Issue Tracker with Risk Matrix
+
+```tsx
+// components/business-transactions/issues/RiskMatrix.tsx
+
+import React from 'react';
+import { useIssues } from '@/hooks/business-transactions/useIssues';
+
+interface RiskMatrixProps {
+  dealId: string;
+}
+
+export function RiskMatrix({ dealId }: RiskMatrixProps) {
+  const { issues } = useIssues(dealId);
+
+  const categories = ['legal', 'financial', 'operational', 'regulatory', 'reputational', 'integration'];
+  const severities = ['critical', 'high', 'medium', 'low'];
+
+  const getIssueCount = (category: string, severity: string) => {
+    return issues.filter(
+      i => i.category === category && i.severity === severity && i.status !== 'closed'
+    ).length;
+  };
+
+  const severityColors = {
+    critical: 'bg-red-600',
+    high: 'bg-orange-500',
+    medium: 'bg-yellow-400',
+    low: 'bg-green-400',
+  };
+
+  return (
+    <div className="bg-white rounded-lg border p-6">
+      <h3 className="text-lg font-semibold mb-4">Risk Heat Map</h3>
+      
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className="text-left p-2">Category</th>
+              {severities.map(s => (
+                <th key={s} className="text-center p-2 capitalize">{s}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map(category => (
+              <tr key={category} className="border-t">
+                <td className="p-2 capitalize font-medium">{category}</td>
+                {severities.map(severity => {
+                  const count = getIssueCount(category, severity);
+                  return (
+                    <td key={severity} className="p-2">
+                      <div className="flex justify-center">
+                        {count > 0 ? (
+                          <div className={`
+                            w-10 h-10 rounded-lg flex items-center justify-center
+                            text-white font-bold ${severityColors[severity]}
+                          `}>
+                            {count}
+                          </div>
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-gray-100" />
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Summary Stats */}
+      <div className="mt-6 grid grid-cols-4 gap-4 pt-4 border-t">
+        <div className="text-center">
+          <p className="text-2xl font-bold text-red-600">
+            {issues.filter(i => i.severity === 'critical' && i.status !== 'closed').length}
+          </p>
+          <p className="text-sm text-gray-500">Critical Issues</p>
+        </div>
+        <div className="text-center">
+          <p className="text-2xl font-bold text-orange-500">
+            {issues.filter(i => i.severity === 'high' && i.status !== 'closed').length}
+          </p>
+          <p className="text-sm text-gray-500">High Issues</p>
+        </div>
+        <div className="text-center">
+          <p className="text-2xl font-bold text-amber-600">
+            {issues.filter(i => i.is_deal_breaker).length}
+          </p>
+          <p className="text-sm text-gray-500">Deal Breakers</p>
+        </div>
+        <div className="text-center">
+          <p className="text-2xl font-bold text-green-600">
+            {issues.filter(i => i.status === 'resolved').length}
+          </p>
+          <p className="text-sm text-gray-500">Resolved</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## AI INTEGRATION PROMPTS
+
+### Contract Analysis AI Prompt
+
+```typescript
+// lib/business-transactions/ai/contract-analysis-prompt.ts
+
+export const contractAnalysisPrompt = `
+You are a legal AI assistant analyzing contracts for M&A due diligence purposes.
+Analyze the provided contract and extract the following information in JSON format:
+
+{
+  "contract_type": "customer_agreement|supplier_agreement|employment|lease|license|loan|insurance|other",
+  "parties": [
+    {"name": "string", "role": "string", "entity_type": "corporation|llc|individual|partnership"}
+  ],
+  "key_dates": {
+    "effective_date": "YYYY-MM-DD",
+    "expiration_date": "YYYY-MM-DD or null",
+    "renewal_dates": ["YYYY-MM-DD"]
+  },
+  "term": {
+    "initial_term": "string description",
+    "auto_renewal": true|false,
+    "renewal_term": "string description",
+    "termination_notice_period": "X days/months"
+  },
+  "financial_terms": {
+    "contract_value": number or null,
+    "payment_terms": "string",
+    "price_escalation": "string or null"
+  },
+  "change_of_control": {
+    "exists": true|false,
+    "trigger_type": "direct|indirect|both|none",
+    "consequences": "termination|consent_required|notification|none",
+    "consent_standard": "sole_discretion|reasonable|not_unreasonably_withheld|none",
+    "exact_language": "quoted provision"
+  },
+  "assignment": {
+    "assignable": true|false,
+    "consent_required": true|false,
+    "consent_standard": "string",
+    "restrictions": ["list of restrictions"],
+    "exact_language": "quoted provision"
+  },
+  "termination": {
+    "for_cause_grounds": ["list"],
+    "for_convenience": true|false,
+    "notice_period": "X days",
+    "termination_fees": "description or null",
+    "survival_provisions": ["list"]
+  },
+  "restrictive_covenants": {
+    "non_compete": {"exists": true|false, "scope": "string", "duration": "string", "geography": "string"},
+    "non_solicit": {"exists": true|false, "scope": "employees|customers|both", "duration": "string"},
+    "exclusivity": {"exists": true|false, "scope": "string"}
+  },
+  "ip_provisions": {
+    "ip_ownership": "string description",
+    "license_grants": ["list of licenses"],
+    "work_for_hire": true|false
+  },
+  "liability": {
+    "indemnification": "description",
+    "liability_cap": "amount or formula",
+    "carve_outs": ["list"],
+    "insurance_requirements": "description"
+  },
+  "risk_assessment": {
+    "risk_score": 1-100,
+    "risk_factors": [
+      {"factor": "string", "severity": "critical|high|medium|low", "description": "string"}
+    ],
+    "flags": [
+      {"type": "coc_termination|consent_required|unusual_term|missing_provision", "description": "string"}
+    ]
+  },
+  "summary": "2-3 sentence summary of the contract and key risks"
+}
+
+Focus especially on:
+1. Change of control provisions that could affect the transaction
+2. Assignment restrictions requiring consent
+3. Unusual or non-standard terms
+4. Material financial obligations
+5. Termination rights that could be triggered
+6. Any provisions that could impact deal value or structure
+
+Be thorough but concise. Flag anything unusual compared to market standard terms.
+`;
+```
+
+### Due Diligence Report Generation Prompt
+
+```typescript
+// lib/business-transactions/ai/report-generation-prompt.ts
+
+export const ddReportPrompt = `
+You are a legal AI assistant generating a due diligence report for an M&A transaction.
+Based on the provided due diligence findings, checklists, issues, and contract analyses,
+generate a comprehensive due diligence report.
+
+The report should follow this structure:
+
+1. EXECUTIVE SUMMARY
+   - Transaction overview
+   - Key findings summary
+   - Critical issues requiring attention
+   - Overall risk assessment
+   - Recommendations
+
+2. CORPORATE & ORGANIZATIONAL
+   - Legal existence and good standing
+   - Organizational structure
+   - Capitalization analysis
+   - Corporate governance
+
+3. MATERIAL CONTRACTS
+   - Summary of key contracts
+   - Change of control implications
+   - Consent requirements
+   - Contract risks
+
+4. INTELLECTUAL PROPERTY
+   - IP portfolio summary
+   - Ownership verification
+   - Licensing arrangements
+   - IP risks
+
+5. REAL PROPERTY
+   - Owned property
+   - Leased property
+   - Lease analysis
+   - Property issues
+
+6. EMPLOYMENT & BENEFITS
+   - Employee overview
+   - Key employee agreements
+   - Benefit plans
+   - Employment risks
+
+7. LITIGATION & REGULATORY
+   - Pending litigation
+   - Regulatory compliance
+   - Permits and licenses
+   - Legal risks
+
+8. TAX
+   - Tax structure
+   - Tax compliance
+   - Tax exposures
+
+9. FINANCIAL
+   - Quality of earnings observations
+   - Working capital analysis
+   - Financial risks
+
+10. ENVIRONMENTAL
+    - Environmental compliance
+    - Environmental risks
+
+11. INFORMATION TECHNOLOGY
+    - IT infrastructure
+    - Cybersecurity
+    - IT risks
+
+12. RISK SUMMARY
+    - Critical issues
+    - High priority issues
+    - Recommended mitigations
+    - Deal structure considerations
+
+13. APPENDICES
+    - Issue detail
+    - Document index
+    - Defined terms
+
+For each section:
+- Summarize key findings with citations to source documents
+- Highlight risks with severity ratings
+- Provide specific recommendations
+- Note any gaps in information received
+
+Write in clear, professional legal language appropriate for a transaction report
+that will be reviewed by counsel, business teams, and potentially board members.
+`;
+```
+
+---
+
+## IMPLEMENTATION NOTES
+
+### Phase 1: Core Infrastructure (Week 1-2)
+1. Database schema implementation
+2. Basic API endpoints for deals CRUD
+3. Navigation update
+4. Transaction Dashboard page
+5. Active Deals list and detail pages
+6. Create/Edit Deal modals
+
+### Phase 2: Document Management (Week 3-4)
+1. Request Lists (DRL) functionality
+2. DRL templates
+3. Data Room implementation
+4. Document upload and organization
+5. Access management
+6. Activity logging
+
+### Phase 3: Review Workflows (Week 5-6)
+1. Due Diligence Checklists
+2. Checklist templates
+3. Contract Analysis with AI
+4. Issue Tracker
+5. Risk Matrix visualization
+
+### Phase 4: Collaboration & Closing (Week 7-8)
+1. Q&A Management
+2. Financial Analysis tools
+3. Background Research integration
+4. Closing Management
+5. Post-closing obligations
+6. Report Generation
+
+### Phase 5: AI & Analytics (Week 9-10)
+1. AI contract analysis integration
+2. AI report generation
+3. Risk scoring algorithms
+4. Analytics dashboards
+5. Deal benchmarking
+
+---
+
+## INTEGRATION WITH EXISTING SENTINEL FEATURES
+
+### Link to Existing Cases
+- Deals can be linked to existing Sentinel cases for litigation/investigation overlap
+- Share document sets between deals and cases
+- Cross-reference communications from existing intake
+
+### Use Existing Document Review
+- Data room documents can be reviewed using existing document coding interface
+- Apply existing AI tagging capabilities
+- Use existing search functionality
+
+### Leverage Existing AI
+- Use existing Business Intelligence Summary Generator for deal reports
+- Apply existing compliance scoring to contract analysis
+- Extend existing communication analytics to deal Q&A
+
+### User Management
+- Use existing user/role infrastructure
+- Extend permissions for deal-specific access
+- Leverage existing audit logging

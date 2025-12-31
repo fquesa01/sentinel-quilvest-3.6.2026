@@ -1,0 +1,235 @@
+GOAL:
+Implement a complete “Communications Heatmap” module that sits on top of the existing email / message data already extracted into the app. The module should visualize communication patterns between people and organizations, compute risk and engagement scores, and support investigations.
+
+We already have a “Discovered from Evidence” UI that shows:
+- People (name, email, org/domain, #sent, #received, total)
+- Organizations (domain, #people, #messages)
+- “Add as Party” action for each person.
+
+You will BUILD ON TOP of this.
+
+------------------------------------------------
+2) NEW COMMUNICATIONS HEATMAP MODULE – SCOPE
+------------------------------------------------
+
+Create a new module called “Communications Heatmap” for each CASE that provides:
+
+A) Time-of-Day / Day-of-Week Heatmap
+- Grid: x-axis = hour (0–23), y-axis = day of week (Mon–Sun).
+- Cell value = count of messages in that bucket, filtered by:
+  - Case
+  - Optional filters: employee/person, organization/domain, internal vs external, date range.
+- Color scale: low volume → dark, high volume → bright.
+- Used to spot:
+  - Normal working patterns
+  - Off-hours spikes
+  - Busy days.
+
+B) Person-to-Person Interaction Heatmap
+- Matrix where rows = people, columns = people.
+- Cell value = number of messages between those two in the selected period (sum of sent + received).
+- Hover tooltip: show counts (sent, received, total) and most common domains.
+- Ability to:
+  - Filter by case, date range.
+  - Limit to top N people by volume.
+- Clicking a cell opens a side panel listing:
+  - Recent messages between those parties.
+  - “Add as Party” buttons for each person (reuse existing action).
+
+C) Organization Interaction Heatmap
+- Matrix where rows = organizations/domains (gmail.com, usawaterpolo.org, morganlewis.com, etc.).
+- Columns = organizations/domains.
+- Cell value = number of cross-domain messages.
+- Used for:
+  - Vendor monitoring
+  - Law firm interaction
+  - Crossover between internal and external domains.
+
+D) Topic vs Person Heatmap (optional but scaffold it)
+- Assume we can tag messages with topics (e.g., “contracts”, “HR”, “safety”, “legal”, “finance”).
+- Heatmap where rows = topics, columns = people (or vice versa).
+- Cell value = number of messages for that topic/person combo.
+- For now:
+  - Implement backend stubs that accept a topic field.
+  - Add mock topic assignment logic (e.g., based on keyword search in subject/body) so the UI is demonstrable.
+
+E) Anomaly / Change Heatmap
+- For each person and/or domain, compute month-over-month (% change) in message volume.
+- Display a simple heatmap where:
+  - Rows = people or domains
+  - Columns = months
+  - Cell value = volume OR % change.
+- Flag anomalies where volume deviates significantly from the baseline.
+- Surface a list of “Notable Changes” in a side panel.
+
+------------------------------------------------
+3) ANALYTICS & SCORING
+------------------------------------------------
+
+For each person (per case and globally), compute and store:
+
+- engagementScore:
+    weighted combination of:
+      - totalMessages
+      - uniqueContacts
+      - ratio of sent vs received
+      - internal vs external mix.
+
+- responsivenessScore:
+    based on average response time
+    (delta between a received message and the next reply in the thread from that person).
+
+- crossDomainRiskScore:
+    higher when:
+      - large share of messages are external.
+      - interacting with many distinct external domains.
+
+- topicRiskScore (stub):
+    higher if:
+      - topics include sensitive terms like “lawsuit”, “settlement”, “kickback”, “complaint”, etc.
+
+- anomalyScore:
+    derived from deviation from their own historical volume
+    (e.g., z-score or simple % difference vs trailing 3-month average).
+
+Create a backend aggregation job / service that can:
+- Rebuild these scores for a case on demand.
+- Optionally run periodically or when new data is ingested.
+
+------------------------------------------------
+4) BACKEND IMPLEMENTATION DETAILS
+------------------------------------------------
+
+1. Inspect the current stack (likely Node/TypeScript or Python API).
+2. Add aggregation logic:
+   - New service or module, e.g.:
+     - /server/services/communicationsHeatmap.ts
+   - Functions:
+     - computeTimeOfDayHeatmap(caseId, filters)
+     - computePersonMatrix(caseId, filters)
+     - computeOrgMatrix(caseId, filters)
+     - computeTopicPersonHeatmap(caseId, filters)
+     - computeAnomalyStats(caseId, filters)
+
+3. Add REST or GraphQL endpoints, e.g.:
+   - GET /api/cases/:caseId/communications/heatmap/time
+   - GET /api/cases/:caseId/communications/heatmap/person-matrix
+   - GET /api/cases/:caseId/communications/heatmap/org-matrix
+   - GET /api/cases/:caseId/communications/heatmap/topic
+   - GET /api/cases/:caseId/communications/heatmap/anomalies
+   - POST /api/cases/:caseId/communications/rebuild-scores
+
+4. Make endpoints accept:
+   - dateRange
+   - partyIds
+   - domains
+   - internalOnly / externalOnly
+   - topN
+
+5. If no analytics tables exist yet:
+   - Create them via migrations (for the chosen DB):
+     - communication_person_stats
+     - communication_org_stats
+     - communication_anomalies
+   - Add simple seed script or dev-only mock data to demonstrate functionality.
+
+Make the aggregation SQL efficient, using GROUP BY, date_trunc, etc. Use indexes on:
+- caseId
+- timestamp
+- senderEmail / recipientEmail
+- domain
+
+------------------------------------------------
+5) FRONTEND / UI IMPLEMENTATION
+------------------------------------------------
+
+- Stack: Use whatever the repo already uses (React/Next, etc.).
+- Create a new screen or tab under a CASE called: “Communications Heatmap”.
+
+Components:
+
+1. HeatmapFiltersBar
+   - Date range picker
+   - Dropdown: View = [Time, People, Organizations, Topics, Anomalies]
+   - Person filter (multi-select)
+   - Organization filter (multi-select)
+   - Toggle: Internal only / External only
+   - Button: “Recalculate Analytics” (calls rebuild scores endpoint).
+
+2. HeatmapGrid component
+   - Reusable generic heatmap component accepting:
+     - rows, columns, data matrix, legends, onCellClick callbacks.
+
+3. InsightsPanel
+   - On the right side (similar to Foundry style).
+   - Shows:
+     - Top 5 communicators (people)
+     - Top 5 external domains
+     - Top 5 anomalies
+     - After-hours % of messages
+   - Clicking any person/domain opens a mini profile (engagementScore, responsivenessScore, etc.) and links to “Add as Party” if not already a party.
+
+4. Integration with existing “Discovered from Evidence”:
+   - From the People list, add a button “View Heatmap” which:
+       - Deep-links to the Communications Heatmap screen
+       - Pre-filters to that person (or that person vs everyone).
+   - From the Organizations list, add a similar “View Heatmap” action.
+
+Design:
+- Maintain dark theme, enterprise feel.
+- Use subtle blues/teals for low to mid intensity, and more intense accents for high values.
+- Provide concise tooltips:
+  - Person-matrix cell tooltip: “X messages between A and B (Y sent, Z received)”.
+  - Time heatmap tooltip: “H messages on Monday between 10:00–11:00”.
+
+------------------------------------------------
+6) FILE STRUCTURE (SUGGESTED)
+------------------------------------------------
+
+Adjust to match the existing project, but roughly:
+
+/server
+  /services
+    communicationsHeatmap.ts
+  /routes or /api
+    communicationsHeatmapRoutes.ts
+
+/web (or /client)
+  /components/communications
+    HeatmapGrid.tsx
+    HeatmapFiltersBar.tsx
+    InsightsPanel.tsx
+  /pages/cases/[caseId]/communications-heatmap.tsx
+
+/db
+  migrations/
+    2025xxxx_add_communications_stats_tables.sql
+
+/scripts
+  seedCommunicationsDemoData.ts   (optional dev helper)
+
+------------------------------------------------
+7) DEVELOPMENT TASKS ORDER
+------------------------------------------------
+
+1. Inspect the repo and confirm stack.
+2. Add or extend DB schema to support aggregated stats.
+3. Implement backend aggregation functions and endpoints.
+4. Create dummy aggregation seed script (for demo cases if real data is not available).
+5. Build the reusable HeatmapGrid component.
+6. Build the Communications Heatmap screen with:
+   - View switcher (Time / People / Orgs / Topics / Anomalies).
+   - Filters.
+   - InsightsPanel.
+7. Wire “Add as Party” and deep-link from the existing People/Organizations lists.
+8. Add basic tests for:
+   - Aggregation functions.
+   - API endpoints.
+9. Add TODO comments anywhere assumptions are made, so my team can refine later.
+
+Throughout, explain what you’re doing as you modify files and show me the key code snippets and integration points so I can follow and extend this feature later.
+
+Now, start by:
+- Briefly summarizing the current stack and relevant files,
+- Then propose an implementation plan in 5–10 clear steps,
+- Then begin implementing the backend aggregation and one heatmap (Time-of-Day x Day-of-Week) end-to-end as the first slice, followed by the rest.

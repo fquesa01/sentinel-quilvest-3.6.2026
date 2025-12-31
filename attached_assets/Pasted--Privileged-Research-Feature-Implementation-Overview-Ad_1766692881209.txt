@@ -1,0 +1,1301 @@
+# Privileged Research Feature Implementation
+
+## Overview
+
+Add a new feature called **"Privileged Research"** to the Sentinel Counsel LLP application. This feature provides users with a Claude-like AI chat interface for conducting legal research and general inquiries under the protection of attorney-client privilege.
+
+The feature button should be placed in the sidebar navigation **directly under the "Ambient Intelligence" button**, with the following properties:
+- Icon: A shield with a sparkle or brain icon (suggesting protected AI)
+- Label: "Privileged Research"
+- Route: `/privileged-research`
+
+---
+
+## Feature Requirements
+
+### Core Functionality
+
+1. **LLM Pass-through Interface**: A clean, Claude-inspired chat interface that allows users to communicate with an LLM of the organization's choosing
+2. **Case Context Mode**: Users can optionally select a case to provide context, enabling the AI to access case-specific documents via RAG
+3. **General Research Mode**: Users can ask any question without case context for general legal research or any topic
+4. **Privilege Protection Banner**: Prominent, always-visible indication that communications are protected under attorney-client privilege
+5. **Session History**: Maintain conversation history organized by case association
+6. **Multi-Model Support**: Architecture to support different LLM providers (Claude, GPT-4, Gemini)
+
+### Privacy & Security Positioning
+
+- All data remains within the customer's Azure deployment
+- No data transmitted to vendor servers
+- Communications occur within the attorney-client relationship context
+- Audit logging for compliance purposes
+
+---
+
+## UI Design Specification
+
+### Sidebar Navigation Update
+
+Add to the existing sidebar, positioned after "Ambient Intelligence":
+
+```tsx
+// Icon suggestion: Shield with sparkles or HiSparkles + HiShieldCheck combination
+{
+  name: 'Privileged Research',
+  href: '/privileged-research',
+  icon: ShieldSparkleIcon, // or combine Lucide icons: Shield + Sparkles
+}
+```
+
+### Main Interface Layout
+
+The Privileged Research page should have a Claude.ai-inspired design with the following structure:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │ 🔒 PRIVILEGED & CONFIDENTIAL                                          │ │
+│  │ Communications through this interface are protected under attorney-   │ │
+│  │ client privilege. All inquiries are conducted within your legal      │ │
+│  │ engagement and remain solely within your organization's systems.     │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│                                                                             │
+│                         ┌─────────────────────┐                            │
+│                         │    ⚖️ 🛡️            │                            │
+│                         └─────────────────────┘                            │
+│                                                                             │
+│                     Welcome to Privileged Research                         │
+│                                                                             │
+│            Your confidential AI assistant for legal matters.               │
+│           All communications are protected and never leave                 │
+│                    your organization's infrastructure.                     │
+│                                                                             │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                                                                       │ │
+│  │  Ask anything — legal research, case analysis, general questions...  │ │
+│  │                                                                   ➤  │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│      ┌──────────────────────┐    ┌──────────────────────┐                  │
+│      │ 📁 No Case Selected ▼│    │ 🤖 Select Model    ▼ │                  │
+│      └──────────────────────┘    └──────────────────────┘                  │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                     │   │
+│  │   📝 Draft Legal Memo    📋 Summarize Case     🔍 Research Law     │   │
+│  │                                                                     │   │
+│  │   ⚖️ Analyze Contract    📊 Compare Cases      💡 Strategy Help    │   │
+│  │                                                                     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│                                                                             │
+│  Recent Sessions                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 🔒 Johnson v. MegaCorp — Contract liability research    2 hours ago │   │
+│  │ 🔒 General — Delaware LLC formation requirements        Yesterday   │   │
+│  │ 🔒 Acme Acquisition — Due diligence checklist review    3 days ago  │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Active Chat Interface
+
+When in an active conversation:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 🔒 PRIVILEGED & CONFIDENTIAL — Johnson v. MegaCorp                  │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─ Session: Contract Liability Analysis ─────────────────── ✕ ⋮ ────┐    │
+│  │                                                                    │    │
+│  │  ┌──────────────────────────────────────────────────────────────┐ │    │
+│  │  │ 👤 User                                              2:34 PM │ │    │
+│  │  │                                                              │ │    │
+│  │  │ What are the potential liability issues with the            │ │    │
+│  │  │ indemnification clause in Section 4.2?                      │ │    │
+│  │  └──────────────────────────────────────────────────────────────┘ │    │
+│  │                                                                    │    │
+│  │  ┌──────────────────────────────────────────────────────────────┐ │    │
+│  │  │ 🤖 AI Counsel                                        2:34 PM │ │    │
+│  │  │                                                              │ │    │
+│  │  │ Based on my review of the contract documents in this case,  │ │    │
+│  │  │ there are several liability concerns with Section 4.2:      │ │    │
+│  │  │                                                              │ │    │
+│  │  │ **1. Scope of Indemnification**                             │ │    │
+│  │  │ The current language extends indemnification to "any and    │ │    │
+│  │  │ all claims" which may be overly broad...                    │ │    │
+│  │  │                                                              │ │    │
+│  │  │ 📎 Referenced: Contract_Draft_v3.pdf (Section 4.2)          │ │    │
+│  │  └──────────────────────────────────────────────────────────────┘ │    │
+│  │                                                                    │    │
+│  └────────────────────────────────────────────────────────────────────┘    │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                                                                       │ │
+│  │  Follow up question...                                            ➤  │ │
+│  │                                                                       │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│      ┌──────────────────────────┐    ┌──────────────────────┐              │
+│      │ 📁 Johnson v. MegaCorp  ▼│    │ 🤖 Claude Sonnet   ▼ │              │
+│      └──────────────────────────┘    └──────────────────────┘              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Component Structure
+
+Create the following React components:
+
+### 1. Main Page Component
+
+**File: `client/src/pages/PrivilegedResearch.tsx`**
+
+```tsx
+import React, { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Shield, Sparkles, Send, Plus, FolderOpen, Bot, FileText, Search, Scale, GitCompare, Lightbulb, Lock, MoreVertical, X } from 'lucide-react';
+
+interface PrivilegedSession {
+  id: number;
+  title: string;
+  caseId: number | null;
+  caseName: string | null;
+  modelProvider: string;
+  modelId: string;
+  createdAt: string;
+  lastActivityAt: string;
+}
+
+interface PrivilegedMessage {
+  id: number;
+  sessionId: number;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  referencedDocuments: string[];
+  createdAt: string;
+}
+
+interface Case {
+  id: number;
+  name: string;
+  caseNumber: string;
+}
+
+interface ModelOption {
+  provider: string;
+  modelId: string;
+  displayName: string;
+}
+
+export default function PrivilegedResearch() {
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [selectedCaseId, setSelectedCaseId] = useState<number | null>(null);
+  const [selectedModel, setSelectedModel] = useState<ModelOption | null>(null);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fetch available cases
+  const { data: cases } = useQuery<Case[]>({
+    queryKey: ['/api/cases'],
+  });
+
+  // Fetch available models
+  const { data: models } = useQuery<ModelOption[]>({
+    queryKey: ['/api/privileged-research/models'],
+  });
+
+  // Fetch recent sessions
+  const { data: sessions, refetch: refetchSessions } = useQuery<PrivilegedSession[]>({
+    queryKey: ['/api/privileged-research/sessions'],
+  });
+
+  // Fetch messages for active session
+  const { data: messages, refetch: refetchMessages } = useQuery<PrivilegedMessage[]>({
+    queryKey: ['/api/privileged-research/sessions', activeSessionId, 'messages'],
+    enabled: !!activeSessionId,
+  });
+
+  // Set default model when models load
+  useEffect(() => {
+    if (models && models.length > 0 && !selectedModel) {
+      setSelectedModel(models[0]);
+    }
+  }, [models]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Auto-resize textarea
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputMessage(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+  };
+
+  // Handle send message
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim() || isStreaming) return;
+
+    const messageContent = inputMessage.trim();
+    setInputMessage('');
+    setIsStreaming(true);
+
+    try {
+      let sessionId = activeSessionId;
+
+      // Create new session if needed
+      if (!sessionId) {
+        const response = await fetch('/api/privileged-research/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caseId: selectedCaseId,
+            modelProvider: selectedModel?.provider || 'anthropic',
+            modelId: selectedModel?.modelId || 'claude-3-5-sonnet-20241022',
+          }),
+        });
+        const newSession = await response.json();
+        sessionId = newSession.id;
+        setActiveSessionId(sessionId);
+        refetchSessions();
+      }
+
+      // Send message and handle streaming response
+      const response = await fetch(`/api/privileged-research/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: messageContent }),
+      });
+
+      if (!response.ok) throw new Error('Failed to send message');
+
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          // Process streamed chunks - update UI accordingly
+          // This would update a streaming message state
+        }
+      }
+
+      refetchMessages();
+      refetchSessions();
+    } catch (error) {
+      console.error('Error sending message:', error);
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  // Handle keyboard submit
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  // Start new session
+  const handleNewSession = () => {
+    setActiveSessionId(null);
+    setInputMessage('');
+  };
+
+  // Quick action prompts
+  const quickActions = [
+    { icon: FileText, label: 'Draft Legal Memo', prompt: 'Help me draft a legal memorandum regarding ' },
+    { icon: FileText, label: 'Summarize Case', prompt: 'Please provide a comprehensive summary of the key facts and legal issues in this case.' },
+    { icon: Search, label: 'Research Law', prompt: 'Research the applicable law and precedents regarding ' },
+    { icon: Scale, label: 'Analyze Contract', prompt: 'Analyze the following contract provisions and identify potential issues: ' },
+    { icon: GitCompare, label: 'Compare Cases', prompt: 'Compare and contrast the following cases and their holdings: ' },
+    { icon: Lightbulb, label: 'Strategy Help', prompt: 'Help me develop a legal strategy for ' },
+  ];
+
+  const handleQuickAction = (prompt: string) => {
+    setInputMessage(prompt);
+    inputRef.current?.focus();
+  };
+
+  // Render welcome screen (no active session)
+  const renderWelcomeScreen = () => (
+    <div className="flex-1 flex flex-col items-center justify-center p-8 animate-fade-in">
+      {/* Logo/Icon */}
+      <div className="relative mb-8">
+        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-600/20 flex items-center justify-center border border-blue-500/30">
+          <Shield className="w-10 h-10 text-blue-400" />
+          <Sparkles className="w-5 h-5 text-blue-300 absolute -top-1 -right-1" />
+        </div>
+      </div>
+
+      {/* Welcome Text */}
+      <h1 className="text-2xl font-semibold text-white mb-3">
+        Welcome to Privileged Research
+      </h1>
+      <p className="text-gray-400 text-center max-w-lg mb-8">
+        Your confidential AI assistant for legal matters. All communications 
+        are protected under attorney-client privilege and never leave your 
+        organization's infrastructure.
+      </p>
+
+      {/* Input Area */}
+      <div className="w-full max-w-2xl mb-6">
+        <div className="relative">
+          <textarea
+            ref={inputRef}
+            value={inputMessage}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask anything — legal research, case analysis, general questions..."
+            className="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-4 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 resize-none min-h-[56px] max-h-[200px]"
+            rows={1}
+          />
+          <button
+            onClick={handleSendMessage}
+            disabled={!inputMessage.trim() || isStreaming}
+            className="absolute right-3 bottom-3 p-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors"
+          >
+            <Send className="w-4 h-4 text-white" />
+          </button>
+        </div>
+      </div>
+
+      {/* Selectors */}
+      <div className="flex gap-4 mb-8">
+        <select
+          value={selectedCaseId || ''}
+          onChange={(e) => setSelectedCaseId(e.target.value ? Number(e.target.value) : null)}
+          className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-gray-300 focus:outline-none focus:border-blue-500/50"
+        >
+          <option value="">📁 No Case Selected</option>
+          {cases?.map((c) => (
+            <option key={c.id} value={c.id}>📁 {c.name}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedModel ? `${selectedModel.provider}:${selectedModel.modelId}` : ''}
+          onChange={(e) => {
+            const [provider, modelId] = e.target.value.split(':');
+            const model = models?.find(m => m.provider === provider && m.modelId === modelId);
+            setSelectedModel(model || null);
+          }}
+          className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-gray-300 focus:outline-none focus:border-blue-500/50"
+        >
+          {models?.map((m) => (
+            <option key={`${m.provider}:${m.modelId}`} value={`${m.provider}:${m.modelId}`}>
+              🤖 {m.displayName}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="w-full max-w-2xl">
+        <div className="grid grid-cols-3 gap-3">
+          {quickActions.map((action, index) => (
+            <button
+              key={index}
+              onClick={() => handleQuickAction(action.prompt)}
+              className="flex items-center gap-2 p-3 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 hover:border-slate-600 rounded-xl transition-all text-left group"
+            >
+              <action.icon className="w-4 h-4 text-blue-400 group-hover:text-blue-300" />
+              <span className="text-sm text-gray-300 group-hover:text-white">{action.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent Sessions */}
+      {sessions && sessions.length > 0 && (
+        <div className="w-full max-w-2xl mt-8">
+          <h3 className="text-sm font-medium text-gray-400 mb-3">Recent Sessions</h3>
+          <div className="space-y-2">
+            {sessions.slice(0, 5).map((session) => (
+              <button
+                key={session.id}
+                onClick={() => setActiveSessionId(session.id)}
+                className="w-full flex items-center gap-3 p-3 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 hover:border-slate-600 rounded-lg transition-all text-left"
+              >
+                <Lock className="w-4 h-4 text-blue-400" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-white truncate">
+                    {session.caseName ? `${session.caseName} — ` : 'General — '}
+                    {session.title}
+                  </div>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {formatRelativeTime(session.lastActivityAt)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Render active chat
+  const renderActiveChat = () => {
+    const currentSession = sessions?.find(s => s.id === activeSessionId);
+    
+    return (
+      <div className="flex-1 flex flex-col">
+        {/* Chat Header */}
+        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-700/50">
+          <div className="flex items-center gap-3">
+            <Lock className="w-4 h-4 text-blue-400" />
+            <span className="text-white font-medium">
+              {currentSession?.title || 'New Session'}
+            </span>
+            {currentSession?.caseName && (
+              <span className="text-gray-400 text-sm">— {currentSession.caseName}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleNewSession}
+              className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
+              title="New Session"
+            >
+              <Plus className="w-4 h-4 text-gray-400" />
+            </button>
+            <button className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors">
+              <MoreVertical className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {messages?.map((message) => (
+            <div
+              key={message.id}
+              className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div className={`max-w-3xl ${message.role === 'user' ? 'order-2' : ''}`}>
+                {/* Message Header */}
+                <div className={`flex items-center gap-2 mb-2 ${message.role === 'user' ? 'justify-end' : ''}`}>
+                  {message.role === 'assistant' && (
+                    <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center">
+                      <Bot className="w-3 h-3 text-blue-400" />
+                    </div>
+                  )}
+                  <span className="text-xs text-gray-500">
+                    {message.role === 'user' ? 'You' : 'AI Counsel'}
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    {formatTime(message.createdAt)}
+                  </span>
+                </div>
+
+                {/* Message Content */}
+                <div
+                  className={`rounded-xl px-4 py-3 ${
+                    message.role === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-800 text-gray-200 border border-slate-700'
+                  }`}
+                >
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    {/* Render markdown content here */}
+                    {message.content}
+                  </div>
+
+                  {/* Referenced Documents */}
+                  {message.referencedDocuments && message.referencedDocuments.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-600">
+                      <div className="flex items-center gap-2 text-xs text-gray-400">
+                        <FileText className="w-3 h-3" />
+                        <span>Referenced:</span>
+                        {message.referencedDocuments.map((doc, i) => (
+                          <span key={i} className="text-blue-400 hover:underline cursor-pointer">
+                            {doc}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Area */}
+        <div className="p-4 border-t border-slate-700/50">
+          <div className="max-w-4xl mx-auto">
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={inputMessage}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Continue the conversation..."
+                className="w-full bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-4 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 resize-none min-h-[56px] max-h-[200px]"
+                rows={1}
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={!inputMessage.trim() || isStreaming}
+                className="absolute right-3 bottom-3 p-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send className="w-4 h-4 text-white" />
+              </button>
+            </div>
+            
+            {/* Bottom Selectors */}
+            <div className="flex gap-4 mt-3">
+              <select
+                value={selectedCaseId || ''}
+                onChange={(e) => setSelectedCaseId(e.target.value ? Number(e.target.value) : null)}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-blue-500/50"
+                disabled={!!activeSessionId}
+              >
+                <option value="">📁 No Case</option>
+                {cases?.map((c) => (
+                  <option key={c.id} value={c.id}>📁 {c.name}</option>
+                ))}
+              </select>
+
+              <select
+                value={selectedModel ? `${selectedModel.provider}:${selectedModel.modelId}` : ''}
+                onChange={(e) => {
+                  const [provider, modelId] = e.target.value.split(':');
+                  const model = models?.find(m => m.provider === provider && m.modelId === modelId);
+                  setSelectedModel(model || null);
+                }}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-blue-500/50"
+                disabled={!!activeSessionId}
+              >
+                {models?.map((m) => (
+                  <option key={`${m.provider}:${m.modelId}`} value={`${m.provider}:${m.modelId}`}>
+                    🤖 {m.displayName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-slate-900">
+      {/* Privilege Banner - Always Visible */}
+      <div className="bg-gradient-to-r from-blue-900/50 to-indigo-900/50 border-b border-blue-500/30">
+        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Shield className="w-5 h-5 text-blue-400" />
+            <Lock className="w-4 h-4 text-blue-300" />
+          </div>
+          <div>
+            <span className="text-blue-200 font-semibold text-sm">PRIVILEGED & CONFIDENTIAL</span>
+            <span className="text-blue-300/70 text-sm ml-3">
+              Communications through this interface are protected under attorney-client privilege. 
+              All data remains within your organization's infrastructure.
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      {activeSessionId ? renderActiveChat() : renderWelcomeScreen()}
+    </div>
+  );
+}
+
+// Utility functions
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} min ago`;
+  if (diffHours < 24) return `${diffHours} hours ago`;
+  if (diffDays === 1) return 'Yesterday';
+  return `${diffDays} days ago`;
+}
+
+function formatTime(dateString: string): string {
+  return new Date(dateString).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+```
+
+---
+
+## Backend Implementation
+
+### Database Schema
+
+**Add to your database schema (Drizzle or Prisma):**
+
+```typescript
+// schema.ts (Drizzle example)
+
+export const privilegedSessions = pgTable('privileged_sessions', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').notNull().references(() => organizations.id),
+  userId: integer('user_id').notNull().references(() => users.id),
+  caseId: integer('case_id').references(() => cases.id),
+  title: varchar('title', { length: 255 }).notNull().default('New Session'),
+  modelProvider: varchar('model_provider', { length: 50 }).notNull().default('anthropic'),
+  modelId: varchar('model_id', { length: 100 }).notNull().default('claude-3-5-sonnet-20241022'),
+  isArchived: boolean('is_archived').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  lastActivityAt: timestamp('last_activity_at').notNull().defaultNow(),
+});
+
+export const privilegedMessages = pgTable('privileged_messages', {
+  id: serial('id').primaryKey(),
+  sessionId: integer('session_id').notNull().references(() => privilegedSessions.id, { onDelete: 'cascade' }),
+  role: varchar('role', { length: 20 }).notNull(), // 'user', 'assistant', 'system'
+  content: text('content').notNull(),
+  referencedDocuments: json('referenced_documents').$type<string[]>().default([]),
+  tokenCount: integer('token_count'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const modelConfigurations = pgTable('model_configurations', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').notNull().references(() => organizations.id),
+  provider: varchar('provider', { length: 50 }).notNull(),
+  modelId: varchar('model_id', { length: 100 }).notNull(),
+  displayName: varchar('display_name', { length: 100 }).notNull(),
+  isEnabled: boolean('is_enabled').notNull().default(true),
+  apiKeyReference: varchar('api_key_reference', { length: 255 }), // Reference to secure storage
+  maxTokens: integer('max_tokens').default(4096),
+  temperature: real('temperature').default(0.7),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+```
+
+### API Routes
+
+**File: `server/routes/privilegedResearch.ts`**
+
+```typescript
+import { Router, Request, Response } from 'express';
+import { db } from '../db';
+import { privilegedSessions, privilegedMessages, modelConfigurations, cases } from '../schema';
+import { eq, and, desc } from 'drizzle-orm';
+import { authenticateUser } from '../middleware/auth';
+import { streamLLMResponse, getLLMClient } from '../services/llmService';
+
+const router = Router();
+
+// All routes require authentication
+router.use(authenticateUser);
+
+// GET /api/privileged-research/models - Get available models
+router.get('/models', async (req: Request, res: Response) => {
+  try {
+    const models = await db
+      .select()
+      .from(modelConfigurations)
+      .where(
+        and(
+          eq(modelConfigurations.organizationId, req.user.organizationId),
+          eq(modelConfigurations.isEnabled, true)
+        )
+      );
+
+    // If no models configured, return defaults
+    if (models.length === 0) {
+      return res.json([
+        { provider: 'anthropic', modelId: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet' },
+        { provider: 'anthropic', modelId: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus' },
+        { provider: 'openai', modelId: 'gpt-4-turbo-preview', displayName: 'GPT-4 Turbo' },
+        { provider: 'google', modelId: 'gemini-pro', displayName: 'Gemini Pro' },
+      ]);
+    }
+
+    res.json(models);
+  } catch (error) {
+    console.error('Error fetching models:', error);
+    res.status(500).json({ error: 'Failed to fetch models' });
+  }
+});
+
+// GET /api/privileged-research/sessions - Get user's sessions
+router.get('/sessions', async (req: Request, res: Response) => {
+  try {
+    const sessions = await db
+      .select({
+        id: privilegedSessions.id,
+        title: privilegedSessions.title,
+        caseId: privilegedSessions.caseId,
+        caseName: cases.name,
+        modelProvider: privilegedSessions.modelProvider,
+        modelId: privilegedSessions.modelId,
+        createdAt: privilegedSessions.createdAt,
+        lastActivityAt: privilegedSessions.lastActivityAt,
+      })
+      .from(privilegedSessions)
+      .leftJoin(cases, eq(privilegedSessions.caseId, cases.id))
+      .where(
+        and(
+          eq(privilegedSessions.userId, req.user.id),
+          eq(privilegedSessions.isArchived, false)
+        )
+      )
+      .orderBy(desc(privilegedSessions.lastActivityAt))
+      .limit(20);
+
+    res.json(sessions);
+  } catch (error) {
+    console.error('Error fetching sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
+
+// POST /api/privileged-research/sessions - Create new session
+router.post('/sessions', async (req: Request, res: Response) => {
+  try {
+    const { caseId, modelProvider, modelId } = req.body;
+
+    const [session] = await db
+      .insert(privilegedSessions)
+      .values({
+        organizationId: req.user.organizationId,
+        userId: req.user.id,
+        caseId: caseId || null,
+        modelProvider: modelProvider || 'anthropic',
+        modelId: modelId || 'claude-3-5-sonnet-20241022',
+        title: 'New Session',
+      })
+      .returning();
+
+    res.json(session);
+  } catch (error) {
+    console.error('Error creating session:', error);
+    res.status(500).json({ error: 'Failed to create session' });
+  }
+});
+
+// GET /api/privileged-research/sessions/:id/messages - Get session messages
+router.get('/sessions/:id/messages', async (req: Request, res: Response) => {
+  try {
+    const sessionId = parseInt(req.params.id);
+
+    // Verify session belongs to user
+    const [session] = await db
+      .select()
+      .from(privilegedSessions)
+      .where(
+        and(
+          eq(privilegedSessions.id, sessionId),
+          eq(privilegedSessions.userId, req.user.id)
+        )
+      );
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const messages = await db
+      .select()
+      .from(privilegedMessages)
+      .where(eq(privilegedMessages.sessionId, sessionId))
+      .orderBy(privilegedMessages.createdAt);
+
+    res.json(messages);
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
+// POST /api/privileged-research/sessions/:id/messages - Send message (streaming)
+router.post('/sessions/:id/messages', async (req: Request, res: Response) => {
+  try {
+    const sessionId = parseInt(req.params.id);
+    const { content } = req.body;
+
+    // Verify session belongs to user and get details
+    const [session] = await db
+      .select()
+      .from(privilegedSessions)
+      .where(
+        and(
+          eq(privilegedSessions.id, sessionId),
+          eq(privilegedSessions.userId, req.user.id)
+        )
+      );
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Save user message
+    const [userMessage] = await db
+      .insert(privilegedMessages)
+      .values({
+        sessionId,
+        role: 'user',
+        content,
+      })
+      .returning();
+
+    // Get conversation history
+    const history = await db
+      .select()
+      .from(privilegedMessages)
+      .where(eq(privilegedMessages.sessionId, sessionId))
+      .orderBy(privilegedMessages.createdAt);
+
+    // Build context with case documents if applicable
+    let systemPrompt = `You are a confidential AI legal assistant operating within a privileged attorney-client relationship. 
+All communications are protected under attorney-client privilege and work product doctrine.
+Provide thorough, accurate legal analysis while noting when matters require attorney review.
+Be direct and professional in your responses.`;
+
+    if (session.caseId) {
+      // Fetch relevant case documents via RAG
+      const caseContext = await getCaseContext(session.caseId, content);
+      if (caseContext) {
+        systemPrompt += `\n\nRelevant case documents:\n${caseContext}`;
+      }
+    }
+
+    // Format messages for LLM
+    const llmMessages = [
+      { role: 'system', content: systemPrompt },
+      ...history.map(m => ({ role: m.role, content: m.content })),
+    ];
+
+    // Set up streaming response
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // Get appropriate LLM client
+    const llmClient = getLLMClient(session.modelProvider, req.user.organizationId);
+    
+    let fullResponse = '';
+    let referencedDocs: string[] = [];
+
+    // Stream response
+    await streamLLMResponse(
+      llmClient,
+      session.modelId,
+      llmMessages,
+      (chunk: string) => {
+        fullResponse += chunk;
+        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`);
+      },
+      (docs: string[]) => {
+        referencedDocs = docs;
+      }
+    );
+
+    // Save assistant message
+    await db.insert(privilegedMessages).values({
+      sessionId,
+      role: 'assistant',
+      content: fullResponse,
+      referencedDocuments: referencedDocs,
+    });
+
+    // Update session title if first exchange
+    if (history.length <= 1) {
+      const title = await generateSessionTitle(content, fullResponse);
+      await db
+        .update(privilegedSessions)
+        .set({ title, lastActivityAt: new Date() })
+        .where(eq(privilegedSessions.id, sessionId));
+    } else {
+      await db
+        .update(privilegedSessions)
+        .set({ lastActivityAt: new Date() })
+        .where(eq(privilegedSessions.id, sessionId));
+    }
+
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// DELETE /api/privileged-research/sessions/:id - Archive session
+router.delete('/sessions/:id', async (req: Request, res: Response) => {
+  try {
+    const sessionId = parseInt(req.params.id);
+
+    await db
+      .update(privilegedSessions)
+      .set({ isArchived: true })
+      .where(
+        and(
+          eq(privilegedSessions.id, sessionId),
+          eq(privilegedSessions.userId, req.user.id)
+        )
+      );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error archiving session:', error);
+    res.status(500).json({ error: 'Failed to archive session' });
+  }
+});
+
+export default router;
+
+// Helper functions
+
+async function getCaseContext(caseId: number, query: string): Promise<string | null> {
+  // This integrates with your existing RAG system
+  // Fetch relevant documents from the case based on the query
+  try {
+    // Use your existing vector search / RAG implementation
+    // const relevantDocs = await vectorSearch(caseId, query);
+    // return relevantDocs.map(d => d.content).join('\n\n');
+    return null; // Placeholder - implement based on your RAG setup
+  } catch (error) {
+    console.error('Error fetching case context:', error);
+    return null;
+  }
+}
+
+async function generateSessionTitle(userMessage: string, assistantResponse: string): Promise<string> {
+  // Generate a concise title based on the first exchange
+  // Could use LLM for this or simple extraction
+  const combined = userMessage.substring(0, 100);
+  return combined.length > 50 ? combined.substring(0, 50) + '...' : combined;
+}
+```
+
+### LLM Service
+
+**File: `server/services/llmService.ts`**
+
+```typescript
+import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+interface LLMMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export function getLLMClient(provider: string, organizationId: number): any {
+  // In production, fetch API keys from secure storage based on organizationId
+  switch (provider) {
+    case 'anthropic':
+      return new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      });
+    case 'openai':
+      return new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      });
+    case 'google':
+      return new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+    default:
+      throw new Error(`Unknown provider: ${provider}`);
+  }
+}
+
+export async function streamLLMResponse(
+  client: any,
+  modelId: string,
+  messages: LLMMessage[],
+  onChunk: (chunk: string) => void,
+  onDocuments?: (docs: string[]) => void
+): Promise<void> {
+  // Determine provider from client type
+  if (client instanceof Anthropic) {
+    await streamAnthropic(client, modelId, messages, onChunk);
+  } else if (client instanceof OpenAI) {
+    await streamOpenAI(client, modelId, messages, onChunk);
+  } else {
+    await streamGoogle(client, modelId, messages, onChunk);
+  }
+}
+
+async function streamAnthropic(
+  client: Anthropic,
+  modelId: string,
+  messages: LLMMessage[],
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const systemMessage = messages.find(m => m.role === 'system')?.content || '';
+  const chatMessages = messages
+    .filter(m => m.role !== 'system')
+    .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+  const stream = await client.messages.stream({
+    model: modelId,
+    max_tokens: 4096,
+    system: systemMessage,
+    messages: chatMessages,
+  });
+
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      onChunk(event.delta.text);
+    }
+  }
+}
+
+async function streamOpenAI(
+  client: OpenAI,
+  modelId: string,
+  messages: LLMMessage[],
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const stream = await client.chat.completions.create({
+    model: modelId,
+    messages: messages.map(m => ({ role: m.role, content: m.content })),
+    stream: true,
+    max_tokens: 4096,
+  });
+
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content;
+    if (content) {
+      onChunk(content);
+    }
+  }
+}
+
+async function streamGoogle(
+  client: GoogleGenerativeAI,
+  modelId: string,
+  messages: LLMMessage[],
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const model = client.getGenerativeModel({ model: modelId });
+  
+  // Convert messages to Gemini format
+  const systemInstruction = messages.find(m => m.role === 'system')?.content;
+  const chatHistory = messages
+    .filter(m => m.role !== 'system')
+    .map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+  const chat = model.startChat({
+    history: chatHistory.slice(0, -1),
+    systemInstruction,
+  });
+
+  const lastMessage = chatHistory[chatHistory.length - 1];
+  const result = await chat.sendMessageStream(lastMessage.parts[0].text);
+
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) {
+      onChunk(text);
+    }
+  }
+}
+```
+
+---
+
+## Sidebar Navigation Update
+
+**Add this to your sidebar navigation component:**
+
+```tsx
+// In your sidebar navigation array, add after Ambient Intelligence:
+
+import { Shield, Sparkles } from 'lucide-react';
+
+// Custom icon component combining shield and sparkles
+const PrivilegedResearchIcon = () => (
+  <div className="relative">
+    <Shield className="w-5 h-5" />
+    <Sparkles className="w-2.5 h-2.5 absolute -top-0.5 -right-0.5 text-blue-400" />
+  </div>
+);
+
+// Navigation item
+{
+  name: 'Privileged Research',
+  href: '/privileged-research',
+  icon: PrivilegedResearchIcon,
+  // or use a single icon: Shield
+}
+```
+
+**Full sidebar section example:**
+
+```tsx
+const navigation = [
+  { name: 'My Queue', href: '/queue', icon: Scale },
+  { name: 'Ambient Intelligence', href: '/ambient-intelligence', icon: Mic },
+  { name: 'Privileged Research', href: '/privileged-research', icon: ShieldCheck },
+  // ... rest of navigation
+];
+```
+
+---
+
+## Route Registration
+
+**Add to your main router setup:**
+
+```typescript
+// server/index.ts or server/routes/index.ts
+
+import privilegedResearchRoutes from './routes/privilegedResearch';
+
+// Register routes
+app.use('/api/privileged-research', privilegedResearchRoutes);
+```
+
+**Add client-side route:**
+
+```tsx
+// In your React Router setup
+import PrivilegedResearch from './pages/PrivilegedResearch';
+
+<Route path="/privileged-research" element={<PrivilegedResearch />} />
+```
+
+---
+
+## CSS Animations (Optional Enhancement)
+
+Add these to match Sentinel's existing aesthetic:
+
+```css
+/* Privilege banner subtle pulse */
+@keyframes privilege-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.2);
+  }
+}
+
+.privilege-banner {
+  animation: privilege-glow 4s ease-in-out infinite;
+}
+
+/* Message fade in */
+@keyframes message-appear {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-bubble {
+  animation: message-appear 0.3s ease-out;
+}
+
+/* Typing indicator */
+@keyframes typing-dot {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
+.typing-dot {
+  animation: typing-dot 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Welcome screen fade in */
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+```
+
+---
+
+## Environment Variables Required
+
+```env
+# LLM Provider API Keys (store securely)
+ANTHROPIC_API_KEY=your_anthropic_key
+OPENAI_API_KEY=your_openai_key
+GOOGLE_AI_API_KEY=your_google_key
+```
+
+---
+
+## Security Considerations
+
+1. **Audit Logging**: All privileged research sessions and messages should be logged for compliance
+2. **Data Retention**: Implement configurable retention policies for sessions
+3. **Access Control**: Ensure only authorized users within the organization can access
+4. **API Key Security**: Store provider API keys in secure key vault, not plain environment variables
+5. **Rate Limiting**: Implement per-user rate limiting to prevent abuse
+
+---
+
+## Summary
+
+This implementation provides:
+
+- ✅ Claude-inspired chat interface
+- ✅ Prominent attorney-client privilege indication
+- ✅ Case context selection with RAG integration
+- ✅ General research mode (no case)
+- ✅ Multi-model support (Claude, GPT-4, Gemini)
+- ✅ Session history and management
+- ✅ Streaming responses
+- ✅ Dark theme matching Sentinel's aesthetic
+- ✅ Sidebar integration under Ambient Intelligence
+
+The feature reinforces Sentinel Counsel's value proposition: sophisticated legal AI tools operating entirely within the client's controlled infrastructure, maintaining true attorney-client privilege protection.

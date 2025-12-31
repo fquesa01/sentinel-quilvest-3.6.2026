@@ -1,0 +1,87 @@
+Perfect — I’ll create a **comprehensive HR Investigation Legal Checklist** specifically for **Florida employers**, aligned with **federal** and **state** law requirements.
+
+It will include four sections:
+
+---
+
+### 📘 **1. Investigation Triggers**
+
+List of common events that *require* or *should strongly prompt* an internal HR investigation.
+
+| #  | Trigger Event                                     | Examples / Notes                                                                                                                       | Applicable Laws                                                                             |
+| -- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1  | **Harassment Complaint (Sexual or Other)**        | Verbal, physical, visual harassment based on sex, gender, race, religion, disability, etc.                                             | Title VII, Florida Stat. § 760.10                                                           |
+| 2  | **Discrimination Complaint**                      | Alleged adverse employment actions based on protected class (race, color, religion, sex, pregnancy, national origin, age, disability). | Title VII, ADA, ADEA, FCRA (§ 760.10)                                                       |
+| 3  | **Retaliation Complaint**                         | Employee alleges punishment for protected activity (e.g., reporting harassment, filing EEOC charge, whistleblowing).                   | Title VII, FCRA § 760.10(7), OSHA § 11(c), 29 U.S.C. § 660(c)                               |
+| 4  | **Wage / Overtime / Misclassification Complaint** | Unpaid wages, off-the-clock work, incorrect exempt classification.                                                                     | FLSA (29 U.S.C. § 201 et seq.), Fla. Const. Art. X § 24, Fla. Stat. § 448.08                |
+| 5  | **Health & Safety / Workplace Injury**            | Safety complaints, accidents, exposure hazards.                                                                                        | OSHA 29 U.S.C. § 654, Fla. Stat. § 440 (Workers’ Comp.)                                     |
+| 6  | **Whistleblower / Ethical Violation**             | Reporting fraud, environmental, financial, or legal violations.                                                                        | Federal Whistleblower Protection Acts; Fla. Stat. § 112.3187 (Public) & § 448.102 (Private) |
+| 7  | **Workplace Violence / Threats / Bullying**       | Physical altercations, threats, verbal abuse, stalking.                                                                                | OSHA General Duty Clause; employer negligence principles                                    |
+| 8  | **Substance Abuse / Drug Testing Violation**      | Failure or refusal to test, intoxication at work.                                                                                      | Fla. Stat. § 440.102 (Drug-Free Workplace Act)                                              |
+| 9  | **Theft / Fraud / Misuse of Company Assets**      | Embezzlement, timecard fraud, misuse of data.                                                                                          | F.S. § 812.014 (Theft); company policy; Sarbanes–Oxley if public company                    |
+| 10 | **FMLA / Leave of Absence Complaint**             | Denial or interference with medical/family leave rights.                                                                               | FMLA 29 U.S.C. § 2601 et seq.                                                               |
+| 11 | **ADA Accommodation Dispute**                     | Denial of reasonable accommodation or improper disclosure of medical data.                                                             | ADA 42 U.S.C. § 12112(b)(5); FCRA                                                           |
+| 12 | **Privacy / Data Protection Incident**            | Mishandling employee medical or personal info.                                                                                         | HIPAA (if health data), Fla. Stat. § 501.171 (Data Breach)                                  |
+
+---
+
+### ⚖️ **2. Governing Laws (Florida + Federal Overview)**
+
+| Area                        | Federal Law(s)                                     | Florida Law(s)                                | Enforcement Agency |
+| --------------------------- | -------------------------------------------------- | --------------------------------------------- | ------------------ |
+| Discrimination / Harassment | Title VII, ADA, ADEA, EPA                          | Fla. Civil Rights Act § 760.10                | EEOC, FCHR         |
+| Retaliation                 | Title VII § 704, OSHA § 11(c)                      | FCRA § 760.10(7), § 448.102                   | EEOC, FCHR, OSHA   |
+| Wage / Hour                 | FLSA                                               | Fla. Const. Art. X § 24; § 448.08             | DOL Wage & Hour    |
+| Safety                      | OSHA                                               | Fla. Stat. § 440 (Workers’ Comp.)             | OSHA, DWC          |
+| Whistleblower               | Various federal (e.g., Sarbanes-Oxley, Dodd-Frank) | Fla. § 448.102 (Private), § 112.3187 (Public) | DOL / State AG     |
+| Drug-Free Workplace         | —                                                  | Fla. § 440.102                                | DWC, Employer      |
+| Data / Privacy              | HIPAA, ADA Confidentiality                         | Fla. § 501.171 (Data Breach Notification Act) | HHS OCR, FDACS     |
+| Leave / Family              | FMLA                                               | FCRA (pregnancy), FMLA applies statewide      | DOL WHD            |
+| Background Checks           | Fair Credit Reporting Act (FCRA)                   | Fla. Stat. § 435 (Specific Industries)        | FTC, DBPR          |
+
+---
+
+### 🧭 **3. HR Investigation Procedure Checklist**
+
+| Step | Description                | Legal Notes                                                                      |
+| ---- | -------------------------- | -------------------------------------------------------------------------------- |
+| 1    | **Receive Complaint**      | Document date/time/source; ensure confidentiality.                               |
+| 2    | **Assess Urgency**         | If physical threat or safety issue → take immediate protective action.           |
+| 3    | **Acknowledge Complaint**  | Send written confirmation to complainant; outline next steps.                    |
+| 4    | **Select Investigator**    | Must be impartial – often HR or outside counsel.                                 |
+| 5    | **Define Scope & Issues**  | Identify statutes/policies implicated (use section 2 table).                     |
+| 6    | **Gather Documents**       | Emails, timecards, pay records, video, policy manuals.                           |
+| 7    | **Interview Witnesses**    | Complainant → Accused → Witnesses; record statements.                            |
+| 8    | **Evaluate Evidence**      | Apply “preponderance of evidence” standard.                                      |
+| 9    | **Draft Findings Report**  | Include facts, credibility, policy violations, legal analysis.                   |
+| 10   | **Take Corrective Action** | Discipline, retraining, termination, or remedial steps.                          |
+| 11   | **Communicate Outcome**    | Inform complainant/accused within confidentiality limits.                        |
+| 12   | **Maintain Records**       | Retain investigation file ≥ 1 year (Title VII); Florida best practice = 4 years. |
+| 13   | **Follow-Up**              | Monitor for retaliation, recurrence, or policy improvements.                     |
+
+---
+
+### 🧾 **4. Documentation & Compliance Retention**
+
+| Category                    | Minimum Retention Period                        | Statutory Basis               |
+| --------------------------- | ----------------------------------------------- | ----------------------------- |
+| Personnel & Payroll Records | 3 years                                         | FLSA 29 C.F.R. § 516.5        |
+| EEOC-Related Records        | 1 year (complaints → 1 year after resolution)   | 29 C.F.R. § 1602.14           |
+| OSHA Records                | 5 years for Form 300 logs                       | 29 C.F.R. § 1904.33           |
+| FMLA Documentation          | 3 years                                         | 29 C.F.R. § 825.500           |
+| ADA Medical Files           | Separate, indefinite until litigation risk ends | ADA § 102(c)(3)               |
+| Florida Civil Rights (FCHR) | 1 year minimum                                  | Fla. Admin. Code § 60Y-11.003 |
+
+---
+
+### 🏁 **Next Step (Optional Deliverable)**
+
+I can convert this into:
+
+* a **Word or PDF policy manual insert**,
+* or an **Excel investigation-trigger matrix** with checkboxes, timelines, and citation links for each law.
+
+Would you like me to generate:
+1️⃣ the **Word policy manual**,
+2️⃣ the **Excel trigger checklist**,
+or both?

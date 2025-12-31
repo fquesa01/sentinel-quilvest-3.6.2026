@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel Counsel - Network Oversight</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.net.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #020403; /* Deep dark base */
+      color: #e4e4e7; /* Zinc-200 */
+    }
+    
+    /* Custom Scrollbar for a cleaner feel */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #09090b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #27272a;
+      border-radius: 3px;
+    }
+
+    /* Smooth text rendering */
+    * {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 selection:bg-emerald-900 selection:text-emerald-50 relative overflow-hidden">
+
+  <!-- Ambient Background Glows -->
+  <div class="fixed top-0 left-1/4 w-96 h-96 bg-emerald-900/10 rounded-full blur-3xl -z-10 pointer-events-none"></div>
+  <div class="fixed bottom-0 right-1/4 w-[500px] h-[500px] bg-green-950/20 rounded-full blur-3xl -z-10 pointer-events-none"></div>
+
+  <!-- Main Card Component -->
+  <div class="max-w-5xl w-full bg-zinc-900/30 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl border border-white/5 flex flex-col md:flex-row relative group">
+    
+    <!-- Left Column: Visualization -->
+    <div class="md:w-1/2 h-80 md:h-auto relative bg-black/20 border-r border-white/5" id="vanta-canvas">
+      
+      <!-- Overlay Header -->
+      <div class="absolute top-6 left-6 z-10 pointer-events-none">
+        <div class="flex items-center space-x-2 mb-3">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span class="text-xs font-medium text-emerald-400 tracking-wide uppercase">Live Monitoring</span>
+        </div>
+        <h2 class="text-3xl font-semibold text-white tracking-tight leading-none">Global Grid</h2>
+        <p class="text-zinc-400 text-sm mt-2 font-medium">Zone A — Hunter Jurisdiction</p>
+      </div>
+
+      <!-- Overlay Footer/Legend -->
+      <div class="absolute bottom-6 left-6 z-10">
+        <div class="flex items-center space-x-4 bg-zinc-950/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/5 shadow-lg">
+           <div class="flex items-center space-x-2">
+             <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+             <span class="text-xs text-zinc-300 font-medium">Active</span>
+           </div>
+           <div class="flex items-center space-x-2">
+             <div class="w-1.5 h-1.5 rounded-full bg-zinc-600"></div>
+             <span class="text-xs text-zinc-500 font-medium">Inactive</span>
+           </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Right Column: Content/Control Panel -->
+    <div class="md:w-1/2 p-8 md:p-10 flex flex-col justify-between bg-zinc-900/40 relative">
+      
+      <!-- Decorative Top Gradient Line -->
+      <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-900/50 to-transparent"></div>
+
+      <div>
+        <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center space-x-2">
+            <div class="p-1.5 bg-emerald-950/30 rounded border border-emerald-900/50">
+              <i data-lucide="shield-check" class="w-4 h-4 text-emerald-500"></i>
+            </div>
+            <span class="text-xs font-semibold text-zinc-400 tracking-wider uppercase">Sentinel Counsel</span>
+          </div>
+          
+          <!-- Custom Toggle Switch -->
+          <div class="flex items-center space-x-3">
+            <span class="text-xs text-zinc-500 font-medium">Auto-Scale</span>
+            <button class="w-9 h-5 rounded-full bg-emerald-900/30 border border-emerald-800/50 relative transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 group-hover:border-emerald-700/50" role="switch" aria-checked="true">
+              <span class="absolute right-0.5 top-0.5 w-3.5 h-3.5 bg-emerald-400 rounded-full shadow-sm transition-transform duration-300"></span>
+            </button>
+          </div>
+        </div>
+
+        <h3 class="text-xl font-semibold text-white mb-2 tracking-tight">Infrastructure Oversight</h3>
+        
+        <p class="text-zinc-400 text-sm leading-relaxed mb-8">
+          The Sentinel Counsel mesh topology ensures a 99.9% jurisdictional uptime through redundant hunter-class nodes. Real-time encryption protocols are active.
+        </p>
+        
+        <!-- Metrics / Progress Bars -->
+        <div class="space-y-6">
+          
+          <!-- Metric 1 -->
+          <div class="group/metric">
+            <div class="flex justify-between items-end mb-2">
+              <span class="text-zinc-300 text-xs font-medium flex items-center gap-1.5">
+                <i data-lucide="activity" class="w-3 h-3 text-zinc-500 group-hover/metric:text-emerald-500 transition-colors"></i>
+                System Integrity
+              </span>
+              <span class="text-emerald-400 text-xs font-mono">99.98%</span>
+            </div>
+            <div class="w-full h-1 bg-zinc-800/50 rounded-full overflow-hidden">
+              <div class="h-full bg-emerald-600 rounded-full shadow-[0_0_10px_rgba(5,150,105,0.3)] relative w-[99.98%]">
+                <div class="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite]"></div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Metric 2 -->
+          <div class="group/metric">
+            <div class="flex justify-between items-end mb-2">
+              <span class="text-zinc-300 text-xs font-medium flex items-center gap-1.5">
+                <i data-lucide="server" class="w-3 h-3 text-zinc-500 group-hover/metric:text-emerald-500 transition-colors"></i>
+                Allocated Bandwidth
+              </span>
+              <span class="text-zinc-400 text-xs font-mono">842 TB</span>
+            </div>
+            <div class="w-full h-1 bg-zinc-800/50 rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-emerald-800 to-emerald-600 rounded-full w-[72%]"></div>
+            </div>
+          </div>
+          
+          <!-- Metric 3 -->
+          <div class="group/metric">
+            <div class="flex justify-between items-end mb-2">
+              <span class="text-zinc-300 text-xs font-medium flex items-center gap-1.5">
+                <i data-lucide="zap" class="w-3 h-3 text-zinc-500 group-hover/metric:text-emerald-500 transition-colors"></i>
+                Node Latency
+              </span>
+              <span class="text-zinc-400 text-xs font-mono">12ms</span>
+            </div>
+            <div class="w-full h-1 bg-zinc-800/50 rounded-full overflow-hidden">
+              <div class="h-full bg-zinc-600 rounded-full w-[24%]"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      
+      <!-- Footer Actions -->
+      <div class="mt-8 pt-6 border-t border-white/5 flex gap-3">
+        <button class="flex-1 px-4 py-2.5 bg-emerald-900/20 hover:bg-emerald-900/30 text-emerald-400 text-xs font-medium rounded-lg border border-emerald-500/10 hover:border-emerald-500/30 transition-all duration-200 flex items-center justify-center gap-2 group/btn">
+          <i data-lucide="bar-chart-2" class="w-3.5 h-3.5 transition-transform group-hover/btn:scale-110"></i>
+          Analytics
+        </button>
+        <button class="flex-1 px-4 py-2.5 bg-zinc-800/30 hover:bg-zinc-800/50 text-zinc-300 text-xs font-medium rounded-lg border border-white/5 hover:border-white/10 transition-all duration-200 flex items-center justify-center gap-2 group/btn">
+          <i data-lucide="terminal" class="w-3.5 h-3.5 text-zinc-500 group-hover/btn:text-zinc-300 transition-colors"></i>
+          System Logs
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize Icons
+    lucide.createIcons();
+
+    // Initialize Vanta Network Effect
+    document.addEventListener('DOMContentLoaded', function() {
+      VANTA.NET({
+        el: "#vanta-canvas",
+        mouseControls: true,
+        touchControls: true,
+        gyroControls: false,
+        minHeight: 200.00,
+        minWidth: 200.00,
+        scale: 1.00,
+        scaleMobile: 1.00,
+        // Hunter Green Palette Adaptation
+        color: 0x10b981,        // Bright Emerald for connections
+        backgroundColor: 0x01130e, // Very dark green/black
+        points: 12.00,
+        maxDistance: 22.00,
+        spacing: 16.00,
+        showDots: true
+      });
+    });
+  </script>
+</body>
+</html>

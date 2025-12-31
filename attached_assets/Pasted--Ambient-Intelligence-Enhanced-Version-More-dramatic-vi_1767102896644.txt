@@ -1,0 +1,659 @@
+/**
+ * Ambient Intelligence - Enhanced Version
+ * 
+ * More dramatic visual effects including:
+ * - Animated gradient borders on hover
+ * - Glow effects on selected cards
+ * - Staggered feature tag animations
+ * - Pulsing microphone animation on submit
+ * - Floating particles background (optional)
+ */
+
+/* ============================================================
+   ENHANCED STYLES - Add these to your existing stylesheet
+   ============================================================ */
+
+const enhancedStyles = `
+/* Animated gradient border effect */
+.mode-card {
+  position: relative;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 28px 24px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  border: none;
+}
+
+.mode-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 2px;
+  background: linear-gradient(135deg, #e2e8f0, #e2e8f0);
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition: background 0.4s ease;
+}
+
+.mode-card:hover::before {
+  background: linear-gradient(
+    135deg,
+    #1e3a5f,
+    #3b82f6,
+    #1e3a5f
+  );
+  background-size: 200% 200%;
+  animation: gradient-shift 2s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* Selected card glow effect */
+.mode-card.selected {
+  box-shadow: 
+    0 0 0 2px #1e3a5f,
+    0 0 30px rgba(30, 58, 95, 0.3),
+    0 0 60px rgba(59, 130, 246, 0.15),
+    0 20px 40px rgba(30, 58, 95, 0.2);
+}
+
+.mode-card.selected::before {
+  background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+  padding: 0;
+  inset: 0;
+  -webkit-mask: none;
+  mask: none;
+  opacity: 1;
+}
+
+/* Icon container with subtle animation */
+.mode-card-icon-wrapper {
+  position: relative;
+}
+
+.mode-card-icon-wrapper::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #1e3a5f, #3b82f6);
+  opacity: 0;
+  filter: blur(10px);
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+
+.mode-card:hover .mode-card-icon-wrapper::after {
+  opacity: 0.3;
+}
+
+.mode-card.selected .mode-card-icon-wrapper::after {
+  opacity: 0;
+}
+
+/* Feature tags with stagger animation */
+.mode-card-feature {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: feature-appear 0.4s ease forwards;
+}
+
+.mode-card-feature:nth-child(1) { animation-delay: 0.1s; }
+.mode-card-feature:nth-child(2) { animation-delay: 0.2s; }
+.mode-card-feature:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes feature-appear {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Submit button with animated gradient and pulse */
+.submit-btn {
+  background: linear-gradient(
+    135deg,
+    #1e3a5f 0%,
+    #2d5a87 50%,
+    #1e3a5f 100%
+  );
+  background-size: 200% 200%;
+  animation: btn-gradient 3s ease infinite;
+  position: relative;
+}
+
+@keyframes btn-gradient {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.submit-btn:not(:disabled):hover {
+  animation: btn-gradient 1.5s ease infinite;
+}
+
+/* Pulse rings on button */
+.submit-btn::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0;
+}
+
+.submit-btn:not(:disabled):hover::after {
+  animation: btn-pulse 1.5s ease infinite;
+}
+
+@keyframes btn-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 0;
+  }
+}
+
+/* Form field focus states with glow */
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  box-shadow: 
+    0 0 0 3px rgba(30, 58, 95, 0.15),
+    0 0 20px rgba(30, 58, 95, 0.1);
+}
+
+/* Consent section highlight animation */
+.consent-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.consent-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(30, 58, 95, 0.05),
+    transparent
+  );
+  transition: none;
+}
+
+.consent-section:focus-within::before {
+  animation: consent-shine 1s ease;
+}
+
+@keyframes consent-shine {
+  to {
+    left: 100%;
+  }
+}
+
+/* Header icon with floating animation */
+.ai-session-header-icon {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* Sparkle effect on header icon */
+.ai-session-header-icon::before,
+.ai-session-header-icon::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #60a5fa;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.ai-session-header-icon::before {
+  top: -4px;
+  right: -4px;
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+.ai-session-header-icon::after {
+  bottom: -4px;
+  left: -4px;
+  animation: sparkle 2s ease-in-out infinite 1s;
+}
+
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Selection ripple effect */
+.mode-card .ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(30, 58, 95, 0.2);
+  transform: scale(0);
+  animation: ripple-effect 0.6s ease-out;
+  pointer-events: none;
+}
+
+@keyframes ripple-effect {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+`;
+
+/* ============================================================
+   ALTERNATIVE LAYOUT: Tab-Style Mode Selector
+   For a more compact approach
+   ============================================================ */
+
+const tabStyleLayout = `
+/* Tab-style mode selector (alternative to cards) */
+.mode-tabs-container {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 24px;
+}
+
+.mode-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.mode-tab:hover {
+  color: #1e3a5f;
+}
+
+.mode-tab.selected {
+  color: #ffffff;
+  background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+  box-shadow: 0 4px 15px rgba(30, 58, 95, 0.3);
+}
+
+.mode-tab svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Usage:
+<div className="mode-tabs-container">
+  <button className={`mode-tab ${mode === 'audio' ? 'selected' : ''}`}>
+    <Mic /> Audio Recording
+  </button>
+  <button className={`mode-tab ${mode === 'video' ? 'selected' : ''}`}>
+    <Video /> Video Conference
+  </button>
+</div>
+*/
+`;
+
+/* ============================================================
+   ALTERNATIVE: Split Screen Hero Layout
+   More dramatic, takes full viewport initially
+   ============================================================ */
+
+const splitScreenLayout = `
+/* Split screen mode selection - full viewport impact */
+.mode-hero-container {
+  display: flex;
+  min-height: 60vh;
+  border-radius: 20px;
+  overflow: hidden;
+  margin-bottom: 32px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+}
+
+.mode-hero-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+  cursor: pointer;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.mode-hero-panel.audio {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+}
+
+.mode-hero-panel.video {
+  background: linear-gradient(135deg, #1e3a5f 0%, #3b82f6 100%);
+}
+
+.mode-hero-panel:hover {
+  flex: 1.2;
+}
+
+.mode-hero-panel.selected {
+  flex: 2;
+}
+
+.mode-hero-panel:not(.selected) {
+  opacity: 0.7;
+}
+
+.mode-hero-icon {
+  width: 80px;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.mode-hero-icon svg {
+  width: 40px;
+  height: 40px;
+  color: #ffffff;
+}
+
+.mode-hero-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 12px;
+}
+
+.mode-hero-description {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  max-width: 280px;
+  line-height: 1.6;
+}
+
+/* Animated background shapes */
+.mode-hero-panel::before {
+  content: '';
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 50%;
+  top: -100px;
+  right: -100px;
+  transition: transform 0.5s ease;
+}
+
+.mode-hero-panel:hover::before {
+  transform: scale(1.2);
+}
+
+.mode-hero-panel::after {
+  content: '';
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 50%;
+  bottom: -50px;
+  left: -50px;
+}
+
+/* Selection indicator */
+.mode-hero-select-btn {
+  margin-top: 32px;
+  padding: 14px 32px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e3a5f;
+  background: #ffffff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s ease;
+}
+
+.mode-hero-panel:hover .mode-hero-select-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.mode-hero-panel.selected .mode-hero-select-btn {
+  background: transparent;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+  opacity: 1;
+  transform: translateY(0);
+}
+`;
+
+/* ============================================================
+   REACT COMPONENT ENHANCEMENTS
+   ============================================================ */
+
+import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// Enhanced card with ripple effect
+const ModeCardEnhanced = ({ 
+  mode, 
+  selected, 
+  onSelect, 
+  icon: Icon,
+  title,
+  description,
+  features 
+}) => {
+  const cardRef = useRef(null);
+  
+  const handleClick = (e) => {
+    // Create ripple effect
+    const card = cardRef.current;
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const ripple = document.createElement('span');
+    ripple.className = 'ripple';
+    ripple.style.left = `${x}px`;
+    ripple.style.top = `${y}px`;
+    
+    card.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 600);
+    
+    onSelect(mode);
+  };
+  
+  return (
+    <motion.div
+      ref={cardRef}
+      className={`mode-card ${selected ? 'selected' : ''}`}
+      onClick={handleClick}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ 
+        y: -4,
+        transition: { duration: 0.2 }
+      }}
+      whileTap={{ scale: 0.98 }}
+    >
+      <div className="mode-card-content">
+        <motion.div 
+          className="mode-card-icon-wrapper"
+          animate={selected ? { 
+            scale: [1, 1.1, 1],
+            rotate: [0, -5, 5, 0]
+          } : {}}
+          transition={{ duration: 0.4 }}
+        >
+          <Icon />
+        </motion.div>
+        <h3 className="mode-card-title">{title}</h3>
+        <p className="mode-card-description">{description}</p>
+        <div className="mode-card-features">
+          {features.map((feature, index) => (
+            <motion.span 
+              key={index}
+              className="mode-card-feature"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 * (index + 1) }}
+            >
+              <feature.icon /> {feature.label}
+            </motion.span>
+          ))}
+        </div>
+      </div>
+      
+      {/* Animated check mark */}
+      <AnimatePresence>
+        {selected && (
+          <motion.div
+            className="mode-card-check"
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            exit={{ scale: 0, rotate: 180 }}
+            transition={{ 
+              type: 'spring',
+              stiffness: 300,
+              damping: 20
+            }}
+          >
+            <Check />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
+
+// Animated submit button with microphone pulse
+const AnimatedSubmitButton = ({ mode, disabled, onClick }) => {
+  return (
+    <motion.button
+      className="submit-btn"
+      disabled={disabled}
+      onClick={onClick}
+      whileHover={!disabled ? { 
+        scale: 1.02,
+        boxShadow: '0 12px 40px rgba(30, 58, 95, 0.4)'
+      } : {}}
+      whileTap={!disabled ? { scale: 0.98 } : {}}
+    >
+      {/* Pulse rings when active */}
+      {!disabled && (
+        <>
+          <motion.span
+            className="pulse-ring"
+            animate={{
+              scale: [0.8, 1.4],
+              opacity: [0.5, 0]
+            }}
+            transition={{
+              duration: 1.5,
+              repeat: Infinity,
+              ease: 'easeOut'
+            }}
+          />
+          <motion.span
+            className="pulse-ring"
+            animate={{
+              scale: [0.8, 1.4],
+              opacity: [0.5, 0]
+            }}
+            transition={{
+              duration: 1.5,
+              repeat: Infinity,
+              ease: 'easeOut',
+              delay: 0.75
+            }}
+          />
+        </>
+      )}
+      
+      <motion.span
+        animate={!disabled ? { 
+          scale: [1, 1.1, 1]
+        } : {}}
+        transition={{
+          duration: 2,
+          repeat: Infinity,
+          ease: 'easeInOut'
+        }}
+      >
+        {mode === 'audio' ? <Mic /> : <Video />}
+      </motion.span>
+      <span>
+        {mode === 'audio' ? 'Start Recording' : 'Create Video Conference'}
+      </span>
+    </motion.button>
+  );
+};
+
+export { 
+  enhancedStyles, 
+  tabStyleLayout, 
+  splitScreenLayout,
+  ModeCardEnhanced,
+  AnimatedSubmitButton
+};

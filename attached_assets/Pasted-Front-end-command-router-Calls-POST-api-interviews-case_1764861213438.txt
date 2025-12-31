@@ -1,0 +1,222 @@
+Front-end command router:
+
+Calls POST /api/interviews:
+
+{ caseId, intervieweeName, intervieweeEmail, startTime }
+
+On success, calls POST /api/email/send with:
+
+to: intervieweeEmail
+
+subject: "Interview for [Case Name]" (simple template)
+
+body: basic invite text
+
+Optionally, navigate user to the newly created interview details or stay where they are but show a link:
+
+“View interview details”
+
+Ava chat:
+
+Shows assistantMessage as a bubble.
+
+Also show a small inline link: “View interview” that navigates to the interview page.
+
+Error / missing info:
+
+If currentCaseId is missing and user didn’t name a case:
+
+Ava asks: “Which case is this interview for?”
+
+If date/time parsing fails:
+
+Ava: “I couldn’t understand that time. Should I schedule it for [parsed guess]?”
+
+If email is missing:
+
+Ava: “What is John Doe’s email address?”
+
+================================
+8) BACK-END IMPLEMENTATION
+
+Tech stack:
+
+Node.js + TypeScript
+
+Express (or similar)
+
+New/updated endpoints:
+
+POST /api/ava/interpret
+
+Input: { message, context }
+
+Uses LLM to:
+
+Determine mode: "command" or "qa".
+
+If "command", output { intent, parameters, assistantMessage }.
+
+If "qa", output { assistantMessage } (the compliance/legal answer).
+
+Return JSON accordingly.
+
+POST /api/interviews
+
+Input: { caseId, intervieweeName, intervieweeEmail, startTime }
+
+Create interview record (in-memory store or DB).
+
+Return interview object.
+
+POST /api/email/send
+
+Input: { to, subject, body }
+
+Stub or integrate with provider; at minimum log/send success response.
+
+GET /api/cases/search?name=...
+
+Return list of matching cases { id, name } to resolve case names.
+
+Structure:
+
+avaController.ts, avaService.ts (for interpret + LLM prompt)
+
+interviewController.ts, interviewService.ts
+
+emailService.ts
+
+caseService.ts
+
+================================
+9) FRONT-END IMPLEMENTATION DETAILS
+
+Tech stack:
+
+React + TypeScript
+
+React Router (or equivalent)
+
+Components / hooks to produce:
+
+AvaProvider
+
+Global context for:
+
+isOpen, isListening, isProcessing, messages[]
+
+context (case/time/route info)
+
+Methods:
+
+openAva(contextOverrides?)
+
+closeAva()
+
+sendMessage(message: string)
+
+startListening(), stopListening()
+
+Integrations:
+
+Bottom-left Ava button:
+
+Calls openAva() with current route/case context.
+
+“Ask Ava” buttons in case pages:
+
+Call openAva({ currentCaseId, currentCaseName, currentTab, currentView }).
+
+AvaDrawer
+
+The right-side panel matching current design.
+
+Shows:
+
+Header, New Chat, welcome text/examples.
+
+Conversation messages.
+
+Input row with text input, mic button, send button.
+
+useVoiceRecognition hook
+
+Wraps Web Speech API.
+
+Provides:
+
+isSupported, isListening, startListening, stopListening.
+
+On final transcript, calls sendMessage(transcript).
+
+commandRouter
+
+Receives { intent, parameters }, plus navigate and API clients.
+
+Handles intents defined above.
+
+Returns a result object (success/failure, additional data) to the Ava UI if needed.
+
+================================
+10) UX, SAFETY, LOGGING
+
+UX:
+
+Ava should respond concisely:
+
+For commands: “Done. [Short description of what was done].”
+
+For Q&A: normal compliance/legal answer.
+
+If something is ambiguous, Ava asks a short follow-up question in the same chat thread.
+
+Safety:
+
+For this version, Ava must not perform destructive actions (delete, bulk modify) without a separate explicit confirmation UI outside the command.
+
+Logging:
+
+Log all Ava interactions server-side:
+
+userId, timestamp, rawMessage, mode, intent (if any), parameters, outcome.
+
+This is important for audits and legal defensibility.
+
+================================
+11) WHAT TO OUTPUT
+
+You must output:
+
+A short README (markdown) explaining:
+
+How Ava’s new command/voice mode works.
+
+How to open Ava (bottom-left button, Ask Ava button, keyboard shortcut).
+
+How to add new intents.
+
+Front-end code (React + TypeScript):
+
+AvaProvider, AvaDrawer, integrations with bottom-left Ava button and page “Ask Ava” buttons.
+
+useVoiceRecognition.
+
+commandRouter.
+
+Back-end code (Node + TypeScript):
+
+/api/ava/interpret, /api/interviews, /api/email/send, /api/cases/search.
+
+LLM prompt + parsing logic for Ava.
+
+Manual QA steps showing at least:
+
+“Take me to the USA Water Polo case, I want to review Frank’s emails with Chris Ramsey.”
+
+“I need to schedule an interview.”
+
+“Schedule John Doe’s interview for tomorrow at 3:30pm. Here is his email, john.doe@example.com
+.”
+
+The goal is a runnable, end-to-end implementation where Ava (in the existing right-side drawer) can accept text or voice, distinguish between Q&A and commands, navigate the Sentinel UI, and schedule interviews by natural language.

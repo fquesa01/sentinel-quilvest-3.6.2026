@@ -1,0 +1,257 @@
+You are a senior full-stack engineer and UX designer working on **Sentinel**, an investigations, compliance, and e-discovery platform.
+
+Your task:
+Build a new **landing page** that appears immediately after a user logs in, *before* showing the main Sentinel interface.
+
+This page is tightly integrated with the existing AI assistant **Ava** and is designed to be the fastest way for a user to tell the system what they want to work on.
+
+================================
+HIGH-LEVEL BEHAVIOR
+================================
+
+When a user logs in, they see a full-screen landing experience with **two choices**:
+
+1) **Start with Ava (primary path)**  
+   - Prominently ask: **“What do you want to work on?”**
+   - Under that question, show a large input where the user can **type or dictate** what they want.
+   - Ava interprets their answer and:
+     - Navigates them to the right area of the platform, and/or
+     - Starts an Ava session (e.g., opens a case, filters documents, schedules interviews).
+
+2) **Enter Platform (secondary path)**  
+   - A button labeled **“Enter Platform”** (or “Skip for now”) that:
+     - Bypasses the question and **loads the main Sentinel app UI** (e.g., My Queue as the default landing page).
+   - This is for users who want to navigate manually using the sidebar.
+
+This landing page is only shown on initial entry (or when explicitly navigated back); after the user chooses an option, they see the standard Sentinel layout:
+- Left sidebar (My Queue, Cases, Email & Document Review, etc.)
+- Bottom-left Ava button
+- Right-side Ava drawer when triggered.
+
+================================
+UI & LAYOUT REQUIREMENTS
+================================
+
+Design a clean, focused, Palantir Foundry–style experience:
+
+- Full-screen, centered layout.
+- Sentinel branding at top-left (logo + “Sentinel | Counsel LLP”).
+- Top-right: small text link or icon to “Account” / user menu (use placeholder; actual implementation can reuse existing header later).
+
+Main content (centered):
+
+1) **Primary Question Block**
+   - Large headline:
+     - Text: **“What do you want to work on?”**
+   - Subtitle (short and practical), e.g.:
+     - “Describe your task in plain language and Ava will get you to the right place.”
+   - Below that, a **command input** component:
+     - A wide text field with placeholder:
+       - “E.g., ‘Open the USA Water Polo case and show me emails between Frank and Chris Ramsey’”
+     - A **microphone icon** on the right inside the input to start/stop voice dictation.
+     - A **submit button** (or pressing Enter) that triggers Ava processing.
+   - Under the input, show 3–5 example prompts as pill buttons the user can click to auto-fill the input, e.g.:
+     - “Review emails in the USA Water Polo case”
+     - “Schedule an interview with John Doe for tomorrow at 3:30pm”
+     - “Show me all open FCPA investigations”
+     - “Take me to my queue and show overdue tasks”
+
+2) **Secondary Action Block**
+   - Below or to the side, add a clear secondary button:
+     - Label: **“Enter Platform”**
+     - Description (small text under/next to it):
+       - “Skip Ava and go straight to the main dashboard.”
+   - Clicking this loads the standard Sentinel shell (left sidebar, top nav, etc.), defaulting to **My Queue**.
+
+Visual style:
+- Modern, minimal, with Sentinel’s existing dark sidebar palette and purple accent.
+- The landing page background can be a subtle gradient or soft pattern; keep focus on the central question/input.
+- Responsive design for large desktops down to smaller screens.
+
+================================
+VOICE + TEXT IMPLEMENTATION
+================================
+
+Use the same **voice infrastructure** you built for Ava:
+
+- Implement or reuse a `useVoiceRecognition` hook (Web Speech API wrapper):
+  - `isSupported, isListening, startListening, stopListening, transcript`.
+- The microphone icon in the “What do you want to work on?” input:
+  - When clicked:
+    - If supported, start listening and show a pulsing mic animation.
+  - On final transcript:
+    - Set the input value to the transcribed text.
+    - Auto-submit (or allow the user to edit, based on configuration; implement auto-submit with a short debounce).
+
+If voice is not supported:
+- Disable mic icon and show a small note beneath the input:
+  - “Your browser doesn’t support voice input. You can still type your request.”
+
+================================
+INTERPRETATION & ROUTING LOGIC
+================================
+
+When the user submits their answer to **“What do you want to work on?”**:
+
+1) Front-end collects:
+   - `command: string` (the typed/spoken text)
+   - `context`:
+     - `userId`
+     - `timezone`
+     - `currentRoute: "landing"` (indicates this is the landing page)
+     - No caseId yet (unless you choose to pre-populate based on last open case)
+
+2) Call back-end endpoint:
+   - `POST /api/ava/interpret`
+   - Same structure as the Ava drawer uses:
+     - Input: `{ message: command, context }`
+   - Expected output:
+     - For commands:
+       ```json
+       {
+         "mode": "command",
+         "intent": "navigate_to_case_email_filter",
+         "parameters": {
+           "caseName": "USA Water Polo",
+           "emailFilter": {
+             "participants": ["Frank", "Chris Ramsey"]
+           }
+         },
+         "assistantMessage": "Opening the USA Water Polo case and filtering to emails between Frank and Chris Ramsey."
+       }
+       ```
+     - For pure Q&A:
+       ```json
+       {
+         "mode": "qa",
+         "assistantMessage": "…Ava’s compliance/legal answer…"
+       }
+       ```
+
+3) Routing behavior from the landing page:
+   - If `mode = "command"`:
+     - Hand off to the **same command router** used by Ava in the main app.
+     - First, transition from the landing page into the main app shell.
+     - Then perform the appropriate navigation/action, e.g.:
+       - Navigate to `/cases/:caseId/email-document-review` for `navigate_to_case_email_filter`.
+       - Navigate to `/my-queue` for `navigate_to_my_queue`.
+       - Call `/api/interviews` for `schedule_interview` and then go to the interview screen.
+     - Optionally, open the Ava drawer in the main UI and show `assistantMessage` as the first message.
+
+   - If `mode = "qa"`:
+     - Transition into the main platform and **auto-open the Ava drawer**.
+     - Seed the chat with:
+       - User message: the original landing-page text.
+       - Ava response: `assistantMessage`.
+     - This way, pure questions become a normal Ava chat session in the full interface.
+
+4) Error handling:
+   - If the interpreter response is invalid or ambiguous:
+     - Show a friendly message above/below the input:
+       - “I’m not sure what you want to work on yet. Can you rephrase or be a bit more specific?”
+     - Do not leave the user stuck in limbo; always give a path forward (either rephrase or “Enter Platform”).
+
+================================
+NAVIGATION INTENTS FROM THE LANDING PAGE
+================================
+
+The landing page should support at least these example commands:
+
+1) “Open the USA Water Polo case and show me emails between Frank and Chris Ramsey.”
+   - `intent: "navigate_to_case_email_filter"`
+   - Resolve case by name, route to email & document review with filter.
+
+2) “Schedule John Doe’s interview for tomorrow at 3:30pm. His email is john.doe@example.com.”
+   - `intent: "schedule_interview"`
+   - Case may need to be resolved by name if mentioned, or via follow-up.
+
+3) “Take me to my queue.”
+   - `intent: "navigate_to_my_queue"`
+
+4) “Show all open investigations about FCPA.”
+   - `intent: "navigate_to_cases_with_filter"` (you can define this new intent)
+   - Open Cases page with pre-applied filter.
+
+5) “I want to review chat messages from Chris with the sales team.”
+   - `intent: "navigate_to_chat_conversations"`
+   - Parameters to filter chat view (participants, channel, date range if specified).
+
+The command router you already designed for Ava can be reused; the landing page’s job is to:
+- Capture the initial intent,
+- Move the user into the main shell,
+- Call the same router.
+
+================================
+ENTER PLATFORM BUTTON
+================================
+
+The **“Enter Platform”** button:
+
+- Appears clearly as a secondary option under/next to the main input.
+- On click:
+  - Immediately render the regular Sentinel UI:
+    - Left sidebar, top header, etc.
+    - Default route: `/my-queue` (My Queue page).
+  - Do NOT call `/api/ava/interpret` for this path.
+- This gives power users a way to skip Ava on entry.
+
+================================
+IMPLEMENTATION DETAILS
+================================
+
+Tech stack:
+- React + TypeScript on front-end
+- React Router (or similar)
+- Node.js + TypeScript + Express (or similar) on back-end
+
+Front-end pieces to implement:
+
+1) `LandingPage` component
+   - Mounted at route like `/start` or `/landing` (and used as post-login entry).
+   - Renders:
+     - Sentinel logo/branding.
+     - Headline + subtitle.
+     - Command input with mic + example prompt pills.
+     - “Enter Platform” button.
+
+2) `LandingCommandInput` subcomponent
+   - Handles:
+     - Text input state.
+     - Voice state via `useVoiceRecognition`.
+     - On submit, calls `avaClient.interpret(message, context)` and then triggers navigation + commandRouter.
+
+3) Routing:
+   - After a successful command, route to the main app shell with the appropriate internal route.
+   - After “Enter Platform,” route directly to the main app shell at `/my-queue`.
+
+4) Shared utilities:
+   - Reuse the **same** `commandRouter` used inside Ava’s drawer.
+   - Use the same `/api/ava/interpret` endpoint and Ava prompt logic.
+
+Back-end:
+- Reuse the existing `/api/ava/interpret` implementation.
+- No new endpoints are strictly required for this feature beyond what Ava already uses.
+
+================================
+WHAT TO OUTPUT
+================================
+
+You must output:
+
+1) A short README (markdown) explaining:
+   - The new landing page.
+   - How it integrates with Ava and the existing command router.
+   - How to toggle between “start at landing” vs “go straight to My Queue” if desired.
+
+2) Front-end code (React + TypeScript):
+   - `LandingPage` and `LandingCommandInput`.
+   - Integration with existing routing so that:
+     - After login, user hits the landing page.
+     - “Enter Platform” navigates to `/my-queue`.
+     - A successful Ava command navigates to the appropriate route and may auto-open Ava.
+
+3) Any minimal back-end tweaks if needed (e.g., minor changes to `/api/ava/interpret` to recognize additional intents), keeping the Ava implementation consistent across landing and in-app use.
+
+The end result:
+- Upon login, users see a clean screen asking “What do you want to work on?” with type/dictate capability powered by Ava.
+- They can either let Ava drive them into the correct place/task or click “Enter Platform” to manually navigate the main Sentinel interface.

@@ -1,0 +1,111 @@
+. Bank Secrecy Act (BSA) / Anti-Money-Laundering (AML)
+Overview
+
+Primary Regulator: FinCEN, FDIC, OCC, Federal Reserve
+
+Core Objective: Detect and prevent money laundering, terrorist financing, and suspicious transactions.
+
+Applies To: Financial institutions, broker-dealers, fintechs, MSBs, certain attorneys and law firms handling client funds.
+
+⚙️ Rule Templates
+- code: STRUCTURED_CASH_TRANSACTIONS
+  category: Money Laundering
+  description: "Series of cash deposits just below $10k CTR threshold."
+  trigger: "≥3 cash deposits between $9,000 and $9,999 within 7 days by same account."
+  score: 75
+  investigation: "Aggregate deposits, verify source of funds, interview client, file SAR if warranted."
+
+- code: ROUND_NUMBER_WIRES
+  category: Suspicious Wires
+  description: "Outgoing wires in round amounts with no invoice or supporting documentation."
+  trigger: "Wire amount % 1000 = 0 AND missing reference field."
+  score: 60
+  investigation: "Confirm business purpose; match to trade invoice; verify beneficiary ownership."
+
+- code: SHELL_COMPANY_ACCOUNT
+  category: Customer Risk
+  description: "Customer entity with no physical operations, low employee count, and offshore registration."
+  trigger: "Incorporation_country in ['BVI','Cayman','Panama'] AND employee_count < 3."
+  score: 65
+  investigation: "Perform Enhanced Due Diligence (EDD); collect beneficial ownership; screen for OFAC matches."
+
+- code: PEP_ACCOUNT_ACTIVITY
+  category: KYC / Sanctions
+  description: "Politically Exposed Person (PEP) receives rapid high-value transfers."
+  trigger: "PEP = true AND > $100,000 transferred within 7 days."
+  score: 80
+  investigation: "EDD + management approval for continued relationship; file SAR if unexplained."
+
+- code: HIGH_RISK_JURISDICTION_WIRE
+  category: Geographic Risk
+  description: "Wire to FATF-listed jurisdiction or sanctioned country."
+  trigger: "Destination_country in ['IR','SY','KP','CU','RU']."
+  score: 85
+  investigation: "Stop payment; sanctions screening; escalate to AML officer."
+
+📂 Monitored Data
+
+Core banking transactions, ACH/wires
+
+Customer KYC profiles
+
+Sanctions/PEP databases
+
+Account opening docs
+
+🧠 Workflow
+
+Detect pattern → auto-case create
+
+Freeze transaction if risk ≥ 75
+
+Auto-generate SAR form pre-fill
+
+AML officer review → finalize SAR submission
+
+💬 LLM Prompt
+
+“Explain this activity’s potential AML violation under the Bank Secrecy Act, referencing structuring, layering, or integration typologies. Outline detection evidence and recommended next steps.”
+
+🇺🇸 2. USA PATRIOT Act (AML / Counter-Terrorist Financing)
+Overview
+
+Sections 311–326: Require Customer Identification Program (CIP) and enhanced due diligence.
+
+Core Goal: Detect terrorist financing and prevent anonymous banking.
+
+⚙️ Rule Templates
+- code: MISSING_CUSTOMER_ID
+  category: CIP Violation
+  description: "Account opened without verified government ID."
+  trigger: "CIP_verification_status = 'pending' AND account_opened > 5 days."
+  score: 60
+  investigation: "Suspend transactions; contact client for KYC completion."
+
+- code: OFAC_UNSCREENED_NEW_ACCOUNT
+  category: Sanctions Risk
+  description: "New customer not screened against OFAC lists."
+  trigger: "account_created = true AND screening_timestamp = null."
+  score: 70
+  investigation: "Immediate OFAC screen; freeze account pending clearance."
+
+- code: HIGH_RISK_CASH_INTENSIVE_BUSINESS
+  category: Risk Profiling
+  description: "Business type flagged high risk (nightclub, casino, car dealer)."
+  trigger: "NAICS_code in ['722410','713210','441110']."
+  score: 55
+  investigation: "EDD required; document site inspection and ownership verification."
+
+📂 Data Sources
+
+CIP onboarding fields
+
+OFAC/FinCEN lists
+
+Industry code registry
+
+🧠 Workflow
+
+CIP verification bot checks open accounts daily
+
+Auto-close or freeze unverified after 10 business days

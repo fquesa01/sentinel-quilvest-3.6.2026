@@ -1,0 +1,225 @@
+Federal Acquisition Regulation (FAR) / DFARS Compliance Library v1.0
+Aspect	Coverage
+Regulators	DoD DCMA • GSA • NASA • DOJ Inspector General • SIGAR
+Governing Parts	FAR Subparts 3, 9, 15, 19, 31, 42, 52 • DFARS 203, 204, 209, 252
+Purpose	Ensure procurement integrity, truthful cost/pricing data, ethics in contracting, secure information handling, and lawful subcontractor conduct.
+Applies To	Prime & sub-contractors, federal suppliers, consultants, grantees.
+________________________________________
+⚙️ 1. Procurement Integrity (FAR 3.104)
+- code: BID_LEAK
+  category: Procurement Integrity
+  description: "Evidence of bid or source-selection information shared prior to award."
+  trigger: "Email or meeting log references competitor pricing or 'source-selection' before RFP close."
+  score: 85
+  examples: ["Got intel on ABC’s bid numbers before submission."]
+  investigation: "Freeze contract file; interview staff; notify contracting officer & legal; potential 18 U.S.C §1905 violation."
+
+- code: IMPROPER_CONTACT
+  category: Procurement Integrity
+  description: "Unauthorized communication between government official and contractor during blackout period."
+  trigger: "Contact_date between solicitation release and award AND no CO approval record."
+  score: 70
+  investigation: "Document contact; report to CO; issue ethics retraining."
+
+- code: POST_EMPLOYMENT_RECRUIT
+  category: Revolving Door / Ethics
+  description: "Offer of employment to government employee involved in procurement decision."
+  trigger: "Candidate.former_agency_role='contracting' AND related_award within 1 year."
+  score: 75
+  investigation: "Suspend hiring; legal review for 41 U.S.C §2104 breach."
+________________________________________
+💰 2. Truthful Cost & Pricing (FAR 15.403-4 / FAR 52.215-10 TINA)
+- code: DEFECTIVE_PRICING
+  category: Cost & Pricing
+  description: "Certified cost or pricing data inaccurate, incomplete, or non-current at award."
+  trigger: "Audit variance > 10 % between proposal and actual cost data."
+  score: 80
+  investigation: "Perform sweep; calculate price reduction; issue disclosure to CO under TINA."
+
+- code: UNALLOWABLE_COST
+  category: Cost Principles
+  description: "Costs claimed that are expressly unallowable under FAR 31 ( e.g., alcohol, fines )."
+  trigger: "GL account flagged 'Unallowable' AND included in claim."
+  score: 65
+  investigation: "Adjust indirect rates; refund; update chart-of-accounts tagging."
+
+- code: COST_MISALLOCATION
+  category: Indirect Cost Rates
+  description: "Improper allocation of overhead or G&A to government contract."
+  trigger: "Pool variance > 15 % or expense charged to contract without allocation base."
+  score: 60
+  investigation: "Recalculate indirects; update CASB Disclosure Statement; resubmit invoices."
+________________________________________
+🧮 3. Billing & Payment Integrity (FAR Subpart 32)
+- code: PROGRESS_BILLING_NO_SUPPORT
+  category: Billing
+  description: "Progress payment submitted without supporting cost records or CO approval."
+  trigger: "Invoice.type='progress' AND attachments missing."
+  score: 55
+  investigation: "Request substantiation; delay payment until validated."
+
+- code: DUPLICATE_INVOICE
+  category: Billing
+  description: "Same invoice number submitted twice within 90 days."
+  trigger: "invoice_number duplicate AND amount identical."
+  score: 50
+  investigation: "Reject duplicate; audit internal controls."
+
+- code: ADVANCE_PAYMENT_WITHOUT_AUTH
+  category: Billing
+  description: "Advance payment issued without contractual authorization per FAR 32.4."
+  trigger: "Payment_type='advance' AND clause 52.232-12 absent."
+  score: 65
+  investigation: "Escalate to Finance; recover funds; update terms."
+________________________________________
+⚖️ 4. Organizational & Personal Conflicts of Interest (FAR 9.5)
+- code: OCI_SAME_CONTRACTOR_EVAL
+  category: Conflict of Interest
+  description: "Contractor involved in evaluating a program where it also provides deliverables."
+  trigger: "Entity listed as vendor and evaluation consultant same contract."
+  score: 75
+  investigation: "Segregate teams; notify CO; amend SOW."
+
+- code: FINANCIAL_INTEREST_DISCLOSURE_MISS
+  category: Conflict of Interest
+  description: "Key employee failed to file annual financial disclosure (FAR 52.203-13)."
+  trigger: "Disclosure_form_date > 12 months."
+  score: 45
+  investigation: "Obtain updated form; log ethics violation."
+________________________________________
+🧰 5. Subcontractor Oversight (FAR 52.244-2 / DFARS 252.244-7001)
+- code: UNAPPROVED_SUBCONTRACT
+  category: Supply Chain
+  description: "Subcontract issued without CO or DCMA approval where required."
+  trigger: "Sub_value > threshold AND approval_status ≠ approved."
+  score: 70
+  investigation: "Suspend payments; seek retro approval; document deviation."
+
+- code: FLOWDOWN_CLAUSE_OMITTED
+  category: Flowdowns
+  description: "Mandatory FAR/DFARS clauses missing in subcontract template."
+  trigger: "Template missing required clauses e.g., 52.219-8, 252.204-7012."
+  score: 60
+  investigation: "Amend subcontract; notify subcontractor; update contract library."
+
+- code: SMALL_BUSINESS_MISREP
+  category: Socio-Economic Programs
+  description: "Subcontractor self-certified as small/disadvantaged without SBA record."
+  trigger: "SAM.gov status ≠ small AND claim =true."
+  score: 65
+  investigation: "Report false certification to SBA/OIG; adjust credit claims."
+________________________________________
+🔐 6. Cybersecurity & Data Safeguards (DFARS 252.204-7012 / FAR 52.204-21)
+- code: CUI_DATA_BREACH
+  category: Cybersecurity
+  description: "Controlled Unclassified Information (CUI) exfiltration or unauthorized access."
+  trigger: "Security incident = CUI AND notification_time > 72 h."
+  score: 85
+  investigation: "Report to DIBNet within 72 h; isolate systems; forensic review."
+
+- code: NIST_SP800_171_NONCOMPLIANT
+  category: Cybersecurity
+  description: "Supplier lacks implemented security controls per NIST SP 800-171."
+  trigger: "Controls_implemented < 110 AND plan_of_action missing."
+  score: 70
+  investigation: "Suspend CUI access; require POA&M; update SPRS score."
+
+- code: EXPORT_CONTROLLED_TECH_TRANSFER
+  category: Data Security
+  description: "ITAR/EAR data transferred to non-U.S. citizen without TAA."
+  trigger: "file.tag='ITAR' AND user.citizenship ≠ US."
+  score: 80
+  investigation: "Stop access; file voluntary disclosure to DDTC."
+________________________________________
+🧑‍💼 7. Ethics & Business Conduct (FAR 52.203-13)
+- code: GIFTS_TO_OFFICIALS
+  category: Ethics
+  description: "Employee gave gift > $20 to federal official."
+  trigger: "Gift.amount > 20 AND recipient.role='federal employee'."
+  score: 65
+  investigation: "Recover gift; record violation; disciplinary review."
+
+- code: KICKBACK_SCHEME
+  category: Ethics
+  description: "Kickbacks from subcontractors to procurement staff."
+  trigger: "Payment from vendor to employee personal account within 30 days of award."
+  score: 80
+  investigation: "Forensic audit; terminate relationship; report to OIG."
+
+- code: HOTLINE_REPORT_IGNORED
+  category: Ethics
+  description: "Internal hotline report not investigated within 30 days."
+  trigger: "Case.status='open' AND age > 30."
+  score: 55
+  investigation: "Assign investigator; document findings; close within 60 days."
+________________________________________
+📊 8. Property & Inventory Management (FAR 45 / DFARS 245)
+- code: GOVERNMENT_PROPERTY_LOSS
+  category: Property Control
+  description: "Lost, stolen, or damaged government-furnished property."
+  trigger: "Inventory_event='loss' AND item.tag='GFP'."
+  score: 60
+  investigation: "Report within 5 days to CO; perform root-cause analysis."
+
+- code: EXCESS_RETENTION
+  category: Property Control
+  description: "Contractor retains GFP after contract close without disposition instructions."
+  trigger: "Contract.status='closed' AND GFP_items > 0."
+  score: 45
+  investigation: "Arrange return or disposal; update property records."
+________________________________________
+🧾 9. Reporting & Disclosure (FAR 52.203-13 / Subpart 9.4 Debarment)
+- code: MANDATORY_DISCLOSURE_IGNORED
+  category: Reporting
+  description: "Credible evidence of fraud, bribery, or FCA violation not reported to OIG within 30 days."
+  trigger: "Case.credibility='credible' AND report_status='unreported'."
+  score: 85
+  investigation: "Notify agency IG; submit written disclosure per FAR 52.203-13 (c)(2)(ii)."
+
+- code: DEBARRED_PARTNER
+  category: Suspension / Debarment
+  description: "Subcontractor appears on SAM.gov excluded parties list."
+  trigger: "vendor.SAM_status='excluded'."
+  score: 80
+  investigation: "Cease work immediately; replace vendor; report to CO."
+________________________________________
+🧮 10. Workflow Automation & Escalation
+- code: AUTO_CREATE_FAR_CASE
+  description: "Automatically create FAR/DFARS compliance case for any flag ≥ 70."
+  trigger: "score ≥ 70."
+  action: "Create 'Contracting Integrity' case; assign Compliance Manager; preserve emails & contract docs."
+
+- code: AUTO_ESCALATE_OIG
+  description: "Immediate notification to OIG for procurement integrity or kickback flags."
+  trigger: "flag.code in [BID_LEAK, KICKBACK_SCHEME, MANDATORY_DISCLOSURE_IGNORED]."
+  action: "Send alert to GC and Agency OIG; initiate legal hold."
+
+- code: QUARTERLY_FAR_AUDIT_REPORT
+  description: "Compile quarterly contract integrity and ethics report."
+  trigger: "Quarter_close = true."
+  action: "Aggregate all open cases and risk scores; export audit pack to Board and CO."
+________________________________________
+💬 11. Explain-This-Flag Prompt Template
+prompt_template: |
+  You are a federal-contracting compliance analyst.
+  Explain why this transaction or behavior triggered a FAR/DFARS red flag.
+  Include:
+  1. Summary of facts (contract, vendor, amount, date).
+  2. Applicable FAR/DFARS clause and regulatory section.
+  3. Risk typology (procurement integrity, cost mischarge, ethics, cybersecurity, etc.).
+  4. Potential penalties (debarment, termination for cause, FCA liability, civil penalty).
+  5. Recommended next steps:
+     - Preserve contract and email records  
+     - Notify Contracting Officer or OIG  
+     - Suspend payment or performance  
+     - Implement corrective action plan
+  Keep tone objective, fact-based, and audit-ready.
+________________________________________
+📂 12. Monitored Data Sources
+Domain	Systems / Feeds to Integrate
+Contract Management	PRISM, SAP Ariba, Deltek Costpoint, Unison PRISM
+Billing & Finance	WAWF/iRAPT, Deltek T&E, ERP ledgers
+Ethics & HR	Hotline portal, training records, HRIS
+Cybersecurity	SIEM logs, SPRS NIST score reports
+Vendor Due Diligence	SAM.gov API, SBA Dynamic Small Business Search
+Property Mgmt	GFP records (GFP Module or DCMA eTools)

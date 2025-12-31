@@ -1,0 +1,206 @@
+🌍 Office of Foreign Assets Control (OFAC) Sanctions Compliance Rule Library v1.0
+Aspect	Coverage
+Regulator	U.S. Department of the Treasury – OFAC
+Legal Authority	International Emergency Economic Powers Act (IEEPA), Trading with the Enemy Act (TWEA), Executive Orders
+Program Scope	Sanctions against individuals, entities, sectors, and countries (SDN, SSI, NS-ISA, etc.)
+Purpose	Prevent U.S. persons and companies from transacting with prohibited parties, assets, or jurisdictions.
+Applies To	Financial institutions, exporters/importers, software and tech companies, legal and professional services firms, any entity handling cross-border funds or trade.
+________________________________________
+⚙️ 1 | Sanctions Screening (SDN, SSI, Consolidated Lists)
+- code: SDN_NAME_MATCH
+  category: Screening
+  description: "Customer or counterparty name matches OFAC SDN list ≥ 90%."
+  trigger: "fuzzy_name_score >= 0.9"
+  score: 85
+  examples: ["Payment to 'Rosneft Trading SA' matches OFAC SDN entry."]
+  investigation: "Stop transaction; freeze funds; verify match via secondary fields (DOB, address); file blocked property report within 10 days."
+
+- code: SSI_ENTITY_MATCH
+  category: Sectoral Sanctions
+  description: "Entity on SSI list involved in prohibited equity or debt transaction."
+  trigger: "entity.SSI_listed = true AND security_type in ['equity','debt'] AND maturity > 14 days"
+  score: 75
+  investigation: "Block prohibited transaction; consult legal for General License coverage."
+
+- code: CONSOLIDATED_LIST_HIT
+  category: Screening
+  description: "Match against non-SDN consolidated lists (UN, EU, BIS, State)."
+  trigger: "list_type='non-SDN' AND match_score >= 0.85"
+  score: 70
+  investigation: "Perform Enhanced Due Diligence (EDD); escalate to sanctions team for clearance."
+________________________________________
+💳 2 | Payment & Funds Transfer Monitoring
+- code: SANCTIONED_COUNTRY_PAYMENT
+  category: Transaction Risk
+  description: "Payment to or from jurisdiction subject to OFAC country-wide sanctions."
+  trigger: "sender_country in ['IR','SY','KP','CU'] OR receiver_country in ['IR','SY','KP','CU']"
+  score: 90
+  investigation: "Block transfer; notify OFAC; file blocking report; assess for General License."
+
+- code: THIRD_PARTY_INTERMEDIARY
+  category: Routing Risk
+  description: "Transaction routed through bank located in sanctioned country or owned by SDN."
+  trigger: "intermediary_bank.country_code in ['RU','BY','IR','SY'] OR intermediary_bank.owner.SDN=true"
+  score: 80
+  investigation: "Review SWIFT chain; reroute via compliant correspondent; file report."
+
+- code: ROUND_TRIP_PAYMENT
+  category: Trade-Based Laundering
+  description: "Funds leave and return through different counterparties in high-risk regions."
+  trigger: "inflow_country = outflow_country AND counterparties differ AND period ≤ 7 days"
+  score: 65
+  investigation: "Analyze purpose; trace beneficial owners; possible evasion scheme."
+________________________________________
+🚢 3 | Trade & Export Transactions
+- code: BLOCKED_PORT_OF_LADING
+  category: Shipping
+  description: "Export or import shipment involves sanctioned port or vessel."
+  trigger: "port.country_code in ['RU','IR','SY','KP','CU'] OR vessel.IMO in SDN_vessels"
+  score: 85
+  investigation: "Hold shipment; file BIS and OFAC voluntary disclosure."
+
+- code: DUAL_USE_EXPORT
+  category: Export Control
+  description: "Export license required for item with ECCN flagged 'dual-use' to sanctioned region."
+  trigger: "ECCN in control_list AND dest_country in embargoed_country_list"
+  score: 75
+  investigation: "Block export; coordinate with BIS/OFAC compliance counsel."
+
+- code: FALSE_END_USER_STATEMENT
+  category: Export Documentation
+  description: "Mismatch between declared and verified end-user or destination."
+  trigger: "end_user_country ≠ shipping_country OR end_user_verified=false"
+  score: 70
+  investigation: "Confirm ultimate consignee; potential sanctions evasion; alert legal."
+________________________________________
+🧾 4 | Beneficial Ownership & Indirect Control (50 Percent Rule)
+- code: INDIRECT_SDN_OWNERSHIP
+  category: Beneficial Ownership
+  description: "Entity 50% or more owned (individually or collectively) by SDN entities."
+  trigger: "sum(owners.where(SDN=true).ownership_pct) ≥ 50"
+  score: 85
+  investigation: "Block entity; document ownership chain; file report."
+
+- code: UNVERIFIED_BENEFICIAL_OWNER
+  category: Ownership Risk
+  description: "Customer or vendor ownership structure incomplete or unverifiable."
+  trigger: "ownership_verified=false OR beneficial_owners < required_threshold"
+  score: 60
+  investigation: "Collect ownership certificates; confirm with registries; freeze until verified."
+________________________________________
+🏢 5 | Corporate & Vendor Screening
+- code: UNSCREENED_VENDOR
+  category: Vendor Risk
+  description: "Vendor or counterparty not screened against OFAC lists before contract."
+  trigger: "vendor.SDN_screened=false"
+  score: 70
+  investigation: "Suspend onboarding; screen immediately; document retro compliance."
+
+- code: AFFILIATE_SDN_LINK
+  category: Third-Party Risk
+  description: "Affiliate or parent company on SDN or SSI list."
+  trigger: "vendor.parent.SDN=true OR vendor.affiliate.SDN=true"
+  score: 75
+  investigation: "Block related payments; escalate for entity-level review."
+________________________________________
+💻 6 | Digital & Cryptocurrency Transactions
+- code: CRYPTO_TO_SANCTIONED_WALLET
+  category: Virtual Assets
+  description: "Crypto wallet address matches OFAC SDN wallet list."
+  trigger: "wallet_address in OFAC_wallet_list"
+  score: 85
+  investigation: "Freeze transaction; preserve blockchain records; report to OFAC via SAR."
+
+- code: MIXING_SERVICE_USE
+  category: Virtual Assets
+  description: "Transaction routed through mixer or anonymity-enhanced service flagged by OFAC."
+  trigger: "transaction.service_type in ['mixer','tumbler']"
+  score: 70
+  investigation: "Stop transfer; perform KYC; consider law-enforcement referral."
+________________________________________
+🧮 7 | Data & Technology Transfers
+- code: CLOUD_STORAGE_SANCTIONED_REGION
+  category: Data Hosting
+  description: "Customer or data storage hosted in a sanctioned country."
+  trigger: "data_center.country_code in ['RU','IR','CU','SY','KP']"
+  score: 75
+  investigation: "Migrate storage; disable access; notify client."
+
+- code: SOFTWARE_ACCESS_BLOCKED_USER
+  category: Technology Export
+  description: "User IP address or location indicates sanctioned territory access."
+  trigger: "geoip.country_code in ['IR','SY','KP','CU']"
+  score: 80
+  investigation: "Block login; record IP logs; notify OFAC compliance."
+________________________________________
+⚖️ 8 | Evasion Red Flags (Pattern Detection)
+- code: SPLIT_TRANSACTIONS
+  category: Structuring
+  description: "Multiple small transactions below sanctions screening threshold to same party."
+  trigger: "count(transactions_to_party < $5k within 24h) ≥ 3"
+  score: 65
+  investigation: "Aggregate flows; analyze evasion intent; consider SAR filing."
+
+- code: ALTERNATE_SPELLING_EVASION
+  category: Name Variations
+  description: "Counterparty name nearly matches SDN but uses alternate spelling or language."
+  trigger: "fuzzy_name_score 0.8-0.89 AND country high_risk"
+  score: 60
+  investigation: "Manual screening; update phonetic match table; retrain model."
+________________________________________
+📊 9 | Reporting & Disclosure Controls
+- code: BLOCKED_PROPERTY_UNREPORTED
+  category: Reporting
+  description: "Blocked funds or property not reported to OFAC within 10 business days."
+  trigger: "blocked_funds_report_date - block_date > 10"
+  score: 85
+  investigation: "Submit report immediately via OFAC portal; log compliance remediation."
+
+- code: ANNUAL_REPORT_MISSING
+  category: Reporting
+  description: "Annual report of blocked property (due Sept 30) not submitted."
+  trigger: "current_date > '09-30' AND report_status=false"
+  score: 70
+  investigation: "Compile all blocked accounts; submit aggregate report."
+________________________________________
+🧩 10 | Workflow Automation & Escalation
+- code: AUTO_CREATE_OFAC_CASE
+  description: "Automatically create OFAC case when any sanction flag ≥ 70."
+  trigger: "score ≥ 70"
+  action: "Create 'OFAC Sanctions' case; lock related transaction; assign Sanctions Officer."
+
+- code: AUTO_ESCALATE_LEGAL
+  description: "Immediate legal escalation for SDN or sanctioned-country flags."
+  trigger: "flag.code in [SDN_NAME_MATCH, SANCTIONED_COUNTRY_PAYMENT, INDIRECT_SDN_OWNERSHIP]"
+  action: "Send alert to General Counsel & AML Officer; initiate legal hold."
+
+- code: MONTHLY_SANCTIONS_REPORT
+  description: "Compile monthly sanctions compliance metrics."
+  trigger: "month_end=true"
+  action: "Aggregate all OFAC cases; summarize match types, blocked funds, EDD actions."
+________________________________________
+💬 11 | Explain-This-Flag LLM Template
+prompt_template: |
+  You are an OFAC sanctions compliance analyst.
+  Explain why this transaction or entity triggered a sanctions red flag.
+  Include:
+  1. Summary of transaction (who, where, amount, channel).
+  2. Applicable sanctions program (e.g., Russia, Iran, Cuba, SDN, SSI, 50% Rule).
+  3. Risk typology (direct SDN, indirect ownership, geographic exposure, evasion pattern).
+  4. Required regulatory action (block, reject, report, license request).
+  5. Recommended next steps:
+     - Freeze assets or suspend transaction
+     - Notify OFAC within 10 days if blocked
+     - File SAR or voluntary self-disclosure if needed
+     - Strengthen screening parameters
+  Produce a factual, regulator-ready summary suitable for inclusion in an OFAC case file.
+________________________________________
+📂 12 | Data Sources to Integrate
+Domain	Systems / Data Feeds
+Payments	SWIFT MT103, ACH, SEPA, wire transfer logs
+KYC / Customer	Core banking, onboarding, CRM
+Sanctions Lists	OFAC SDN/SSI JSON feeds, EU/UN consolidated lists, Refinitiv/World-Check APIs
+Vendors	Procurement, supplier onboarding
+Trade / Shipping	Bill of Lading, customs export filings
+Crypto	Blockchain analytics (Chainalysis, TRM Labs)
+IT Systems	GeoIP, cloud access logs

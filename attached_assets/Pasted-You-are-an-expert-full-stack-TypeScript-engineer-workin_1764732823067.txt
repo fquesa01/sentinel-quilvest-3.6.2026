@@ -1,0 +1,547 @@
+You are an expert full-stack TypeScript engineer working inside Replit.  
+Build a self-contained **“Interview Module”** for a web app called **Sentinel** (an internal investigations + compliance platform).
+
+## TECH STACK
+
+- Backend: Node.js + Express + TypeScript
+- Frontend: React + TypeScript + Vite (SPA), styled with TailwindCSS
+- Data layer: In-memory store backed by a simple JSON file on disk (so it runs easily on Replit without DB setup).  
+  - Create a small data access layer that can later be swapped for a real DB.
+- Use a clean, modular file structure.
+
+## HIGH-LEVEL GOAL
+
+Implement an **Interview system** inspired by the Ribbon AI interview UI, adapted for internal investigations:
+
+- List of interviews
+- Detailed interview view with:
+  - Playback timeline (dummy audio + colored segments)
+  - Transcript with annotations
+  - Tabs: **Summary**, **Scorecard**, **Questions**
+  - Notes & documents section
+- REST API endpoints for interviews and related data
+- Mock “AI analysis” functions that generate summary, scoring, and risk flags from stored transcript segments (no real ML – just deterministic helper functions).
+
+The module should be fully working with seeded sample data so I can click around immediately after running.
+
+---
+
+## FILE STRUCTURE
+
+Create something like:
+
+- `backend/`
+  - `src/server.ts`
+  - `src/routes/interviews.ts`
+  - `src/data/store.ts`
+  - `src/data/seed.ts`
+  - `src/types.ts`
+  - `package.json`, `tsconfig.json`
+- `frontend/`
+  - `index.html`
+  - `vite.config.ts`
+  - `tsconfig.json`
+  - `src/main.tsx`
+  - `src/App.tsx`
+  - `src/api/client.ts`
+  - `src/components/layout/Sidebar.tsx`
+  - `src/components/layout/Header.tsx`
+  - `src/components/interviews/InterviewListPage.tsx`
+  - `src/components/interviews/InterviewDetailPage.tsx`
+  - `src/components/interviews/PlaybackTimeline.tsx`
+  - `src/components/interviews/TranscriptView.tsx`
+  - `src/components/interviews/tabs/SummaryTab.tsx`
+  - `src/components/interviews/tabs/ScorecardTab.tsx`
+  - `src/components/interviews/tabs/QuestionsTab.tsx`
+  - `src/components/interviews/NotesPanel.tsx`
+  - `src/components/common/Badge.tsx`
+  - `src/components/common/Tag.tsx`
+  - `src/types.ts`
+  - Tailwind setup files (`postcss.config.cjs`, `tailwind.config.cjs`, etc.)
+
+Make sure both backend and frontend have their own `package.json` with scripts:
+
+- Backend: `"dev": "ts-node-dev src/server.ts"`
+- Frontend: `"dev": "vite"`
+
+Add a simple root README that explains how to run both.
+
+---
+
+## DATA MODEL
+
+Define shared TypeScript types in both backend and frontend (`src/types.ts`) and keep them in sync.
+
+Core types:
+
+```ts
+export type RiskLevel = "low" | "medium" | "high";
+
+export interface TranscriptSegment {
+  id: string;
+  interviewId: string;
+  speaker: "AI_INTERVIEWER" | "SUBJECT";
+  startSec: number;
+  endSec: number;
+  text: string;
+  sentiment: "positive" | "neutral" | "negative";
+  stressScore: number; // 0-1
+  riskLevel: RiskLevel;
+  contradictions?: string[]; // ids of other segments or notes
+}
+
+export interface QuestionScore {
+  questionId: string;
+  label: "good" | "okay" | "poor";
+  credibility: number;   // 0-1
+  riskLevel: RiskLevel;
+}
+
+export interface Question {
+  id: string;
+  prompt: string;
+  category: "fact" | "behavior" | "compliance" | "timeline" | "other";
+}
+
+export interface Scorecard {
+  interviewScore: number;       // 0-100
+  credibilityScore: number;     // 0-100
+  complianceRiskScore: number;  // 0-100 (higher = riskier)
+  documentConflictIndex: number;// 0-100
+  questionScores: QuestionScore[];
+}
+
+export interface SummaryInsight {
+  id: string;
+  title: string;
+  body: string;
+  tag: "admission" | "denial" | "risk" | "timeline" | "policy" | "other";
+}
+
+export interface Note {
+  id: string;
+  interviewId: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  isPrivileged: boolean;
+  linkedSegmentId?: string;
+}
+
+export interface EvidenceLink {
+  id: string;
+  interviewId: string;
+  label: string;
+  type: "email" | "document" | "chat" | "other";
+  url: string;
+  relatedSegments: string[]; // TranscriptSegment ids
+}
+
+export interface Interview {
+  id: string;
+  subjectName: string;
+  subjectEmail?: string;
+  roleOrTitle: string;
+  department: string;
+  caseId: string;
+  caseTitle: string;
+  status: "invited" | "scheduled" | "in_progress" | "completed";
+  createdAt: string;
+  completedAt?: string;
+  language: string;
+  riskLevel: RiskLevel;
+  credibilityIndex: number; // 0-100
+  stressIndex: number;      // 0-100
+  evasionProbability: number;// 0-100
+  // aggregates:
+  summary: SummaryInsight[];
+  scorecard: Scorecard;
+  questions: Question[];
+}
+BACKEND REQUIREMENTS
+1. Data Store
+Implement backend/src/data/store.ts:
+
+Load initial data from a local JSON file on startup (use seed.ts to write it once).
+
+Maintain in-memory arrays for:
+
+interviews
+
+transcriptSegments
+
+notes
+
+evidenceLinks
+
+Expose simple functions:
+
+getInterviews()
+
+getInterviewById(id)
+
+getTranscriptByInterviewId(id)
+
+getNotesByInterviewId(id)
+
+addNote(note)
+
+addInterview(interview) (even if not used yet)
+
+Seed at least 3 sample interviews, each with:
+
+6–10 questions
+
+30–40 transcript segments
+
+A precomputed scorecard (but computed via helper functions so they can be recomputed).
+
+2. Mock “AI Analysis” Helpers
+Create functions that simulate analytics based on transcript content:
+
+computeScorecard(interviewId: string): Scorecard
+
+Use simple heuristics, e.g., count segments with riskLevel === "high" to increase complianceRiskScore, etc.
+
+generateSummary(interviewId: string): SummaryInsight[]
+
+Build a few bullet-style insights by scanning transcript segments (e.g., if text contains “I was told to change the numbers”, create an “admission” insight).
+
+detectContradictions(interviewId: string): void
+
+Just create fake contradictions by pairing segments with opposite sentiment or containing keywords like “never” vs “actually”.
+
+These helpers will be used when serving the detail endpoint.
+
+3. Express Server & Routes
+Implement backend/src/server.ts:
+
+Set up CORS to allow frontend at http://localhost:5173.
+
+JSON body parsing.
+
+Routes in backend/src/routes/interviews.ts:
+
+GET /api/interviews
+
+Returns list of interviews with minimal fields (id, subjectName, caseTitle, status, riskLevel, credibilityIndex, createdAt, completedAt).
+
+Support query params for:
+
+status
+
+minRiskLevel
+
+search (matches subject name, case title, or department).
+
+GET /api/interviews/:id
+
+Returns full Interview object plus:
+
+transcript: TranscriptSegment[]
+
+notes: Note[]
+
+evidence: EvidenceLink[]
+
+POST /api/interviews/:id/notes
+
+Body: { author, body, isPrivileged, linkedSegmentId? }
+
+Appends note, returns updated notes.
+
+(Optional, but nice)
+
+POST /api/interviews
+
+Accepts a minimal payload to create a new interview (for future expansion).
+
+Make sure all routes return proper TypeScript types.
+
+FRONTEND REQUIREMENTS
+1. App Shell / Layout
+In App.tsx:
+
+Use React Router with two routes:
+
+/interviews → InterviewListPage
+
+/interviews/:id → InterviewDetailPage
+
+Basic layout:
+
+Left sidebar (vertical) with:
+
+App title “Sentinel”
+
+Nav items: Dashboard (placeholder), Interviews (active), Heatmaps (placeholder), Settings (placeholder).
+
+Top header with:
+
+Page title
+
+Simple search bar
+
+User avatar placeholder
+
+Style: Dark/neutral Palantir Foundry-style:
+
+Dark sidebar, lighter content area, soft rounded cards, subtle shadows.
+
+Use Tailwind classes for all styling.
+
+2. API Client
+In frontend/src/api/client.ts:
+
+Small wrapper around fetch:
+
+getInterviews()
+
+getInterview(id)
+
+createNote(interviewId, notePayload)
+
+Prefer async functions returning typed data.
+
+3. Interview List Page
+InterviewListPage.tsx:
+
+Fetch /api/interviews on load.
+
+Show:
+
+Table or card list with columns:
+
+Subject
+
+Role/Dept
+
+Case title
+
+Status (pill/badge)
+
+Risk level (color coded: green/yellow/red)
+
+Credibility index
+
+Created / Completed dates
+
+Filters:
+
+Dropdown for Status (All, Invited, In progress, Completed)
+
+Dropdown or segmented control for Risk (All, Low, Medium, High)
+
+Search box.
+
+Clicking a row navigates to /interviews/:id.
+
+4. Interview Detail Page
+InterviewDetailPage.tsx:
+
+Layout:
+
+Top panel (header):
+
+Subject name, role, department
+
+Case id/title
+
+Status + risk badge
+
+Key metrics: Credibility Index, Stress Index, Evasion Probability (display as small pill gauges / progress bars).
+
+Main content split:
+
+Upper area: Playback timeline + mini video card
+
+Middle area: Tabs (Summary, Scorecard, Questions)
+
+Right side or lower area: Transcript + Notes panel (you choose the exact layout but keep it clean and responsive).
+
+4.1 PlaybackTimeline component
+PlaybackTimeline.tsx:
+
+Accepts an array of TranscriptSegment.
+
+Renders a horizontal bar made of flex segments whose width is proportional to endSec - startSec.
+
+Segment color logic:
+
+Speaker AI vs SUBJECT (two base colors).
+
+Overlay border or saturation if riskLevel === "high".
+
+When user clicks a segment:
+
+Highlight that segment.
+
+Scroll transcript to that segment.
+
+Include dummy audio player controls:
+
+Play / pause button.
+
+Playback speed dropdown (1x, 1.5x, 2x).
+
+Current time indicator.
+
+For now, audio is simulated (e.g., new Audio() pointing to a placeholder file or no audio at all; focus on UI wiring).
+
+4.2 TranscriptView component
+TranscriptView.tsx:
+
+Shows transcript grouped by speaker.
+
+Each TranscriptSegment row shows:
+
+Timestamp (mm:ss)
+
+Speaker label
+
+Text
+
+Badges for:
+
+sentiment
+
+stressScore bucket (Low / Medium / High)
+
+riskLevel (Low / Medium / High)
+
+If contradictions exist, show a small ⚠ icon with tooltip.
+
+Highlight the “currently selected” segment (from the timeline) with a distinct border/background.
+
+Allow clicking a transcript line to set it as the current segment.
+
+4.3 Tabs
+Use a simple tab system (no external library) to switch between:
+
+SummaryTab.tsx
+Receive interview.summary and interview.scorecard.
+
+Show:
+
+Brief narrative summary at top.
+
+Sections:
+
+Key admissions
+
+Key denials
+
+Timeline highlights
+
+Risk insights
+
+Policy references (can be simple bullet points derived from summary tags).
+
+Use pills/tags to show categories (admission, risk, etc).
+
+ScorecardTab.tsx
+Visual representation of:
+
+InterviewScore
+
+CredibilityScore
+
+ComplianceRiskScore
+
+DocumentConflictIndex
+
+Use horizontal progress bars with labels.
+
+Show table of questionScores with:
+
+Question short label (truncate)
+
+Good/Okay/Poor chip
+
+Credibility meter
+
+Risk level.
+
+QuestionsTab.tsx
+List all questions in order.
+
+For each question:
+
+Show full question text.
+
+Show the primary responsive transcript snippet (find the first segment where the speaker is SUBJECT and whose time falls in that question’s time window; or just map by id in sample data).
+
+Show question’s QuestionScore label and risk.
+
+Display any related evidence items as small links/chips.
+
+5. NotesPanel component
+NotesPanel.tsx:
+
+Shows list of notes for this interview.
+
+For each note:
+
+Author, createdAt, “Privileged” badge if isPrivileged.
+
+Body text.
+
+If linked to a segment, show a small button that, when clicked, scrolls transcript to that segment.
+
+At bottom, include a simple form:
+
+Textarea for note body
+
+Checkbox “Privileged”
+
+Optional dropdown to link to currently selected transcript segment.
+
+“Add Note” button → calls POST /api/interviews/:id/notes, updates state optimistically.
+
+DESIGN GUIDELINES
+Overall feel: clean, modern, “Palantir Foundry” style.
+
+Dark left sidebar, subtle gradients, rounded corners.
+
+Use Tailwind for all styling; configure a dark theme with:
+
+background: #0b0f19 / #111827
+
+cards: #111827 / #1f2937
+
+accents: indigo / teal for active states.
+
+Make it responsive: list and detail pages should work on laptop screens down to ~1024px width.
+
+BOOTSTRAP & INSTRUCTIONS
+Set up two npm projects: backend and frontend with the file structure described.
+
+Configure TypeScript for both (strict mode).
+
+Configure Tailwind in the frontend.
+
+Add simple root README.md with:
+
+How to install:
+
+cd backend && npm install
+
+cd frontend && npm install
+
+How to run:
+
+Backend: npm run dev on port 4000
+
+Frontend: npm run dev on port 5173
+
+Note that frontend expects backend at http://localhost:4000.
+
+After everything is generated, ensure:
+
+GET /api/interviews and GET /api/interviews/:id work.
+
+Frontend interview list loads with seeded interviews.
+
+Clicking a row opens the detailed page with timeline, transcript, tabs, and notes.
+
+Write all code completely (no “…”) so it runs as-is on Replit.

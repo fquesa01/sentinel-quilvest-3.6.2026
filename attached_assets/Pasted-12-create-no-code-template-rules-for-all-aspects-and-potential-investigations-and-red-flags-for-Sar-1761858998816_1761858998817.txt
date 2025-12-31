@@ -1,0 +1,201 @@
+12.	create no code template rules for all aspects and potential investigations and red flags for Sarbanes oaxley compliance
+
+🧾 SOX Compliance No-Code Rule Template Library (v1.0)
+meta:
+  framework: ["Sarbanes-Oxley Act of 2002", "Sections 302, 404, 802, 906"]
+  version: 1.0
+  purpose: "Detect, flag, and investigate potential SOX control violations in financial and IT systems."
+  default_thresholds:
+    critical: 70
+    high: 50
+    medium: 30
+    low: 10
+________________________________________
+🧩 1. Financial Reporting Integrity (Section 302 / 404)
+- code: MANUAL_JOURNAL_OVERRIDE
+  category: Financial Reporting
+  description: "Manual journal entries posted without independent review or approval."
+  trigger: "Journal entry manually created >$50,000 by preparer without secondary approver."
+  examples: ["End-of-quarter revenue adjustment by same user who approved it."]
+  score: 60
+  investigation: "Review justification, supporting docs, and audit trail; verify management sign-off."
+
+- code: LATE_ENTRY_POSTING
+  category: Financial Reporting
+  description: "Entries posted after period close without controller approval."
+  trigger: "Posting timestamp > period close date and no documented approval."
+  score: 45
+  investigation: "Validate late entry authorization; ensure disclosure in audit memo."
+
+- code: REVERSAL_PATTERN
+  category: Financial Reporting
+  description: "Large entry reversed within 30 days with no explanatory memo."
+  trigger: "Debit > $25 000 reversed < 30 days later."
+  score: 35
+  investigation: "Check rationale; ensure not used to shift income between periods."
+________________________________________
+🏦 2. Segregation of Duties (SOD) Controls
+- code: SOD_CONFLICT_USER
+  category: Access Control
+  description: "User holds conflicting roles: transaction creator + approver or vendor master + payment release."
+  trigger: "Role matrix conflict between Finance and Procurement modules."
+  score: 70
+  investigation: "Deactivate access; review transactions for self-approval or fraud."
+
+- code: MULTI_ROLE_ACCESS
+  category: Access Control
+  description: "User has production access in both accounting and IT systems."
+  trigger: "Same account in ERP and database admin group."
+  score: 50
+  investigation: "Review logs for unauthorized changes; apply least-privilege principle."
+
+- code: TEMP_ROLE_ESCALATION
+  category: Access Control
+  description: "Temporary admin access not revoked within allowed window."
+  trigger: "Access granted for 24 hrs; still active after 72 hrs."
+  score: 40
+  investigation: "Disable access; document root cause; update IAM process."
+________________________________________
+💻 3. IT General Controls (ITGC)
+- code: PROD_CHANGE_NO_APPROVAL
+  category: ITGC
+  description: "Production code/config changes without ticket or CAB approval."
+  trigger: "Commit or deployment in production branch lacking linked change ticket."
+  score: 55
+  investigation: "Identify responsible engineer; verify emergency-change documentation."
+
+- code: LOG_DELETION
+  category: ITGC
+  description: "System or database logs deleted or modified within 90-day retention window."
+  trigger: "Log deletion event detected on critical systems."
+  score: 65
+  investigation: "Preserve remaining logs; determine intent; escalate to CISO and audit."
+
+- code: FAILED_BACKUP
+  category: ITGC
+  description: "Critical financial database backup failed or not verified."
+  trigger: "Backup job failed > 2 days in a row."
+  score: 45
+  investigation: "Initiate backup restoration test; document remediation."
+________________________________________
+💰 4. Revenue Recognition & Expense Classification
+- code: REVENUE_PULL_FORWARD
+  category: Accounting
+  description: "Revenue recognized before shipment or service delivery."
+  trigger: "Invoice date < delivery date AND no deferred revenue entry."
+  score: 65
+  investigation: "Validate delivery evidence; adjust revenue timing; escalate to controller."
+
+- code: CAPITAL_EXPENSE_MISCLASS
+  category: Accounting
+  description: "Operating expenses capitalized without approval or capitalization policy justification."
+  trigger: "GL account starts with 1*** (asset) AND expense type ='maintenance'."
+  score: 45
+  investigation: "Review capitalization memo; verify accounting policy adherence."
+________________________________________
+📊 5. Financial Close & Consolidation
+- code: CLOSE_DEADLINE_MISS
+  category: Close Process
+  description: "Business unit missed month-end close deadline without exception approval."
+  trigger: "Entity close completion > 2 days past published calendar."
+  score: 30
+  investigation: "Document reason; assess materiality; report to controller."
+
+- code: UNAPPROVED_ADJUSTMENT
+  category: Close Process
+  description: "Top-side adjustments lacking CFO or controller signature."
+  trigger: "Top-side journal without digital approval record."
+  score: 50
+  investigation: "Obtain retroactive approval; log deficiency."
+________________________________________
+📈 6. Disclosure Controls & Certifications (302/906)
+- code: MISSING_QUARTERLY_CERT
+  category: Disclosure
+  description: "Executive officer failed to sign quarterly Section 302 certification."
+  trigger: "No certification file uploaded by deadline."
+  score: 70
+  investigation: "Escalate to compliance officer; require written explanation."
+
+- code: MISSTATEMENT_DISCLOSURE_DELAY
+  category: Disclosure
+  description: "Known misstatement not reported to disclosure committee within required window."
+  trigger: "> 10 days between issue detection and committee notification."
+  score: 60
+  investigation: "Document root cause; update escalation policy."
+________________________________________
+🔒 7. Data & Document Retention (SOX §802)
+- code: RECORD_DELETION_BEFORE_RETENTION
+  category: Records
+  description: "Financial record deleted before 7-year minimum retention."
+  trigger: "Deletion timestamp < policy_retention_date."
+  score: 75
+  investigation: "Restore backup; lock archive; notify legal for potential violation."
+
+- code: ALTERED_SUPPORT_DOC
+  category: Records
+  description: "Supporting document modified after posting without change-log."
+  trigger: "File hash mismatch or version overwrite on attached invoice."
+  score: 50
+  investigation: "Recover prior version; preserve for forensic review."
+________________________________________
+🧠 8. Fraud Indicators & Control Overrides
+- code: ROUND_DOLLAR_TRANSACTIONS
+  category: Fraud Indicators
+  description: "High-value round-dollar transactions just below approval limits."
+  trigger: "Amount % 1000 = 0 AND amount < approval_threshold."
+  score: 45
+  investigation: "Check vendor pattern; possible split transactions."
+
+- code: MANAGEMENT_OVERRIDE
+  category: Fraud Indicators
+  description: "Executive reversed or bypassed system control without documentation."
+  trigger: "Override event in audit log AND user_role ='Executive'."
+  score: 70
+  investigation: "Escalate immediately to audit committee; preserve system logs."
+
+- code: VENDOR_MASTER_CHANGES
+  category: Fraud Indicators
+  description: "Vendor bank details changed within 10 days of payment run."
+  trigger: "Vendor account change + payment scheduled < 10 days later."
+  score: 50
+  investigation: "Call vendor to confirm change; freeze payment until verified."
+________________________________________
+🧮 9. Workflow & Escalation Automation
+- code: AUTO_CASE_CREATE_SOX
+  description: "Open a SOX investigation case when any critical flag detected."
+  trigger: "score ≥ 70 OR flags [MANUAL_JOURNAL_OVERRIDE, LOG_DELETION, RECORD_DELETION_BEFORE_RETENTION]."
+  action: "Create 'SOX Compliance Investigation' case; assign Internal Audit; preserve all evidence."
+
+- code: AUTO_ESCALATE_AUDIT_COMMITTEE
+  description: "Escalate substantiated control failures to Audit Committee."
+  trigger: "case.status = 'SUBSTANTIATED' AND control_type in ['Financial Reporting','ITGC']."
+  action: "Send committee briefing + evidence pack."
+
+- code: SOX_REPORT_EXPORT
+  description: "Generate quarterly SOX 404 compliance report."
+  trigger: "Quarter close completed + all cases closed/updated."
+  action: "Compile control testing results, open deficiencies, remediation status."
+________________________________________
+💬 10. “Explain This Flag” LLM Template
+prompt_template: |
+  You are a SOX compliance analyst.
+  Explain why this control triggered a potential violation.
+  Include:
+  1. Summary of the event and control affected.
+  2. Applicable SOX section (302, 404, 802, 906).
+  3. Risk type (Financial Reporting, ITGC, Access Control, Fraud).
+  4. Possible impact on financial statements or disclosure accuracy.
+  5. Recommended next steps:
+     - Preserve logs and evidence
+     - Verify approvals and documentation
+     - Evaluate materiality
+     - Initiate remediation plan
+  Keep tone factual, concise, regulator-ready.
+________________________________________
+✅ Usage Summary
+Function	Purpose
+Triggers	Auto-flag risk events in ERP, finance, and IT systems
+Score	Quantifies severity for automatic escalation
+Investigation	Outlines next steps, documentation, and control owner
+Explain-This-Flag	LLM generates human-readable rationale for reports
+Case Automation	Creates immutable record in Audit Ledger and alerts Internal Audit

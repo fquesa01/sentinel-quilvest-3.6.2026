@@ -1,0 +1,2196 @@
+# Sentinel Counsel LLP - Intelligent Document Processing & Generation
+
+## Feature Overview
+
+This system provides two core capabilities:
+
+1. **Auto-Checklist Satisfaction**: When documents are uploaded to a deal, AI automatically classifies them and checks off matching checklist items
+1. **Deal Document Generation**: When deal terms are uploaded (LOI, Term Sheet, or structured input), AI generates transaction documents based on the firm’s past documents and templates
+
+-----
+
+## PART 1: AUTO-CHECKLIST DOCUMENT MATCHING
+
+### Database Schema
+
+```typescript
+// Document classification results
+export const documentClassifications = pgTable('document_classifications', {
+  id: serial('id').primaryKey(),
+  documentId: integer('document_id').references(() => dataRoomFiles.id).notNull(),
+  dealId: integer('deal_id').references(() => deals.id).notNull(),
+  
+  // Classification results
+  primaryClassification: varchar('primary_classification', { length: 100 }),
+  secondaryClassifications: jsonb('secondary_classifications'), // Array of possible matches
+  confidence: real('confidence'), // 0-1 confidence score
+  
+  // Matched checklist item
+  matchedChecklistItemId: integer('matched_checklist_item_id').references(() => dealChecklistItems.id),
+  matchConfidence: real('match_confidence'),
+  matchMethod: varchar('match_method', { length: 50 }), // 'ai_classification', 'keyword', 'filename', 'manual'
+  
+  // Extraction results
+  extractedMetadata: jsonb('extracted_metadata'), // Key data points extracted from doc
+  extractedParties: jsonb('extracted_parties'), // Parties identified in document
+  extractedDates: jsonb('extracted_dates'), // Important dates found
+  extractedAmounts: jsonb('extracted_amounts'), // Dollar amounts found
+  
+  // Verification
+  isVerified: boolean('is_verified').default(false),
+  verifiedBy: integer('verified_by').references(() => users.id),
+  verifiedAt: timestamp('verified_at'),
+  verificationNotes: text('verification_notes'),
+  
+  // If classification was wrong
+  wasReclassified: boolean('was_reclassified').default(false),
+  originalClassification: varchar('original_classification', { length: 100 }),
+  reclassifiedBy: integer('reclassified_by').references(() => users.id),
+  
+  classifiedAt: timestamp('classified_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Document type definitions for classification
+export const documentTypeDefinitions = pgTable('document_type_definitions', {
+  id: serial('id').primaryKey(),
+  
+  // Type identification
+  typeCode: varchar('type_code', { length: 100 }).notNull().unique(),
+  typeName: varchar('type_name', { length: 255 }).notNull(),
+  category: varchar('category', { length: 100 }), // 'contract', 'disclosure', 'title', 'financial', etc.
+  transactionType: varchar('transaction_type', { length: 100 }), // 'real_estate', 'acquisition', 'loan', 'all'
+  
+  // Classification hints
+  keywords: jsonb('keywords'), // Keywords that indicate this doc type
+  filenamePatterns: jsonb('filename_patterns'), // Regex patterns for filenames
+  contentPatterns: jsonb('content_patterns'), // Text patterns in document content
+  requiredElements: jsonb('required_elements'), // Elements that MUST be present
+  
+  // Extraction rules
+  extractionSchema: jsonb('extraction_schema'), // What data to extract from this doc type
+  
+  // Related checklist items (for matching)
+  defaultChecklistItemSlugs: jsonb('default_checklist_item_slugs'),
+  
+  // Learning
+  exampleDocumentIds: jsonb('example_document_ids'), // IDs of confirmed examples
+  
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Classification learning/feedback
+export const classificationFeedback = pgTable('classification_feedback', {
+  id: serial('id').primaryKey(),
+  documentId: integer('document_id').references(() => dataRoomFiles.id).notNull(),
+  
+  aiClassification: varchar('ai_classification', { length: 100 }),
+  correctClassification: varchar('correct_classification', { length: 100 }),
+  wasCorrect: boolean('was_correct'),
+  
+  feedbackBy: integer('feedback_by').references(() => users.id),
+  feedbackAt: timestamp('feedback_at').defaultNow(),
+  notes: text('notes'),
+});
+```
+
+### Document Type Definitions
+
+```typescript
+// seed/document-types/real-estate.ts
+
+export const realEstateDocumentTypes = [
+  // ============================================
+  // PRE-CONTRACT / LOI
+  // ============================================
+  {
+    typeCode: 'letter_of_intent',
+    typeName: 'Letter of Intent / Term Sheet',
+    category: 'contract',
+    transactionType: 'real_estate',
+    keywords: [
+      'letter of intent', 'LOI', 'term sheet', 'indication of interest',
+      'non-binding', 'proposed terms', 'expression of interest'
+    ],
+    filenamePatterns: [
+      /loi/i, /letter.?of.?intent/i, /term.?sheet/i, /ioi/i
+    ],
+    contentPatterns: [
+      'purchase price', 'earnest money', 'due diligence period',
+      'non-binding', 'proposed transaction', 'target closing'
+    ],
+    requiredElements: ['purchase_price', 'property_address'],
+    extractionSchema: {
+      purchasePrice: { type: 'currency', patterns: ['purchase price', 'price'] },
+      earnestMoney: { type: 'currency', patterns: ['earnest money', 'deposit'] },
+      dueDiligencePeriod: { type: 'duration', patterns: ['due diligence', 'inspection period'] },
+      closingDate: { type: 'date', patterns: ['closing', 'close of escrow'] },
+      propertyAddress: { type: 'address', patterns: ['property', 'premises', 'located at'] },
+      buyerName: { type: 'party', patterns: ['buyer', 'purchaser'] },
+      sellerName: { type: 'party', patterns: ['seller', 'owner'] },
+    },
+    defaultChecklistItemSlugs: ['letter-of-intent-loi-term-sheet'],
+  },
+  
+  {
+    typeCode: 'confidentiality_agreement',
+    typeName: 'Confidentiality Agreement / NDA',
+    category: 'contract',
+    transactionType: 'all',
+    keywords: [
+      'confidentiality', 'non-disclosure', 'NDA', 'confidential information',
+      'proprietary information', 'trade secrets'
+    ],
+    filenamePatterns: [
+      /nda/i, /confidentiality/i, /non.?disclosure/i
+    ],
+    contentPatterns: [
+      'confidential information', 'shall not disclose', 'receiving party',
+      'disclosing party', 'trade secrets'
+    ],
+    defaultChecklistItemSlugs: ['confidentiality-agreement-nda'],
+  },
+
+  // ============================================
+  // PURCHASE AGREEMENT
+  // ============================================
+  {
+    typeCode: 'purchase_sale_agreement',
+    typeName: 'Purchase and Sale Agreement',
+    category: 'contract',
+    transactionType: 'real_estate',
+    keywords: [
+      'purchase and sale agreement', 'PSA', 'purchase agreement', 'sale agreement',
+      'agreement of sale', 'real estate contract', 'contract for sale'
+    ],
+    filenamePatterns: [
+      /psa/i, /purchase.?(and|&)?.?sale/i, /sale.?agreement/i, /contract.?for.?sale/i
+    ],
+    contentPatterns: [
+      'agrees to sell', 'agrees to purchase', 'convey and transfer',
+      'warranties and representations', 'conditions precedent', 'closing deliveries',
+      'title insurance', 'survey', 'environmental'
+    ],
+    requiredElements: ['purchase_price', 'legal_description', 'parties', 'closing_date'],
+    extractionSchema: {
+      purchasePrice: { type: 'currency', required: true },
+      earnestMoney: { type: 'currency' },
+      additionalDeposit: { type: 'currency' },
+      effectiveDate: { type: 'date', patterns: ['effective date', 'dated as of'] },
+      dueDiligenceExpiration: { type: 'date', patterns: ['due diligence', 'inspection'] },
+      closingDate: { type: 'date', patterns: ['closing date', 'close of escrow'] },
+      buyerName: { type: 'party', required: true },
+      sellerName: { type: 'party', required: true },
+      propertyAddress: { type: 'address' },
+      legalDescription: { type: 'text', patterns: ['legal description', 'legally described'] },
+    },
+    defaultChecklistItemSlugs: ['purchase-and-sale-agreement-psa', 'executed-purchase-and-sale-agreement'],
+  },
+  
+  {
+    typeCode: 'psa_amendment',
+    typeName: 'Amendment to Purchase Agreement',
+    category: 'contract',
+    transactionType: 'real_estate',
+    keywords: [
+      'amendment', 'first amendment', 'second amendment', 'modification',
+      'extension', 'addendum'
+    ],
+    filenamePatterns: [
+      /amendment/i, /addendum/i, /modification/i
+    ],
+    contentPatterns: [
+      'hereby amended', 'modified as follows', 'extended to',
+      'all other terms', 'remain in full force'
+    ],
+    extractionSchema: {
+      amendmentNumber: { type: 'number', patterns: ['first', 'second', 'third', '1st', '2nd', '3rd'] },
+      effectiveDate: { type: 'date' },
+      changedTerms: { type: 'text', patterns: ['amended', 'modified', 'changed'] },
+      newClosingDate: { type: 'date', patterns: ['closing', 'extended'] },
+    },
+    defaultChecklistItemSlugs: ['all-amendments-to-psa'],
+  },
+  
+  {
+    typeCode: 'assignment_of_psa',
+    typeName: 'Assignment of Purchase Agreement',
+    category: 'contract',
+    transactionType: 'real_estate',
+    keywords: [
+      'assignment', 'assigns', 'assignor', 'assignee', 'assignment and assumption'
+    ],
+    filenamePatterns: [
+      /assignment/i, /assigns/i
+    ],
+    contentPatterns: [
+      'hereby assigns', 'all right, title and interest', 'assumes all obligations',
+      'assignor', 'assignee'
+    ],
+    defaultChecklistItemSlugs: ['assignment-of-purchase-agreement'],
+  },
+
+  {
+    typeCode: 'earnest_money_receipt',
+    typeName: 'Earnest Money Deposit Receipt',
+    category: 'financial',
+    transactionType: 'real_estate',
+    keywords: [
+      'earnest money', 'deposit receipt', 'escrow receipt', 'wire confirmation',
+      'funds received'
+    ],
+    filenamePatterns: [
+      /earnest/i, /deposit.?receipt/i, /escrow.?receipt/i, /wire/i
+    ],
+    contentPatterns: [
+      'received from', 'in the amount of', 'held in escrow',
+      'earnest money deposit', 'wire transfer'
+    ],
+    extractionSchema: {
+      amount: { type: 'currency', required: true },
+      receivedDate: { type: 'date' },
+      depositor: { type: 'party' },
+      escrowAgent: { type: 'party' },
+    },
+    defaultChecklistItemSlugs: ['earnest-money-deposit-initial', 'earnest-money-deposit-additional'],
+  },
+
+  // ============================================
+  // DISCLOSURES
+  // ============================================
+  {
+    typeCode: 'seller_disclosure',
+    typeName: 'Seller Disclosure Statement',
+    category: 'disclosure',
+    transactionType: 'real_estate',
+    keywords: [
+      'seller disclosure', 'property disclosure', 'disclosure statement',
+      'seller\'s disclosure', 'condition of property'
+    ],
+    filenamePatterns: [
+      /seller.?disclosure/i, /property.?disclosure/i, /disclosure.?statement/i
+    ],
+    contentPatterns: [
+      'seller represents', 'to the best of seller\'s knowledge',
+      'condition of the property', 'known defects', 'material facts'
+    ],
+    defaultChecklistItemSlugs: ['seller-disclosure-statement'],
+  },
+  
+  {
+    typeCode: 'lead_paint_disclosure',
+    typeName: 'Lead-Based Paint Disclosure',
+    category: 'disclosure',
+    transactionType: 'real_estate',
+    keywords: [
+      'lead-based paint', 'lead paint', 'lead disclosure', 'EPA',
+      'pre-1978', 'lead hazard'
+    ],
+    filenamePatterns: [
+      /lead/i, /lbp/i
+    ],
+    contentPatterns: [
+      'lead-based paint', 'constructed prior to 1978', 'lead hazard',
+      'EPA pamphlet', 'protect your family'
+    ],
+    defaultChecklistItemSlugs: ['lead-based-paint-disclosure'],
+  },
+
+  {
+    typeCode: 'radon_disclosure',
+    typeName: 'Radon Disclosure',
+    category: 'disclosure',
+    transactionType: 'real_estate',
+    keywords: [
+      'radon', 'radon gas', 'radon disclosure', 'radon test'
+    ],
+    filenamePatterns: [
+      /radon/i
+    ],
+    contentPatterns: [
+      'radon gas', 'radon test', 'picocuries', 'radon mitigation'
+    ],
+    defaultChecklistItemSlugs: ['radon-disclosure'],
+  },
+
+  // ============================================
+  // TITLE DOCUMENTS
+  // ============================================
+  {
+    typeCode: 'title_commitment',
+    typeName: 'Title Commitment / Preliminary Title Report',
+    category: 'title',
+    transactionType: 'real_estate',
+    keywords: [
+      'title commitment', 'preliminary title', 'title report', 'commitment for title',
+      'schedule a', 'schedule b'
+    ],
+    filenamePatterns: [
+      /title.?commitment/i, /prelim/i, /title.?report/i, /commitment/i
+    ],
+    contentPatterns: [
+      'schedule a', 'schedule b', 'requirements', 'exceptions',
+      'fee simple', 'vested in', 'title insurance', 'proposed insured'
+    ],
+    requiredElements: ['schedule_a', 'schedule_b'],
+    extractionSchema: {
+      commitmentNumber: { type: 'text', patterns: ['commitment no', 'file no'] },
+      effectiveDate: { type: 'date', patterns: ['effective date'] },
+      titleCompany: { type: 'party' },
+      proposedInsured: { type: 'party' },
+      policyAmount: { type: 'currency', patterns: ['amount', 'policy amount'] },
+      currentOwner: { type: 'party', patterns: ['vested in', 'owner'] },
+      legalDescription: { type: 'text' },
+    },
+    defaultChecklistItemSlugs: ['title-commitment-preliminary-title-report'],
+  },
+
+  {
+    typeCode: 'title_exception_document',
+    typeName: 'Title Exception Document',
+    category: 'title',
+    transactionType: 'real_estate',
+    keywords: [
+      'easement', 'covenant', 'restriction', 'declaration', 'encumbrance',
+      'right of way', 'CC&R', 'plat'
+    ],
+    filenamePatterns: [
+      /easement/i, /covenant/i, /restriction/i, /declaration/i, /cc&?r/i, /plat/i
+    ],
+    contentPatterns: [
+      'grants and conveys', 'right of way', 'easement for',
+      'restrictive covenant', 'declaration of', 'recorded in'
+    ],
+    defaultChecklistItemSlugs: ['title-exception-documents'],
+  },
+
+  {
+    typeCode: 'survey',
+    typeName: 'ALTA/NSPS Survey',
+    category: 'title',
+    transactionType: 'real_estate',
+    keywords: [
+      'ALTA', 'NSPS', 'survey', 'boundary survey', 'land survey',
+      'surveyor', 'plat'
+    ],
+    filenamePatterns: [
+      /survey/i, /alta/i, /nsps/i, /plat/i
+    ],
+    contentPatterns: [
+      'certified to', 'surveyed by', 'ALTA/NSPS', 'boundary',
+      'legal description', 'easement', 'encroachment'
+    ],
+    extractionSchema: {
+      surveyDate: { type: 'date' },
+      surveyor: { type: 'party' },
+      certifiedTo: { type: 'array', patterns: ['certified to'] },
+      acreage: { type: 'number', patterns: ['acres', 'square feet'] },
+    },
+    defaultChecklistItemSlugs: ['alta-survey-existing', 'alta-survey-updated-new'],
+  },
+
+  {
+    typeCode: 'title_policy',
+    typeName: 'Title Insurance Policy',
+    category: 'title',
+    transactionType: 'real_estate',
+    keywords: [
+      'title policy', 'owner\'s policy', 'title insurance policy',
+      'insures', 'policy of title insurance'
+    ],
+    filenamePatterns: [
+      /title.?policy/i, /owner.?policy/i
+    ],
+    contentPatterns: [
+      'policy of title insurance', 'insures against loss', 'subject to',
+      'covered risks', 'exclusions from coverage'
+    ],
+    defaultChecklistItemSlugs: ['owners-title-policy-issued', 'pro-forma-title-policy'],
+  },
+
+  // ============================================
+  // ENVIRONMENTAL
+  // ============================================
+  {
+    typeCode: 'phase_i_esa',
+    typeName: 'Phase I Environmental Site Assessment',
+    category: 'environmental',
+    transactionType: 'real_estate',
+    keywords: [
+      'Phase I', 'Phase 1', 'ESA', 'environmental site assessment',
+      'ASTM', 'environmental report', 'recognized environmental conditions'
+    ],
+    filenamePatterns: [
+      /phase.?[i1]/i, /esa/i, /environmental/i
+    ],
+    contentPatterns: [
+      'ASTM', 'recognized environmental conditions', 'REC',
+      'historical research', 'site reconnaissance', 'regulatory database'
+    ],
+    extractionSchema: {
+      reportDate: { type: 'date' },
+      consultant: { type: 'party' },
+      recsIdentified: { type: 'boolean', patterns: ['recognized environmental condition', 'REC'] },
+      recommendations: { type: 'text', patterns: ['recommend', 'further investigation'] },
+    },
+    defaultChecklistItemSlugs: ['phase-i-environmental-site-assessment'],
+  },
+
+  {
+    typeCode: 'phase_ii_esa',
+    typeName: 'Phase II Environmental Site Assessment',
+    category: 'environmental',
+    transactionType: 'real_estate',
+    keywords: [
+      'Phase II', 'Phase 2', 'subsurface investigation', 'soil sampling',
+      'groundwater sampling'
+    ],
+    filenamePatterns: [
+      /phase.?[ii2]/i, /subsurface/i
+    ],
+    contentPatterns: [
+      'soil boring', 'groundwater', 'sampling', 'laboratory analysis',
+      'contaminant', 'remediation'
+    ],
+    defaultChecklistItemSlugs: ['phase-ii-environmental-assessment'],
+  },
+
+  // ============================================
+  // PROPERTY CONDITION
+  // ============================================
+  {
+    typeCode: 'property_condition_report',
+    typeName: 'Property Condition Assessment (PCA)',
+    category: 'engineering',
+    transactionType: 'real_estate',
+    keywords: [
+      'property condition', 'PCA', 'engineering report', 'building assessment',
+      'physical condition', 'capital needs'
+    ],
+    filenamePatterns: [
+      /pca/i, /property.?condition/i, /engineering/i, /building.?assessment/i
+    ],
+    contentPatterns: [
+      'physical condition', 'immediate repairs', 'capital reserves',
+      'remaining useful life', 'deferred maintenance'
+    ],
+    extractionSchema: {
+      reportDate: { type: 'date' },
+      engineer: { type: 'party' },
+      immediateRepairs: { type: 'currency' },
+      capitalReserves: { type: 'currency' },
+    },
+    defaultChecklistItemSlugs: ['property-condition-assessment-pca'],
+  },
+
+  // ============================================
+  // ZONING
+  // ============================================
+  {
+    typeCode: 'zoning_report',
+    typeName: 'Zoning Report / Letter',
+    category: 'zoning',
+    transactionType: 'real_estate',
+    keywords: [
+      'zoning', 'zoning report', 'zoning letter', 'zoning compliance',
+      'permitted use', 'zoning district'
+    ],
+    filenamePatterns: [
+      /zoning/i
+    ],
+    contentPatterns: [
+      'zoning district', 'permitted use', 'setback', 'FAR', 'floor area ratio',
+      'parking requirements', 'height restriction'
+    ],
+    defaultChecklistItemSlugs: ['zoning-report-letter'],
+  },
+
+  {
+    typeCode: 'certificate_of_occupancy',
+    typeName: 'Certificate of Occupancy',
+    category: 'zoning',
+    transactionType: 'real_estate',
+    keywords: [
+      'certificate of occupancy', 'CO', 'C of O', 'occupancy permit',
+      'use and occupancy'
+    ],
+    filenamePatterns: [
+      /c\.?o\.?/i, /certificate.?of.?occupancy/i, /occupancy/i
+    ],
+    contentPatterns: [
+      'permitted to occupy', 'certificate of occupancy', 'complies with',
+      'building code', 'zoning ordinance'
+    ],
+    defaultChecklistItemSlugs: ['certificate-of-occupancy'],
+  },
+
+  // ============================================
+  // LEASES
+  // ============================================
+  {
+    typeCode: 'lease_agreement',
+    typeName: 'Lease Agreement',
+    category: 'lease',
+    transactionType: 'real_estate',
+    keywords: [
+      'lease', 'lease agreement', 'rental agreement', 'landlord', 'tenant',
+      'premises', 'term', 'rent'
+    ],
+    filenamePatterns: [
+      /lease/i, /rental.?agreement/i
+    ],
+    contentPatterns: [
+      'landlord', 'tenant', 'leased premises', 'term of lease',
+      'base rent', 'security deposit', 'common area'
+    ],
+    extractionSchema: {
+      landlord: { type: 'party', required: true },
+      tenant: { type: 'party', required: true },
+      premises: { type: 'text', patterns: ['suite', 'unit', 'premises'] },
+      squareFeet: { type: 'number', patterns: ['square feet', 'sf', 'rsf'] },
+      baseRent: { type: 'currency', patterns: ['base rent', 'monthly rent'] },
+      commencementDate: { type: 'date', patterns: ['commencement', 'lease start'] },
+      expirationDate: { type: 'date', patterns: ['expiration', 'term end', 'lease end'] },
+      securityDeposit: { type: 'currency', patterns: ['security deposit'] },
+    },
+    defaultChecklistItemSlugs: ['all-lease-agreements'],
+  },
+
+  {
+    typeCode: 'lease_amendment',
+    typeName: 'Lease Amendment',
+    category: 'lease',
+    transactionType: 'real_estate',
+    keywords: [
+      'lease amendment', 'amendment to lease', 'lease modification',
+      'first amendment', 'second amendment'
+    ],
+    filenamePatterns: [
+      /lease.?amendment/i, /amendment.?to.?lease/i
+    ],
+    contentPatterns: [
+      'hereby amended', 'lease is modified', 'extended', 'renewed'
+    ],
+    defaultChecklistItemSlugs: ['lease-amendments-and-modifications'],
+  },
+
+  {
+    typeCode: 'tenant_estoppel',
+    typeName: 'Tenant Estoppel Certificate',
+    category: 'lease',
+    transactionType: 'real_estate',
+    keywords: [
+      'estoppel', 'tenant estoppel', 'estoppel certificate'
+    ],
+    filenamePatterns: [
+      /estoppel/i
+    ],
+    contentPatterns: [
+      'certifies', 'represents and warrants', 'no default',
+      'security deposit', 'rent has been paid', 'lease is in full force'
+    ],
+    extractionSchema: {
+      tenant: { type: 'party', required: true },
+      certificationDate: { type: 'date' },
+      currentRent: { type: 'currency' },
+      securityDeposit: { type: 'currency' },
+      leaseExpiration: { type: 'date' },
+      defaults: { type: 'boolean', patterns: ['default', 'breach'] },
+    },
+    defaultChecklistItemSlugs: ['tenant-estoppel-certificates'],
+  },
+
+  {
+    typeCode: 'rent_roll',
+    typeName: 'Rent Roll',
+    category: 'financial',
+    transactionType: 'real_estate',
+    keywords: [
+      'rent roll', 'tenant schedule', 'lease schedule', 'tenant roster'
+    ],
+    filenamePatterns: [
+      /rent.?roll/i, /tenant.?schedule/i
+    ],
+    contentPatterns: [
+      'tenant', 'unit', 'rent', 'lease expiration', 'security deposit',
+      'vacancy'
+    ],
+    defaultChecklistItemSlugs: ['rent-roll-current-certified'],
+  },
+
+  {
+    typeCode: 'snda',
+    typeName: 'Subordination, Non-Disturbance & Attornment Agreement',
+    category: 'lease',
+    transactionType: 'real_estate',
+    keywords: [
+      'SNDA', 'subordination', 'non-disturbance', 'attornment'
+    ],
+    filenamePatterns: [
+      /snda/i, /subordination/i
+    ],
+    contentPatterns: [
+      'subordinates', 'non-disturbance', 'attornment', 'lender', 'mortgage'
+    ],
+    defaultChecklistItemSlugs: ['snda-agreements'],
+  },
+
+  // ============================================
+  // FINANCIAL DOCUMENTS
+  // ============================================
+  {
+    typeCode: 'operating_statement',
+    typeName: 'Operating Statement / P&L',
+    category: 'financial',
+    transactionType: 'real_estate',
+    keywords: [
+      'operating statement', 'income statement', 'P&L', 'profit and loss',
+      'NOI', 'net operating income'
+    ],
+    filenamePatterns: [
+      /operating/i, /p&?l/i, /income.?statement/i, /financials/i
+    ],
+    contentPatterns: [
+      'revenue', 'expenses', 'net operating income', 'NOI',
+      'gross income', 'vacancy', 'operating expenses'
+    ],
+    defaultChecklistItemSlugs: ['historical-operating-statements-3-years'],
+  },
+
+  {
+    typeCode: 'property_tax_bill',
+    typeName: 'Property Tax Bill',
+    category: 'financial',
+    transactionType: 'real_estate',
+    keywords: [
+      'property tax', 'tax bill', 'real estate tax', 'ad valorem',
+      'tax assessment'
+    ],
+    filenamePatterns: [
+      /tax.?bill/i, /property.?tax/i
+    ],
+    contentPatterns: [
+      'assessed value', 'tax amount', 'millage', 'due date',
+      'parcel', 'folio'
+    ],
+    defaultChecklistItemSlugs: ['property-tax-bills-3-years'],
+  },
+
+  {
+    typeCode: 'insurance_certificate',
+    typeName: 'Certificate of Insurance',
+    category: 'insurance',
+    transactionType: 'real_estate',
+    keywords: [
+      'certificate of insurance', 'COI', 'insurance certificate',
+      'ACORD', 'evidence of insurance'
+    ],
+    filenamePatterns: [
+      /coi/i, /insurance.?cert/i, /acord/i
+    ],
+    contentPatterns: [
+      'certificate holder', 'insured', 'coverage', 'policy number',
+      'effective date', 'expiration date', 'general liability'
+    ],
+    defaultChecklistItemSlugs: ['insurance-certificates-policies'],
+  },
+
+  // ============================================
+  // FINANCING DOCUMENTS
+  // ============================================
+  {
+    typeCode: 'loan_commitment',
+    typeName: 'Loan Commitment Letter',
+    category: 'financing',
+    transactionType: 'real_estate',
+    keywords: [
+      'loan commitment', 'commitment letter', 'term sheet', 'financing commitment'
+    ],
+    filenamePatterns: [
+      /loan.?commit/i, /commitment.?letter/i, /financing/i
+    ],
+    contentPatterns: [
+      'committed to lend', 'loan amount', 'interest rate', 'term',
+      'conditions precedent', 'closing conditions'
+    ],
+    extractionSchema: {
+      loanAmount: { type: 'currency', required: true },
+      interestRate: { type: 'percentage' },
+      term: { type: 'duration' },
+      lender: { type: 'party' },
+      borrower: { type: 'party' },
+    },
+    defaultChecklistItemSlugs: ['loan-term-sheet-commitment'],
+  },
+
+  {
+    typeCode: 'appraisal',
+    typeName: 'Appraisal Report',
+    category: 'financing',
+    transactionType: 'real_estate',
+    keywords: [
+      'appraisal', 'MAI', 'market value', 'appraised value'
+    ],
+    filenamePatterns: [
+      /appraisal/i, /mai/i
+    ],
+    contentPatterns: [
+      'market value', 'appraised value', 'comparable sales',
+      'income approach', 'cost approach', 'MAI', 'as-is value'
+    ],
+    extractionSchema: {
+      appraisedValue: { type: 'currency', required: true },
+      effectiveDate: { type: 'date' },
+      appraiser: { type: 'party' },
+    },
+    defaultChecklistItemSlugs: ['appraisal'],
+  },
+
+  // ============================================
+  // CLOSING DOCUMENTS
+  // ============================================
+  {
+    typeCode: 'deed',
+    typeName: 'Deed',
+    category: 'closing',
+    transactionType: 'real_estate',
+    keywords: [
+      'deed', 'warranty deed', 'special warranty deed', 'grant deed',
+      'quitclaim deed', 'bargain and sale'
+    ],
+    filenamePatterns: [
+      /deed/i
+    ],
+    contentPatterns: [
+      'grants, bargains', 'conveys and warrants', 'grantor', 'grantee',
+      'legal description', 'consideration'
+    ],
+    defaultChecklistItemSlugs: ['deed-draft', 'recorded-deed-received'],
+  },
+
+  {
+    typeCode: 'settlement_statement',
+    typeName: 'Settlement Statement / Closing Statement',
+    category: 'closing',
+    transactionType: 'real_estate',
+    keywords: [
+      'settlement statement', 'closing statement', 'HUD', 'ALTA settlement',
+      'closing disclosure'
+    ],
+    filenamePatterns: [
+      /settlement/i, /closing.?statement/i, /hud/i
+    ],
+    contentPatterns: [
+      'settlement charges', 'prorations', 'adjustments',
+      'buyer credits', 'seller credits', 'disbursements'
+    ],
+    defaultChecklistItemSlugs: ['settlement-statement-draft', 'settlement-statement-approved'],
+  },
+
+  {
+    typeCode: 'bill_of_sale',
+    typeName: 'Bill of Sale',
+    category: 'closing',
+    transactionType: 'real_estate',
+    keywords: [
+      'bill of sale', 'personal property', 'FF&E', 'tangible property'
+    ],
+    filenamePatterns: [
+      /bill.?of.?sale/i
+    ],
+    contentPatterns: [
+      'sells, transfers', 'personal property', 'as-is', 'FF&E',
+      'furniture, fixtures and equipment'
+    ],
+    defaultChecklistItemSlugs: ['bill-of-sale'],
+  },
+
+  {
+    typeCode: 'assignment_of_leases',
+    typeName: 'Assignment and Assumption of Leases',
+    category: 'closing',
+    transactionType: 'real_estate',
+    keywords: [
+      'assignment of leases', 'assumption of leases', 'lease assignment'
+    ],
+    filenamePatterns: [
+      /assignment.?of.?leases/i, /lease.?assignment/i
+    ],
+    contentPatterns: [
+      'assigns and transfers', 'assumes all obligations', 'tenant leases',
+      'security deposits'
+    ],
+    defaultChecklistItemSlugs: ['assignment-of-leases'],
+  },
+
+  {
+    typeCode: 'firpta_certificate',
+    typeName: 'FIRPTA Certificate',
+    category: 'closing',
+    transactionType: 'real_estate',
+    keywords: [
+      'FIRPTA', 'non-foreign', 'foreign investment', 'withholding'
+    ],
+    filenamePatterns: [
+      /firpta/i, /non.?foreign/i
+    ],
+    contentPatterns: [
+      'not a foreign person', 'FIRPTA', 'withholding', 'taxpayer identification'
+    ],
+    defaultChecklistItemSlugs: ['firpta-certificate-affidavit'],
+  },
+];
+```
+
+### Document Classification AI Prompt
+
+```typescript
+const DOCUMENT_CLASSIFICATION_PROMPT = `
+You are an expert legal document classifier for real estate transactions. Your job is to analyze uploaded documents and determine their type and extract key information.
+
+Given a document (text content or image), classify it into one of these categories and extract relevant data.
+
+## CLASSIFICATION TASK
+
+Analyze the document and provide:
+
+1. **Primary Classification**: The most likely document type
+2. **Confidence Score**: 0-100% confidence in classification
+3. **Secondary Classifications**: Other possible document types if uncertain
+4. **Key Indicators**: What elements led to this classification
+
+## AVAILABLE DOCUMENT TYPES
+
+{documentTypesJson}
+
+## EXTRACTION TASK
+
+Based on the document type, extract:
+- Parties (buyer, seller, landlord, tenant, lender, etc.)
+- Key dates (effective date, closing date, expiration, etc.)
+- Dollar amounts (purchase price, rent, deposits, etc.)
+- Property information (address, legal description, parcel ID)
+- Any other type-specific data per the extraction schema
+
+## RESPONSE FORMAT
+
+{
+  "classification": {
+    "primaryType": "document_type_code",
+    "confidence": 0.95,
+    "secondaryTypes": [
+      { "type": "alternative_type", "confidence": 0.15 }
+    ],
+    "indicators": [
+      "Found 'Purchase and Sale Agreement' in title",
+      "Contains Schedule A and Schedule B sections",
+      "References earnest money deposit"
+    ]
+  },
+  "extraction": {
+    "parties": {
+      "buyer": "ABC Acquisitions LLC",
+      "seller": "XYZ Properties Inc."
+    },
+    "dates": {
+      "effectiveDate": "2024-01-15",
+      "closingDate": "2024-03-15",
+      "dueDiligenceExpiration": "2024-02-15"
+    },
+    "amounts": {
+      "purchasePrice": 5000000,
+      "earnestMoney": 100000
+    },
+    "property": {
+      "address": "123 Main Street, Miami, FL 33131",
+      "legalDescription": "Lot 1, Block 2, Example Subdivision...",
+      "parcelId": "01-2345-678-9012"
+    },
+    "additional": {
+      // Any type-specific extracted data
+    }
+  },
+  "checklistMatch": {
+    "suggestedItems": ["purchase-and-sale-agreement-psa"],
+    "matchConfidence": 0.92
+  },
+  "warnings": [
+    // Any issues or things to verify manually
+  ]
+}
+
+## CLASSIFICATION RULES
+
+1. If document has signatures, it's likely an EXECUTED version
+2. If document has "DRAFT" watermark or says "draft" - note this
+3. Amendments should be classified as amendments, not the original doc type
+4. If multiple doc types seem possible, pick the most specific one
+5. If truly uncertain (<60% confidence), flag for manual review
+
+## IMPORTANT
+
+- Extract dates in ISO 8601 format (YYYY-MM-DD)
+- Extract amounts as numbers without currency symbols
+- If a field is not found, set to null rather than guessing
+- Flag any unusual or concerning provisions found
+`;
+```
+
+### Auto-Matching Service
+
+```typescript
+// services/document-classifier.ts
+
+export class DocumentClassificationService {
+  private documentTypes: DocumentTypeDefinition[];
+  private openai: OpenAI;
+
+  async classifyAndMatch(
+    documentId: number,
+    dealId: number,
+    content: string | Buffer,
+    filename: string
+  ): Promise<ClassificationResult> {
+    
+    // Step 1: Quick filename-based pre-classification
+    const filenameHints = this.getFilenameHints(filename);
+    
+    // Step 2: AI Classification
+    const aiClassification = await this.classifyWithAI(content, filename, filenameHints);
+    
+    // Step 3: Find matching checklist items
+    const checklistMatches = await this.findChecklistMatches(
+      dealId,
+      aiClassification.classification.primaryType
+    );
+    
+    // Step 4: Auto-assign if high confidence
+    if (aiClassification.classification.confidence >= 0.85 && checklistMatches.length > 0) {
+      const bestMatch = checklistMatches[0];
+      
+      // Link document to checklist item
+      await this.linkDocumentToChecklistItem(documentId, bestMatch.id);
+      
+      // Update checklist item status if document requirement met
+      await this.updateChecklistItemStatus(bestMatch.id, documentId);
+    }
+    
+    // Step 5: Store classification results
+    await this.storeClassification(documentId, dealId, aiClassification, checklistMatches);
+    
+    return {
+      classification: aiClassification,
+      checklistMatches,
+      autoAssigned: aiClassification.classification.confidence >= 0.85,
+    };
+  }
+
+  private async findChecklistMatches(dealId: number, documentType: string): Promise<ChecklistItem[]> {
+    // Get the deal's active checklist
+    const checklist = await db.query.dealChecklists.findFirst({
+      where: eq(dealChecklists.dealId, dealId),
+      with: {
+        items: {
+          with: {
+            templateItem: true,
+          },
+        },
+      },
+    });
+
+    if (!checklist) return [];
+
+    // Find the document type definition
+    const docTypeDef = this.documentTypes.find(dt => dt.typeCode === documentType);
+    if (!docTypeDef) return [];
+
+    // Match against checklist items
+    const matches: ChecklistItem[] = [];
+    
+    for (const item of checklist.items) {
+      // Check by slug match
+      if (docTypeDef.defaultChecklistItemSlugs?.includes(item.templateItem.slug)) {
+        matches.push(item);
+        continue;
+      }
+      
+      // Check by keyword match in item name
+      const itemNameLower = item.templateItem.name.toLowerCase();
+      const matchesKeyword = docTypeDef.keywords.some(kw => 
+        itemNameLower.includes(kw.toLowerCase())
+      );
+      if (matchesKeyword) {
+        matches.push(item);
+      }
+    }
+
+    return matches;
+  }
+
+  private async updateChecklistItemStatus(
+    checklistItemId: number,
+    documentId: number
+  ): Promise<void> {
+    const item = await db.query.dealChecklistItems.findFirst({
+      where: eq(dealChecklistItems.id, checklistItemId),
+      with: {
+        templateItem: true,
+        documents: true,
+      },
+    });
+
+    if (!item) return;
+
+    const requiredDocs = item.templateItem.requiredDocumentCount || 1;
+    const currentDocs = item.documents.length + 1; // +1 for the new doc
+
+    if (currentDocs >= requiredDocs) {
+      // Mark as complete
+      await db.update(dealChecklistItems)
+        .set({
+          status: 'complete',
+          satisfactionMethod: 'document',
+          satisfiedAt: new Date(),
+        })
+        .where(eq(dealChecklistItems.id, checklistItemId));
+    } else if (item.status === 'pending') {
+      // Mark as in progress
+      await db.update(dealChecklistItems)
+        .set({ status: 'in_progress' })
+        .where(eq(dealChecklistItems.id, checklistItemId));
+    }
+  }
+}
+```
+
+-----
+
+## PART 2: DEAL DOCUMENT GENERATION
+
+### Database Schema
+
+```typescript
+// Deal terms extraction
+export const dealTerms = pgTable('deal_terms', {
+  id: serial('id').primaryKey(),
+  dealId: integer('deal_id').references(() => deals.id).notNull(),
+  
+  // Source of terms
+  sourceType: varchar('source_type', { length: 50 }),
+  // 'loi', 'term_sheet', 'manual_entry', 'psa_extraction'
+  sourceDocumentId: integer('source_document_id').references(() => dataRoomFiles.id),
+  
+  // ============================================
+  // PROPERTY INFORMATION
+  // ============================================
+  propertyName: varchar('property_name', { length: 255 }),
+  propertyAddress: text('property_address'),
+  propertyCity: varchar('property_city', { length: 100 }),
+  propertyState: varchar('property_state', { length: 50 }),
+  propertyZip: varchar('property_zip', { length: 20 }),
+  propertyCounty: varchar('property_county', { length: 100 }),
+  legalDescription: text('legal_description'),
+  parcelId: varchar('parcel_id', { length: 100 }),
+  propertyType: varchar('property_type', { length: 100 }),
+  // 'office', 'retail', 'industrial', 'multifamily', 'mixed_use', 'land', 'hospitality'
+  squareFeet: integer('square_feet'),
+  acreage: decimal('acreage', { precision: 10, scale: 4 }),
+  units: integer('units'), // For multifamily
+  yearBuilt: integer('year_built'),
+  
+  // ============================================
+  // PARTIES
+  // ============================================
+  // Buyer
+  buyerName: varchar('buyer_name', { length: 255 }),
+  buyerEntityType: varchar('buyer_entity_type', { length: 50 }),
+  // 'llc', 'lp', 'corporation', 'individual', 'trust'
+  buyerStateOfFormation: varchar('buyer_state_of_formation', { length: 50 }),
+  buyerAddress: text('buyer_address'),
+  buyerSignerName: varchar('buyer_signer_name', { length: 255 }),
+  buyerSignerTitle: varchar('buyer_signer_title', { length: 100 }),
+  
+  // Seller
+  sellerName: varchar('seller_name', { length: 255 }),
+  sellerEntityType: varchar('seller_entity_type', { length: 50 }),
+  sellerStateOfFormation: varchar('seller_state_of_formation', { length: 50 }),
+  sellerAddress: text('seller_address'),
+  sellerSignerName: varchar('seller_signer_name', { length: 255 }),
+  sellerSignerTitle: varchar('seller_signer_title', { length: 100 }),
+  
+  // Escrow Agent / Title Company
+  escrowAgentName: varchar('escrow_agent_name', { length: 255 }),
+  escrowAgentAddress: text('escrow_agent_address'),
+  escrowAgentContact: varchar('escrow_agent_contact', { length: 255 }),
+  escrowAgentEmail: varchar('escrow_agent_email', { length: 255 }),
+  
+  // ============================================
+  // FINANCIAL TERMS
+  // ============================================
+  purchasePrice: decimal('purchase_price', { precision: 18, scale: 2 }),
+  
+  // Deposits
+  initialDeposit: decimal('initial_deposit', { precision: 18, scale: 2 }),
+  initialDepositDays: integer('initial_deposit_days'), // Days after execution
+  additionalDeposit: decimal('additional_deposit', { precision: 18, scale: 2 }),
+  additionalDepositTrigger: varchar('additional_deposit_trigger', { length: 100 }),
+  // 'dd_expiration', 'specific_date', 'contingency_waiver'
+  depositHardDate: date('deposit_hard_date'), // When deposit goes hard
+  
+  // ============================================
+  // KEY DATES & PERIODS
+  // ============================================
+  effectiveDate: date('effective_date'),
+  
+  // Due Diligence
+  dueDiligencePeriodDays: integer('due_diligence_period_days'),
+  dueDiligenceExpiration: date('due_diligence_expiration'),
+  
+  // Financing Contingency
+  hasFinancingContingency: boolean('has_financing_contingency').default(false),
+  financingContingencyDays: integer('financing_contingency_days'),
+  financingContingencyExpiration: date('financing_contingency_expiration'),
+  
+  // Closing
+  closingDate: date('closing_date'),
+  closingExtensionDays: integer('closing_extension_days'),
+  closingExtensionFee: decimal('closing_extension_fee', { precision: 18, scale: 2 }),
+  
+  // ============================================
+  // TITLE & SURVEY
+  // ============================================
+  titleObjectionPeriodDays: integer('title_objection_period_days'),
+  surveyObjectionPeriodDays: integer('survey_objection_period_days'),
+  titleCurePeriodDays: integer('title_cure_period_days'),
+  titleInsuranceAmount: decimal('title_insurance_amount', { precision: 18, scale: 2 }),
+  
+  // ============================================
+  // REPRESENTATIONS & WARRANTIES
+  // ============================================
+  repsSurvivalMonths: integer('reps_survival_months'),
+  repsCap: decimal('reps_cap', { precision: 18, scale: 2 }), // Cap on seller liability
+  repsBasket: decimal('reps_basket', { precision: 18, scale: 2 }), // Deductible
+  
+  // ============================================
+  // SPECIAL CONDITIONS
+  // ============================================
+  specialConditions: jsonb('special_conditions'),
+  // Array of: { condition: "...", party: "buyer|seller", deadline: "date" }
+  
+  // ============================================
+  // ADDITIONAL TERMS (freeform JSON)
+  // ============================================
+  additionalTerms: jsonb('additional_terms'),
+  
+  // ============================================
+  // STATUS
+  // ============================================
+  isComplete: boolean('is_complete').default(false),
+  lastUpdatedBy: integer('last_updated_by').references(() => users.id),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Document templates (firm's past documents)
+export const documentTemplates = pgTable('document_templates', {
+  id: serial('id').primaryKey(),
+  organizationId: integer('organization_id'),
+  
+  // Template identification
+  name: varchar('name', { length: 255 }).notNull(),
+  documentType: varchar('document_type', { length: 100 }).notNull(),
+  // 'psa', 'amendment', 'assignment', 'deed', 'bill_of_sale', 'closing_certificate', etc.
+  
+  transactionType: varchar('transaction_type', { length: 100 }),
+  // 'real_estate', 'acquisition', 'loan'
+  
+  propertyType: varchar('property_type', { length: 100 }),
+  // 'office', 'retail', 'multifamily', 'industrial', 'all'
+  
+  jurisdiction: varchar('jurisdiction', { length: 50 }),
+  // State code or 'all'
+  
+  // Source document
+  sourceDocumentId: integer('source_document_id').references(() => dataRoomFiles.id),
+  
+  // Processed template
+  templateContent: text('template_content'), // With placeholders
+  templateFormat: varchar('template_format', { length: 20 }), // 'docx', 'html', 'markdown'
+  
+  // Variables/placeholders used in this template
+  variables: jsonb('variables'),
+  // [{ name: "purchasePrice", type: "currency", required: true }, ...]
+  
+  // Template metadata
+  description: text('description'),
+  version: integer('version').default(1),
+  isActive: boolean('is_active').default(true),
+  isDefault: boolean('is_default').default(false),
+  
+  // Quality/usage tracking
+  usageCount: integer('usage_count').default(0),
+  lastUsedAt: timestamp('last_used_at'),
+  rating: real('rating'), // User ratings
+  
+  // Learning metadata
+  sourceTransactionType: varchar('source_transaction_type', { length: 100 }),
+  sourceClosingDate: date('source_closing_date'),
+  
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Generated documents
+export const generatedDocuments = pgTable('generated_documents', {
+  id: serial('id').primaryKey(),
+  dealId: integer('deal_id').references(() => deals.id).notNull(),
+  
+  documentType: varchar('document_type', { length: 100 }).notNull(),
+  documentName: varchar('document_name', { length: 255 }),
+  
+  // Source template used
+  templateId: integer('template_id').references(() => documentTemplates.id),
+  
+  // Terms used for generation
+  dealTermsId: integer('deal_terms_id').references(() => dealTerms.id),
+  termsSnapshotJson: jsonb('terms_snapshot_json'), // Snapshot of terms at generation
+  
+  // Generated file
+  generatedFileId: integer('generated_file_id').references(() => dataRoomFiles.id),
+  
+  // Version tracking
+  version: integer('version').default(1),
+  parentVersionId: integer('parent_version_id').references(() => generatedDocuments.id),
+  
+  // Status
+  status: varchar('status', { length: 50 }).default('draft'),
+  // 'draft', 'review', 'approved', 'executed', 'superseded'
+  
+  // Review tracking
+  reviewedBy: integer('reviewed_by').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewNotes: text('review_notes'),
+  
+  generatedBy: integer('generated_by').references(() => users.id),
+  generatedAt: timestamp('generated_at').defaultNow(),
+});
+```
+
+### Deal Terms Extraction Prompt
+
+```typescript
+const DEAL_TERMS_EXTRACTION_PROMPT = `
+You are a legal document analyst extracting deal terms from a Letter of Intent, Term Sheet, or other preliminary agreement for a real estate transaction.
+
+Extract all available terms into a structured format. Be thorough but don't guess - only extract what's clearly stated in the document.
+
+## EXTRACTION CATEGORIES
+
+### 1. Property Information
+- Property name/address
+- Legal description (if provided)
+- Property type (office, retail, multifamily, industrial, land, etc.)
+- Square footage / acreage
+- Number of units (for multifamily)
+
+### 2. Parties
+- Buyer name and entity type
+- Seller name and entity type
+- Any mentioned representatives, brokers, or attorneys
+
+### 3. Financial Terms
+- Purchase price
+- Earnest money / deposit amounts
+- Deposit schedule (when deposits are due)
+- When deposits go "hard" (non-refundable)
+
+### 4. Key Dates & Periods
+- Effective date
+- Due diligence period (in days or specific date)
+- Financing contingency period (if any)
+- Closing date or timeframe
+
+### 5. Contingencies
+- Due diligence contingency details
+- Financing contingency details
+- Any other conditions to closing
+
+### 6. Title & Survey
+- Title objection period
+- Survey requirements
+- Who pays for title/survey
+
+### 7. Representations & Warranties
+- Any mentioned rep/warranty provisions
+- Survival periods
+- Caps or baskets
+
+### 8. Special Conditions
+- Any unique terms or conditions
+- Seller deliverables
+- Buyer requirements
+
+## RESPONSE FORMAT
+
+{
+  "property": {
+    "name": "string or null",
+    "address": "string or null",
+    "city": "string or null",
+    "state": "string or null",
+    "type": "office|retail|multifamily|industrial|land|mixed_use|hospitality|null",
+    "squareFeet": "number or null",
+    "acreage": "number or null",
+    "units": "number or null"
+  },
+  "parties": {
+    "buyer": {
+      "name": "string or null",
+      "entityType": "llc|lp|corporation|individual|trust|null",
+      "address": "string or null"
+    },
+    "seller": {
+      "name": "string or null",
+      "entityType": "llc|lp|corporation|individual|trust|null",
+      "address": "string or null"
+    }
+  },
+  "financial": {
+    "purchasePrice": "number or null",
+    "initialDeposit": "number or null",
+    "initialDepositTiming": "string description or null",
+    "additionalDeposit": "number or null",
+    "additionalDepositTrigger": "string or null",
+    "depositHardTrigger": "string or null"
+  },
+  "dates": {
+    "effectiveDate": "YYYY-MM-DD or null",
+    "dueDiligenceDays": "number or null",
+    "dueDiligenceExpiration": "YYYY-MM-DD or null",
+    "financingContingencyDays": "number or null",
+    "closingDate": "YYYY-MM-DD or null",
+    "closingTimeframe": "string description if no specific date"
+  },
+  "contingencies": [
+    {
+      "type": "due_diligence|financing|title|other",
+      "description": "string",
+      "deadline": "YYYY-MM-DD or null",
+      "isBuyerContingency": true
+    }
+  ],
+  "titleAndSurvey": {
+    "titleObjectionDays": "number or null",
+    "surveyObjectionDays": "number or null",
+    "titleCureDays": "number or null",
+    "titlePaidBy": "buyer|seller|split|null",
+    "surveyPaidBy": "buyer|seller|split|null"
+  },
+  "repsAndWarranties": {
+    "survivalMonths": "number or null",
+    "cap": "number or null",
+    "basket": "number or null"
+  },
+  "specialConditions": [
+    {
+      "condition": "string description",
+      "responsibleParty": "buyer|seller",
+      "deadline": "YYYY-MM-DD or null"
+    }
+  ],
+  "otherTerms": {
+    // Any other relevant terms extracted
+  },
+  "extractionNotes": [
+    // Notes about ambiguous terms or things that need clarification
+  ],
+  "confidence": {
+    "overall": 0.85,
+    "lowConfidenceFields": ["fieldName1", "fieldName2"]
+  }
+}
+
+## RULES
+
+1. Extract dates in ISO format (YYYY-MM-DD)
+2. Extract dollar amounts as numbers without symbols
+3. If a term is ambiguous, add to extractionNotes
+4. If a term references another document (e.g., "per the PSA"), note this
+5. Preserve exact language for legal terms where possible
+6. Note if document appears to be non-binding vs binding
+`;
+```
+
+### Document Generation Prompt
+
+```typescript
+const DOCUMENT_GENERATION_PROMPT = `
+You are a legal document drafting assistant. Your task is to generate a {documentType} based on:
+1. The deal terms provided
+2. A template document from the firm's past transactions
+3. Best practices for this document type
+
+## DEAL TERMS
+{dealTermsJson}
+
+## TEMPLATE DOCUMENT
+{templateContent}
+
+## INSTRUCTIONS
+
+Generate a complete {documentType} that:
+
+1. **Follows the template structure** - Use the same general organization, clause ordering, and formatting as the template
+2. **Incorporates all deal terms** - Replace placeholder values with actual deal terms
+3. **Maintains legal precision** - Keep standard legal language and defined terms consistent
+4. **Updates for this transaction** - Adjust any template provisions that don't fit the current deal
+5. **Preserves firm style** - Match the drafting style, defined terms, and conventions used in the template
+
+## PLACEHOLDER CONVENTIONS
+
+In the template, placeholders appear as:
+- {{BUYER_NAME}} - Direct substitution
+- {{PURCHASE_PRICE}} - Direct substitution with proper formatting
+- [OPTIONAL: ...] - Include only if applicable to this deal
+- [CHOOSE ONE: A / B / C] - Select based on deal terms
+- [[REVIEW: ...]] - Flag for attorney review
+
+## OUTPUT FORMAT
+
+Return the complete document in {outputFormat} format.
+
+Include at the end:
+1. A list of any provisions that need attorney review
+2. A list of any missing information that should be obtained
+3. Any significant deviations from the template and why
+
+## DOCUMENT-SPECIFIC GUIDANCE
+
+{documentSpecificGuidance}
+`;
+
+// Document-specific guidance
+const DOCUMENT_GUIDANCE = {
+  psa: `
+    For Purchase and Sale Agreements:
+    - Ensure all defined terms are consistent throughout
+    - Verify all dates tie together logically (DD period < Closing)
+    - Include appropriate exhibits list
+    - Match deposit schedule to financial terms
+    - Include jurisdiction-appropriate provisions
+    - Verify seller rep scope matches transaction type
+  `,
+  
+  amendment: `
+    For Amendments:
+    - Reference the original agreement with full title and date
+    - Clearly state what sections are being modified
+    - Use "hereby amended to read as follows" format
+    - Include ratification language for unchanged terms
+    - Update exhibit references if needed
+  `,
+  
+  assignment: `
+    For Assignments:
+    - Verify assignment is permitted under original agreement
+    - Include assumption of all obligations
+    - Address security deposit transfer if applicable
+    - Include seller consent/acknowledgment if required
+  `,
+  
+  deed: `
+    For Deeds:
+    - Use jurisdiction-appropriate deed form (warranty, special warranty, grant, etc.)
+    - Match grantee name exactly to buyer in PSA
+    - Include proper legal description
+    - Include any required state-specific language
+    - Reference any recorded exceptions being carried forward
+  `,
+  
+  closing_certificate: `
+    For Closing Certificates:
+    - Reference all representations being brought down
+    - Note any updated schedules
+    - Include proper certification language
+    - Date as of closing
+  `,
+};
+```
+
+### Document Generation Service
+
+```typescript
+// services/document-generator.ts
+
+export class DocumentGenerationService {
+  
+  async generateDocument(
+    dealId: number,
+    documentType: string,
+    options: GenerationOptions = {}
+  ): Promise<GeneratedDocument> {
+    
+    // Step 1: Get deal terms
+    const dealTerms = await this.getDealTerms(dealId);
+    if (!dealTerms || !dealTerms.isComplete) {
+      throw new Error('Deal terms are incomplete. Please fill in required fields.');
+    }
+    
+    // Step 2: Find best template
+    const template = await this.findBestTemplate(documentType, dealTerms, options);
+    if (!template) {
+      throw new Error(`No template found for document type: ${documentType}`);
+    }
+    
+    // Step 3: Generate with AI
+    const generatedContent = await this.generateWithAI(
+      documentType,
+      dealTerms,
+      template,
+      options
+    );
+    
+    // Step 4: Create document file
+    const documentFile = await this.createDocumentFile(
+      generatedContent,
+      documentType,
+      dealTerms,
+      options.format || 'docx'
+    );
+    
+    // Step 5: Store generation record
+    const generatedDoc = await db.insert(generatedDocuments).values({
+      dealId,
+      documentType,
+      documentName: this.generateDocumentName(documentType, dealTerms),
+      templateId: template.id,
+      dealTermsId: dealTerms.id,
+      termsSnapshotJson: dealTerms, // Snapshot for version tracking
+      generatedFileId: documentFile.id,
+      status: 'draft',
+    }).returning();
+    
+    // Step 6: Update template usage
+    await db.update(documentTemplates)
+      .set({
+        usageCount: sql`${documentTemplates.usageCount} + 1`,
+        lastUsedAt: new Date(),
+      })
+      .where(eq(documentTemplates.id, template.id));
+    
+    return generatedDoc[0];
+  }
+
+  private async findBestTemplate(
+    documentType: string,
+    dealTerms: DealTerms,
+    options: GenerationOptions
+  ): Promise<DocumentTemplate | null> {
+    // Query templates matching criteria
+    const candidates = await db.query.documentTemplates.findMany({
+      where: and(
+        eq(documentTemplates.documentType, documentType),
+        eq(documentTemplates.isActive, true),
+        or(
+          eq(documentTemplates.propertyType, dealTerms.propertyType),
+          eq(documentTemplates.propertyType, 'all')
+        ),
+        or(
+          eq(documentTemplates.jurisdiction, dealTerms.propertyState),
+          eq(documentTemplates.jurisdiction, 'all')
+        )
+      ),
+      orderBy: [
+        desc(documentTemplates.isDefault),
+        desc(documentTemplates.rating),
+        desc(documentTemplates.usageCount),
+      ],
+    });
+
+    if (candidates.length === 0) return null;
+    
+    // If user specified a template, use that
+    if (options.templateId) {
+      return candidates.find(t => t.id === options.templateId) || candidates[0];
+    }
+    
+    // Otherwise return highest ranked
+    return candidates[0];
+  }
+
+  private async generateWithAI(
+    documentType: string,
+    dealTerms: DealTerms,
+    template: DocumentTemplate,
+    options: GenerationOptions
+  ): Promise<GeneratedContent> {
+    
+    const guidance = DOCUMENT_GUIDANCE[documentType] || '';
+    
+    const prompt = DOCUMENT_GENERATION_PROMPT
+      .replace('{documentType}', documentType)
+      .replace('{dealTermsJson}', JSON.stringify(dealTerms, null, 2))
+      .replace('{templateContent}', template.templateContent)
+      .replace('{outputFormat}', options.format || 'docx')
+      .replace('{documentSpecificGuidance}', guidance);
+
+    const response = await this.openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        { role: 'system', content: 'You are an expert real estate attorney drafting transaction documents.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.3, // Lower temperature for more consistent legal drafting
+    });
+
+    return this.parseGenerationResponse(response.choices[0].message.content);
+  }
+
+  private generateDocumentName(documentType: string, dealTerms: DealTerms): string {
+    const typeNames: Record<string, string> = {
+      psa: 'Purchase and Sale Agreement',
+      amendment: 'Amendment to PSA',
+      assignment: 'Assignment of Purchase Agreement',
+      deed: 'Deed',
+      bill_of_sale: 'Bill of Sale',
+      closing_certificate: 'Closing Certificate',
+      settlement_statement: 'Settlement Statement',
+    };
+    
+    const typeName = typeNames[documentType] || documentType;
+    const propertyName = dealTerms.propertyName || dealTerms.propertyAddress?.split(',')[0] || 'Property';
+    
+    return `${typeName} - ${propertyName}`;
+  }
+}
+```
+
+-----
+
+## UI COMPONENTS
+
+### 1. Document Upload with Auto-Classification
+
+```tsx
+// components/deals/DocumentUploadWithClassification.tsx
+
+export function DocumentUploadWithClassification({ dealId }: Props) {
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [classifying, setClassifying] = useState<Record<string, boolean>>({});
+
+  const handleFilesSelected = async (files: File[]) => {
+    for (const file of files) {
+      const fileId = `temp-${Date.now()}-${file.name}`;
+      
+      // Add to upload list
+      setUploadedFiles(prev => [...prev, {
+        id: fileId,
+        file,
+        status: 'uploading',
+        classification: null,
+      }]);
+
+      try {
+        // Upload file
+        const uploadedDoc = await uploadDocument(dealId, file);
+        
+        // Update status to classifying
+        setUploadedFiles(prev => prev.map(f => 
+          f.id === fileId ? { ...f, status: 'classifying', documentId: uploadedDoc.id } : f
+        ));
+        
+        // Classify document
+        const classification = await classifyDocument(uploadedDoc.id, dealId);
+        
+        // Update with classification results
+        setUploadedFiles(prev => prev.map(f => 
+          f.id === fileId ? { 
+            ...f, 
+            status: 'complete', 
+            classification,
+          } : f
+        ));
+        
+      } catch (error) {
+        setUploadedFiles(prev => prev.map(f => 
+          f.id === fileId ? { ...f, status: 'error', error: error.message } : f
+        ));
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Drop Zone */}
+      <div
+        className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-accent/50 transition-colors"
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+        <p className="font-medium">Drop documents here or click to upload</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Documents will be automatically classified and matched to checklist items
+        </p>
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          multiple
+          onChange={(e) => handleFilesSelected(Array.from(e.target.files || []))}
+        />
+      </div>
+
+      {/* Upload Progress & Classification Results */}
+      {uploadedFiles.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Uploaded Documents</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {uploadedFiles.map((file) => (
+              <div key={file.id} className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
+                <FileText className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{file.file.name}</p>
+                  
+                  {/* Status */}
+                  {file.status === 'uploading' && (
+                    <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Uploading...
+                    </div>
+                  )}
+                  
+                  {file.status === 'classifying' && (
+                    <div className="flex items-center gap-2 mt-1 text-sm text-blue-600">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Classifying document...
+                    </div>
+                  )}
+                  
+                  {file.status === 'complete' && file.classification && (
+                    <div className="mt-2 space-y-2">
+                      {/* Classification Result */}
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          {file.classification.classification.primaryType}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {Math.round(file.classification.classification.confidence * 100)}% confidence
+                        </span>
+                      </div>
+                      
+                      {/* Checklist Match */}
+                      {file.classification.checklistMatches?.length > 0 && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          <span>
+                            Matched to: <strong>{file.classification.checklistMatches[0].name}</strong>
+                          </span>
+                          {file.classification.autoAssigned && (
+                            <Badge variant="secondary" className="text-xs">Auto-assigned</Badge>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Extracted Data Preview */}
+                      {file.classification.extraction && (
+                        <Collapsible>
+                          <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground">
+                            View extracted data →
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="mt-2 p-2 bg-muted rounded text-xs space-y-1">
+                              {file.classification.extraction.parties?.buyer && (
+                                <p>Buyer: {file.classification.extraction.parties.buyer}</p>
+                              )}
+                              {file.classification.extraction.amounts?.purchasePrice && (
+                                <p>Price: ${file.classification.extraction.amounts.purchasePrice.toLocaleString()}</p>
+                              )}
+                              {file.classification.extraction.dates?.closingDate && (
+                                <p>Closing: {file.classification.extraction.dates.closingDate}</p>
+                              )}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                    </div>
+                  )}
+                  
+                  {file.status === 'error' && (
+                    <div className="flex items-center gap-2 mt-1 text-sm text-red-600">
+                      <AlertCircle className="h-3 w-3" />
+                      {file.error}
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1">
+                  {file.status === 'complete' && (
+                    <>
+                      <Button variant="ghost" size="icon" className="h-7 w-7">
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openReclassifyDialog(file)}>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Reclassify
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openAssignDialog(file)}>
+                            <ListChecks className="h-4 w-4 mr-2" />
+                            Assign to Checklist Item
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+```
+
+### 2. Deal Terms Editor
+
+```tsx
+// components/deals/DealTermsEditor.tsx
+
+export function DealTermsEditor({ dealId }: Props) {
+  const { data: dealTerms, refetch } = useDealTerms(dealId);
+  const [activeSection, setActiveSection] = useState('property');
+
+  const sections = [
+    { id: 'property', label: 'Property', icon: Building2 },
+    { id: 'parties', label: 'Parties', icon: Users },
+    { id: 'financial', label: 'Financial', icon: DollarSign },
+    { id: 'dates', label: 'Dates & Periods', icon: Calendar },
+    { id: 'title', label: 'Title & Survey', icon: FileText },
+    { id: 'special', label: 'Special Conditions', icon: AlertTriangle },
+  ];
+
+  const completionStatus = useMemo(() => {
+    if (!dealTerms) return { complete: 0, total: 0 };
+    
+    const requiredFields = [
+      'purchasePrice', 'buyerName', 'sellerName', 'propertyAddress',
+      'closingDate', 'dueDiligencePeriodDays', 'initialDeposit'
+    ];
+    
+    const filledFields = requiredFields.filter(f => dealTerms[f] != null);
+    return { complete: filledFields.length, total: requiredFields.length };
+  }, [dealTerms]);
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Import Option */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Deal Terms</h2>
+              <p className="text-sm text-muted-foreground">
+                {completionStatus.complete} of {completionStatus.total} required fields complete
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={openImportDialog}>
+                <Upload className="h-4 w-4 mr-2" />
+                Import from LOI
+              </Button>
+              <Button
+                disabled={completionStatus.complete < completionStatus.total}
+                onClick={openGenerateDocumentsDialog}
+              >
+                <Wand2 className="h-4 w-4 mr-2" />
+                Generate Documents
+              </Button>
+            </div>
+          </div>
+          
+          {/* Progress */}
+          <Progress 
+            value={(completionStatus.complete / completionStatus.total) * 100} 
+            className="mt-4 h-2"
+          />
+        </CardContent>
+      </Card>
+
+      {/* Section Navigation */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {sections.map((section) => {
+          const Icon = section.icon;
+          return (
+            <Button
+              key={section.id}
+              variant={activeSection === section.id ? 'default' : 'outline'}
+              onClick={() => setActiveSection(section.id)}
+              className="shrink-0"
+            >
+              <Icon className="h-4 w-4 mr-2" />
+              {section.label}
+            </Button>
+          );
+        })}
+      </div>
+
+      {/* Section Forms */}
+      <Card>
+        <CardContent className="pt-6">
+          {activeSection === 'property' && (
+            <PropertyInfoForm dealTerms={dealTerms} onUpdate={refetch} />
+          )}
+          {activeSection === 'parties' && (
+            <PartiesForm dealTerms={dealTerms} onUpdate={refetch} />
+          )}
+          {activeSection === 'financial' && (
+            <FinancialTermsForm dealTerms={dealTerms} onUpdate={refetch} />
+          )}
+          {activeSection === 'dates' && (
+            <DatesPeriodsForm dealTerms={dealTerms} onUpdate={refetch} />
+          )}
+          {activeSection === 'title' && (
+            <TitleSurveyForm dealTerms={dealTerms} onUpdate={refetch} />
+          )}
+          {activeSection === 'special' && (
+            <SpecialConditionsForm dealTerms={dealTerms} onUpdate={refetch} />
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+### 3. Document Generation Dialog
+
+```tsx
+// components/deals/GenerateDocumentsDialog.tsx
+
+export function GenerateDocumentsDialog({ open, onClose, dealId, dealTerms }: Props) {
+  const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>([]);
+  const [generating, setGenerating] = useState(false);
+  const [results, setResults] = useState<GenerationResult[]>([]);
+
+  const availableDocTypes = [
+    { id: 'psa', name: 'Purchase and Sale Agreement', description: 'Full PSA with all exhibits' },
+    { id: 'amendment', name: 'Amendment to PSA', description: 'Amendment for modified terms' },
+    { id: 'assignment', name: 'Assignment of PSA', description: 'Assignment to new buyer entity' },
+    { id: 'deed', name: 'Deed', description: 'Conveyance document' },
+    { id: 'bill_of_sale', name: 'Bill of Sale', description: 'Personal property transfer' },
+    { id: 'assignment_of_leases', name: 'Assignment of Leases', description: 'Lease assignment and assumption' },
+    { id: 'closing_certificate', name: 'Closing Certificate', description: 'Seller/Buyer closing certificate' },
+    { id: 'firpta', name: 'FIRPTA Certificate', description: 'Non-foreign seller certification' },
+  ];
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setResults([]);
+
+    for (const docType of selectedDocTypes) {
+      try {
+        const result = await generateDocument(dealId, docType);
+        setResults(prev => [...prev, { docType, success: true, document: result }]);
+      } catch (error) {
+        setResults(prev => [...prev, { docType, success: false, error: error.message }]);
+      }
+    }
+
+    setGenerating(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Wand2 className="h-5 w-5" />
+            Generate Deal Documents
+          </DialogTitle>
+          <DialogDescription>
+            Select documents to generate based on your deal terms and firm templates.
+          </DialogDescription>
+        </DialogHeader>
+
+        {results.length === 0 ? (
+          <>
+            {/* Document Selection */}
+            <div className="space-y-3 py-4">
+              {availableDocTypes.map((docType) => (
+                <div
+                  key={docType.id}
+                  className={cn(
+                    "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                    selectedDocTypes.includes(docType.id) 
+                      ? "border-primary bg-primary/5" 
+                      : "hover:bg-accent/50"
+                  )}
+                  onClick={() => {
+                    setSelectedDocTypes(prev => 
+                      prev.includes(docType.id)
+                        ? prev.filter(id => id !== docType.id)
+                        : [...prev, docType.id]
+                    );
+                  }}
+                >
+                  <Checkbox
+                    checked={selectedDocTypes.includes(docType.id)}
+                    onCheckedChange={() => {}}
+                  />
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{docType.name}</p>
+                    <p className="text-xs text-muted-foreground">{docType.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Deal Terms Summary */}
+            <div className="bg-muted/50 rounded-lg p-4">
+              <h4 className="font-medium text-sm mb-2">Deal Terms Summary</h4>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <div className="text-muted-foreground">Property:</div>
+                <div>{dealTerms.propertyAddress || '—'}</div>
+                <div className="text-muted-foreground">Buyer:</div>
+                <div>{dealTerms.buyerName || '—'}</div>
+                <div className="text-muted-foreground">Seller:</div>
+                <div>{dealTerms.sellerName || '—'}</div>
+                <div className="text-muted-foreground">Price:</div>
+                <div>{dealTerms.purchasePrice ? `$${dealTerms.purchasePrice.toLocaleString()}` : '—'}</div>
+                <div className="text-muted-foreground">Closing:</div>
+                <div>{dealTerms.closingDate || '—'}</div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button 
+                onClick={handleGenerate}
+                disabled={selectedDocTypes.length === 0}
+              >
+                Generate {selectedDocTypes.length} Document{selectedDocTypes.length !== 1 && 's'}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            {/* Generation Results */}
+            <div className="space-y-3 py-4">
+              {results.map((result, index) => (
+                <div
+                  key={index}
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-lg",
+                    result.success ? "bg-green-50" : "bg-red-50"
+                  )}
+                >
+                  {result.success ? (
+                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-red-600" />
+                  )}
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">
+                      {availableDocTypes.find(d => d.id === result.docType)?.name}
+                    </p>
+                    {result.success ? (
+                      <p className="text-xs text-green-700">Generated successfully</p>
+                    ) : (
+                      <p className="text-xs text-red-700">{result.error}</p>
+                    )}
+                  </div>
+                  {result.success && (
+                    <Button variant="outline" size="sm" onClick={() => viewDocument(result.document)}>
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Button>
+                  )}
+                </div>
+              ))}
+              
+              {generating && selectedDocTypes.length > results.length && (
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <div>
+                    <p className="font-medium text-sm">Generating...</p>
+                    <p className="text-xs text-muted-foreground">
+                      {results.length + 1} of {selectedDocTypes.length}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>Close</Button>
+              <Button onClick={() => downloadAllDocuments(results.filter(r => r.success))}>
+                <Download className="h-4 w-4 mr-2" />
+                Download All
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+-----
+
+## API ENDPOINTS
+
+```typescript
+// Document Classification
+POST   /api/documents/:id/classify                     // Classify a document
+POST   /api/deals/:dealId/classify-all                 // Classify all unclassified docs
+POST   /api/documents/:id/reclassify                   // Manually reclassify
+GET    /api/documents/:id/classification               // Get classification results
+POST   /api/classification-feedback                    // Submit feedback on classification
+
+// Deal Terms
+GET    /api/deals/:dealId/terms                        // Get deal terms
+PUT    /api/deals/:dealId/terms                        // Update deal terms
+POST   /api/deals/:dealId/terms/extract                // Extract terms from uploaded doc
+POST   /api/deals/:dealId/terms/import                 // Import terms from LOI/term sheet
+
+// Document Generation
+GET    /api/templates/documents                        // List available document templates
+GET    /api/templates/documents/:id                    // Get specific template
+POST   /api/deals/:dealId/generate                     // Generate a document
+GET    /api/deals/:dealId/generated-documents          // List generated docs for deal
+GET    /api/generated-documents/:id                    // Get specific generated doc
+POST   /api/generated-documents/:id/regenerate         // Regenerate with updated terms
+```
+
+-----
+
+## IMPLEMENTATION PRIORITY
+
+1. **Phase 1**: Document type definitions and classification infrastructure
+1. **Phase 2**: AI document classification on upload
+1. **Phase 3**: Auto-matching to checklist items
+1. **Phase 4**: Deal terms schema and editor UI
+1. **Phase 5**: LOI/Term sheet import (terms extraction)
+1. **Phase 6**: Document template management
+1. **Phase 7**: Document generation from templates
+1. **Phase 8**: Learning from reclassification feedback

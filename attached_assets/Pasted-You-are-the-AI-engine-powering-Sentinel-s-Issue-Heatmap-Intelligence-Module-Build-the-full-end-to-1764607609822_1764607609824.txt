@@ -1,0 +1,266 @@
+You are the AI engine powering Sentinel’s Issue Heatmap Intelligence Module. 
+Build the full end-to-end logic, UI, schema, and analysis engine described below. 
+Follow these instructions exactly.
+
+====================================================
+SENTINEL — ISSUE HEATMAP INTELLIGENCE MODULE (FULL SPEC)
+====================================================
+
+GOAL:
+Create a full organizational Issue Heatmap that allows users to visualize the highest-frequency and highest-urgency issues discussed across all emails, chats, files, and documents in a case or organization.  
+Show:  
+• Most discussed issues  
+• Least discussed issues  
+• Issues by person  
+• Issues by organization/domain  
+• Urgency and importance language  
+• Sentiment + escalation signals  
+• Issue timelines  
+• Anomaly detection  
+• Insights panels  
+• Foundry-style UI
+
+This module integrates with Sentinel’s existing communications heatmaps.
+
+====================================================
+1. DATA INGESTION AND ANALYSIS ENGINE
+====================================================
+
+For every ingested communication (email, text, chat, document, attachment), extract:
+
+A. TOPIC CLASSIFICATION
+Use hybrid models (LLM classification + embedding clustering).
+Default topics (extensible):
+- Legal  
+- HR  
+- Contracts  
+- Finance  
+- Safety  
+- Sensitive  
+- General  
+- Custom case-level topics
+
+B. ISSUE EXTRACTION
+Extract the central issue using entity detection + LLM summarization.
+Include:
+- Event mentions  
+- Deadlines  
+- Contract numbers  
+- People and organizations  
+- References to places, products, safety issues, HR concerns, etc.
+
+C. URGENCY & IMPORTANCE LANGUAGE
+Calculate an urgency_score (0–10) using weighted detection of:
+High urgency keywords:
+urgent, critical, important, immediate, escalate, asap, emergency, crisis, deadline, right away
+
+Moderate urgency:
+please advise, following up, need clarification, check in
+
+Escalation sentiments:
+“don’t forward,”  
+“take offline,”  
+“delete after reading,”  
+“shouldn’t put this in writing,”  
+“we need to talk now,”  
+fear signals, blame language, legal worry, etc.
+
+D. SENTIMENT ANALYSIS
+Assign numeric sentiment score (-1 negative to +1 positive).
+
+E. ENTITY EXTRACTION
+Extract:
+- People (internal & external)
+- Organizations/domains
+- Projects or case items
+- Contract names
+- Facilities/locations
+- Document identifiers
+
+F. ISSUE OBJECT (STORE THIS OBJECT)
+Create and save Issue Objects with this schema:
+
+{
+  "issue_id": "uuid",
+  "topic": "Contracts",
+  "subtopics": ["Renewals", "Disputes"],
+  "urgency_score": 7.8,
+  "sentiment": -0.42,
+  "people_involved": ["frank.quesada", "mlam", "cramsey"],
+  "organizations_involved": ["gmail.com", "morganlewis.com"],
+  "message_volume": 112,
+  "date_range_start": "2025-01-05",
+  "date_range_end": "2025-01-30",
+  "keywords": ["renewal", "liability", "contract breach"],
+  "risk_tags": ["legal", "sensitive"]
+}
+
+Store in index/graph DB (Pinecone or Neo4j).
+
+====================================================
+2. HEATMAP TYPES TO GENERATE
+====================================================
+
+Create FIVE heatmaps + ONE timeline view:
+
+--------------------------------------------
+A. ISSUE FREQUENCY HEATMAP (MACRO)
+--------------------------------------------
+Rows → Issues/Topics  
+Columns → Time (weeks/months)  
+Cells → Message volume x Urgency score  
+Sort from most discussed → least discussed  
+Use color intensity to reflect combined score.
+
+--------------------------------------------
+B. ISSUE-BY-PERSON MATRIX (MICRO)
+--------------------------------------------
+Rows → Issues  
+Columns → People (internal custodians)  
+Cells → Count of messages or documents discussing that issue  
+Highlights:
+- Who drives which issue  
+- Who discusses sensitive topics  
+- Disproportionate involvement  
+- HR/legal/compliance analysis  
+
+--------------------------------------------
+C. ISSUE-BY-ORGANIZATION MATRIX
+--------------------------------------------
+Rows → Issues  
+Columns → External domains (gmail.com, morganlewis.com, usawaterpolo.org, etc.)  
+Cells → Cross-domain message count  
+Purpose:
+- Third-party risk  
+- Vendor conflicts  
+- Outside-counsel communications  
+- Leak detection  
+
+--------------------------------------------
+D. ISSUE IMPORTANCE / URGENCY HEATMAP
+--------------------------------------------
+Rows → Issues  
+Columns → People or Time  
+Cells → Urgency score  
+Identify:
+- Crisis language spikes  
+- Patterns of escalation  
+- Clusters of “critical” or “urgent” topics  
+
+--------------------------------------------
+E. SENSITIVE & HIGH-RISK ISSUE MAP
+--------------------------------------------
+Detect and visualize:
+- HR issues  
+- Legal exposure issues  
+- Safety incidents  
+- Compliance failures  
+- Workplace disputes  
+- Hidden clusters in comms  
+
+--------------------------------------------
+F. ISSUE ESCALATION TIMELINE (CHART)
+--------------------------------------------
+Line chart for each issue with:  
+• Volume  
+• Urgency score over time  
+• Sentiment movement  
+• New participants joining  
+• Domain expansion  
+• Anomaly spikes  
+
+====================================================
+3. ANOMALY DETECTION SYSTEM
+====================================================
+
+Detect:
+- Sudden spikes in issue volume  
+- Rapid increase in urgency language  
+- New actors entering a topic  
+- Sharp sentiment negativity  
+- Increased communication with risky domains  
+- Topic resurrection (issues reappearing after silence)  
+- Cross-department surges  
+
+Tag anomalies and display in sidebar.
+
+====================================================
+4. INSIGHTS PANEL (SIDEBAR)
+====================================================
+
+Generate:
+
+1. Top 10 Issues This Week  
+2. Issues With Highest Urgency  
+3. New & Emerging Issues  
+4. Issues With Unexpected Participants  
+5. Sensitive Topic Growth  
+6. Contract or Legal Issues Trending  
+7. External Domain Issue Activity  
+8. Heatmap of “Urgent/Critical” Phrases  
+9. Volume changes with percentages (+2500%, etc.)  
+
+====================================================
+5. UI/UX / FOUNDRY-STYLE COMPONENTS
+====================================================
+
+• Clean card-based layout  
+• Muted background with high-contrast data tiles  
+• Smooth rollover animations  
+• Collapsible filter panel  
+• Docked “Insights” sidebar on the right  
+• Interactive heatmap tiles  
+• Hover-to-expand issue details  
+• Anchor links to underlying messages  
+• Timeline view with zoom  
+• Toggle: Volume / Urgency / Sentiment  
+
+Filters:
+• Date range  
+• Person  
+• Organization  
+• Department  
+• Issue category  
+• Urgency level  
+• Sensitivity level  
+• Volume thresholds  
+
+====================================================
+6. SEARCH & DEEP-DIVE FUNCTIONS
+====================================================
+
+For every tile the user can click:
+• Show underlying messages  
+• Show involved people  
+• Show issue timeline  
+• Show sentiment & urgency evolution  
+• Link to original documents  
+• Auto-generate “Issue Summary”  
+• Auto-generate “Why this issue matters”  
+
+====================================================
+7. PROVIDE AS OUTPUT:
+====================================================
+
+When this prompt runs, you must generate:
+
+1. Data Extraction Functions  
+2. Embedding / Indexing Logic  
+3. Issue Object Builder  
+4. Full UI Components (React or equivalent)  
+5. Heatmap renderers (JS/TS)  
+6. Timeline visualizations  
+7. Sidebar insights  
+8. API endpoints for:
+   - /issues
+   - /issues/people
+   - /issues/domains
+   - /issues/urgency
+   - /issues/timeline
+9. All necessary backend + frontend glue code  
+10. A final packaged Issue Heatmap Module ready for Sentinel.
+
+====================================================
+END OF SPEC — GENERATE FULL MODULE
+====================================================
+

@@ -1,0 +1,253 @@
+You are a senior full-stack engineer and UX designer working on a web app called **Sentinel** (an investigations, compliance, and e-discovery platform).
+
+Your job:
+Upgrade the existing AI assistant **“Ava – AI Compliance Assistant”** so that users can **speak or type natural language commands to navigate Sentinel and perform tasks**, while still being able to ask compliance / legal questions in the same interface.
+
+IMPORTANT: EXISTING AVA UI
+
+The current Ava experience already exists and must be extended, not replaced:
+
+- There is an **Ava button in the bottom-left** of the sidebar (purple button with Ava label).
+- On case pages (e.g., Findings tab), there is an **“Ask Ava” button** in the main content area.
+- Clicking either opens a **right-side drawer/panel** labeled “Ava – AI Compliance Assistant.”
+- The panel currently shows:
+  - Ava header with icon + name
+  - “New Chat” button
+  - Welcome text and example prompts
+  - A **single text input at the bottom**: “Ask Ava anything…” with a send icon.
+
+You must keep this **right-side drawer layout** and integrate voice + command functionality directly into this existing Ava panel and input.
+
+================================
+1) HIGH-LEVEL GOAL
+================================
+
+Ava should work like a smart secretary for the user:
+
+1) Users can **navigate the app** by speaking or typing commands.
+2) Users can **execute tasks** like scheduling interviews.
+3) Users can still **ask legal/compliance questions** and get normal chat responses.
+4) Ava decides if an input is:
+   - A **command** (navigate/perform an action), or
+   - A **knowledge Q&A** (answer with text only),
+   and routes appropriately.
+
+App context (simplified):
+- My Queue (home)
+- Investigations:
+  - Cases
+  - Email & Document Review
+  - Chat Conversations
+  - Interviews
+  - Document Sets
+- Intake & Monitoring:
+  - Communications
+- Each Case has tabs: Overview, Evidence, Parties & Custodians, Interviews, Timeline, Findings, Applicable Law, etc.
+
+================================
+2) ENTRY POINTS & CONTEXT PASSING
+================================
+
+ENTRY POINTS (must reuse existing ones):
+
+1) **Bottom-left Ava button (sidebar)**  
+   - Opens the Ava drawer on the right.
+   - Context:
+     - If user is on a case page, pass:
+       - `currentCaseId`
+       - `currentCaseName`
+       - `currentTab` (e.g., "Findings", "Evidence").
+     - If user is not in a case, context will not have a caseId.
+
+2) **“Ask Ava” buttons inside pages** (e.g., Findings tab)  
+   - Already present in the UI.
+   - On click:
+     - Opens the same right-side Ava drawer.
+     - Passes richer context:
+       - `currentCaseId`
+       - `currentCaseName`
+       - `currentTab`
+       - `currentView` (e.g., "Findings", sub-section like "All Entries", selected filters, etc. if available).
+
+3) **Keyboard shortcut**  
+   - Implement `Cmd+K` (Mac) / `Ctrl+K` (Windows) to:
+     - Open the Ava drawer (if closed).
+     - Focus the input field at the bottom.
+
+All three entry points share the same Ava panel component; they only differ in the initial context they pass.
+
+================================
+3) AVA PANEL UPGRADES (UI)
+================================
+
+Keep the current layout but extend it:
+
+- Header stays: Ava name, icon, “AI Compliance Assistant.”
+- Keep “New Chat” button.
+- Keep welcome text / example prompts.
+- At the **bottom input area**, upgrade:
+
+1) Add a **microphone icon** next to the send icon:
+   - States:
+     - Idle
+     - Listening (pulsing)
+   - Clicking it toggles voice capture.
+
+2) Placeholder text:
+   - “Ask Ava anything… or tell Ava what to do.”
+
+3) Above the input, optionally add a subtle helper line:
+   - “Try: ‘Take me to the USA Water Polo case’ or ‘Schedule John Doe’s interview for tomorrow at 3:30pm.’”
+
+4) The message list in the drawer should show:
+   - User messages and Ava responses (as today).
+   - For commands, Ava should respond with short confirmations and optionally clickable links (e.g., “View interview details”).
+
+Do NOT create a new floating button; Ava always appears as this right-hand drawer.
+
+================================
+4) VOICE + TEXT COMMANDS
+================================
+
+The same Ava input supports both text and voice.
+
+Voice:
+- Implement a `useVoiceRecognition` hook (Web Speech API wrapper) that:
+  - `startListening()`, `stopListening()`
+  - Emits recognized text via callback.
+- When the mic is pressed:
+  - Start listening.
+  - Show listening animation on mic icon.
+- When speech ends or recognition finalizes:
+  - Fill the Ava input with the recognized text.
+  - Auto-submit, as if the user hit send.
+
+Fallback:
+- If browser doesn’t support Web Speech or mic permission is denied:
+  - Show small notice in the panel: “Your browser doesn’t support voice input. You can still type commands.”
+  - Mic icon remains but is disabled or hidden.
+
+================================
+5) COMMAND vs. Q&A ROUTING
+================================
+
+When the user submits a message (typed or spoken), Ava must decide:
+
+- Is this a **command** (navigate or perform a task)?
+- Or a **knowledge/compliance question**?
+
+Implementation:
+
+1) Front-end sends the message + context to a new back-end endpoint:
+   - `POST /api/ava/interpret`
+   - Input:
+     - `message: string`
+     - `context: { userId, currentRoute, currentCaseId?, currentCaseName?, currentTab?, timezone, ... }`
+
+2) Back-end uses an LLM to:
+   - Classify the message as:
+     - `"mode": "command"` or `"mode": "qa"`.
+   - If `"command"`, return:
+     ```json
+     {
+       "mode": "command",
+       "intent": "navigate_to_case_email_filter",
+       "parameters": {
+         "caseName": "USA Water Polo",
+         "emailFilter": {
+           "participants": ["Frank", "Chris Ramsey"]
+         }
+       },
+       "assistantMessage": "Opening the USA Water Polo case and filtering to emails between Frank and Chris Ramsey."
+     }
+     ```
+   - If `"qa"`, return:
+     ```json
+     {
+       "mode": "qa",
+       "assistantMessage": "…Ava’s compliance/legal answer here…"
+     }
+     ```
+
+3) On the front-end:
+   - If mode = `qa`:
+     - Simply render `assistantMessage` as the chat response.
+   - If mode = `command`:
+     - Run the **command router** (see next section) and ALSO render `assistantMessage` in the chat as confirmation.
+
+================================
+6) COMMAND ROUTER – NAVIGATION & ACTIONS
+================================
+
+Implement a front-end **commandRouter** that takes `{ intent, parameters }` and performs actions.
+
+Supported intents (minimum):
+
+- Navigation:
+  - `navigate_to_case`
+  - `navigate_to_case_document_review`
+  - `navigate_to_case_email_filter`
+  - `navigate_to_my_queue`
+  - `navigate_to_interviews`
+  - `navigate_to_chat_conversations`
+  - `navigate_to_document_sets`
+  - `navigate_to_findings`
+
+- Actions:
+  - `schedule_interview`
+
+Examples of commands the interpreter should understand:
+
+1) Navigation to case & filtered emails
+   - User: “Take me to the USA Water Polo case, I want to review Frank’s emails with Chris Ramsey.”
+   - Interpret:
+     - `intent: "navigate_to_case_email_filter"`
+     - `parameters: { caseName: "USA Water Polo", emailFilter: { participants: ["Frank", "Chris Ramsey"] } }`
+   - Router:
+     - Call `/api/cases/search?name=USA%20Water%20Polo`.
+     - Resolve to `caseId`.
+     - Navigate to `/cases/:caseId/email-document-review` with appropriate query params or filter state.
+   - Ava chat: “Done. I’ve opened USA Water Polo and filtered emails between Frank and Chris Ramsey.”
+
+2) Jump to Interviews from within a case
+   - User (on a case): “I need to schedule an interview.”
+   - Context includes `currentCaseId`.
+   - Interpret:
+     - `intent: "navigate_to_interviews"`
+     - `parameters: { caseId: "<currentCaseId>" }`
+   - Router:
+     - Navigate to `/cases/:caseId/interviews`.
+   - Ava: “Opening the Interviews tab for [Case Name].”
+
+3) Go to My Queue
+   - User: “Take me to my queue.”
+   - Interpret:
+     - `intent: "navigate_to_my_queue"`
+   - Router:
+     - Navigate to `/my-queue`.
+   - Ava: “Taking you to your queue.”
+
+================================
+7) TASK EXECUTION – SCHEDULING INTERVIEWS
+================================
+
+Main action example:
+
+User:  
+“Schedule John Doe’s interview for tomorrow at 3:30pm. Here is his email address, john.doe@example.com. Make sure the email is sent to him.”
+
+Behavior:
+
+1) Interpreter:
+   ```json
+   {
+     "mode": "command",
+     "intent": "schedule_interview",
+     "parameters": {
+       "caseId": "<use currentCaseId if present or ask which case>",
+       "intervieweeName": "John Doe",
+       "intervieweeEmail": "john.doe@example.com",
+       "startTime": "2025-12-05T15:30:00-05:00"
+     },
+     "assistantMessage": "Scheduling John Doe’s interview for tomorrow at 3:30pm for the USA Water Polo case and sending an email invitation."
+   }

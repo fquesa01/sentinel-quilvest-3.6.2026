@@ -1,0 +1,477 @@
+PROMPT TO PASTE INTO REPLIT / VIBE CODING
+
+You are an expert full-stack engineer and product designer working inside this existing Sentinel Counsel LLP investigation platform.
+
+Your job is to design and implement a complete AI Interview Module with the following goals:
+
+Allow attorneys/investigators to send remote AI-conducted interviews via email or SMS.
+
+Capture video + audio responses from interviewees through a secure browser / mobile web flow.
+
+Store recordings, transcripts, AI summaries, and analytics back into the platform’s Interviews and Cases sections.
+
+Always preserve attorney–client privilege and produce high-quality investigative output.
+
+Follow these requirements exactly and implement whatever backend + frontend code is needed in this Replit project using the existing stack and conventions.
+
+1. Core Objects & Data Model
+
+Create or extend models/tables for at least:
+
+InterviewTemplate
+
+id
+
+name (e.g., “FCPA – Vendor Payments”, “SOX – Revenue Recognition”, etc.)
+
+category (FCPA, SOX, Antitrust, HR, AML, etc.)
+
+base_questions: array of ordered question strings
+
+metadata: JSON (e.g., tags, risk_areas)
+
+InterviewInvite
+
+id
+
+case_id (link to existing Case)
+
+interview_template_id
+
+interviewee_name
+
+interviewee_email (optional)
+
+interviewee_phone (optional)
+
+delivery_channel: “email”, “sms”, or “both”
+
+status: “draft”, “sent”, “opened”, “in_progress”, “completed”, “expired”
+
+unique_token (unguessable UUID used in invite link)
+
+expires_at (UTC)
+
+created_at, updated_at
+
+RecordedInterview
+
+id
+
+case_id
+
+interview_invite_id
+
+interviewee_name
+
+started_at, completed_at
+
+video_url (or storage key)
+
+audio_url (optional if separated)
+
+transcript_text (full transcript)
+
+transcript_segments: JSON array with timestamps + speaker + text
+
+ai_summary_text (investigation-oriented summary)
+
+issues_tags: array of strings (FCPA, SOX, harassment, etc.)
+
+behavioral_signals: JSON (e.g., pauses, evasions; not lie detection)
+
+privilege_status: enum [“privileged”, “partially_privileged”, “non_privileged”]
+
+upjohn_acknowledged: boolean
+
+consent_captured: boolean
+
+identity_verification: JSON (what checks were done)
+
+timeline_events: JSON (derived events with timestamps)
+
+created_at, updated_at
+
+InterviewNote
+
+id
+
+recorded_interview_id
+
+author_user_id
+
+transcript_segment_ref (timestamp or index)
+
+note_text
+
+tags (e.g., “follow_up”, “credibility”, “document_request”)
+
+created_at
+
+Make sure relations between Cases, Interviews, InterviewInvites, and RecordedInterviews are clear and enforced.
+
+2. Sending AI Interview Invites (Email + SMS)
+
+Implement UI and backend for creating and sending interview invites:
+
+In the existing Investigation Interviews section, add a button “Send AI Interview”.
+
+A modal / page allows investigator to:
+
+Select associated Case
+
+Choose or search an InterviewTemplate
+
+Enter interviewee name, email, and/or phone
+
+Choose delivery channel (email, SMS, or both)
+
+Set expiration date/time
+
+On submit:
+
+Create an InterviewInvite with unique_token and status “sent”.
+
+Generate a secure URL like:
+/ai-interview/{token}
+
+Send:
+
+Email via existing or stubbed email provider with:
+
+Brief explanation
+
+Big “Begin Interview” CTA button linking to the URL.
+
+SMS via existing or stubbed SMS provider with:
+
+Short message + interview link.
+
+Provide basic HTML email/SMS templates that can be restyled later.
+
+Security:
+
+Token must be single-use and hard to guess.
+
+When expired, the link should show an “Interview expired” screen.
+
+3. Interview Session Flow (Frontend)
+
+At route /ai-interview/{token}, implement a secure, mobile-friendly web page:
+
+3.1 Token Validation
+
+Validate token → load InterviewInvite.
+
+If invalid or expired → show friendly error.
+
+If valid → proceed to Upjohn & Consent step.
+
+3.2 Upjohn Warning & Consent
+
+Screen 1:
+
+Display a clear Upjohn-style warning block (placeholder text, configurable later).
+
+Provide a short video/audio explanation (AI voice acceptable or simple text-to-speech).
+
+Require the interviewee to:
+
+Check a box “I understand this warning”.
+
+Optionally record a short acknowledgment clip:
+
+e.g., “I have read and understand the Upjohn warning.”
+
+Click “I Agree and Continue”.
+
+Record:
+
+upjohn_acknowledged = true
+
+Store timestamp and device info (browser, OS, IP) in the RecordedInterview or associated metadata.
+
+Screen 2:
+
+Consent statement (e.g., being recorded, data use, etc.).
+
+Require explicit consent checkbox + confirm button.
+
+Store consent_captured = true.
+
+3.3 Device & Identity Step (Optional)
+
+Ask for permission to use camera + microphone.
+
+Grab a still frame for identity verification (stored as metadata; do NOT implement face recognition beyond simple capture without explicit instruction).
+
+Optional: verify email/phone via one-time code if you judge it necessary. Keep structure flexible to plug in verification later.
+
+3.4 Interview UI
+
+Once consented and devices enabled, show the main interview screen:
+
+Video preview window of the interviewee.
+
+Text area showing current question and previous questions.
+
+“Start Interview” button.
+
+Show progress indicator (# of questions completed vs total).
+
+Provide “Pause” and “Resume” controls.
+
+Recording mechanics:
+
+Use browser MediaRecorder/WebRTC to capture audio/video.
+
+Chunk upload or upload at end to backend storage endpoint.
+
+Handle failure states gracefully (lost connection, permission denied, etc.).
+
+Question rendering:
+
+Start with the InterviewTemplate.base_questions list.
+
+Render the current question, with large, readable text.
+
+Provide voice read-out of the question (TTS).
+
+4. AI-Driven Dynamic Questioning
+
+Implement an AI service (using the project’s GPT integration) that:
+
+Receives:
+
+Template questions
+
+Case metadata (if available)
+
+Transcript so far
+
+Risk categories (FCPA, SOX, etc.)
+
+Returns:
+
+Next question (or signal that base list is done)
+
+Optional follow-up questions
+
+Clarification prompts for vague answers.
+
+Logic:
+
+For each base question:
+
+Ask question.
+
+Capture answer segment (audio/video, later transcribed).
+
+Send transcript so far + last answer to AI to determine:
+
+Does a follow-up question need to be asked?
+
+If yes, ask follow-up and capture answer.
+
+After finishing base questions:
+
+Allow AI to propose up to N additional questions focused on:
+
+Unresolved inconsistencies
+
+Names / dates / transactions mentioned
+
+Potential policy/regulation violations.
+
+Ensure prompts clearly state:
+
+This is not a lie detector.
+
+The model should focus on completeness, clarity, specific facts, and who/what/when/where/how.
+
+5. Recording, Transcription, and Storage
+
+When interview is ended:
+
+Stop recording and upload final video file(s) to backend storage.
+
+Create a RecordedInterview linked to InterviewInvite and Case.
+
+Run transcription using the project’s audio transcription AI (e.g., Whisper or equivalent):
+
+Produce:
+
+Full transcript text.
+
+Segmented transcript with timestamps (e.g., every few seconds or by pause).
+
+Save:
+
+video_url / audio_url
+
+transcript_text
+
+transcript_segments JSON
+
+Mark InterviewInvite.status = "completed".
+
+6. Post-Interview AI Analytics & Outputs
+
+After transcription, run additional AI pipelines to generate structured outputs and store them in RecordedInterview:
+
+6.1 AI Legal Summary
+
+Generate an attorney-friendly summary including:
+
+Key facts
+
+People mentioned
+
+Relevant dates and timeline snippet
+
+Transactions or events described
+
+Risk categories implicated (FCPA, SOX, Antitrust, HR, AML, OFAC, GLBA, Privacy, etc.)
+
+Any apparent gaps or unanswered issues
+
+Recommended follow-up questions for live attorney interview.
+
+Store in ai_summary_text and issues_tags.
+
+6.2 Behavioral Signals (Non-Lie-Detection)
+
+Analyze transcript linguistically (and optionally metadata like long pauses) to flag:
+
+Evasive responses (vague, non-responsive)
+
+Repeated “I don’t recall” patterns
+
+Sudden changes from detail to generality
+
+Mention of others (indicating more custodians)
+
+Store as structured JSON in behavioral_signals.
+This is strictly for investigative context, not to declare truthfulness.
+
+6.3 Timeline Extraction
+
+From transcript, extract events with approximate dates/times, e.g.:
+
+{ date: '2024-03-10', description: 'Kickoff meeting in London about vendor payments', participants: [...] }
+
+Store as timeline_events JSON.
+
+Link this timeline back to the associated Case so that the global Case timeline view can incorporate interview events.
+
+6.4 Document Request Suggestions
+
+Based on the transcript, generate a list of suggested follow-up evidence:
+
+Emails to collect (e.g., “emails between Alice and Bob between May 1–10”)
+
+Documents/contracts referenced
+
+Chats/channels mentioned
+
+System logs or bank statements
+
+Store this as part of behavioral_signals or a new field (e.g., evidence_suggestions).
+
+7. Investigator & Attorney Review UI
+
+In the existing Investigation Interviews section of the app, add a detail view for each RecordedInterview showing:
+
+Video player of the interview.
+
+Transcript pane with:
+
+Search.
+
+Click-to-jump to time in video.
+
+Highlighted segments with AI tags (e.g., “Potential FCPA issue”, “Unclear answer”, etc.).
+
+Sidebar with:
+
+AI Summary
+
+Timeline events list
+
+Behavioral signals list
+
+Document/evidence suggestion list
+
+Ability for investigators to:
+
+Add InterviewNotes tied to transcript timestamps.
+
+Tag segments (e.g., FCPA, SOX, HR).
+
+Mark sections “privileged” or “non-privileged” for later redaction.
+
+Export a PDF or report of:
+
+summary
+
+selected transcript excerpts
+
+notes
+
+timeline
+
+Integration with legal hold:
+
+Button “Add as Custodian” which triggers or links to existing legal hold workflows for that interviewee.
+
+8. Multi-Interview Comparison (Optional Initial Scaffolding)
+
+Add backend and UI scaffolding so later we can compare interviews within the same Case:
+
+For a given Case, allow selection of 2–5 RecordedInterviews and generate:
+
+Table of key questions and each interviewee’s answers.
+
+Automatically flagged contradictions or mismatches.
+
+Just create endpoints and a simple UI stub; AI comparison logic can be improved iteratively.
+
+9. Security, Privilege, and Audit Trail
+
+Every HTTP request and state transition should be logged with:
+
+user id (or anonymous interviewee token)
+
+action (invite_sent, interview_started, consent_given, interview_completed, etc.)
+
+timestamp
+
+IP + user agent
+
+Ensure:
+
+Invite links use HTTPS only.
+
+Tokens are single-use and can be manually invalidated by investigators.
+
+All interview artifacts are associated with privilege settings and clearly labeled in the UI.
+
+10. Implementation Style
+
+Use clean, modular code; separate:
+
+UI components
+
+services (email, sms, AI, storage)
+
+database/data access layer
+
+routing/controllers
+
+Comment important functions concisely so future developers understand intent.
+
+Provide seed data for a few InterviewTemplates (FCPA, SOX, HR harassment) to demonstrate the flow.
+
+Where external services are not configured (e.g., email, sms, AI, storage), create clear stub functions with TODOs that can later be wired to real providers.
+
+Implement this feature set step-by-step, keeping the existing Sentinel Counsel LLP aesthetic and navigation. When in doubt, choose the option that most benefits attorneys and investigators in real internal investigations and regulatory response work.

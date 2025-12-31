@@ -1,0 +1,357 @@
+Below is a **copy‑paste‑ready rules starter pack** for your **Investigation Logic Studio**—**10 FCPA** and **10 SOX** templates—using the hybrid detection model you outlined (rules + LLM with a 20–90 risk scale and privileged routing). Each rule is concise, uses a consistent pseudo‑DSL, and includes counter‑signals to reduce noise. Tweak thresholds, dictionaries, and routing to match each client. 
+
+> **How to read/use these:**
+>
+> * **DSL primitives:** `TEXT.CONTAINS_ANY`, `TEXT.NEAR(terms, window)`, `ATTACHMENT.FILETYPE`, `ATTACHMENT.FILENAME.MATCHES`, `CURRENCY.MENTIONED`, `ENTITY.{...}`, `COUNTRY.IN(list)`, `METADATA.SENT_AT.WITHIN_DAYS_OF(date, n)`, `COUNTERSIGNALS.NOT([...])`.
+> * **Routing:** `route="Attorney Review"` (privileged) for high‑risk; `route="Compliance Triage"` for medium.
+> * **Scoring:** Defaults map to your **20–90 risk engine**; calibrate with evals. 
+
+---
+
+## Shared dictionaries (seed lists)
+
+* `$GOV_OFFICIAL_TERMS = ["official","minister","ministry","regulator","customs","inspector","permit","SOE","state‑owned","government"]`
+* `$BRIBE_EUPHEMISMS = ["facilitation fee","grease payment","under the table","backhander","sweetener","envelope","make it happen","oiling the wheels"]`
+* `$GIFT_TNE_TERMS = ["gift","hospitality","tickets","hotel","per diem","five‑star","business class","first class","gala","lodging","stipend"]`
+* `$CHARITY_TERMS = ["donation","sponsorship","charity","foundation","CSR","scholarship","relief fund"]`
+* `$THIRD_PARTY_TERMS = ["agent","consultant","distributor","intermediary","broker","representative"]`
+* `$SOX_REVENUE_TERMS = ["bill‑and‑hold","channel stuffing","side letter","pull forward","ship‑and‑book","consignment","price protection","extended terms"]`
+* `$SOX_JE_TERMS = ["journal entry","J/E","topside","manual entry","reclassify","plug","true‑up"]`
+* `$SOX_OVERRIDE_TERMS = ["override","bypass","disable control","approve later","backdate","no PO","off‑cycle","emergency access"]`
+* `$VAGUE_DESC = ["consulting","facilitation","service fee","marketing support","retainer"]`
+* `$COUNTERSIGNALS = ["ethics training","anti‑bribery policy","code of conduct","annual certification","sample scenario","test question","hypothetical","mock data"]`
+* `$HIGH_RISK_COUNTRIES = LIST("HighRiskCountries")` (configure per client)
+
+---
+
+# FCPA — 10 starter rules
+
+### **FCPA‑01 — Facilitation / “Grease” Payment Language**
+
+**Intent:** Surface explicit/euphemistic bribe requests around officials.
+**Trigger (DSL):**
+
+```
+RULE "FCPA - Facilitation / Grease"
+WHEN channel IN ["email","slack","teams"]
+ AND TEXT.CONTAINS_ANY($BRIBE_EUPHEMISMS)
+ AND TEXT.NEAR($GOV_OFFICIAL_TERMS, 12)
+ AND (CURRENCY.MENTIONED OR ATTACHMENT.FILETYPE IN ["xls","pdf","docx"])
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=85 tags=["FCPA","Anti-Bribery"] route="Attorney Review"
+```
+
+**Notes:** Add local euphemisms per region; keep a living dictionary. 
+
+---
+
+### **FCPA‑02 — Gifts & Hospitality for Foreign Officials (High Value)**
+
+**Intent:** Detect high‑value gifts/travel for officials that may breach policy.
+**Trigger:**
+
+```
+RULE "FCPA - Gifts/Hospitality (Officials)"
+WHEN TEXT.CONTAINS_ANY($GIFT_TNE_TERMS)
+ AND TEXT.NEAR($GOV_OFFICIAL_TERMS, 20)
+ AND (CURRENCY.MENTIONED OR TEXT.CONTAINS_ANY(["business class","five-star","VIP"]))
+ AND ATTACHMENT.FILETYPE IN ["pdf","docx","xls"]  // itinerary/invoice
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=80 tags=["FCPA","Gifts","Travel"] route="Attorney Review"
+```
+
+---
+
+### **FCPA‑03 — Travel & Lodging for Officials + Family**
+
+**Intent:** Sponsoring travel/hospitality for officials or relatives.
+**Trigger:**
+
+```
+RULE "FCPA - Travel for Officials/Relatives"
+WHEN TEXT.CONTAINS_ANY(["itinerary","visa","per diem","lodging","tickets"])
+ AND TEXT.NEAR($GOV_OFFICIAL_TERMS, 18)
+ AND TEXT.CONTAINS_ANY(["spouse","family","plus one","children"])
+ AND ATTACHMENT.FILETYPE IN ["pdf","docx"]
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=82 tags=["FCPA","Travel","Family"] route="Attorney Review"
+```
+
+---
+
+### **FCPA‑04 — “Donations”/CSR with Government Nexus**
+
+**Intent:** Charitable/sponsorship payments tied to permits or officials.
+**Trigger:**
+
+```
+RULE "FCPA - Charity with Gov Nexus"
+WHEN TEXT.CONTAINS_ANY($CHARITY_TERMS)
+ AND (TEXT.NEAR($GOV_OFFICIAL_TERMS, 24) OR ENTITY.ORG.IS_SOE = true)
+ AND TEXT.CONTAINS_ANY(["permit","license","approval","expedite"])
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=78 tags=["FCPA","Charity","Books & Records"] route="Attorney Review"
+```
+
+---
+
+### **FCPA‑05 — Third‑Party Agent “Success Fee” in High‑Risk Country**
+
+**Intent:** Risky intermediaries with opaque fees.
+**Trigger:**
+
+```
+RULE "FCPA - Third-Party Success Fee"
+WHEN TEXT.CONTAINS_ANY($THIRD_PARTY_TERMS + ["success fee","commission","finder"])
+ AND (COUNTRY.IN($HIGH_RISK_COUNTRIES) OR TEXT.CONTAINS_ANY(["customs","import"]))
+ AND (CURRENCY.MENTIONED OR ATTACHMENT.FILENAME.MATCHES(".*invoice.*"))
+ AND TEXT.CONTAINS_ANY($VAGUE_DESC)
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=83 tags=["FCPA","Third-Party","Anti-Bribery"] route="Attorney Review"
+```
+
+---
+
+### **FCPA‑06 — Discounts/Rebates Offered to SOE or Regulator**
+
+**Intent:** Price concessions to state‑owned entities or regulators.
+**Trigger:**
+
+```
+RULE "FCPA - Discounts to SOE"
+WHEN TEXT.CONTAINS_ANY(["discount","rebate","credit","rebilling"])
+ AND (ENTITY.ORG.IS_SOE = true OR TEXT.NEAR(["state-owned","ministry"], 10))
+ AND TEXT.CONTAINS_ANY(["end of month","quarter end","close this week"])
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=MEDIUM risk=70 tags=["FCPA","SOE","Commercial Terms"] route="Compliance Triage"
+```
+
+---
+
+### **FCPA‑07 — Off‑Book / Slush Fund Language**
+
+**Intent:** “Special account,” petty cash, off‑book tracking.
+**Trigger:**
+
+```
+RULE "FCPA - Off-Book Funds"
+WHEN TEXT.CONTAINS_ANY(["off books","slush","special account","petty cash","cash box"])
+ AND (ATTACHMENT.FILETYPE IN ["xls","csv"] OR CURRENCY.MENTIONED)
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=84 tags=["FCPA","Books & Records"] route="Attorney Review"
+```
+
+---
+
+### **FCPA‑08 — Political/Party Contributions Abroad**
+
+**Intent:** Company funds directed to foreign parties/campaigns.
+**Trigger:**
+
+```
+RULE "FCPA - Foreign Political Contributions"
+WHEN TEXT.CONTAINS_ANY(["campaign","party donation","election fund","PAC"])
+ AND COUNTRY.IN($HIGH_RISK_COUNTRIES)
+ AND (CURRENCY.MENTIONED OR ATTACHMENT.FILETYPE IN ["pdf","docx"])
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=79 tags=["FCPA","Political"] route="Attorney Review"
+```
+
+---
+
+### **FCPA‑09 — “Expedite Customs/Permits” with Cash/Envelope**
+
+**Intent:** Payments to speed customs, inspections, permits.
+**Trigger:**
+
+```
+RULE "FCPA - Expedite Customs/Permits"
+WHEN TEXT.CONTAINS_ANY(["expedite customs","clear customs","inspection fee","stamp fee","processing fee"])
+ AND TEXT.NEAR($GOV_OFFICIAL_TERMS, 16)
+ AND TEXT.CONTAINS_ANY(["cash","envelope","cash payment"])
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=86 tags=["FCPA","Customs","Anti-Bribery"] route="Attorney Review"
+```
+
+---
+
+### **FCPA‑10 — False/Vague Invoices or Backdating**
+
+**Intent:** Books‑and‑records violations (vague descriptors, backdating).
+**Trigger:**
+
+```
+RULE "FCPA - False or Vague Invoices"
+WHEN TEXT.CONTAINS_ANY(["backdate","retroactive","reissue"])
+ OR (ATTACHMENT.FILENAME.MATCHES(".*invoice.*") AND TEXT.CONTAINS_ANY($VAGUE_DESC))
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=MEDIUM risk=72 tags=["FCPA","Books & Records","Invoices"] route="Compliance Triage"
+```
+
+---
+
+# SOX — 10 starter rules
+
+### **SOX‑01 — Quarter‑End Revenue Pull‑Forward / Ship‑and‑Book**
+
+**Intent:** Pressure to accelerate revenue before close.
+**Trigger:**
+
+```
+RULE "SOX - Pull Forward Revenue"
+WHEN TEXT.CONTAINS_ANY(["pull forward","bring forward","ship-and-book","book this quarter"])
+ AND TEXT.NEAR(["before close","quarter end","EoQ","Q1","Q2","Q3","Q4"], 15)
+ AND (ATTACHMENT.FILETYPE IN ["pdf","docx"] OR TEXT.CONTAINS_ANY(["no PO","PO later"]))
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=82 tags=["SOX","Revenue Recognition"] route="Attorney Review"
+```
+
+---
+
+### **SOX‑02 — Side Letters Changing Terms/Contingencies**
+
+**Intent:** Off‑contract terms affecting rev‑rec.
+**Trigger:**
+
+```
+RULE "SOX - Side Letter"
+WHEN TEXT.CONTAINS_ANY(["side letter","price protection","right of return","acceptance criteria","consignment"])
+ AND TEXT.NEAR(["revenue","recognize","ship","invoice"], 20)
+ AND ATTACHMENT.FILETYPE IN ["pdf","docx"]
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=85 tags=["SOX","Contracts","Revenue"] route="Attorney Review"
+```
+
+---
+
+### **SOX‑03 — Manual Journal Entries Without Support/Approval**
+
+**Intent:** Topside/manual JEs lacking backup or approvals.
+**Trigger:**
+
+```
+RULE "SOX - Manual JE w/o Support"
+WHEN TEXT.CONTAINS_ANY($SOX_JE_TERMS)
+ AND TEXT.CONTAINS_ANY(["no backup","no support","approve later","after audit"])
+ AND (ATTACHMENT.FILETYPE NOT IN ["pdf","xls","csv"])
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=84 tags=["SOX","JEs","Internal Controls"] route="Attorney Review"
+```
+
+---
+
+### **SOX‑04 — Split Transactions to Avoid Threshold/Approval**
+
+**Intent:** Breaking payments/invoices to bypass controls.
+**Trigger:**
+
+```
+RULE "SOX - Split to Avoid Threshold"
+WHEN TEXT.CONTAINS_ANY(["split the invoice","two smaller invoices","under the limit","avoid approval"])
+ AND (CURRENCY.MENTIONED OR ATTACHMENT.FILETYPE IN ["xls","csv"])
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=MEDIUM risk=74 tags=["SOX","Procure-to-Pay","Approvals"] route="Compliance Triage"
+```
+
+---
+
+### **SOX‑05 — Backdating / Effective‑Date Manipulation**
+
+**Intent:** Altering dates to fit quarter timing.
+**Trigger:**
+
+```
+RULE "SOX - Backdating"
+WHEN TEXT.CONTAINS_ANY(["backdate","change the date","make effective as of","retroactive to"])
+ AND TEXT.NEAR(["quarter end","month end","close"], 15)
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=80 tags=["SOX","Books & Records","Timing"] route="Attorney Review"
+```
+
+---
+
+### **SOX‑06 — Disabling Logs / Tampering with Audit Trails**
+
+**Intent:** Requests to delete/disable audit logs or history.
+**Trigger:**
+
+```
+RULE "SOX - Log Tampering"
+WHEN TEXT.CONTAINS_ANY(["delete logs","purge history","clear audit","turn off audit","disable logging"])
+ AND TEXT.NEAR(["ERP","GL","subledger","CRM","billing","revenue system"], 20)
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=88 tags=["SOX","Audit Trail","ITGC"] route="Attorney Review"
+```
+
+---
+
+### **SOX‑07 — “No PO” / Off‑Cycle Purchases**
+
+**Intent:** Purchases without PO or off‑workflow to bypass 3‑way match.
+**Trigger:**
+
+```
+RULE "SOX - No PO / Off-Cycle"
+WHEN TEXT.CONTAINS_ANY(["no PO","PO later","off-cycle","rush payment","urgent wire"])
+ AND TEXT.CONTAINS_ANY($VAGUE_DESC)
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=MEDIUM risk=73 tags=["SOX","P2P","Approvals"] route="Compliance Triage"
+```
+
+---
+
+### **SOX‑08 — Rev‑Rec Override Instructions**
+
+**Intent:** Directives to override revenue rules or defer/accelerate recognition.
+**Trigger:**
+
+```
+RULE "SOX - RevRec Override"
+WHEN TEXT.CONTAINS_ANY(["override","force book","recognize anyway","defer revenue","accelerate recognition"])
+ AND TEXT.NEAR(["delivery","acceptance","PO","contingency"], 18)
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=81 tags=["SOX","Revenue Recognition","Override"] route="Attorney Review"
+```
+
+---
+
+### **SOX‑09 — Elevated Access / Emergency Admin Near Close**
+
+**Intent:** Granting high‑risk access around period close (potential SOD breach).
+**Trigger:**
+
+```
+RULE "SOX - Emergency Access at Close"
+WHEN TEXT.CONTAINS_ANY(["grant admin","emergency access","temporary admin","elevate privileges"])
+ AND METADATA.SENT_AT.WITHIN_DAYS_OF(quarter_end(), 10)
+ AND TEXT.NEAR(["GL","ERP","production DB","billing","revenue"], 20)
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=HIGH risk=80 tags=["SOX","ITGC","Access Mgmt"] route="Attorney Review"
+```
+
+---
+
+### **SOX‑10 — Vendor Master / Bank Detail Changes + Urgent Payment**
+
+**Intent:** Risk of improper payments or duplicate payments.
+**Trigger:**
+
+```
+RULE "SOX - Vendor Change + Urgent Pay"
+WHEN TEXT.CONTAINS_ANY(["change bank details","update account","new vendor setup"])
+ AND TEXT.CONTAINS_ANY(["urgent payment","today","immediately"])
+ AND (ATTACHMENT.FILETYPE IN ["pdf","xls","csv"] OR CURRENCY.MENTIONED)
+ AND COUNTERSIGNALS.NOT($COUNTERSIGNALS)
+THEN ALERT severity=MEDIUM risk=72 tags=["SOX","Vendor Master","Disbursements"] route="Compliance Triage"
+```
+
+---
+
+## Implementation tips
+
+* **Version & explainability.** Store rule version, matched terms, and text spans for each alert so reviewers see “why” alongside the score. 
+* **Attorney Review Queue.** Keep high‑risk items in privileged storage with restricted visibility. 
+* **Sector tailoring.** Clone these rules into sector packs (Broker‑Dealer, Life Sciences, GovCon) and swap vocabularies. 
+* **Counter‑signal hygiene.** Keep `$COUNTERSIGNALS` fresh (training, policy broadcasts) to reduce false positives without missing real risk. 
+
+If you like, I can convert this pack into **JSON** for bulk import and add **unit test snippets** (positive/negative examples) that you can run in your evaluation harness.

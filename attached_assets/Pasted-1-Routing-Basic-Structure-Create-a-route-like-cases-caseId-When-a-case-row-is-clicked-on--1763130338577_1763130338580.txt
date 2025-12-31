@@ -1,0 +1,336 @@
+1. Routing & Basic Structure
+Create a route like:
+•	/cases/:caseId
+When a case row is clicked on the main “Cases” list, navigate to this route, loading all case-specific data.
+High-level layout:
+1.	Case Header Bar (sticky at top)
+2.	Case Search & AI Copilot bar
+3.	Tab Navigation
+4.	Tab Content Area (Overview / Evidence / Parties & Custodians / Interviews / Timeline & Tasks / Analytics & Law Analysis)
+Design the page to be responsive and match the current Sentinel look (cards, badges, purple CTA buttons, etc.).
+________________________________________
+2. Data Model & API Considerations
+Assume there are existing back-end entities for Case, DocumentSet, Document, Interview, Party/Custodian, Alert, etc. If something doesn’t exist, create the minimal model or API stub needed:
+Case (existing, extend if needed):
+•	id
+•	case_number
+•	title
+•	violation_type
+•	priority
+•	status (alert, investigation, remediation, closed)
+•	origin (alert, hotline, regulator, internal audit, etc.)
+•	regulatory_body (optional)
+•	incident_period_start / incident_period_end (optional)
+•	investigation_opened_at
+•	next_deadline_at
+•	owner_user_id (lead attorney)
+•	summary_text (short description)
+•	created_at, updated_at
+CaseStats (can be computed or cached):
+•	document_sets_count
+•	documents_count
+•	custodians_count
+•	interviews_completed_count
+•	interviews_scheduled_count
+•	alerts_count
+•	risk_score (0–100)
+CaseAIAnalysis:
+•	case_id
+•	ai_summary_text (narrative overview)
+•	key_facts (array)
+•	key_individuals (array)
+•	key_entities (array)
+•	law_matrix (see section 7)
+•	risk_assessment_text
+•	suggested_next_steps
+•	last_generated_at
+Make sure all APIs filter by case_id for:
+•	document sets & documents
+•	parties / custodians
+•	interviews
+•	alerts
+•	tasks
+•	timeline events
+________________________________________
+3. Case Header Bar (Sticky)
+At the top of /cases/:caseId show:
+•	Case title and case number
+•	Badges:
+o	Violation type (FCPA, SOX, Antitrust, AML, “other”, etc.)
+o	Priority (critical/high/medium/low)
+o	Status (alert/investigation/remediation/closed)
+•	Quick stats, pulled from CaseStats:
+o	Docs count
+o	Custodians count
+o	Interviews (completed / scheduled)
+o	Alerts linked
+•	Risk score pill (0–100, colorized)
+•	“Last Updated” timestamp
+•	Lead attorney (case owner) avatar/name
+Quick actions (buttons) on the right:
+•	+ Add Document Set
+•	+ Add Party / Custodian
+•	+ Send AI Interview
+•	Run AI Case Analysis (regenerates CaseAIAnalysis using GPT)
+Make the header sticky so these controls remain visible when scrolling.
+________________________________________
+4. Case Search & AI Copilot Bar
+Immediately below the header, full width:
+4.1 Case Search
+A search bar with placeholder:
+“Search everything in this case (docs, emails, transcripts, notes…)”
+Behavior:
+•	Queries across all objects linked to this case_id:
+o	Documents and emails
+o	Document sets
+o	Interview transcripts
+o	Alerts
+o	Tasks and notes
+•	Display results in a dropdown or redirect to a “Search Results” overlay/panel with:
+o	Type (doc, email, interview, alert)
+o	Title/snippet
+o	Date
+o	Link to open in its native view
+Add an “Advanced filters” drawer:
+•	Source type (Email, PDF, Spreadsheet, Chat, Interview, Alert, Task)
+•	Date range
+•	Custodian/party
+•	Tags (FCPA, SOX, HR, etc.)
+4.2 AI Copilot Button
+To the right of search, small button:
+•	Ask Ava about this case
+Click opens a side panel chat:
+•	Context is all indexed material with this case_id.
+•	Examples of queries:
+o	“Summarize this case in one page for the board.”
+o	“List all documents referencing the Singapore vendor.”
+o	“What are the main FCPA risks?”
+•	Implement the frontend panel and stub/backend endpoint to call GPT with the case context.
+________________________________________
+5. Tab Navigation
+Under the search bar:
+Tabs (use existing style for navigation):
+1.	Overview (default)
+2.	Evidence
+3.	Parties & Custodians
+4.	Interviews
+5.	Timeline & Tasks
+6.	Analytics & Law Analysis
+Each tab is a separate component but shares the same caseId and loads its own data.
+________________________________________
+6. Overview Tab (Case Snapshot)
+Divide into two columns on desktop, stacked on mobile.
+6.1 Left Column – Case Snapshot & AI Summary
+A. Case Snapshot Card
+Fields:
+•	Allegations / issue summary (case.summary_text)
+•	Origin (alert, hotline, regulator, etc.)
+•	Regulatory body (if any)
+•	Incident period (start/end)
+•	Investigation opened date
+•	Next regulatory deadline
+•	Linked matters (if there’s a relationship to other cases/matters – can just show a list of related case titles)
+B. AI Case Summary & Laws Card
+Pull from CaseAIAnalysis:
+•	Narrative AI summary (multi-paragraph)
+•	“Key Facts” bullet list
+•	“Key Individuals/Entities” bullet list
+•	“Regulatory Framework” section:
+o	List of primary laws/regimes that apply (SOX sections, FCPA, GLBA, OFAC, BSA/AML, etc.) with short descriptions
+•	“Risk Assessment” short narrative
+•	“Suggested Next Steps” checklist
+Include button:
+•	Regenerate with latest data → calls backend to re-run GPT analysis for this case.
+6.2 Right Column – Operational Snapshot Cards
+C. Document Sets & Evidence Card
+Table of document sets for this case:
+•	Name
+•	Type (email archive, file share export, chat export, etc.)
+•	Document count
+•	Review status (% reviewed, # hot docs)
+Controls:
+•	View all evidence → switch to Evidence tab
+•	+ Add document set
+D. Parties & Custodians Card
+List:
+•	Name
+•	Role (employee, vendor, regulator, whistleblower, etc.)
+•	Case role (subject, witness, reporter)
+•	Legal hold status (badge)
+•	Interview status (not scheduled/scheduled/completed)
+Control:
+•	Manage parties → Parties & Custodians tab
+E. Interviews Snapshot Card
+Show metrics:
+•	Completed / Scheduled / Notified
+List:
+•	Upcoming 3 interviews (name, role, date/time, status)
+•	Last 3 completed interviews (name, date, AI risk tag)
+Controls:
+•	View all interviews → Interviews tab
+•	Send AI interview
+F. Alerts Snapshot Card
+Show a compact list of alerts tied to this case:
+•	Severity
+•	Violation type
+•	Created date
+Control:
+•	View alerts in context (could link to Evidence or a dedicated alerts view)
+________________________________________
+7. Evidence Tab (Documents & Communications)
+Focus on all reviewable content attached to the case.
+Layout:
+•	Left side: filters panel
+•	Right side: results table/grid
+Filters:
+•	Source type: Email, Chat, PDF, Spreadsheet, Audio/Video, Other
+•	Document set
+•	Custodian
+•	Date range
+•	Tags (FCPA, SOX, “hot”, “privileged”, “produced”)
+Results list columns:
+•	Title / subject
+•	Type
+•	Custodian
+•	Date
+•	Flags/badges:
+o	Privileged
+o	Responsive
+o	Hot
+•	AI snippet preview (short relevant excerpt to the case issues)
+Row actions:
+•	Open in document viewer (reuse existing document review module, scoped to this case)
+•	Tag / untag (hot, privileged, responsive)
+•	Add to production set
+Top-right actions:
+•	+ Add document set
+•	Bulk tag (for multi-select)
+________________________________________
+8. Parties & Custodians Tab
+Show all people/entities involved in the case.
+Columns:
+•	Name
+•	Role type (employee, vendor, regulator, outside counsel, whistleblower, etc.)
+•	Case role (subject, witness, bystander, reporter)
+•	Department / company
+•	Legal hold status (badge, with date)
+•	Data sources collected (icons for: email, chat, phone, file share, CRM, etc.)
+•	Interview status (not scheduled / scheduled / completed / declined)
+•	Risk level (low/med/high – derived from alerts & interviews)
+Actions:
+•	+ Add party / custodian (form for name, role, email, department, role in case)
+•	Per-row:
+o	Issue / update legal hold (hooks into existing legal hold workflow if present)
+o	Send AI interview
+o	View profile (optional future: page showing everything for that person in this case)
+________________________________________
+9. Interviews Tab
+Integrate your AI interview system here.
+Top metrics:
+•	Total interviews
+•	Completed
+•	Scheduled
+•	With recordings
+•	Marked privileged
+•	AI flagged: high-risk
+List columns:
+•	Interviewee name
+•	Role / relationship
+•	Type (AI remote / live / hybrid)
+•	Date/time
+•	Status
+•	Upjohn icon (if delivered)
+•	Consent icon
+•	Short AI summary snippet (e.g., “Described off-book payments to vendor X”)
+•	Risk tag (low/med/high)
+Row action:
+•	View interview → existing detailed view with:
+o	video player
+o	transcript with clickable segments
+o	AI summary
+o	notes
+o	timeline events
+o	evidence suggestions
+Top-right actions:
+•	+ Schedule live interview
+•	+ Send AI interview
+________________________________________
+10. Timeline & Tasks Tab
+10.1 Timeline
+Show a chronological list or visual timeline of all key events for this case:
+•	Alerts
+•	Document set ingestions
+•	Key document tags (e.g., first “hot” doc)
+•	Interviews (scheduled & completed)
+•	Regulatory deadlines and events
+•	Internal decisions (e.g., “suspended vendor relationship”)
+Each event item:
+•	Icon for type
+•	Title/description
+•	Date/time
+•	Link to open the relevant object in side panel or separate view.
+10.2 Tasks
+Case-specific tasks list (or Kanban-style board):
+•	Task title
+•	Owner
+•	Due date
+•	Status (open, in progress, done)
+•	Linked object (doc, interview, party, alert, etc.)
+Controls:
+•	+ Add task
+•	Filter by owner, status, due date
+________________________________________
+11. Analytics & Law Analysis Tab
+This tab surfaces deeper AI analysis of legal exposure and risk.
+11.1 Applicable Law Matrix
+Table where each row is a law/regulation and columns include:
+•	Law name / citation (e.g., “FCPA – Anti-Bribery”, “SOX §404 Internal Control”, “GLBA Safeguards Rule”, “OFAC Sanctions”, “BSA/AML – KYC/CTR”)
+•	Applies? (Yes / Likely / Unclear / No)
+•	AI rationale text (short paragraph)
+•	Evidence references (doc IDs, interview IDs, alerts)
+This comes from CaseAIAnalysis.law_matrix generated via GPT using case data.
+11.2 Risk Heatmap
+Visualization (can start as a simple table):
+•	Axis 1: Department / Entity / Subsidiary
+•	Axis 2: Issue area (revenue recognition, bribery, sanctions, data privacy, AML, etc.)
+•	Cell: AI-derived risk level (low/med/high) based on evidence tagged to each combination.
+11.3 Narrative “What Should We Be Thinking About?”
+AI-generated narrative panel answering:
+•	Main risk themes
+•	Likely regulator perspective
+•	Key remediation themes and control improvements expected by regulators
+•	Suggested communication strategy (board, regulators, auditors)
+11.4 Export Tools
+Buttons:
+•	Generate Board Summary PDF
+•	Generate Regulator Brief Outline
+Both should call an endpoint that uses GPT to produce structured markdown or HTML that can be rendered/exported later.
+________________________________________
+12. Security, Privilege & Audit
+•	All reads/writes must enforce access control: only authorized users can view a case.
+•	Case page actions to log in audit trail:
+o	Opening the case
+o	Running AI analysis
+o	Adding/removing parties
+o	Adding document sets
+o	Sending AI interviews
+o	Changing status/priority
+•	Display privilege indicators clearly:
+o	Case can be marked as under attorney–client privilege
+o	Individual documents/interviews can be tagged privileged and should show a shield icon.
+________________________________________
+13. Implementation Style
+•	Follow the existing UI component style (cards, typography, spacing, purple CTAs).
+•	Break the page into reusable components:
+o	CaseHeader
+o	CaseSearchBar
+o	CaseTabs
+o	CaseOverview
+o	CaseEvidenceTab
+o	CasePartiesTab
+o	CaseInterviewsTab
+o	CaseTimelineTab
+o	CaseAnalyticsTab
+•	Keep data fetching organized (e.g., hooks/services like useCase(caseId), useCaseStats(caseId), etc.).
+•	Where back-end APIs do not exist yet, create stubs with clear TODOs and mock data structures so the UI works and can be wired to real endpoints later.
+Prioritize features that most improve investigator and attorney workflows: fast orientation, deep search within the case, seeing who/what/when at a glance, and AI-powered legal insights.

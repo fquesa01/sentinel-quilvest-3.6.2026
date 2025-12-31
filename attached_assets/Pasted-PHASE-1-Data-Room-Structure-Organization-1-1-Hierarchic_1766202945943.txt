@@ -1,0 +1,887 @@
+PHASE 1: Data Room Structure & Organization
+1.1 Hierarchical Folder System
+typescript// Schema additions for folder structure
+export const dataRoomFolders = pgTable('data_room_folders', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  parentFolderId: integer('parent_folder_id'), // Self-reference for nesting
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  sortOrder: integer('sort_order').default(0),
+  
+  // Index numbering (1.0, 1.1, 1.1.1, etc.)
+  indexNumber: varchar('index_number', { length: 50 }),
+  autoIndex: boolean('auto_index').default(true),
+  
+  // Folder settings
+  isLocked: boolean('is_locked').default(false),
+  lockedBy: integer('locked_by').references(() => users.id),
+  lockedAt: timestamp('locked_at'),
+  
+  // Metadata
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const dataRoomDocuments = pgTable('data_room_documents', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  folderId: integer('folder_id').references(() => dataRoomFolders.id),
+  
+  // Document info
+  fileName: varchar('file_name', { length: 500 }).notNull(),
+  originalFileName: varchar('original_file_name', { length: 500 }),
+  fileSize: bigint('file_size', { mode: 'number' }),
+  mimeType: varchar('mime_type', { length: 100 }),
+  fileExtension: varchar('file_extension', { length: 20 }),
+  storagePath: text('storage_path').notNull(),
+  
+  // Index numbering
+  indexNumber: varchar('index_number', { length: 50 }),
+  sortOrder: integer('sort_order').default(0),
+  
+  // Version control
+  version: integer('version').default(1),
+  isLatestVersion: boolean('is_latest_version').default(true),
+  previousVersionId: integer('previous_version_id'),
+  
+  // Document status
+  status: varchar('status', { length: 50 }).default('active'), // 'active', 'archived', 'deleted'
+  
+  // Checksums for integrity
+  md5Hash: varchar('md5_hash', { length: 32 }),
+  sha256Hash: varchar('sha256_hash', { length: 64 }),
+  
+  // Metadata
+  uploadedBy: integer('uploaded_by').references(() => users.id),
+  uploadedAt: timestamp('uploaded_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+Implementation Requirements:
+
+Unlimited folder nesting depth
+Drag-and-drop folder/document reordering
+Auto-generated index numbers (1.0, 1.1, 1.2, 2.0, etc.) with manual override option
+Bulk folder creation from template
+Folder tree view with expand/collapse
+Breadcrumb navigation
+Right-click context menu for folder operations
+
+1.2 Standard Folder Templates
+typescriptexport const dataRoomTemplates = pgTable('data_room_templates', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  dealType: varchar('deal_type', { length: 100 }), // 'M&A', 'Real Estate', 'Financing', 'IPO', 'General'
+  folderStructure: jsonb('folder_structure'), // Nested folder template
+  isDefault: boolean('is_default').default(false),
+  isGlobal: boolean('is_global').default(true), // Available to all users
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+Pre-built Templates to Include:
+M&A Due Diligence Template:
+1.0 Corporate Organization
+  1.1 Charter Documents
+  1.2 Bylaws
+  1.3 Board Minutes
+  1.4 Stockholder Records
+  1.5 Subsidiaries & Affiliates
+2.0 Financial Information
+  2.1 Audited Financial Statements
+  2.2 Interim Financials
+  2.3 Projections & Forecasts
+  2.4 Tax Returns
+  2.5 Accounts Receivable/Payable
+3.0 Material Contracts
+  3.1 Customer Agreements
+  3.2 Supplier Agreements
+  3.3 Partnership Agreements
+  3.4 Loan Agreements
+  3.5 Lease Agreements
+4.0 Intellectual Property
+  4.1 Patents
+  4.2 Trademarks
+  4.3 Copyrights
+  4.4 Trade Secrets
+  4.5 License Agreements
+5.0 Employment & Benefits
+  5.1 Employee Agreements
+  5.2 Benefit Plans
+  5.3 Executive Compensation
+  5.4 Stock Option Plans
+  5.5 Employee Handbook
+6.0 Real Property
+  6.1 Owned Property
+  6.2 Leased Property
+  6.3 Environmental Reports
+7.0 Litigation & Claims
+  7.1 Pending Litigation
+  7.2 Threatened Claims
+  7.3 Regulatory Matters
+  7.4 Insurance Policies
+8.0 Regulatory & Compliance
+  8.1 Permits & Licenses
+  8.2 Regulatory Filings
+  8.3 Compliance Reports
+9.0 Technology & IT
+  9.1 Systems Documentation
+  9.2 Data Security
+  9.3 Software Licenses
+10.0 Transaction Documents
+  10.1 LOI/Term Sheet
+  10.2 Draft Agreements
+  10.3 Disclosure Schedules
+  10.4 Closing Documents
+Real Estate Template:
+1.0 Property Information
+2.0 Title & Survey
+3.0 Environmental
+4.0 Zoning & Entitlements
+5.0 Financial Information
+6.0 Leases & Tenants
+7.0 Property Management
+8.0 Insurance
+9.0 Transaction Documents
+Financing Template:
+1.0 Borrower Information
+2.0 Financial Statements
+3.0 Collateral Documentation
+4.0 Credit Documentation
+5.0 Legal Documentation
+6.0 Regulatory & Compliance
+
+PHASE 2: Document Management
+2.1 Bulk Upload & Processing
+typescriptexport const uploadJobs = pgTable('upload_jobs', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id),
+  folderId: integer('folder_id').references(() => dataRoomFolders.id),
+  status: varchar('status', { length: 50 }), // 'pending', 'processing', 'completed', 'failed'
+  totalFiles: integer('total_files'),
+  processedFiles: integer('processed_files').default(0),
+  failedFiles: integer('failed_files').default(0),
+  uploadedBy: integer('uploaded_by').references(() => users.id),
+  startedAt: timestamp('started_at'),
+  completedAt: timestamp('completed_at'),
+});
+
+export const uploadJobFiles = pgTable('upload_job_files', {
+  id: serial('id').primaryKey(),
+  jobId: integer('job_id').references(() => uploadJobs.id),
+  fileName: varchar('file_name', { length: 500 }),
+  status: varchar('status', { length: 50 }), // 'pending', 'processing', 'completed', 'failed'
+  errorMessage: text('error_message'),
+  documentId: integer('document_id').references(() => dataRoomDocuments.id),
+});
+Implementation Requirements:
+
+Drag-and-drop bulk upload (files and folders)
+Preserve folder structure from ZIP uploads
+Progress indicator with file-by-file status
+Resume failed uploads
+Duplicate detection with options: skip, rename, replace, version
+File type validation
+Virus scanning integration point
+Maximum file size configuration (default 5GB per file)
+
+2.2 Version Control
+typescriptexport const documentVersions = pgTable('document_versions', {
+  id: serial('id').primaryKey(),
+  documentId: integer('document_id').references(() => dataRoomDocuments.id),
+  version: integer('version').notNull(),
+  fileName: varchar('file_name', { length: 500 }),
+  fileSize: bigint('file_size', { mode: 'number' }),
+  storagePath: text('storage_path'),
+  md5Hash: varchar('md5_hash', { length: 32 }),
+  changeNotes: text('change_notes'),
+  uploadedBy: integer('uploaded_by').references(() => users.id),
+  uploadedAt: timestamp('uploaded_at').defaultNow(),
+});
+Implementation Requirements:
+
+Automatic version increment on re-upload
+Version history panel showing all versions
+Version comparison (for supported file types)
+Download any previous version
+Restore previous version as current
+Version notes/comments
+"Track Changes" indicator when new version uploaded
+
+2.3 Document Viewer
+Implementation Requirements:
+
+In-browser viewing for common formats:
+
+PDF (with page thumbnails)
+Microsoft Office (Word, Excel, PowerPoint)
+Images (JPG, PNG, GIF, TIFF)
+Text files
+CAD files (basic support)
+
+
+Watermarking options:
+
+User email
+Company name
+Custom text
+Date/time
+Document index number
+
+
+Print/download controls (can be disabled per user/group)
+Page navigation with thumbnails
+Zoom controls
+Full-screen mode
+Search within document
+Annotation tools (highlight, comment, sticky note) - optional per data room setting
+
+2.4 Document Actions
+Implementation Requirements:
+
+Download (single file, multiple files as ZIP, entire folder)
+Move to different folder
+Copy to different folder
+Rename
+Delete (soft delete with trash/recovery)
+Archive
+Add to favorites/starred
+Share link (if enabled)
+Print (if enabled)
+Email document (through system)
+
+
+PHASE 3: User & Permission Management
+3.1 User Groups & Roles
+typescriptexport const dataRoomGroups = pgTable('data_room_groups', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  color: varchar('color', { length: 7 }), // Hex color for visual identification
+  isDefault: boolean('is_default').default(false),
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const dataRoomUsers = pgTable('data_room_users', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  userId: integer('user_id').references(() => users.id),
+  
+  // For external users invited by email
+  email: varchar('email', { length: 255 }),
+  firstName: varchar('first_name', { length: 100 }),
+  lastName: varchar('last_name', { length: 100 }),
+  company: varchar('company', { length: 255 }),
+  title: varchar('title', { length: 255 }),
+  phone: varchar('phone', { length: 50 }),
+  
+  // Access settings
+  groupId: integer('group_id').references(() => dataRoomGroups.id),
+  role: varchar('role', { length: 50 }).default('viewer'), // 'admin', 'manager', 'uploader', 'viewer'
+  
+  // Invitation tracking
+  invitedBy: integer('invited_by').references(() => users.id),
+  invitedAt: timestamp('invited_at'),
+  invitationToken: varchar('invitation_token', { length: 100 }),
+  invitationExpires: timestamp('invitation_expires'),
+  acceptedAt: timestamp('accepted_at'),
+  
+  // Access restrictions
+  accessExpires: timestamp('access_expires'),
+  isActive: boolean('is_active').default(true),
+  lastAccessedAt: timestamp('last_accessed_at'),
+  
+  // Security settings
+  requireMfa: boolean('require_mfa').default(false),
+  ipRestrictions: jsonb('ip_restrictions'), // Array of allowed IP ranges
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const dataRoomGroupMembers = pgTable('data_room_group_members', {
+  id: serial('id').primaryKey(),
+  groupId: integer('group_id').references(() => dataRoomGroups.id),
+  userId: integer('user_id').references(() => dataRoomUsers.id),
+  addedAt: timestamp('added_at').defaultNow(),
+});
+3.2 Granular Permissions
+typescriptexport const dataRoomPermissions = pgTable('data_room_permissions', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id),
+  
+  // Permission can apply to user, group, or role
+  userId: integer('user_id').references(() => dataRoomUsers.id),
+  groupId: integer('group_id').references(() => dataRoomGroups.id),
+  role: varchar('role', { length: 50 }),
+  
+  // Target: entire data room, specific folder, or specific document
+  targetType: varchar('target_type', { length: 50 }), // 'data_room', 'folder', 'document'
+  folderId: integer('folder_id').references(() => dataRoomFolders.id),
+  documentId: integer('document_id').references(() => dataRoomDocuments.id),
+  
+  // Permission levels
+  canView: boolean('can_view').default(false),
+  canDownload: boolean('can_download').default(false),
+  canPrint: boolean('can_print').default(false),
+  canUpload: boolean('can_upload').default(false),
+  canEdit: boolean('can_edit').default(false),
+  canDelete: boolean('can_delete').default(false),
+  canShare: boolean('can_share').default(false),
+  canManageUsers: boolean('can_manage_users').default(false),
+  canSeeOtherUsers: boolean('can_see_other_users').default(false),
+  
+  // View restrictions
+  watermarkEnabled: boolean('watermark_enabled').default(true),
+  fenceView: boolean('fence_view').default(false), // Restricted viewing mode
+  
+  // Inheritance
+  inheritFromParent: boolean('inherit_from_parent').default(true),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+Permission Levels (Presets):
+- No Access: Cannot see folder/document exists
+- View Only: Can view in browser, no download/print
+- View + Download: Can view and download
+- View + Download + Print: Full read access
+- Contributor: View + Download + Print + Upload
+- Manager: Contributor + Edit + Delete + Share
+- Admin: Full control including user management
+Implementation Requirements:
+
+Permission matrix UI showing users/groups vs folders
+Drag-and-drop permission assignment
+Bulk permission changes
+Permission inheritance with override capability
+"Copy permissions from" another user/group
+Permission audit report
+Real-time permission preview ("What can User X see?")
+
+3.3 User Invitation Workflow
+Implementation Requirements:
+
+Email invitation with secure link
+Bulk invite via CSV upload
+Custom invitation message
+Invitation expiration settings
+Resend invitation option
+Track invitation status (sent, opened, accepted)
+Self-registration with approval workflow (optional)
+SSO integration support (SAML, OAuth)
+Terms of use/NDA acceptance requirement
+
+
+PHASE 4: Q&A Module
+4.1 Q&A Schema
+typescriptexport const dataRoomQuestions = pgTable('data_room_questions', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  
+  // Question details
+  questionNumber: varchar('question_number', { length: 50 }), // Auto-generated: Q-001, Q-002
+  subject: varchar('subject', { length: 500 }).notNull(),
+  body: text('body').notNull(),
+  
+  // Categorization
+  category: varchar('category', { length: 100 }),
+  priority: varchar('priority', { length: 50 }).default('normal'), // 'low', 'normal', 'high', 'urgent'
+  
+  // Document references
+  relatedFolderId: integer('related_folder_id').references(() => dataRoomFolders.id),
+  relatedDocumentId: integer('related_document_id').references(() => dataRoomDocuments.id),
+  
+  // Status tracking
+  status: varchar('status', { length: 50 }).default('open'), // 'open', 'in_progress', 'answered', 'closed', 'withdrawn'
+  
+  // Assignment
+  assignedTo: integer('assigned_to').references(() => dataRoomUsers.id),
+  assignedToGroup: integer('assigned_to_group').references(() => dataRoomGroups.id),
+  
+  // Submitter info
+  submittedBy: integer('submitted_by').references(() => dataRoomUsers.id).notNull(),
+  submittedAt: timestamp('submitted_at').defaultNow(),
+  
+  // Visibility
+  isPrivate: boolean('is_private').default(false), // Only visible to submitter's group + admins
+  visibleToGroups: jsonb('visible_to_groups'), // Array of group IDs
+  
+  // Timestamps
+  dueDate: timestamp('due_date'),
+  answeredAt: timestamp('answered_at'),
+  closedAt: timestamp('closed_at'),
+});
+
+export const dataRoomAnswers = pgTable('data_room_answers', {
+  id: serial('id').primaryKey(),
+  questionId: integer('question_id').references(() => dataRoomQuestions.id).notNull(),
+  
+  // Answer content
+  body: text('body').notNull(),
+  
+  // Status
+  status: varchar('status', { length: 50 }).default('draft'), // 'draft', 'pending_approval', 'published', 'rejected'
+  
+  // Approval workflow
+  requiresApproval: boolean('requires_approval').default(true),
+  approvedBy: integer('approved_by').references(() => dataRoomUsers.id),
+  approvedAt: timestamp('approved_at'),
+  rejectionReason: text('rejection_reason'),
+  
+  // Author
+  answeredBy: integer('answered_by').references(() => dataRoomUsers.id).notNull(),
+  answeredAt: timestamp('answered_at').defaultNow(),
+  
+  // Edit tracking
+  editedAt: timestamp('edited_at'),
+  editedBy: integer('edited_by').references(() => dataRoomUsers.id),
+});
+
+export const dataRoomQaAttachments = pgTable('data_room_qa_attachments', {
+  id: serial('id').primaryKey(),
+  questionId: integer('question_id').references(() => dataRoomQuestions.id),
+  answerId: integer('answer_id').references(() => dataRoomAnswers.id),
+  documentId: integer('document_id').references(() => dataRoomDocuments.id),
+  attachmentType: varchar('attachment_type', { length: 50 }), // 'link_existing', 'new_upload'
+  addedAt: timestamp('added_at').defaultNow(),
+});
+
+export const dataRoomQaComments = pgTable('data_room_qa_comments', {
+  id: serial('id').primaryKey(),
+  questionId: integer('question_id').references(() => dataRoomQuestions.id),
+  answerId: integer('answer_id').references(() => dataRoomAnswers.id),
+  parentCommentId: integer('parent_comment_id'), // For threaded replies
+  body: text('body').notNull(),
+  authorId: integer('author_id').references(() => dataRoomUsers.id).notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+  isInternal: boolean('is_internal').default(false), // Only visible to sell-side
+});
+Implementation Requirements:
+
+Q&A dashboard with filtering (status, category, assignee, date)
+Question submission form with document/folder reference
+Assignment workflow with notifications
+Answer drafting with approval workflow
+Answer publication with notification to questioner
+Follow-up questions/comments threading
+Export Q&A log to Excel/PDF
+Q&A analytics (response times, volume by category)
+Due date tracking with overdue alerts
+Batch operations (assign, close, export)
+
+
+PHASE 5: Activity Tracking & Audit
+5.1 Comprehensive Activity Logging
+typescriptexport const dataRoomActivity = pgTable('data_room_activity', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  
+  // Actor
+  userId: integer('user_id').references(() => dataRoomUsers.id),
+  userEmail: varchar('user_email', { length: 255 }),
+  userIp: varchar('user_ip', { length: 45 }),
+  userAgent: text('user_agent'),
+  
+  // Action details
+  actionType: varchar('action_type', { length: 100 }).notNull(),
+  actionCategory: varchar('action_category', { length: 50 }), // 'document', 'folder', 'user', 'permission', 'qa', 'system'
+  
+  // Target
+  targetType: varchar('target_type', { length: 50 }),
+  targetId: integer('target_id'),
+  targetName: varchar('target_name', { length: 500 }),
+  folderId: integer('folder_id'),
+  documentId: integer('document_id'),
+  
+  // Additional context
+  details: jsonb('details'), // Additional action-specific data
+  previousValue: jsonb('previous_value'), // For changes
+  newValue: jsonb('new_value'),
+  
+  // Session tracking
+  sessionId: varchar('session_id', { length: 100 }),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Action types to track:
+// Document: view, download, print, upload, delete, move, copy, rename, version_upload
+// Folder: create, rename, delete, move, permission_change
+// User: invite, accept_invite, login, logout, permission_change, access_revoke
+// Q&A: question_submit, answer_draft, answer_publish, comment_add
+// System: data_room_create, data_room_archive, settings_change
+5.2 Activity Reports & Analytics
+typescriptexport const activityReports = pgTable('activity_reports', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id),
+  reportType: varchar('report_type', { length: 100 }),
+  dateRangeStart: timestamp('date_range_start'),
+  dateRangeEnd: timestamp('date_range_end'),
+  filters: jsonb('filters'),
+  generatedBy: integer('generated_by').references(() => users.id),
+  generatedAt: timestamp('generated_at').defaultNow(),
+  reportData: jsonb('report_data'),
+  exportPath: text('export_path'),
+});
+Implementation Requirements:
+
+Real-time activity feed dashboard
+Filterable activity log (by user, action type, date, document)
+Document-level activity history
+User-level activity history
+Engagement analytics:
+
+Most viewed documents
+Most active users
+Time spent per document (page views over time)
+Download frequency
+User login patterns
+
+
+Heat maps showing activity by time of day
+Export activity logs (CSV, Excel, PDF)
+Scheduled report delivery via email
+Anomaly detection (unusual download patterns, off-hours access)
+
+5.3 User Activity Summary
+Reports to Generate:
+
+User Summary Report: Per-user activity breakdown
+Document Popularity Report: Most viewed/downloaded documents
+Access Report: Who accessed what, when
+Engagement Report: Active vs inactive users
+Security Report: Failed logins, permission changes, IP anomalies
+Q&A Summary: Questions asked, response times, outstanding items
+
+
+PHASE 6: Security Features
+6.1 Watermarking
+typescriptexport const watermarkSettings = pgTable('watermark_settings', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id),
+  
+  // Watermark content
+  watermarkType: varchar('watermark_type', { length: 50 }), // 'text', 'image', 'dynamic'
+  textContent: text('text_content'), // Can include variables: {user_email}, {company}, {date}, {time}, {doc_id}
+  imagePath: text('image_path'),
+  
+  // Appearance
+  position: varchar('position', { length: 50 }), // 'diagonal', 'header', 'footer', 'tiled'
+  opacity: real('opacity').default(0.3),
+  fontSize: integer('font_size').default(12),
+  fontColor: varchar('font_color', { length: 7 }).default('#888888'),
+  rotation: integer('rotation').default(45),
+  
+  // Application rules
+  applyToViewer: boolean('apply_to_viewer').default(true),
+  applyToDownload: boolean('apply_to_download').default(true),
+  applyToPrint: boolean('apply_to_print').default(true),
+  
+  isActive: boolean('is_active').default(true),
+});
+6.2 Access Controls
+typescriptexport const dataRoomSecuritySettings = pgTable('data_room_security_settings', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).unique(),
+  
+  // Authentication
+  requireMfa: boolean('require_mfa').default(false),
+  sessionTimeoutMinutes: integer('session_timeout_minutes').default(60),
+  maxConcurrentSessions: integer('max_concurrent_sessions').default(1),
+  
+  // IP restrictions
+  ipWhitelistEnabled: boolean('ip_whitelist_enabled').default(false),
+  ipWhitelist: jsonb('ip_whitelist'), // Array of IP ranges
+  
+  // Time-based access
+  accessScheduleEnabled: boolean('access_schedule_enabled').default(false),
+  accessSchedule: jsonb('access_schedule'), // Days/hours when access is allowed
+  
+  // Download protection
+  downloadWatermarkRequired: boolean('download_watermark_required').default(true),
+  pdfConvertOnDownload: boolean('pdf_convert_on_download').default(false), // Convert docs to PDF for download
+  nativeDownloadAllowed: boolean('native_download_allowed').default(true),
+  
+  // Print protection
+  printingAllowed: boolean('printing_allowed').default(true),
+  printWatermarkRequired: boolean('print_watermark_required').default(true),
+  
+  // Screen capture protection (informational - can't fully enforce)
+  screenCaptureWarning: boolean('screen_capture_warning').default(true),
+  
+  // Terms acceptance
+  requireTermsAcceptance: boolean('require_terms_acceptance').default(true),
+  termsContent: text('terms_content'),
+  
+  // Auto-expiration
+  autoExpireEnabled: boolean('auto_expire_enabled').default(false),
+  autoExpireDate: timestamp('auto_expire_date'),
+  
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+6.3 Document Protection Features
+Implementation Requirements:
+
+Dynamic watermarking with user identification
+Fence view mode (only portion of document visible at a time)
+Disabled right-click/copy in viewer
+Print disabled via CSS/JavaScript (soft protection)
+Download in view-only PDF with watermark
+Expiring download links
+Digital Rights Management (DRM) integration point
+Remote document revocation capability
+
+
+PHASE 7: Notifications & Alerts
+7.1 Notification System
+typescriptexport const dataRoomNotificationSettings = pgTable('data_room_notification_settings', {
+  id: serial('id').primaryKey(),
+  dataRoomUserId: integer('data_room_user_id').references(() => dataRoomUsers.id),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id),
+  
+  // Notification preferences
+  emailEnabled: boolean('email_enabled').default(true),
+  inAppEnabled: boolean('in_app_enabled').default(true),
+  dailyDigest: boolean('daily_digest').default(false),
+  
+  // Event subscriptions
+  notifyOnNewDocument: boolean('notify_on_new_document').default(true),
+  notifyOnDocumentUpdate: boolean('notify_on_document_update').default(true),
+  notifyOnNewQuestion: boolean('notify_on_new_question').default(true),
+  notifyOnQuestionAssigned: boolean('notify_on_question_assigned').default(true),
+  notifyOnAnswerPublished: boolean('notify_on_answer_published').default(true),
+  notifyOnPermissionChange: boolean('notify_on_permission_change').default(true),
+  notifyOnMention: boolean('notify_on_mention').default(true),
+  
+  // Folder-specific subscriptions
+  subscribedFolders: jsonb('subscribed_folders'), // Array of folder IDs
+  
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const dataRoomNotifications = pgTable('data_room_notifications', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id),
+  userId: integer('user_id').references(() => dataRoomUsers.id),
+  
+  notificationType: varchar('notification_type', { length: 100 }),
+  title: varchar('title', { length: 255 }),
+  message: text('message'),
+  
+  // Reference
+  targetType: varchar('target_type', { length: 50 }),
+  targetId: integer('target_id'),
+  
+  // Status
+  isRead: boolean('is_read').default(false),
+  readAt: timestamp('read_at'),
+  emailSent: boolean('email_sent').default(false),
+  emailSentAt: timestamp('email_sent_at'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+Notification Events:
+
+New document uploaded to subscribed folder
+Document updated (new version)
+New Q&A question submitted
+Q&A question assigned to you
+Q&A answer published
+Permission changed
+Mentioned in comment
+User invitation accepted
+Data room access expiring soon
+Daily activity digest
+
+
+PHASE 8: Advanced Features
+8.1 AI-Powered Search
+typescriptexport const documentSearchIndex = pgTable('document_search_index', {
+  id: serial('id').primaryKey(),
+  documentId: integer('document_id').references(() => dataRoomDocuments.id),
+  extractedText: text('extracted_text'),
+  embedding: vector('embedding', { dimensions: 768 }), // Gemini embeddings
+  metadata: jsonb('metadata'),
+  indexedAt: timestamp('indexed_at').defaultNow(),
+});
+Implementation Requirements:
+
+Full-text search across all documents
+OCR for image-based documents
+AI-powered semantic search ("find documents about indemnification")
+Search within specific folders
+Search filters (date, file type, uploader)
+Search result highlighting
+Saved searches
+Search analytics (what are users searching for?)
+
+8.2 Document Request Lists
+typescriptexport const documentRequests = pgTable('document_requests', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id),
+  
+  // Request details
+  requestNumber: varchar('request_number', { length: 50 }),
+  description: text('description').notNull(),
+  category: varchar('category', { length: 100 }),
+  
+  // Target folder
+  targetFolderId: integer('target_folder_id').references(() => dataRoomFolders.id),
+  
+  // Status
+  status: varchar('status', { length: 50 }).default('pending'), // 'pending', 'in_progress', 'fulfilled', 'not_applicable'
+  
+  // Assignment
+  assignedTo: integer('assigned_to').references(() => dataRoomUsers.id),
+  
+  // Fulfillment
+  fulfilledDocuments: jsonb('fulfilled_documents'), // Array of document IDs
+  fulfilledAt: timestamp('fulfilled_at'),
+  fulfilledBy: integer('fulfilled_by').references(() => dataRoomUsers.id),
+  
+  // Tracking
+  requestedBy: integer('requested_by').references(() => dataRoomUsers.id),
+  requestedAt: timestamp('requested_at').defaultNow(),
+  dueDate: timestamp('due_date'),
+  
+  notes: text('notes'),
+});
+Implementation Requirements:
+
+Create document request lists (what documents are needed)
+Track fulfillment status
+Link uploaded documents to requests
+Import request lists from Excel
+Export request status report
+Integrate with Due Diligence Checklists
+
+8.3 Redlining & Comparison
+Implementation Requirements:
+
+Document comparison (Word documents)
+Visual diff highlighting
+Redline export
+Version comparison within same document
+
+8.4 Data Room Analytics Dashboard
+Metrics to Display:
+
+Total documents / pages
+Storage used
+Active users (today, this week, this month)
+Most viewed documents
+Most active users
+Q&A status summary
+Document upload timeline
+User engagement over time
+Outstanding items (open questions, pending requests)
+
+
+PHASE 9: Integration & Export
+9.1 Archive & Export
+typescriptexport const dataRoomArchives = pgTable('data_room_archives', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id),
+  archiveName: varchar('archive_name', { length: 255 }),
+  archiveType: varchar('archive_type', { length: 50 }), // 'full', 'documents_only', 'index_only'
+  includeVersions: boolean('include_versions').default(false),
+  includeActivity: boolean('include_activity').default(true),
+  includeQa: boolean('include_qa').default(true),
+  status: varchar('status', { length: 50 }), // 'pending', 'processing', 'completed', 'failed'
+  storagePath: text('storage_path'),
+  fileSize: bigint('file_size', { mode: 'number' }),
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+  completedAt: timestamp('completed_at'),
+  expiresAt: timestamp('expires_at'),
+});
+Implementation Requirements:
+
+Full data room archive (ZIP with folder structure)
+Index export (Excel/PDF listing all documents)
+Activity log export
+Q&A log export
+Selective export (specific folders)
+Scheduled archive creation
+Archive download with expiring link
+USB/external drive delivery preparation
+
+9.2 Integration APIs
+// API endpoints for external integration
+GET    /api/v1/data-rooms
+POST   /api/v1/data-rooms
+GET    /api/v1/data-rooms/:id/folders
+POST   /api/v1/data-rooms/:id/folders
+GET    /api/v1/data-rooms/:id/documents
+POST   /api/v1/data-rooms/:id/documents/upload
+GET    /api/v1/data-rooms/:id/users
+POST   /api/v1/data-rooms/:id/users/invite
+GET    /api/v1/data-rooms/:id/activity
+GET    /api/v1/data-rooms/:id/qa
+
+PHASE 10: UI Components
+10.1 Main Data Room View
+Layout:
+
+Left sidebar: Folder tree with expand/collapse
+Main area: Document grid or list view (toggle)
+Right sidebar: Document details panel (when selected)
+Top bar: Search, view options, actions
+
+Document Grid View:
+
+Thumbnail preview for images/PDFs
+File type icon for others
+Document name (truncated with tooltip)
+Quick actions on hover
+
+Document List View:
+
+Columns: Index #, Name, Type, Size, Uploaded By, Date, Status
+Sortable columns
+Resizable columns
+Column visibility toggle
+
+10.2 Key UI Components to Build
+
+FolderTree - Recursive folder navigation with drag-drop
+DocumentGrid - Thumbnail grid view
+DocumentList - Table view with sorting
+DocumentViewer - In-browser document viewing
+UploadModal - Drag-drop upload with progress
+PermissionMatrix - User/group permission grid
+UserInviteDialog - User invitation form
+QADashboard - Q&A management interface
+ActivityFeed - Real-time activity stream
+AnalyticsDashboard - Charts and metrics
+SearchInterface - Advanced search with filters
+WatermarkPreview - Watermark configuration preview
+
+
+Implementation Priority
+Phase 1: Folder structure, templates (Foundation - Week 1-2)
+Phase 2: Document management, versions, viewer (Core functionality - Week 2-3)
+Phase 3: Users, groups, permissions (Access control - Week 3-4)
+Phase 4: Q&A module (Deal communication - Week 4-5)
+Phase 5: Activity tracking, audit (Compliance - Week 5-6)
+Phase 6: Security features, watermarking (Protection - Week 6-7)
+Phase 7: Notifications (User experience - Week 7)
+Phase 8: AI search, analytics (Advanced - Week 8-9)
+Phase 9: Archive, export, API (Enterprise - Week 9-10)
+Phase 10: UI polish (Refinement - Ongoing)
+
+Technical Notes
+
+Use React DnD or dnd-kit for drag-and-drop functionality
+Use PDF.js or similar for in-browser PDF viewing
+Use Mammoth.js for Word document conversion
+Implement virtual scrolling for large document lists
+Use WebSocket for real-time activity updates
+Store documents in object storage with signed URLs for secure access
+Implement chunked upload for large files
+Use background jobs for heavy operations (archive creation, bulk upload processing)
+
+Begin with Phase 1 and confirm functionality before proceeding. Ask for clarification on any requirements.

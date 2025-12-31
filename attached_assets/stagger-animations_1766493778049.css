@@ -1,0 +1,67 @@
+/*
+ * STAGGER ANIMATION UTILITIES
+ * 
+ * Copy this entire file to your Replit app's styles folder
+ * Then import it in your main CSS or component:
+ * 
+ *   @import './stagger-animations.css';
+ *   
+ * Or in React/Next.js:
+ * 
+ *   import './stagger-animations.css';
+ *
+ * USAGE:
+ *   <div className="stagger-1">First element</div>
+ *   <div className="stagger-2">Second element</div>
+ *   <div className="stagger-3">Third element</div>
+ *   <div className="stagger-4">Fourth element</div>
+ */
+
+/* Base animation keyframe */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Stagger classes - each delays slightly more */
+.stagger-1 {
+  animation: fadeSlideUp 0.5s ease forwards;
+  animation-delay: 0.1s;
+  opacity: 0;
+}
+
+.stagger-2 {
+  animation: fadeSlideUp 0.5s ease forwards;
+  animation-delay: 0.2s;
+  opacity: 0;
+}
+
+.stagger-3 {
+  animation: fadeSlideUp 0.5s ease forwards;
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+.stagger-4 {
+  animation: fadeSlideUp 0.5s ease forwards;
+  animation-delay: 0.4s;
+  opacity: 0;
+}
+
+.stagger-5 {
+  animation: fadeSlideUp 0.5s ease forwards;
+  animation-delay: 0.5s;
+  opacity: 0;
+}
+
+.stagger-6 {
+  animation: fadeSlideUp 0.5s ease forwards;
+  animation-delay: 0.6s;
+  opacity: 0;
+}

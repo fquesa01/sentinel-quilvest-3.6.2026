@@ -1,0 +1,2697 @@
+# Sentinel Counsel LLP - Background Research Tool
+
+## Feature Overview
+
+AI-powered preliminary due diligence tool that performs comprehensive background research on target companies, individuals, and entities for business transactions, acquisitions, and investment decisions.
+
+**Research Categories:**
+1. **Corporate Structure** - Entity formation, ownership, subsidiaries, affiliates
+2. **Leadership & Key Personnel** - Officers, directors, beneficial owners, key employees
+3. **Litigation History** - Federal/state lawsuits, bankruptcies, judgments
+4. **UCC Filings & Liens** - Secured transactions, tax liens, judgment liens
+5. **Regulatory & Compliance** - Agency actions, investigations, sanctions
+6. **News & Media** - Press coverage, controversies, reputation issues
+7. **Financial Indicators** - SEC filings, credit indicators, financial health
+8. **Red Flags & Risk Assessment** - Synthesized risk analysis
+
+---
+
+## ENVIRONMENT VARIABLES
+
+```bash
+# .env
+
+# SEC EDGAR (no API key needed, but requires User-Agent header)
+SEC_EDGAR_USER_AGENT="Sentinel Counsel LLP contact@sentinelcounsel.com"
+
+# OpenCorporates (optional, has free tier)
+OPENCORPORATES_API_KEY="your_key_here"
+
+# UCC Provider (pick one based on your needs)
+# Options: "infotrack", "csc", "ct_corp", "lexisnexis", "cobalt"
+UCC_PROVIDER="infotrack"
+UCC_PROVIDER_API_KEY="your_key_here"
+UCC_PROVIDER_ACCOUNT_ID="your_account_id"
+
+# OpenAI for AI analysis
+OPENAI_API_KEY="your_openai_key_here"
+```
+
+---
+
+## API INTEGRATIONS
+
+### SEC EDGAR API Service (Free - No Authentication Required)
+
+```typescript
+// services/sec-edgar-api.service.ts
+
+/**
+ * SEC EDGAR API Service
+ * 
+ * The SEC provides free, public API access to all EDGAR filings.
+ * No API key required - just need to provide a User-Agent header with contact info.
+ * 
+ * API Documentation: https://www.sec.gov/developer
+ * Rate Limits: 10 requests per second
+ */
+
+export interface EdgarCompanyInfo {
+  cik: string;
+  entityType: string;
+  name: string;
+  sic: string;
+  sicDescription: string;
+  tickers: string[];
+  exchanges: string[];
+  ein: string;
+  stateOfIncorporation: string;
+  fiscalYearEnd: string;
+  website?: string;
+  formerNames?: Array<{ name: string; from: string; to: string }>;
+}
+
+export interface EdgarFiling {
+  accessionNumber: string;
+  form: string;
+  filingDate: string;
+  reportDate: string;
+  acceptanceDateTime: string;
+  primaryDocument: string;
+  primaryDocDescription: string;
+  documentUrl: string;
+  size: number;
+}
+
+export interface EdgarSearchResult {
+  cik: string;
+  companyName: string;
+  filingType: string;
+  filedDate: string;
+  accessionNumber: string;
+}
+
+export interface FinancialSummary {
+  revenue: number | null;
+  netIncome: number | null;
+  totalAssets: number | null;
+  totalLiabilities: number | null;
+  stockholdersEquity: number | null;
+  cashAndEquivalents: number | null;
+  longTermDebt: number | null;
+  earningsPerShare: number | null;
+  periodEnd: string | null;
+}
+
+export interface MaterialEvent {
+  date: string;
+  form: string;
+  description: string;
+  url: string;
+  items: string[];
+  requiresReview: boolean;
+}
+
+export class SecEdgarApiService {
+  private readonly BASE_URL = 'https://data.sec.gov';
+  private readonly SEARCH_URL = 'https://efts.sec.gov/LATEST/search-index';
+  private readonly BROWSE_URL = 'https://www.sec.gov/cgi-bin/browse-edgar';
+  
+  // SEC requires a User-Agent header with company name and contact email
+  private readonly headers: Record<string, string>;
+  
+  constructor() {
+    const userAgent = process.env.SEC_EDGAR_USER_AGENT || 'Sentinel Counsel LLP contact@sentinelcounsel.com';
+    this.headers = {
+      'User-Agent': userAgent,
+      'Accept': 'application/json',
+    };
+  }
+
+  /**
+   * Search for companies by name
+   * Returns matching companies with their CIK numbers
+   */
+  async searchCompany(companyName: string): Promise<EdgarSearchResult[]> {
+    try {
+      // Use the full-text search API
+      const response = await fetch(
+        `${this.SEARCH_URL}?q="${encodeURIComponent(companyName)}"&dateRange=custom&startdt=2020-01-01&enddt=${new Date().toISOString().split('T')[0]}&forms=10-K,10-Q,8-K`,
+        { headers: this.headers }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`SEC search failed: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // Extract unique companies from search results
+      const companiesMap = new Map<string, EdgarSearchResult>();
+      
+      for (const hit of data.hits?.hits || []) {
+        const cik = hit._source.ciks?.[0];
+        if (cik && !companiesMap.has(cik)) {
+          companiesMap.set(cik, {
+            cik,
+            companyName: hit._source.display_names?.[0] || hit._source.entity,
+            filingType: hit._source.form,
+            filedDate: hit._source.file_date,
+            accessionNumber: hit._source.adsh,
+          });
+        }
+      }
+      
+      return Array.from(companiesMap.values());
+    } catch (error) {
+      console.error('SEC company search failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Look up a company by ticker symbol
+   */
+  async getCompanyByTicker(ticker: string): Promise<EdgarCompanyInfo | null> {
+    try {
+      // SEC provides a ticker-to-CIK mapping file
+      const tickerResponse = await fetch(
+        'https://www.sec.gov/files/company_tickers.json',
+        { headers: this.headers }
+      );
+      
+      const tickerData = await tickerResponse.json();
+      
+      // Find the company by ticker
+      for (const key in tickerData) {
+        if (tickerData[key].ticker?.toUpperCase() === ticker.toUpperCase()) {
+          const cik = String(tickerData[key].cik_str);
+          return this.getCompanyInfo(cik);
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Ticker lookup failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get detailed company information by CIK
+   */
+  async getCompanyInfo(cik: string): Promise<EdgarCompanyInfo | null> {
+    try {
+      // Pad CIK to 10 digits (SEC requirement)
+      const paddedCik = cik.replace(/^0+/, '').padStart(10, '0');
+      
+      const response = await fetch(
+        `${this.BASE_URL}/submissions/CIK${paddedCik}.json`,
+        { headers: this.headers }
+      );
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null; // Company not found (likely not public)
+        }
+        throw new Error(`Failed to get company info: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      return {
+        cik: data.cik,
+        entityType: data.entityType,
+        name: data.name,
+        sic: data.sic,
+        sicDescription: data.sicDescription,
+        tickers: data.tickers || [],
+        exchanges: data.exchanges || [],
+        ein: data.ein,
+        stateOfIncorporation: data.stateOfIncorporation,
+        fiscalYearEnd: data.fiscalYearEnd,
+        formerNames: data.formerNames,
+      };
+    } catch (error) {
+      console.error('Get company info failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all filings for a company
+   */
+  async getCompanyFilings(cik: string, formTypes?: string[]): Promise<EdgarFiling[]> {
+    try {
+      const paddedCik = cik.replace(/^0+/, '').padStart(10, '0');
+      
+      const response = await fetch(
+        `${this.BASE_URL}/submissions/CIK${paddedCik}.json`,
+        { headers: this.headers }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to get filings: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      const recent = data.filings?.recent;
+      
+      if (!recent) return [];
+      
+      const filings: EdgarFiling[] = [];
+      
+      for (let i = 0; i < recent.form.length; i++) {
+        const form = recent.form[i];
+        
+        // Filter by form type if specified
+        if (formTypes && formTypes.length > 0 && !formTypes.includes(form)) {
+          continue;
+        }
+        
+        const accessionNumber = recent.accessionNumber[i];
+        const primaryDocument = recent.primaryDocument[i];
+        
+        filings.push({
+          accessionNumber,
+          form,
+          filingDate: recent.filingDate[i],
+          reportDate: recent.reportDate[i],
+          acceptanceDateTime: recent.acceptanceDateTime[i],
+          primaryDocument,
+          primaryDocDescription: recent.primaryDocDescription[i],
+          size: recent.size[i],
+          documentUrl: this.buildDocumentUrl(data.cik, accessionNumber, primaryDocument),
+        });
+      }
+      
+      return filings;
+    } catch (error) {
+      console.error('Get company filings failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Build the URL to access a specific filing document
+   */
+  private buildDocumentUrl(cik: string, accessionNumber: string, document: string): string {
+    const accessionFormatted = accessionNumber.replace(/-/g, '');
+    return `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionFormatted}/${document}`;
+  }
+
+  /**
+   * Get structured financial data (XBRL) for a company
+   */
+  async getCompanyFacts(cik: string): Promise<any> {
+    try {
+      const paddedCik = cik.replace(/^0+/, '').padStart(10, '0');
+      
+      const response = await fetch(
+        `${this.BASE_URL}/api/xbrl/companyfacts/CIK${paddedCik}.json`,
+        { headers: this.headers }
+      );
+      
+      if (!response.ok) {
+        return null;
+      }
+      
+      return response.json();
+    } catch (error) {
+      console.error('Get company facts failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract key financial metrics from XBRL data
+   */
+  async getFinancialSummary(cik: string): Promise<FinancialSummary> {
+    const facts = await this.getCompanyFacts(cik);
+    
+    if (!facts) {
+      return {
+        revenue: null,
+        netIncome: null,
+        totalAssets: null,
+        totalLiabilities: null,
+        stockholdersEquity: null,
+        cashAndEquivalents: null,
+        longTermDebt: null,
+        earningsPerShare: null,
+        periodEnd: null,
+      };
+    }
+    
+    const usgaap = facts.facts?.['us-gaap'] || {};
+    
+    // Helper to get most recent annual (10-K) value
+    const getMostRecent = (concepts: string[], unit: string = 'USD'): { value: number | null; period: string | null } => {
+      for (const concept of concepts) {
+        const values = usgaap[concept]?.units?.[unit];
+        if (values?.length) {
+          // Get most recent 10-K value
+          const annual = values
+            .filter((v: any) => v.form === '10-K' && v.frame) // Has fiscal year frame
+            .sort((a: any, b: any) => new Date(b.end).getTime() - new Date(a.end).getTime());
+          
+          if (annual.length > 0) {
+            return { value: annual[0].val, period: annual[0].end };
+          }
+        }
+      }
+      return { value: null, period: null };
+    };
+
+    const revenue = getMostRecent([
+      'Revenues',
+      'RevenueFromContractWithCustomerExcludingAssessedTax',
+      'SalesRevenueNet',
+      'RevenueFromContractWithCustomerIncludingAssessedTax',
+    ]);
+
+    return {
+      revenue: revenue.value,
+      netIncome: getMostRecent(['NetIncomeLoss', 'ProfitLoss']).value,
+      totalAssets: getMostRecent(['Assets']).value,
+      totalLiabilities: getMostRecent(['Liabilities']).value,
+      stockholdersEquity: getMostRecent(['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']).value,
+      cashAndEquivalents: getMostRecent(['CashAndCashEquivalentsAtCarryingValue', 'Cash']).value,
+      longTermDebt: getMostRecent(['LongTermDebt', 'LongTermDebtNoncurrent']).value,
+      earningsPerShare: getMostRecent(['EarningsPerShareBasic'], 'USD/shares').value,
+      periodEnd: revenue.period,
+    };
+  }
+
+  /**
+   * Get recent 8-K filings and identify material events
+   */
+  async getMaterialEvents(cik: string, limit: number = 20): Promise<MaterialEvent[]> {
+    const eightKFilings = await this.getCompanyFilings(cik, ['8-K', '8-K/A']);
+    
+    // 8-K items that indicate significant events requiring review
+    const significantItems: Record<string, string> = {
+      '1.01': 'Entry into Material Definitive Agreement',
+      '1.02': 'Termination of Material Definitive Agreement',
+      '1.03': 'Bankruptcy or Receivership',
+      '1.04': 'Mine Safety',
+      '1.05': 'Material Cybersecurity Incidents',
+      '2.01': 'Completion of Acquisition or Disposition of Assets',
+      '2.02': 'Results of Operations and Financial Condition',
+      '2.03': 'Creation of Direct Financial Obligation',
+      '2.04': 'Triggering Events That Accelerate Obligation',
+      '2.05': 'Costs Associated with Exit Activities',
+      '2.06': 'Material Impairments',
+      '3.01': 'Notice of Delisting',
+      '3.02': 'Unregistered Sales of Equity Securities',
+      '3.03': 'Material Modification to Rights of Securities',
+      '4.01': 'Changes in Registrant\'s Certifying Accountant',
+      '4.02': 'Non-Reliance on Previously Issued Financial Statements',
+      '5.01': 'Changes in Control of Registrant',
+      '5.02': 'Departure/Election of Directors or Officers',
+      '5.03': 'Amendments to Articles of Incorporation or Bylaws',
+      '5.05': 'Amendments to Code of Ethics',
+      '5.06': 'Change in Shell Company Status',
+      '5.07': 'Submission of Matters to Vote of Security Holders',
+      '6.01': 'ABS Informational and Computational Material',
+      '7.01': 'Regulation FD Disclosure',
+      '8.01': 'Other Events',
+      '9.01': 'Financial Statements and Exhibits',
+    };
+
+    // High-priority items that definitely need review
+    const highPriorityItems = ['1.01', '1.02', '1.03', '1.05', '2.01', '2.04', '2.06', '3.01', '4.01', '4.02', '5.01', '5.02'];
+
+    return eightKFilings.slice(0, limit).map(filing => ({
+      date: filing.filingDate,
+      form: filing.form,
+      description: filing.primaryDocDescription || 'Form 8-K',
+      url: filing.documentUrl,
+      items: [], // Would need to parse the 8-K content to get specific items
+      requiresReview: true, // Flag all 8-Ks for review
+    }));
+  }
+
+  /**
+   * Check if a company is publicly traded
+   */
+  async isPublicCompany(companyName: string): Promise<{ isPublic: boolean; cik?: string; info?: EdgarCompanyInfo }> {
+    const searchResults = await this.searchCompany(companyName);
+    
+    if (searchResults.length === 0) {
+      return { isPublic: false };
+    }
+    
+    // Verify by getting company info
+    const info = await this.getCompanyInfo(searchResults[0].cik);
+    
+    if (info) {
+      return { isPublic: true, cik: info.cik, info };
+    }
+    
+    return { isPublic: false };
+  }
+
+  /**
+   * Get all SEC data for background research
+   */
+  async getFullSecProfile(companyName: string): Promise<SecProfileResult> {
+    // Search for the company
+    const searchResults = await this.searchCompany(companyName);
+    
+    if (searchResults.length === 0) {
+      return {
+        isPublic: false,
+        found: false,
+      };
+    }
+    
+    const cik = searchResults[0].cik;
+    
+    // Get all data in parallel
+    const [companyInfo, financials, tenKFilings, tenQFilings, eightKFilings] = await Promise.all([
+      this.getCompanyInfo(cik),
+      this.getFinancialSummary(cik),
+      this.getCompanyFilings(cik, ['10-K']),
+      this.getCompanyFilings(cik, ['10-Q']),
+      this.getCompanyFilings(cik, ['8-K', '8-K/A']),
+    ]);
+
+    const materialEvents = await this.getMaterialEvents(cik);
+
+    return {
+      isPublic: true,
+      found: true,
+      cik,
+      companyInfo,
+      financials,
+      filings: {
+        annualReports: tenKFilings.slice(0, 5),
+        quarterlyReports: tenQFilings.slice(0, 8),
+        currentReports: eightKFilings.slice(0, 20),
+      },
+      materialEvents,
+      secUrl: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=&dateb=&owner=include&count=40`,
+    };
+  }
+}
+
+export interface SecProfileResult {
+  isPublic: boolean;
+  found: boolean;
+  cik?: string;
+  companyInfo?: EdgarCompanyInfo | null;
+  financials?: FinancialSummary;
+  filings?: {
+    annualReports: EdgarFiling[];
+    quarterlyReports: EdgarFiling[];
+    currentReports: EdgarFiling[];
+  };
+  materialEvents?: MaterialEvent[];
+  secUrl?: string;
+  error?: string;
+}
+```
+
+---
+
+### UCC Filing API Service
+
+```typescript
+// services/ucc-api.service.ts
+
+/**
+ * UCC Filing API Service
+ * 
+ * UCC filings are maintained at the state level, so we need either:
+ * 1. A commercial aggregator (InfoTrack, CSC, Cobalt, LexisNexis)
+ * 2. Direct state portal access (manual or scraping)
+ * 
+ * This service abstracts both approaches.
+ */
+
+export interface UccFiling {
+  filingNumber: string;
+  filingType: 'UCC1' | 'UCC3_CONTINUATION' | 'UCC3_AMENDMENT' | 'UCC3_TERMINATION' | 'UCC3_ASSIGNMENT';
+  filingState: string;
+  filingDate: string;
+  lapseDate: string | null;
+  status: 'active' | 'lapsed' | 'terminated';
+  
+  // Debtor info
+  debtorName: string;
+  debtorAddress: string | null;
+  debtorType: 'organization' | 'individual';
+  
+  // Secured party info
+  securedPartyName: string;
+  securedPartyAddress: string | null;
+  
+  // Collateral
+  collateralDescription: string;
+  collateralType: 'all_assets' | 'equipment' | 'inventory' | 'accounts' | 'specific' | 'other';
+  
+  // Source
+  sourceUrl: string | null;
+}
+
+export interface UccSearchResult {
+  automated: boolean;
+  filings: UccFiling[];
+  searchedStates: string[];
+  manualSearchRequired?: boolean;
+  manualSearchInstructions?: string;
+  manualSearchUrls?: Record<string, string>;
+}
+
+export interface LienRecord {
+  lienType: 'federal_tax' | 'state_tax' | 'judgment' | 'mechanics' | 'other';
+  filingNumber: string;
+  filingJurisdiction: string;
+  filingDate: string;
+  releaseDate: string | null;
+  creditor: string;
+  originalAmount: number;
+  currentAmount: number | null;
+  status: 'active' | 'released' | 'paid';
+  relatedCaseNumber: string | null;
+  sourceUrl: string | null;
+}
+
+// State UCC portal URLs for manual searching
+export const STATE_UCC_PORTALS: Record<string, string> = {
+  'AL': 'https://www.sos.alabama.gov/government-records/ucc',
+  'AK': 'https://www.commerce.alaska.gov/web/cbpl/Corporations/UCCFilingAndSearch.aspx',
+  'AZ': 'https://ecorp.azcc.gov/PublicSearch/PublicSearch',
+  'AR': 'https://www.sos.arkansas.gov/corps/ucc/',
+  'CA': 'https://bizfileonline.sos.ca.gov/search/ucc',
+  'CO': 'https://www.sos.state.co.us/biz/BusinessEntityCriteriaExt.do',
+  'CT': 'https://www.concord-sots.ct.gov/CONCORD/index.jsp',
+  'DE': 'https://icis.corp.delaware.gov/uccsearch/',
+  'FL': 'https://ccfcorp.dos.state.fl.us/ucc/ucc.asp',
+  'GA': 'https://ecorp.sos.ga.gov/BusinessSearch',
+  'HI': 'https://hbe.ehawaii.gov/documents/ucc.html',
+  'ID': 'https://www.sos.idaho.gov/business/ucc.html',
+  'IL': 'https://www.ilsos.gov/uccsearch/',
+  'IN': 'https://bsd.sos.in.gov/publicbusinesssearch',
+  'IA': 'https://sos.iowa.gov/search/business/(S(...))/search.aspx',
+  'KS': 'https://www.kansas.gov/bess/flow/main?execution=e1s1',
+  'KY': 'https://web.sos.ky.gov/ftshow/default.aspx',
+  'LA': 'https://www.sos.la.gov/BusinessServices/SearchForUCCFilings/Pages/default.aspx',
+  'ME': 'https://www.maine.gov/sos/cec/corp/ucc.html',
+  'MD': 'https://egov.maryland.gov/BusinessExpress/EntitySearch',
+  'MA': 'https://corp.sec.state.ma.us/corp/UCCPublicInq/UCCPublicInq.asp',
+  'MI': 'https://cofs.lara.state.mi.us/SearchApi/Search/Search',
+  'MN': 'https://mblsportal.sos.state.mn.us/Business/Search',
+  'MS': 'https://corp.sos.ms.gov/corp/portal/c/page/corpucc/portal.aspx',
+  'MO': 'https://bsd.sos.mo.gov/BusinessEntity/BESearch.aspx',
+  'MT': 'https://sosmt.gov/business/',
+  'NE': 'https://www.nebraska.gov/sos/corp/corpsearch.cgi',
+  'NV': 'https://esos.nv.gov/EntitySearch/OnlineEntitySearch',
+  'NH': 'https://quickstart.sos.nh.gov/online/BusinessInquire',
+  'NJ': 'https://www.njportal.com/DOR/BusinessRecords/',
+  'NM': 'https://portal.sos.state.nm.us/BFS/online/',
+  'NY': 'https://appext20.dos.ny.gov/pls/ucc_public/web_search.main_frame',
+  'NC': 'https://www.sosnc.gov/online_services/search/ucc',
+  'ND': 'https://firststop.sos.nd.gov/',
+  'OH': 'https://www.ohiosos.gov/businesses/filing-forms/ucc/',
+  'OK': 'https://www.sos.ok.gov/corp/UCCSearch.aspx',
+  'OR': 'https://sos.oregon.gov/business/pages/find.aspx',
+  'PA': 'https://www.corporations.pa.gov/Search/corpsearch',
+  'RI': 'https://business.sos.ri.gov/CorpWeb/CorpSearch/CorpSearch.aspx',
+  'SC': 'https://businessfilings.sc.gov/BusinessFiling/Entity/Search',
+  'SD': 'https://sosenterprise.sd.gov/BusinessServices/Business/FilingSearch.aspx',
+  'TN': 'https://tnbear.tn.gov/Ecommerce/FilingSearch.aspx',
+  'TX': 'https://direct.sos.state.tx.us/ucc/',
+  'UT': 'https://secure.utah.gov/bes/',
+  'VT': 'https://www.vtsosonline.com/online/BusinessInquire/',
+  'VA': 'https://cis.scc.virginia.gov/',
+  'WA': 'https://www.sos.wa.gov/corps/corps_search.aspx',
+  'WV': 'https://apps.wv.gov/sos/businessentitysearch/',
+  'WI': 'https://www.wdfi.org/apps/uccrecord/Search.aspx',
+  'WY': 'https://wyobiz.wyo.gov/Business/FilingSearch.aspx',
+  'DC': 'https://corponline.dcra.dc.gov/Home.aspx',
+};
+
+export class UccApiService {
+  private provider: string;
+  private apiKey: string | null;
+  private accountId: string | null;
+
+  constructor() {
+    this.provider = process.env.UCC_PROVIDER || 'manual';
+    this.apiKey = process.env.UCC_PROVIDER_API_KEY || null;
+    this.accountId = process.env.UCC_PROVIDER_ACCOUNT_ID || null;
+  }
+
+  /**
+   * Search for UCC filings
+   */
+  async searchUccFilings(
+    entityName: string,
+    states: string[],
+    options: {
+      searchAsDebtor?: boolean;
+      searchAsSecuredParty?: boolean;
+      includeTerminated?: boolean;
+    } = {}
+  ): Promise<UccSearchResult> {
+    const { searchAsDebtor = true, searchAsSecuredParty = false, includeTerminated = false } = options;
+
+    // If we have a commercial provider configured, use it
+    if (this.provider !== 'manual' && this.apiKey) {
+      return this.searchViaProvider(entityName, states, { searchAsDebtor, searchAsSecuredParty, includeTerminated });
+    }
+
+    // Otherwise, return manual search instructions
+    return this.getManualSearchInstructions(entityName, states);
+  }
+
+  /**
+   * Search via commercial UCC provider
+   */
+  private async searchViaProvider(
+    entityName: string,
+    states: string[],
+    options: { searchAsDebtor: boolean; searchAsSecuredParty: boolean; includeTerminated: boolean }
+  ): Promise<UccSearchResult> {
+    // Implementation depends on provider
+    // This is a template - actual implementation would depend on the specific provider's API
+    
+    switch (this.provider.toLowerCase()) {
+      case 'infotrack':
+        return this.searchInfoTrack(entityName, states, options);
+      case 'csc':
+        return this.searchCSC(entityName, states, options);
+      case 'cobalt':
+        return this.searchCobalt(entityName, states, options);
+      default:
+        return this.getManualSearchInstructions(entityName, states);
+    }
+  }
+
+  /**
+   * InfoTrack UCC Search
+   * API Documentation: https://www.infotrack.com/api/
+   */
+  private async searchInfoTrack(
+    entityName: string,
+    states: string[],
+    options: { searchAsDebtor: boolean; searchAsSecuredParty: boolean; includeTerminated: boolean }
+  ): Promise<UccSearchResult> {
+    const filings: UccFiling[] = [];
+    
+    try {
+      for (const state of states) {
+        const response = await fetch('https://api.infotrack.com/v1/ucc/search', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            searchName: entityName,
+            state: state,
+            searchType: options.searchAsDebtor ? 'debtor' : 'secured_party',
+            includeInactive: options.includeTerminated,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          
+          for (const result of data.results || []) {
+            filings.push(this.mapInfoTrackResult(result, state));
+          }
+        }
+      }
+
+      return {
+        automated: true,
+        filings,
+        searchedStates: states,
+      };
+    } catch (error) {
+      console.error('InfoTrack search failed:', error);
+      return this.getManualSearchInstructions(entityName, states);
+    }
+  }
+
+  private mapInfoTrackResult(result: any, state: string): UccFiling {
+    return {
+      filingNumber: result.filingNumber,
+      filingType: this.mapFilingType(result.filingType),
+      filingState: state,
+      filingDate: result.filingDate,
+      lapseDate: result.lapseDate,
+      status: this.mapStatus(result.status),
+      debtorName: result.debtorName,
+      debtorAddress: result.debtorAddress,
+      debtorType: result.debtorType === 'individual' ? 'individual' : 'organization',
+      securedPartyName: result.securedPartyName,
+      securedPartyAddress: result.securedPartyAddress,
+      collateralDescription: result.collateralDescription,
+      collateralType: this.inferCollateralType(result.collateralDescription),
+      sourceUrl: result.documentUrl,
+    };
+  }
+
+  /**
+   * CSC Global UCC Search
+   */
+  private async searchCSC(
+    entityName: string,
+    states: string[],
+    options: { searchAsDebtor: boolean; searchAsSecuredParty: boolean; includeTerminated: boolean }
+  ): Promise<UccSearchResult> {
+    // CSC API implementation
+    // Similar structure to InfoTrack
+    
+    try {
+      const response = await fetch('https://api.cscglobal.com/ucc/search', {
+        method: 'POST',
+        headers: {
+          'X-API-Key': this.apiKey!,
+          'X-Account-ID': this.accountId!,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          debtorName: options.searchAsDebtor ? entityName : undefined,
+          securedPartyName: options.searchAsSecuredParty ? entityName : undefined,
+          jurisdictions: states,
+          includeTerminated: options.includeTerminated,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`CSC API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      return {
+        automated: true,
+        filings: data.filings.map((f: any) => this.mapCSCResult(f)),
+        searchedStates: states,
+      };
+    } catch (error) {
+      console.error('CSC search failed:', error);
+      return this.getManualSearchInstructions(entityName, states);
+    }
+  }
+
+  private mapCSCResult(result: any): UccFiling {
+    return {
+      filingNumber: result.fileNumber,
+      filingType: this.mapFilingType(result.type),
+      filingState: result.jurisdiction,
+      filingDate: result.filedDate,
+      lapseDate: result.expirationDate,
+      status: this.mapStatus(result.status),
+      debtorName: result.debtor?.name,
+      debtorAddress: result.debtor?.address,
+      debtorType: result.debtor?.type || 'organization',
+      securedPartyName: result.securedParty?.name,
+      securedPartyAddress: result.securedParty?.address,
+      collateralDescription: result.collateral,
+      collateralType: this.inferCollateralType(result.collateral),
+      sourceUrl: result.documentLink,
+    };
+  }
+
+  /**
+   * Cobalt Intelligence UCC Search
+   * More affordable option with API access
+   */
+  private async searchCobalt(
+    entityName: string,
+    states: string[],
+    options: { searchAsDebtor: boolean; searchAsSecuredParty: boolean; includeTerminated: boolean }
+  ): Promise<UccSearchResult> {
+    try {
+      const response = await fetch('https://api.cobaltintelligence.com/v1/ucc/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: entityName,
+          states: states,
+          role: options.searchAsDebtor ? 'debtor' : 'secured_party',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Cobalt API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      return {
+        automated: true,
+        filings: data.filings.map((f: any) => ({
+          filingNumber: f.filing_number,
+          filingType: this.mapFilingType(f.filing_type),
+          filingState: f.state,
+          filingDate: f.filing_date,
+          lapseDate: f.lapse_date,
+          status: this.mapStatus(f.status),
+          debtorName: f.debtor_name,
+          debtorAddress: f.debtor_address,
+          debtorType: 'organization',
+          securedPartyName: f.secured_party_name,
+          securedPartyAddress: f.secured_party_address,
+          collateralDescription: f.collateral,
+          collateralType: this.inferCollateralType(f.collateral),
+          sourceUrl: f.source_url,
+        })),
+        searchedStates: states,
+      };
+    } catch (error) {
+      console.error('Cobalt search failed:', error);
+      return this.getManualSearchInstructions(entityName, states);
+    }
+  }
+
+  /**
+   * Get manual search instructions when no API is available
+   */
+  private getManualSearchInstructions(entityName: string, states: string[]): UccSearchResult {
+    const manualSearchUrls: Record<string, string> = {};
+    
+    for (const state of states) {
+      if (STATE_UCC_PORTALS[state]) {
+        manualSearchUrls[state] = STATE_UCC_PORTALS[state];
+      }
+    }
+
+    // Suggest additional states to search
+    const suggestedStates = this.getSuggestedSearchStates(states[0]);
+    for (const state of suggestedStates) {
+      if (!manualSearchUrls[state] && STATE_UCC_PORTALS[state]) {
+        manualSearchUrls[state] = STATE_UCC_PORTALS[state];
+      }
+    }
+
+    return {
+      automated: false,
+      filings: [],
+      searchedStates: [],
+      manualSearchRequired: true,
+      manualSearchInstructions: `
+Search for "${entityName}" as DEBTOR in the following state UCC databases:
+
+${Object.entries(manualSearchUrls).map(([state, url]) => `• ${state}: ${url}`).join('\n')}
+
+Tips for searching:
+1. Search the exact entity name first
+2. Then try variations (without Inc., LLC, etc.)
+3. Check both organization and individual debtor searches
+4. Note the filing numbers, dates, secured parties, and collateral descriptions
+5. For "All Assets" filings, this typically indicates significant secured debt
+      `.trim(),
+      manualSearchUrls,
+    };
+  }
+
+  /**
+   * Suggest additional states to search based on primary state
+   */
+  private getSuggestedSearchStates(primaryState: string): string[] {
+    const suggestions = new Set<string>([primaryState]);
+    
+    // Always search Delaware (common incorporation state)
+    suggestions.add('DE');
+    
+    // If primary state is a major commercial state, add others
+    const majorStates = ['CA', 'NY', 'TX', 'FL', 'IL', 'NV', 'DE'];
+    if (majorStates.includes(primaryState)) {
+      majorStates.forEach(s => suggestions.add(s));
+    }
+    
+    return Array.from(suggestions);
+  }
+
+  /**
+   * Map filing type strings to enum
+   */
+  private mapFilingType(type: string): UccFiling['filingType'] {
+    const typeUpper = type?.toUpperCase() || '';
+    if (typeUpper.includes('TERMINATION')) return 'UCC3_TERMINATION';
+    if (typeUpper.includes('AMENDMENT')) return 'UCC3_AMENDMENT';
+    if (typeUpper.includes('CONTINUATION')) return 'UCC3_CONTINUATION';
+    if (typeUpper.includes('ASSIGNMENT')) return 'UCC3_ASSIGNMENT';
+    if (typeUpper.includes('UCC3') || typeUpper.includes('UCC-3')) return 'UCC3_AMENDMENT';
+    return 'UCC1';
+  }
+
+  /**
+   * Map status strings to enum
+   */
+  private mapStatus(status: string): UccFiling['status'] {
+    const statusLower = status?.toLowerCase() || '';
+    if (statusLower.includes('terminated') || statusLower.includes('released')) return 'terminated';
+    if (statusLower.includes('lapsed') || statusLower.includes('expired')) return 'lapsed';
+    return 'active';
+  }
+
+  /**
+   * Infer collateral type from description
+   */
+  private inferCollateralType(description: string): UccFiling['collateralType'] {
+    if (!description) return 'other';
+    
+    const descLower = description.toLowerCase();
+    
+    if (descLower.includes('all assets') || 
+        descLower.includes('all personal property') || 
+        descLower.includes('all tangible and intangible')) {
+      return 'all_assets';
+    }
+    if (descLower.includes('equipment') && !descLower.includes('inventory')) {
+      return 'equipment';
+    }
+    if (descLower.includes('inventory')) {
+      return 'inventory';
+    }
+    if (descLower.includes('accounts receivable') || descLower.includes('accounts')) {
+      return 'accounts';
+    }
+    
+    return 'specific';
+  }
+
+  /**
+   * Analyze UCC filings for risk indicators
+   */
+  analyzeUccFilings(filings: UccFiling[]): UccAnalysis {
+    const activeFilings = filings.filter(f => f.status === 'active');
+    const allAssetsFilings = activeFilings.filter(f => f.collateralType === 'all_assets');
+    
+    // Group by secured party
+    const bySecuredParty = new Map<string, UccFiling[]>();
+    for (const filing of activeFilings) {
+      const key = filing.securedPartyName.toLowerCase();
+      if (!bySecuredParty.has(key)) {
+        bySecuredParty.set(key, []);
+      }
+      bySecuredParty.get(key)!.push(filing);
+    }
+
+    // Identify known lender types
+    const lenderTypes: string[] = [];
+    for (const [name] of bySecuredParty) {
+      if (name.includes('bank') || name.includes('capital') || name.includes('credit')) {
+        lenderTypes.push('Traditional Lender');
+      } else if (name.includes('factor') || name.includes('funding')) {
+        lenderTypes.push('Factor/ABL');
+      } else if (name.includes('leasing') || name.includes('lease')) {
+        lenderTypes.push('Equipment Lessor');
+      }
+    }
+
+    return {
+      totalFilings: filings.length,
+      activeFilings: activeFilings.length,
+      lapsedFilings: filings.filter(f => f.status === 'lapsed').length,
+      terminatedFilings: filings.filter(f => f.status === 'terminated').length,
+      
+      hasAllAssetsLien: allAssetsFilings.length > 0,
+      allAssetsLienCount: allAssetsFilings.length,
+      
+      uniqueSecuredParties: bySecuredParty.size,
+      securedParties: Array.from(bySecuredParty.keys()),
+      lenderTypes: [...new Set(lenderTypes)],
+      
+      riskLevel: this.assessUccRisk(activeFilings, allAssetsFilings),
+      riskNotes: this.generateUccRiskNotes(activeFilings, allAssetsFilings, bySecuredParty),
+    };
+  }
+
+  private assessUccRisk(activeFilings: UccFiling[], allAssetsFilings: UccFiling[]): 'low' | 'medium' | 'high' {
+    if (allAssetsFilings.length > 1) return 'high';
+    if (allAssetsFilings.length === 1) return 'medium';
+    if (activeFilings.length > 5) return 'medium';
+    return 'low';
+  }
+
+  private generateUccRiskNotes(
+    activeFilings: UccFiling[],
+    allAssetsFilings: UccFiling[],
+    bySecuredParty: Map<string, UccFiling[]>
+  ): string[] {
+    const notes: string[] = [];
+    
+    if (allAssetsFilings.length > 0) {
+      notes.push(`${allAssetsFilings.length} "All Assets" filing(s) found - indicates significant secured debt that would take priority in any asset purchase`);
+    }
+    
+    if (bySecuredParty.size > 3) {
+      notes.push(`Multiple secured creditors (${bySecuredParty.size}) - may indicate complex capital structure`);
+    }
+    
+    // Check for recent filings (within 90 days)
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const recentFilings = activeFilings.filter(f => new Date(f.filingDate) > ninetyDaysAgo);
+    
+    if (recentFilings.length > 0) {
+      notes.push(`${recentFilings.length} filing(s) within last 90 days - recent secured financing activity`);
+    }
+    
+    return notes;
+  }
+}
+
+export interface UccAnalysis {
+  totalFilings: number;
+  activeFilings: number;
+  lapsedFilings: number;
+  terminatedFilings: number;
+  hasAllAssetsLien: boolean;
+  allAssetsLienCount: number;
+  uniqueSecuredParties: number;
+  securedParties: string[];
+  lenderTypes: string[];
+  riskLevel: 'low' | 'medium' | 'high';
+  riskNotes: string[];
+}
+```
+
+---
+
+### OpenCorporates API Service (Corporate Records)
+
+```typescript
+// services/opencorporates-api.service.ts
+
+/**
+ * OpenCorporates API Service
+ * 
+ * OpenCorporates aggregates corporate registry data from around the world.
+ * Free tier: 500 requests/month
+ * Paid tiers: Higher limits and more data
+ * 
+ * API Documentation: https://api.opencorporates.com/documentation
+ */
+
+export interface OpenCorpCompany {
+  name: string;
+  companyNumber: string;
+  jurisdictionCode: string;
+  incorporationDate: string;
+  companyType: string;
+  registryUrl: string;
+  status: string;
+  
+  // Address
+  registeredAddress?: string;
+  
+  // Officers
+  officers?: OpenCorpOfficer[];
+  
+  // Filings
+  filings?: OpenCorpFiling[];
+  
+  // Additional data
+  previousNames?: string[];
+  industryCode?: string;
+  branchStatus?: string;
+}
+
+export interface OpenCorpOfficer {
+  name: string;
+  position: string;
+  startDate?: string;
+  endDate?: string;
+  status: 'active' | 'inactive';
+}
+
+export interface OpenCorpFiling {
+  title: string;
+  date: string;
+  filingType: string;
+  url?: string;
+}
+
+export interface OpenCorpSearchResult {
+  companies: OpenCorpCompany[];
+  totalCount: number;
+  page: number;
+  perPage: number;
+}
+
+export class OpenCorporatesApiService {
+  private readonly BASE_URL = 'https://api.opencorporates.com/v0.4';
+  private readonly apiKey: string | null;
+
+  constructor() {
+    this.apiKey = process.env.OPENCORPORATES_API_KEY || null;
+  }
+
+  /**
+   * Build URL with optional API key
+   */
+  private buildUrl(path: string, params: Record<string, string> = {}): string {
+    const url = new URL(`${this.BASE_URL}${path}`);
+    
+    if (this.apiKey) {
+      url.searchParams.set('api_token', this.apiKey);
+    }
+    
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value);
+    }
+    
+    return url.toString();
+  }
+
+  /**
+   * Search for companies by name
+   */
+  async searchCompanies(
+    name: string,
+    options: {
+      jurisdiction?: string;
+      country?: string;
+      status?: 'Active' | 'Inactive' | 'All';
+      companyType?: string;
+      page?: number;
+      perPage?: number;
+    } = {}
+  ): Promise<OpenCorpSearchResult> {
+    const params: Record<string, string> = {
+      q: name,
+      ...(options.jurisdiction && { jurisdiction_code: options.jurisdiction }),
+      ...(options.country && { country_code: options.country }),
+      ...(options.status && { status: options.status }),
+      ...(options.companyType && { company_type: options.companyType }),
+      page: String(options.page || 1),
+      per_page: String(options.perPage || 30),
+    };
+
+    try {
+      const response = await fetch(this.buildUrl('/companies/search', params));
+      
+      if (!response.ok) {
+        throw new Error(`OpenCorporates search failed: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      return {
+        companies: data.results?.companies?.map((c: any) => this.mapCompany(c.company)) || [],
+        totalCount: data.total_count || 0,
+        page: data.page || 1,
+        perPage: data.per_page || 30,
+      };
+    } catch (error) {
+      console.error('OpenCorporates search failed:', error);
+      return { companies: [], totalCount: 0, page: 1, perPage: 30 };
+    }
+  }
+
+  /**
+   * Get detailed company information
+   */
+  async getCompany(jurisdictionCode: string, companyNumber: string): Promise<OpenCorpCompany | null> {
+    try {
+      const response = await fetch(
+        this.buildUrl(`/companies/${jurisdictionCode}/${companyNumber}`)
+      );
+      
+      if (!response.ok) {
+        return null;
+      }
+      
+      const data = await response.json();
+      return this.mapCompany(data.results?.company);
+    } catch (error) {
+      console.error('OpenCorporates get company failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get company officers
+   */
+  async getCompanyOfficers(jurisdictionCode: string, companyNumber: string): Promise<OpenCorpOfficer[]> {
+    try {
+      const response = await fetch(
+        this.buildUrl(`/companies/${jurisdictionCode}/${companyNumber}/officers`)
+      );
+      
+      if (!response.ok) {
+        return [];
+      }
+      
+      const data = await response.json();
+      
+      return data.results?.officers?.map((o: any) => ({
+        name: o.officer?.name,
+        position: o.officer?.position,
+        startDate: o.officer?.start_date,
+        endDate: o.officer?.end_date,
+        status: o.officer?.end_date ? 'inactive' : 'active',
+      })) || [];
+    } catch (error) {
+      console.error('OpenCorporates get officers failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get company filings
+   */
+  async getCompanyFilings(jurisdictionCode: string, companyNumber: string): Promise<OpenCorpFiling[]> {
+    try {
+      const response = await fetch(
+        this.buildUrl(`/companies/${jurisdictionCode}/${companyNumber}/filings`)
+      );
+      
+      if (!response.ok) {
+        return [];
+      }
+      
+      const data = await response.json();
+      
+      return data.results?.filings?.map((f: any) => ({
+        title: f.filing?.title,
+        date: f.filing?.date,
+        filingType: f.filing?.filing_type,
+        url: f.filing?.url,
+      })) || [];
+    } catch (error) {
+      console.error('OpenCorporates get filings failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Search for officers/directors by name
+   */
+  async searchOfficers(
+    name: string,
+    options: { jurisdiction?: string; page?: number } = {}
+  ): Promise<OpenCorpOfficer[]> {
+    const params: Record<string, string> = {
+      q: name,
+      ...(options.jurisdiction && { jurisdiction_code: options.jurisdiction }),
+      page: String(options.page || 1),
+    };
+
+    try {
+      const response = await fetch(this.buildUrl('/officers/search', params));
+      
+      if (!response.ok) {
+        return [];
+      }
+      
+      const data = await response.json();
+      
+      return data.results?.officers?.map((o: any) => ({
+        name: o.officer?.name,
+        position: o.officer?.position,
+        startDate: o.officer?.start_date,
+        endDate: o.officer?.end_date,
+        status: o.officer?.end_date ? 'inactive' : 'active',
+      })) || [];
+    } catch (error) {
+      console.error('OpenCorporates officer search failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Map API response to our interface
+   */
+  private mapCompany(company: any): OpenCorpCompany {
+    if (!company) {
+      return {} as OpenCorpCompany;
+    }
+    
+    return {
+      name: company.name,
+      companyNumber: company.company_number,
+      jurisdictionCode: company.jurisdiction_code,
+      incorporationDate: company.incorporation_date,
+      companyType: company.company_type,
+      registryUrl: company.registry_url,
+      status: company.current_status || company.status,
+      registeredAddress: company.registered_address_in_full,
+      previousNames: company.previous_names?.map((n: any) => n.company_name),
+      industryCode: company.industry_codes?.[0]?.code,
+      branchStatus: company.branch_status,
+    };
+  }
+
+  /**
+   * Map US state codes to OpenCorporates jurisdiction codes
+   */
+  getJurisdictionCode(stateCode: string): string {
+    return `us_${stateCode.toLowerCase()}`;
+  }
+
+  /**
+   * Get full corporate profile for background research
+   */
+  async getFullCorporateProfile(companyName: string, state?: string): Promise<CorporateProfileResult> {
+    // Search for the company
+    const searchResults = await this.searchCompanies(companyName, {
+      jurisdiction: state ? this.getJurisdictionCode(state) : undefined,
+      status: 'All',
+    });
+
+    if (searchResults.companies.length === 0) {
+      return {
+        found: false,
+        searchedName: companyName,
+      };
+    }
+
+    // Get the best match (first result or exact name match)
+    const bestMatch = searchResults.companies.find(
+      c => c.name.toLowerCase() === companyName.toLowerCase()
+    ) || searchResults.companies[0];
+
+    // Get detailed info
+    const [officers, filings] = await Promise.all([
+      this.getCompanyOfficers(bestMatch.jurisdictionCode, bestMatch.companyNumber),
+      this.getCompanyFilings(bestMatch.jurisdictionCode, bestMatch.companyNumber),
+    ]);
+
+    return {
+      found: true,
+      company: {
+        ...bestMatch,
+        officers,
+        filings,
+      },
+      alternativeMatches: searchResults.companies.slice(1, 5),
+    };
+  }
+}
+
+export interface CorporateProfileResult {
+  found: boolean;
+  searchedName?: string;
+  company?: OpenCorpCompany;
+  alternativeMatches?: OpenCorpCompany[];
+}
+```
+
+---
+
+## DATABASE SCHEMA
+
+```typescript
+// db/schema/background-research.ts
+
+import { pgTable, serial, integer, varchar, text, boolean, date, timestamp, decimal, jsonb, real } from 'drizzle-orm/pg-core';
+
+// Background research requests
+export const backgroundResearch = pgTable('background_research', {
+  id: serial('id').primaryKey(),
+  
+  // Context
+  dealId: integer('deal_id').references(() => deals.id),
+  organizationId: integer('organization_id'),
+  
+  // Subject of research
+  subjectType: varchar('subject_type', { length: 50 }).notNull(),
+  // 'company', 'individual', 'entity'
+  
+  subjectName: varchar('subject_name', { length: 500 }).notNull(),
+  subjectAliases: jsonb('subject_aliases'), // Alternative names, DBAs
+  
+  // Company-specific
+  companyType: varchar('company_type', { length: 100 }),
+  stateOfFormation: varchar('state_of_formation', { length: 50 }),
+  einNumber: varchar('ein_number', { length: 20 }),
+  
+  // Individual-specific
+  dateOfBirth: date('date_of_birth'),
+  ssn_last4: varchar('ssn_last4', { length: 4 }), // Encrypted
+  
+  // Address info
+  primaryAddress: text('primary_address'),
+  city: varchar('city', { length: 100 }),
+  state: varchar('state', { length: 50 }),
+  country: varchar('country', { length: 100 }).default('USA'),
+  
+  // Research scope
+  researchScope: jsonb('research_scope'),
+  // { litigation: true, ucc: true, news: true, corporate: true, regulatory: true, sec: true }
+  
+  // Status
+  status: varchar('status', { length: 50 }).default('pending'),
+  // 'pending', 'in_progress', 'completed', 'failed', 'needs_review'
+  
+  startedAt: timestamp('started_at'),
+  completedAt: timestamp('completed_at'),
+  
+  // Results summary
+  overallRiskLevel: varchar('overall_risk_level', { length: 20 }),
+  // 'low', 'medium', 'high', 'critical'
+  riskScore: integer('risk_score'), // 0-100
+  
+  executiveSummary: text('executive_summary'),
+  recommendation: text('recommendation'),
+  redFlagsCount: integer('red_flags_count').default(0),
+  
+  // Report
+  reportGeneratedAt: timestamp('report_generated_at'),
+  reportDocumentId: integer('report_document_id').references(() => dataRoomFiles.id),
+  
+  requestedBy: integer('requested_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// SEC/EDGAR findings for public companies
+export const researchSecFilings = pgTable('research_sec_filings', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  // Company identification
+  isPublicCompany: boolean('is_public_company').default(false),
+  cik: varchar('cik', { length: 20 }),
+  ticker: varchar('ticker', { length: 20 }),
+  exchange: varchar('exchange', { length: 50 }),
+  
+  // Company info from SEC
+  secCompanyName: varchar('sec_company_name', { length: 500 }),
+  sic: varchar('sic', { length: 10 }),
+  sicDescription: varchar('sic_description', { length: 255 }),
+  stateOfIncorporation: varchar('state_of_incorporation', { length: 50 }),
+  ein: varchar('ein', { length: 20 }),
+  fiscalYearEnd: varchar('fiscal_year_end', { length: 10 }),
+  
+  // Financial summary (from XBRL)
+  latestRevenue: decimal('latest_revenue', { precision: 18, scale: 2 }),
+  latestNetIncome: decimal('latest_net_income', { precision: 18, scale: 2 }),
+  totalAssets: decimal('total_assets', { precision: 18, scale: 2 }),
+  totalLiabilities: decimal('total_liabilities', { precision: 18, scale: 2 }),
+  stockholdersEquity: decimal('stockholders_equity', { precision: 18, scale: 2 }),
+  cashAndEquivalents: decimal('cash_and_equivalents', { precision: 18, scale: 2 }),
+  longTermDebt: decimal('long_term_debt', { precision: 18, scale: 2 }),
+  financialPeriodEnd: date('financial_period_end'),
+  
+  // Filing summaries
+  recentFilings: jsonb('recent_filings'),
+  // { annualReports: [...], quarterlyReports: [...], currentReports: [...] }
+  
+  materialEvents: jsonb('material_events'),
+  // Array of 8-K events that need review
+  
+  // Source
+  secProfileUrl: text('sec_profile_url'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Corporate structure findings
+export const researchCorporateStructure = pgTable('research_corporate_structure', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  // Entity details
+  legalName: varchar('legal_name', { length: 500 }),
+  entityType: varchar('entity_type', { length: 100 }),
+  // 'corporation', 'llc', 'lp', 'llp', 'sole_prop', 'partnership', 'trust', 'nonprofit'
+  
+  formationState: varchar('formation_state', { length: 50 }),
+  formationDate: date('formation_date'),
+  status: varchar('status', { length: 50 }), // 'active', 'inactive', 'dissolved', 'suspended'
+  
+  registeredAgent: varchar('registered_agent', { length: 255 }),
+  registeredAgentAddress: text('registered_agent_address'),
+  
+  principalAddress: text('principal_address'),
+  mailingAddress: text('mailing_address'),
+  
+  // Filings
+  fileNumber: varchar('file_number', { length: 100 }),
+  lastAnnualReportDate: date('last_annual_report_date'),
+  nextAnnualReportDue: date('next_annual_report_due'),
+  
+  // Foreign qualifications
+  foreignQualifications: jsonb('foreign_qualifications'),
+  // [{ state: 'FL', fileNumber: '...', status: 'active' }]
+  
+  // Ownership
+  ownershipStructure: jsonb('ownership_structure'),
+  // [{ name: '...', ownershipPercent: 50, type: 'member' }]
+  
+  // Subsidiaries and affiliates
+  subsidiaries: jsonb('subsidiaries'),
+  affiliates: jsonb('affiliates'),
+  parentCompany: varchar('parent_company', { length: 255 }),
+  
+  // Source
+  sourceUrls: jsonb('source_urls'),
+  sourceType: varchar('source_type', { length: 50 }), // 'opencorporates', 'state_sos', 'web_search'
+  verifiedAt: timestamp('verified_at'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Leadership and key personnel
+export const researchLeadership = pgTable('research_leadership', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  personName: varchar('person_name', { length: 255 }).notNull(),
+  title: varchar('title', { length: 255 }),
+  role: varchar('role', { length: 100 }),
+  // 'ceo', 'cfo', 'coo', 'president', 'director', 'officer', 'registered_agent', 'member', 'partner', 'beneficial_owner'
+  
+  // Contact
+  email: varchar('email', { length: 255 }),
+  phone: varchar('phone', { length: 50 }),
+  linkedinUrl: varchar('linkedin_url', { length: 500 }),
+  
+  // Background
+  biography: text('biography'),
+  previousCompanies: jsonb('previous_companies'),
+  education: jsonb('education'),
+  
+  // Tenure
+  startDate: date('start_date'),
+  endDate: date('end_date'),
+  isCurrent: boolean('is_current').default(true),
+  
+  // Flags
+  hasLitigation: boolean('has_litigation').default(false),
+  hasRegulatoryIssues: boolean('has_regulatory_issues').default(false),
+  hasBankruptcy: boolean('has_bankruptcy').default(false),
+  notes: text('notes'),
+  
+  sourceUrls: jsonb('source_urls'),
+  sourceType: varchar('source_type', { length: 50 }), // 'sec', 'opencorporates', 'linkedin', 'web_search'
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Litigation records
+export const researchLitigation = pgTable('research_litigation', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  // Case identification
+  caseNumber: varchar('case_number', { length: 100 }),
+  caseCaption: text('case_caption'),
+  
+  // Court info
+  courtType: varchar('court_type', { length: 50 }),
+  // 'federal_district', 'federal_appellate', 'federal_bankruptcy', 'state_trial', 'state_appellate', 'administrative'
+  courtName: varchar('court_name', { length: 255 }),
+  courtLocation: varchar('court_location', { length: 255 }),
+  jurisdiction: varchar('jurisdiction', { length: 100 }),
+  
+  // Parties
+  subjectRole: varchar('subject_role', { length: 50 }), // 'plaintiff', 'defendant', 'debtor', 'creditor', 'third_party'
+  opposingParties: jsonb('opposing_parties'),
+  
+  // Case details
+  caseType: varchar('case_type', { length: 100 }),
+  // 'contract', 'tort', 'employment', 'ip', 'securities', 'bankruptcy', 'tax', 'regulatory', 'criminal', 'other'
+  natureSuit: varchar('nature_suit', { length: 255 }),
+  
+  fileDate: date('file_date'),
+  closeDate: date('close_date'),
+  status: varchar('status', { length: 50 }), // 'pending', 'closed', 'appealed', 'settled', 'dismissed'
+  
+  // Outcome
+  outcome: varchar('outcome', { length: 100 }),
+  // 'judgment_for_subject', 'judgment_against_subject', 'settled', 'dismissed', 'pending', 'unknown'
+  
+  judgmentAmount: decimal('judgment_amount', { precision: 18, scale: 2 }),
+  settlementAmount: decimal('settlement_amount', { precision: 18, scale: 2 }),
+  
+  // Analysis
+  summary: text('summary'),
+  significance: varchar('significance', { length: 20 }), // 'low', 'medium', 'high', 'critical'
+  riskImpact: text('risk_impact'),
+  
+  // Source
+  sourceUrl: text('source_url'),
+  pacerLink: text('pacer_link'),
+  documentIds: jsonb('document_ids'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// UCC filings
+export const researchUccFilings = pgTable('research_ucc_filings', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  // Filing info
+  filingNumber: varchar('filing_number', { length: 100 }),
+  filingType: varchar('filing_type', { length: 50 }),
+  // 'ucc1', 'ucc3_continuation', 'ucc3_amendment', 'ucc3_termination', 'ucc3_assignment'
+  
+  filingState: varchar('filing_state', { length: 50 }),
+  filingDate: date('filing_date'),
+  lapseDate: date('lapse_date'),
+  status: varchar('status', { length: 50 }), // 'active', 'lapsed', 'terminated'
+  
+  // Parties
+  subjectRole: varchar('subject_role', { length: 50 }), // 'debtor', 'secured_party'
+  securedPartyName: varchar('secured_party_name', { length: 255 }),
+  securedPartyAddress: text('secured_party_address'),
+  debtorName: varchar('debtor_name', { length: 255 }),
+  debtorAddress: text('debtor_address'),
+  
+  // Collateral
+  collateralDescription: text('collateral_description'),
+  collateralType: varchar('collateral_type', { length: 100 }),
+  // 'all_assets', 'equipment', 'inventory', 'accounts_receivable', 'real_property', 'specific_assets'
+  
+  // Analysis
+  estimatedAmount: decimal('estimated_amount', { precision: 18, scale: 2 }),
+  significance: varchar('significance', { length: 20 }),
+  notes: text('notes'),
+  
+  sourceUrl: text('source_url'),
+  sourceType: varchar('source_type', { length: 50 }), // 'infotrack', 'csc', 'manual', 'cobalt'
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// UCC search tasks (for manual searches)
+export const researchUccSearchTasks = pgTable('research_ucc_search_tasks', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  state: varchar('state', { length: 50 }).notNull(),
+  searchUrl: text('search_url'),
+  searchInstructions: text('search_instructions'),
+  
+  status: varchar('status', { length: 50 }).default('pending'),
+  // 'pending', 'in_progress', 'completed', 'skipped'
+  
+  completedBy: integer('completed_by').references(() => users.id),
+  completedAt: timestamp('completed_at'),
+  notes: text('notes'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Tax liens and judgment liens
+export const researchLiens = pgTable('research_liens', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  lienType: varchar('lien_type', { length: 50 }).notNull(),
+  // 'federal_tax', 'state_tax', 'judgment', 'mechanics', 'child_support', 'other'
+  
+  filingNumber: varchar('filing_number', { length: 100 }),
+  filingJurisdiction: varchar('filing_jurisdiction', { length: 100 }),
+  filingDate: date('filing_date'),
+  releaseDate: date('release_date'),
+  
+  creditor: varchar('creditor', { length: 255 }),
+  originalAmount: decimal('original_amount', { precision: 18, scale: 2 }),
+  currentAmount: decimal('current_amount', { precision: 18, scale: 2 }),
+  
+  status: varchar('status', { length: 50 }), // 'active', 'released', 'paid', 'disputed'
+  
+  relatedCaseNumber: varchar('related_case_number', { length: 100 }),
+  notes: text('notes'),
+  
+  sourceUrl: text('source_url'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Regulatory actions
+export const researchRegulatoryActions = pgTable('research_regulatory_actions', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  // Agency
+  agencyName: varchar('agency_name', { length: 255 }).notNull(),
+  agencyType: varchar('agency_type', { length: 100 }),
+  // 'sec', 'ftc', 'doj', 'cfpb', 'osha', 'epa', 'fda', 'state_ag', 'state_regulatory', 'other'
+  
+  // Action details
+  actionType: varchar('action_type', { length: 100 }),
+  // 'investigation', 'enforcement', 'consent_order', 'cease_desist', 'fine', 'sanction', 'debarment', 'license_revocation'
+  
+  docketNumber: varchar('docket_number', { length: 100 }),
+  actionDate: date('action_date'),
+  resolutionDate: date('resolution_date'),
+  
+  status: varchar('status', { length: 50 }), // 'pending', 'resolved', 'ongoing', 'appealed'
+  
+  // Allegations
+  allegationsSummary: text('allegations_summary'),
+  violationsAlleged: jsonb('violations_alleged'),
+  
+  // Outcome
+  outcome: varchar('outcome', { length: 100 }),
+  penaltyAmount: decimal('penalty_amount', { precision: 18, scale: 2 }),
+  otherSanctions: text('other_sanctions'),
+  
+  // Significance
+  significance: varchar('significance', { length: 20 }),
+  riskImpact: text('risk_impact'),
+  
+  sourceUrl: text('source_url'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// News and media
+export const researchNewsMedia = pgTable('research_news_media', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  headline: text('headline').notNull(),
+  source: varchar('source', { length: 255 }),
+  sourceUrl: text('source_url'),
+  publishDate: date('publish_date'),
+  
+  // Categorization
+  category: varchar('category', { length: 50 }),
+  // 'positive', 'negative', 'neutral', 'controversy', 'financial', 'legal', 'product', 'leadership'
+  
+  sentiment: varchar('sentiment', { length: 20 }), // 'positive', 'negative', 'neutral'
+  
+  // Content
+  summary: text('summary'),
+  keyPoints: jsonb('key_points'),
+  
+  // Relevance
+  relevanceScore: real('relevance_score'), // 0-1
+  significance: varchar('significance', { length: 20 }),
+  
+  // Related entities
+  mentionedPersons: jsonb('mentioned_persons'),
+  mentionedCompanies: jsonb('mentioned_companies'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Financial indicators (combined from SEC and other sources)
+export const researchFinancialIndicators = pgTable('research_financial_indicators', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  // Public company info (from SEC)
+  isPublicCompany: boolean('is_public_company').default(false),
+  ticker: varchar('ticker', { length: 20 }),
+  exchange: varchar('exchange', { length: 50 }),
+  
+  // SEC filings reference
+  secFilings: jsonb('sec_filings'),
+  // [{ type: '10-K', date: '...', url: '...' }]
+  
+  latestRevenue: decimal('latest_revenue', { precision: 18, scale: 2 }),
+  latestNetIncome: decimal('latest_net_income', { precision: 18, scale: 2 }),
+  marketCap: decimal('market_cap', { precision: 18, scale: 2 }),
+  
+  // Credit indicators
+  businessCreditScore: integer('business_credit_score'),
+  paymentHistory: varchar('payment_history', { length: 50 }),
+  
+  // Other indicators
+  estimatedEmployeeCount: integer('estimated_employee_count'),
+  estimatedAnnualRevenue: varchar('estimated_annual_revenue', { length: 100 }),
+  industryClassification: varchar('industry_classification', { length: 255 }),
+  naicsCode: varchar('naics_code', { length: 20 }),
+  sicCode: varchar('sic_code', { length: 10 }),
+  
+  // Risk indicators
+  financialHealthScore: integer('financial_health_score'),
+  financialNotes: text('financial_notes'),
+  
+  sourceUrls: jsonb('source_urls'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Red flags identified
+export const researchRedFlags = pgTable('research_red_flags', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  category: varchar('category', { length: 100 }).notNull(),
+  // 'litigation', 'regulatory', 'financial', 'corporate', 'reputation', 'leadership', 'compliance', 'sec', 'ucc'
+  
+  severity: varchar('severity', { length: 20 }).notNull(),
+  // 'low', 'medium', 'high', 'critical'
+  
+  title: varchar('title', { length: 255 }).notNull(),
+  description: text('description').notNull(),
+  
+  // Evidence
+  evidence: jsonb('evidence'),
+  // [{ type: 'litigation', recordId: 123, summary: '...' }]
+  
+  sourceRecordType: varchar('source_record_type', { length: 50 }),
+  sourceRecordId: integer('source_record_id'),
+  
+  // Recommendations
+  recommendation: text('recommendation'),
+  mitigationOptions: jsonb('mitigation_options'),
+  
+  // Review
+  isVerified: boolean('is_verified').default(false),
+  reviewedBy: integer('reviewed_by').references(() => users.id),
+  reviewNotes: text('review_notes'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+```
+
+---
+
+## INTEGRATED RESEARCH SERVICE
+
+```typescript
+// services/background-research.service.ts
+
+import { SecEdgarApiService, SecProfileResult } from './sec-edgar-api.service';
+import { UccApiService, UccSearchResult, UccAnalysis } from './ucc-api.service';
+import { OpenCorporatesApiService, CorporateProfileResult } from './opencorporates-api.service';
+import { OpenAI } from 'openai';
+import { db } from '@/db';
+import { eq } from 'drizzle-orm';
+import {
+  backgroundResearch,
+  researchSecFilings,
+  researchCorporateStructure,
+  researchLeadership,
+  researchLitigation,
+  researchUccFilings,
+  researchUccSearchTasks,
+  researchRegulatoryActions,
+  researchNewsMedia,
+  researchFinancialIndicators,
+  researchRedFlags,
+} from '@/db/schema';
+
+export interface ResearchScope {
+  corporate: boolean;
+  leadership: boolean;
+  litigation: boolean;
+  ucc: boolean;
+  regulatory: boolean;
+  news: boolean;
+  financial: boolean;
+  sec: boolean;
+}
+
+export class BackgroundResearchService {
+  private secApi: SecEdgarApiService;
+  private uccApi: UccApiService;
+  private openCorpApi: OpenCorporatesApiService;
+  private openai: OpenAI;
+
+  constructor() {
+    this.secApi = new SecEdgarApiService();
+    this.uccApi = new UccApiService();
+    this.openCorpApi = new OpenCorporatesApiService();
+    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+
+  /**
+   * Run comprehensive background research
+   */
+  async runResearch(researchId: number): Promise<void> {
+    const research = await db.query.backgroundResearch.findFirst({
+      where: eq(backgroundResearch.id, researchId),
+    });
+
+    if (!research) throw new Error('Research not found');
+
+    // Update status
+    await db.update(backgroundResearch)
+      .set({ status: 'in_progress', startedAt: new Date() })
+      .where(eq(backgroundResearch.id, researchId));
+
+    try {
+      const scope = research.researchScope as ResearchScope;
+
+      // Run research in parallel where possible
+      const results = await Promise.allSettled([
+        // API-based research
+        scope.sec && this.searchSecFilings(research),
+        scope.corporate && this.searchCorporateStructure(research),
+        scope.ucc && this.searchUccFilings(research),
+        
+        // Web search-based research
+        scope.leadership && this.searchLeadership(research),
+        scope.litigation && this.searchLitigation(research),
+        scope.regulatory && this.searchRegulatoryActions(research),
+        scope.news && this.searchNewsMedia(research),
+        scope.financial && this.enrichFinancialIndicators(research),
+      ]);
+
+      // Log any errors
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Research task ${index} failed:`, result.reason);
+        }
+      });
+
+      // Analyze all findings and generate red flags
+      await this.analyzeAndGenerateRedFlags(researchId);
+
+      // Generate executive summary
+      await this.generateExecutiveSummary(researchId);
+
+      // Calculate risk score
+      await this.calculateRiskScore(researchId);
+
+      // Update status to completed
+      await db.update(backgroundResearch)
+        .set({ status: 'completed', completedAt: new Date() })
+        .where(eq(backgroundResearch.id, researchId));
+
+    } catch (error) {
+      console.error('Research failed:', error);
+      await db.update(backgroundResearch)
+        .set({ status: 'failed' })
+        .where(eq(backgroundResearch.id, researchId));
+      throw error;
+    }
+  }
+
+  /**
+   * Search SEC EDGAR for public company filings
+   */
+  private async searchSecFilings(research: any): Promise<void> {
+    console.log(`Searching SEC EDGAR for: ${research.subjectName}`);
+    
+    const secProfile = await this.secApi.getFullSecProfile(research.subjectName);
+    
+    // Store SEC findings
+    await db.insert(researchSecFilings).values({
+      researchId: research.id,
+      isPublicCompany: secProfile.isPublic,
+      cik: secProfile.cik,
+      ticker: secProfile.companyInfo?.tickers?.[0],
+      exchange: secProfile.companyInfo?.exchanges?.[0],
+      secCompanyName: secProfile.companyInfo?.name,
+      sic: secProfile.companyInfo?.sic,
+      sicDescription: secProfile.companyInfo?.sicDescription,
+      stateOfIncorporation: secProfile.companyInfo?.stateOfIncorporation,
+      ein: secProfile.companyInfo?.ein,
+      fiscalYearEnd: secProfile.companyInfo?.fiscalYearEnd,
+      latestRevenue: secProfile.financials?.revenue,
+      latestNetIncome: secProfile.financials?.netIncome,
+      totalAssets: secProfile.financials?.totalAssets,
+      totalLiabilities: secProfile.financials?.totalLiabilities,
+      stockholdersEquity: secProfile.financials?.stockholdersEquity,
+      cashAndEquivalents: secProfile.financials?.cashAndEquivalents,
+      longTermDebt: secProfile.financials?.longTermDebt,
+      financialPeriodEnd: secProfile.financials?.periodEnd,
+      recentFilings: secProfile.filings,
+      materialEvents: secProfile.materialEvents,
+      secProfileUrl: secProfile.secUrl,
+    });
+
+    // Generate red flags for SEC findings
+    if (secProfile.isPublic) {
+      // Check for concerning 8-K events
+      if (secProfile.materialEvents && secProfile.materialEvents.length > 0) {
+        await db.insert(researchRedFlags).values({
+          researchId: research.id,
+          category: 'sec',
+          severity: 'medium',
+          title: `${secProfile.materialEvents.length} Recent 8-K Filing(s) Require Review`,
+          description: `The company has filed ${secProfile.materialEvents.length} Form 8-K current reports in recent months. These filings may disclose material events that could affect the transaction.`,
+          evidence: JSON.stringify(secProfile.materialEvents.slice(0, 5)),
+          recommendation: 'Review each 8-K filing to understand the material events disclosed.',
+        });
+      }
+
+      // Check financial health
+      if (secProfile.financials) {
+        const { netIncome, totalLiabilities, totalAssets, revenue } = secProfile.financials;
+        
+        // Net loss
+        if (netIncome && netIncome < 0) {
+          await db.insert(researchRedFlags).values({
+            researchId: research.id,
+            category: 'financial',
+            severity: Math.abs(netIncome) > 10000000 ? 'high' : 'medium',
+            title: 'Company Reported Net Loss',
+            description: `The company reported a net loss of $${Math.abs(netIncome).toLocaleString()} in the most recent fiscal year.`,
+            recommendation: 'Review the company\'s financial statements and management discussion for explanations.',
+          });
+        }
+        
+        // High debt ratio
+        if (totalLiabilities && totalAssets && totalLiabilities / totalAssets > 0.8) {
+          await db.insert(researchRedFlags).values({
+            researchId: research.id,
+            category: 'financial',
+            severity: 'medium',
+            title: 'High Debt-to-Asset Ratio',
+            description: `The company has a debt-to-asset ratio of ${((totalLiabilities / totalAssets) * 100).toFixed(1)}%, indicating significant leverage.`,
+            recommendation: 'Review debt covenants and ability to service debt obligations.',
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Search for corporate structure using OpenCorporates
+   */
+  private async searchCorporateStructure(research: any): Promise<void> {
+    console.log(`Searching corporate records for: ${research.subjectName}`);
+    
+    const corpProfile = await this.openCorpApi.getFullCorporateProfile(
+      research.subjectName,
+      research.stateOfFormation
+    );
+
+    if (corpProfile.found && corpProfile.company) {
+      const company = corpProfile.company;
+      
+      // Store corporate structure
+      await db.insert(researchCorporateStructure).values({
+        researchId: research.id,
+        legalName: company.name,
+        entityType: company.companyType,
+        formationState: company.jurisdictionCode?.replace('us_', '').toUpperCase(),
+        formationDate: company.incorporationDate,
+        status: company.status,
+        principalAddress: company.registeredAddress,
+        fileNumber: company.companyNumber,
+        sourceUrls: [company.registryUrl],
+        sourceType: 'opencorporates',
+      });
+
+      // Store officers/leadership
+      if (company.officers) {
+        for (const officer of company.officers) {
+          await db.insert(researchLeadership).values({
+            researchId: research.id,
+            personName: officer.name,
+            title: officer.position,
+            role: this.mapOfficerRole(officer.position),
+            startDate: officer.startDate,
+            endDate: officer.endDate,
+            isCurrent: officer.status === 'active',
+            sourceType: 'opencorporates',
+          });
+        }
+      }
+
+      // Check for inactive status
+      if (company.status && !['active', 'good standing'].includes(company.status.toLowerCase())) {
+        await db.insert(researchRedFlags).values({
+          researchId: research.id,
+          category: 'corporate',
+          severity: 'high',
+          title: `Entity Status: ${company.status}`,
+          description: `The company's status is listed as "${company.status}" in corporate records. This may indicate dissolution, suspension, or other issues.`,
+          recommendation: 'Verify the entity\'s current standing with the Secretary of State before proceeding.',
+        });
+      }
+    }
+  }
+
+  /**
+   * Search UCC filings
+   */
+  private async searchUccFilings(research: any): Promise<void> {
+    console.log(`Searching UCC filings for: ${research.subjectName}`);
+    
+    // Determine which states to search
+    const statesToSearch = this.getStatesToSearch(
+      research.stateOfFormation,
+      research.state
+    );
+
+    const uccResult = await this.uccApi.searchUccFilings(
+      research.subjectName,
+      statesToSearch,
+      { searchAsDebtor: true, searchAsSecuredParty: false }
+    );
+
+    if (uccResult.automated && uccResult.filings.length > 0) {
+      // Store UCC filings
+      for (const filing of uccResult.filings) {
+        await db.insert(researchUccFilings).values({
+          researchId: research.id,
+          filingNumber: filing.filingNumber,
+          filingType: filing.filingType.toLowerCase(),
+          filingState: filing.filingState,
+          filingDate: filing.filingDate,
+          lapseDate: filing.lapseDate,
+          status: filing.status,
+          subjectRole: 'debtor',
+          securedPartyName: filing.securedPartyName,
+          securedPartyAddress: filing.securedPartyAddress,
+          debtorName: filing.debtorName,
+          debtorAddress: filing.debtorAddress,
+          collateralDescription: filing.collateralDescription,
+          collateralType: filing.collateralType,
+          sourceUrl: filing.sourceUrl,
+          sourceType: process.env.UCC_PROVIDER || 'automated',
+        });
+      }
+
+      // Analyze UCC profile
+      const analysis = this.uccApi.analyzeUccFilings(uccResult.filings);
+      
+      // Generate red flags based on analysis
+      if (analysis.hasAllAssetsLien) {
+        await db.insert(researchRedFlags).values({
+          researchId: research.id,
+          category: 'ucc',
+          severity: analysis.allAssetsLienCount > 1 ? 'high' : 'medium',
+          title: `"All Assets" UCC Filing(s) Found`,
+          description: `${analysis.allAssetsLienCount} UCC filing(s) covering "all assets" were found. This indicates significant secured debt that would take priority over unsecured creditors in any asset purchase or bankruptcy.`,
+          evidence: JSON.stringify({
+            totalActive: analysis.activeFilings,
+            allAssetsCount: analysis.allAssetsLienCount,
+            securedParties: analysis.securedParties,
+          }),
+          recommendation: 'Obtain payoff letters from secured creditors and understand priority of liens before closing.',
+        });
+      }
+
+      for (const note of analysis.riskNotes) {
+        await db.insert(researchRedFlags).values({
+          researchId: research.id,
+          category: 'ucc',
+          severity: 'low',
+          title: 'UCC Filing Note',
+          description: note,
+        });
+      }
+    } else if (uccResult.manualSearchRequired) {
+      // Create manual search tasks
+      for (const [state, url] of Object.entries(uccResult.manualSearchUrls || {})) {
+        await db.insert(researchUccSearchTasks).values({
+          researchId: research.id,
+          state,
+          searchUrl: url,
+          searchInstructions: `Search for "${research.subjectName}" as debtor in ${state} UCC records`,
+          status: 'pending',
+        });
+      }
+    }
+  }
+
+  /**
+   * Search for litigation via web search
+   */
+  private async searchLitigation(research: any): Promise<void> {
+    console.log(`Searching litigation for: ${research.subjectName}`);
+    
+    // Use AI-powered web search to find litigation
+    const searchQueries = [
+      `"${research.subjectName}" lawsuit`,
+      `"${research.subjectName}" litigation`,
+      `"${research.subjectName}" court case`,
+      `"${research.subjectName}" defendant`,
+      `"${research.subjectName}" bankruptcy`,
+      `"${research.subjectName}" judgment`,
+    ];
+
+    // This would integrate with a web search API (e.g., Serper, SerpAPI)
+    // For now, we'll create a placeholder that would be implemented
+    const searchResults = await this.performWebSearch(searchQueries);
+
+    if (searchResults.length > 0) {
+      // Use AI to analyze and structure the results
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages: [
+          {
+            role: 'system',
+            content: LITIGATION_ANALYSIS_PROMPT,
+          },
+          {
+            role: 'user',
+            content: `Analyze these search results for litigation involving "${research.subjectName}":\n\n${JSON.stringify(searchResults)}`,
+          },
+        ],
+        response_format: { type: 'json_object' },
+      });
+
+      const litigationData = JSON.parse(response.choices[0].message.content || '{}');
+
+      // Store litigation findings
+      for (const case_ of litigationData.cases || []) {
+        await db.insert(researchLitigation).values({
+          researchId: research.id,
+          caseNumber: case_.caseNumber,
+          caseCaption: case_.caption,
+          courtType: case_.courtType,
+          courtName: case_.court,
+          subjectRole: case_.role,
+          caseType: case_.caseType,
+          fileDate: case_.fileDate,
+          status: case_.status,
+          summary: case_.summary,
+          significance: case_.significance,
+          sourceUrl: case_.sourceUrl,
+        });
+
+        // Generate red flags for significant litigation
+        if (['high', 'critical'].includes(case_.significance)) {
+          await db.insert(researchRedFlags).values({
+            researchId: research.id,
+            category: 'litigation',
+            severity: case_.significance,
+            title: `Significant Litigation: ${case_.caseType}`,
+            description: case_.summary,
+            recommendation: 'Obtain full court records and assess potential impact on transaction.',
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Enrich financial indicators from multiple sources
+   */
+  private async enrichFinancialIndicators(research: any): Promise<void> {
+    // Check if we already have SEC data
+    const secData = await db.query.researchSecFilings.findFirst({
+      where: eq(researchSecFilings.researchId, research.id),
+    });
+
+    const financialData: any = {
+      researchId: research.id,
+      isPublicCompany: secData?.isPublicCompany || false,
+      ticker: secData?.ticker,
+      exchange: secData?.exchange,
+      latestRevenue: secData?.latestRevenue,
+      latestNetIncome: secData?.latestNetIncome,
+    };
+
+    // If public company, reference SEC filings
+    if (secData?.isPublicCompany) {
+      financialData.secFilings = secData.recentFilings;
+      financialData.sicCode = secData.sic;
+      financialData.industryClassification = secData.sicDescription;
+    }
+
+    // Store financial indicators
+    await db.insert(researchFinancialIndicators).values(financialData);
+  }
+
+  /**
+   * Analyze all findings and generate red flags
+   */
+  private async analyzeAndGenerateRedFlags(researchId: number): Promise<void> {
+    // Get all findings
+    const [litigation, regulatory, uccFilings, liens, secFilings] = await Promise.all([
+      db.query.researchLitigation.findMany({ where: eq(researchLitigation.researchId, researchId) }),
+      db.query.researchRegulatoryActions.findMany({ where: eq(researchRegulatoryActions.researchId, researchId) }),
+      db.query.researchUccFilings.findMany({ where: eq(researchUccFilings.researchId, researchId) }),
+      db.query.researchLiens.findMany({ where: eq(researchLiens.researchId, researchId) }),
+      db.query.researchSecFilings.findFirst({ where: eq(researchSecFilings.researchId, researchId) }),
+    ]);
+
+    // Use AI to analyze patterns and generate additional red flags
+    const analysisPrompt = `
+Analyze the following due diligence findings and identify any additional red flags or patterns of concern:
+
+SEC/Public Company:
+${JSON.stringify(secFilings, null, 2)}
+
+Litigation (${litigation.length} cases):
+${JSON.stringify(litigation, null, 2)}
+
+Regulatory Actions (${regulatory.length}):
+${JSON.stringify(regulatory, null, 2)}
+
+UCC Filings (${uccFilings.length}):
+${JSON.stringify(uccFilings, null, 2)}
+
+Liens (${liens.length}):
+${JSON.stringify(liens, null, 2)}
+
+Identify:
+1. Patterns that suggest systemic issues
+2. Connections between different findings
+3. Red flags that might not be obvious from individual findings
+4. Overall risk assessment
+
+Return JSON format:
+{
+  "additionalRedFlags": [
+    {
+      "category": "string",
+      "severity": "low|medium|high|critical",
+      "title": "string",
+      "description": "string",
+      "recommendation": "string"
+    }
+  ],
+  "patternAnalysis": "string",
+  "overallAssessment": "string"
+}
+`;
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages: [
+          { role: 'system', content: 'You are a senior due diligence analyst reviewing background research findings.' },
+          { role: 'user', content: analysisPrompt },
+        ],
+        response_format: { type: 'json_object' },
+      });
+
+      const analysis = JSON.parse(response.choices[0].message.content || '{}');
+
+      // Store additional red flags
+      for (const flag of analysis.additionalRedFlags || []) {
+        await db.insert(researchRedFlags).values({
+          researchId,
+          category: flag.category,
+          severity: flag.severity,
+          title: flag.title,
+          description: flag.description,
+          recommendation: flag.recommendation,
+        });
+      }
+    } catch (error) {
+      console.error('AI analysis failed:', error);
+    }
+  }
+
+  /**
+   * Generate executive summary
+   */
+  private async generateExecutiveSummary(researchId: number): Promise<void> {
+    // Get all findings for summary
+    const [research, redFlags, litigation, uccFilings, secFilings, corporate] = await Promise.all([
+      db.query.backgroundResearch.findFirst({ where: eq(backgroundResearch.id, researchId) }),
+      db.query.researchRedFlags.findMany({ where: eq(researchRedFlags.researchId, researchId) }),
+      db.query.researchLitigation.findMany({ where: eq(researchLitigation.researchId, researchId) }),
+      db.query.researchUccFilings.findMany({ where: eq(researchUccFilings.researchId, researchId) }),
+      db.query.researchSecFilings.findFirst({ where: eq(researchSecFilings.researchId, researchId) }),
+      db.query.researchCorporateStructure.findFirst({ where: eq(researchCorporateStructure.researchId, researchId) }),
+    ]);
+
+    const summaryPrompt = `
+Generate an executive summary for a background research report on "${research?.subjectName}".
+
+Key findings:
+- Red Flags: ${redFlags.length} identified (${redFlags.filter(f => f.severity === 'critical').length} critical, ${redFlags.filter(f => f.severity === 'high').length} high)
+- Litigation: ${litigation.length} cases found
+- UCC Filings: ${uccFilings.length} filings
+- Public Company: ${secFilings?.isPublicCompany ? 'Yes' : 'No'}
+- Corporate Status: ${corporate?.status || 'Unknown'}
+
+Red Flags Details:
+${redFlags.map(f => `- [${f.severity.toUpperCase()}] ${f.title}: ${f.description}`).join('\n')}
+
+Write a 2-3 paragraph executive summary that:
+1. Summarizes the entity's basic profile
+2. Highlights the most significant findings and risks
+3. Provides a clear recommendation (proceed, proceed with caution, additional diligence needed, or do not proceed)
+
+Be direct and professional.
+`;
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages: [
+          { role: 'system', content: 'You are a senior due diligence analyst writing an executive summary.' },
+          { role: 'user', content: summaryPrompt },
+        ],
+      });
+
+      const summary = response.choices[0].message.content;
+
+      await db.update(backgroundResearch)
+        .set({ executiveSummary: summary })
+        .where(eq(backgroundResearch.id, researchId));
+    } catch (error) {
+      console.error('Summary generation failed:', error);
+    }
+  }
+
+  /**
+   * Calculate overall risk score
+   */
+  private async calculateRiskScore(researchId: number): Promise<void> {
+    const [litigation, regulatory, redFlags, liens, uccFilings] = await Promise.all([
+      db.query.researchLitigation.findMany({ where: eq(researchLitigation.researchId, researchId) }),
+      db.query.researchRegulatoryActions.findMany({ where: eq(researchRegulatoryActions.researchId, researchId) }),
+      db.query.researchRedFlags.findMany({ where: eq(researchRedFlags.researchId, researchId) }),
+      db.query.researchLiens.findMany({ where: eq(researchLiens.researchId, researchId) }),
+      db.query.researchUccFilings.findMany({ where: eq(researchUccFilings.researchId, researchId) }),
+    ]);
+
+    let score = 0;
+
+    // Red flags scoring
+    score += redFlags.filter(f => f.severity === 'critical').length * 30;
+    score += redFlags.filter(f => f.severity === 'high').length * 20;
+    score += redFlags.filter(f => f.severity === 'medium').length * 10;
+    score += redFlags.filter(f => f.severity === 'low').length * 3;
+
+    // Litigation scoring
+    score += litigation.filter(l => l.status === 'pending' && l.subjectRole === 'defendant').length * 15;
+    score += litigation.filter(l => l.subjectRole === 'defendant').length * 5;
+
+    // Regulatory scoring
+    score += regulatory.filter(r => r.status === 'pending').length * 25;
+    score += regulatory.filter(r => r.penaltyAmount && Number(r.penaltyAmount) > 100000).length * 15;
+
+    // Lien scoring
+    score += liens.filter(l => l.lienType === 'federal_tax' && l.status === 'active').length * 30;
+    score += liens.filter(l => l.lienType === 'state_tax' && l.status === 'active').length * 20;
+    score += liens.filter(l => l.lienType === 'judgment' && l.status === 'active').length * 15;
+
+    // UCC scoring
+    const activeUcc = uccFilings.filter(u => u.status === 'active');
+    const allAssetsUcc = activeUcc.filter(u => u.collateralType === 'all_assets');
+    score += allAssetsUcc.length * 10;
+    if (activeUcc.length > 5) score += 10;
+
+    // Cap at 100
+    score = Math.min(score, 100);
+
+    // Determine risk level
+    let riskLevel: string;
+    let recommendation: string;
+    
+    if (score <= 20) {
+      riskLevel = 'low';
+      recommendation = 'proceed';
+    } else if (score <= 40) {
+      riskLevel = 'medium';
+      recommendation = 'proceed_with_caution';
+    } else if (score <= 70) {
+      riskLevel = 'high';
+      recommendation = 'additional_diligence';
+    } else {
+      riskLevel = 'critical';
+      recommendation = 'do_not_proceed';
+    }
+
+    await db.update(backgroundResearch)
+      .set({
+        riskScore: score,
+        overallRiskLevel: riskLevel,
+        recommendation,
+        redFlagsCount: redFlags.length,
+      })
+      .where(eq(backgroundResearch.id, researchId));
+  }
+
+  // Helper methods
+  
+  private getStatesToSearch(stateOfFormation?: string, operatingState?: string): string[] {
+    const states = new Set<string>();
+    
+    // Always search Delaware
+    states.add('DE');
+    
+    if (stateOfFormation) states.add(stateOfFormation);
+    if (operatingState) states.add(operatingState);
+    
+    // Add major commercial states if searching a major state
+    const majorStates = ['CA', 'NY', 'TX', 'FL', 'IL'];
+    if (stateOfFormation && majorStates.includes(stateOfFormation)) {
+      majorStates.forEach(s => states.add(s));
+    }
+    
+    return Array.from(states);
+  }
+
+  private mapOfficerRole(position: string): string {
+    const posLower = position.toLowerCase();
+    if (posLower.includes('chief executive') || posLower.includes('ceo')) return 'ceo';
+    if (posLower.includes('chief financial') || posLower.includes('cfo')) return 'cfo';
+    if (posLower.includes('chief operating') || posLower.includes('coo')) return 'coo';
+    if (posLower.includes('president')) return 'president';
+    if (posLower.includes('director')) return 'director';
+    if (posLower.includes('secretary')) return 'secretary';
+    if (posLower.includes('treasurer')) return 'treasurer';
+    if (posLower.includes('agent')) return 'registered_agent';
+    return 'officer';
+  }
+
+  private async performWebSearch(queries: string[]): Promise<any[]> {
+    // This would integrate with a web search API
+    // For example: Serper API, SerpAPI, or similar
+    // Placeholder implementation
+    return [];
+  }
+}
+
+// AI Prompts
+const LITIGATION_ANALYSIS_PROMPT = `
+You are a legal research analyst. Analyze web search results to identify litigation involving the specified entity.
+
+For each case found, extract:
+- Case number
+- Court name and type
+- Case caption
+- Entity's role (plaintiff/defendant)
+- Case type (contract, employment, IP, etc.)
+- File date
+- Current status
+- Summary of allegations
+- Significance (low/medium/high/critical)
+- Source URL
+
+Return results as JSON:
+{
+  "cases": [
+    {
+      "caseNumber": "string",
+      "caption": "string",
+      "courtType": "federal_district|federal_bankruptcy|state_trial|etc",
+      "court": "string",
+      "role": "plaintiff|defendant",
+      "caseType": "contract|employment|ip|securities|etc",
+      "fileDate": "YYYY-MM-DD",
+      "status": "pending|closed|settled|dismissed",
+      "summary": "string",
+      "significance": "low|medium|high|critical",
+      "sourceUrl": "string"
+    }
+  ]
+}
+`;
+```
+
+---
+
+## API ENDPOINTS
+
+```typescript
+// app/api/research/route.ts
+
+import { BackgroundResearchService } from '@/services/background-research.service';
+
+const researchService = new BackgroundResearchService();
+
+// Create new research
+export async function POST(req: Request) {
+  const body = await req.json();
+  
+  // Create research record
+  const [research] = await db.insert(backgroundResearch).values({
+    dealId: body.dealId,
+    subjectType: body.subjectType,
+    subjectName: body.subjectName,
+    subjectAliases: body.aliases,
+    stateOfFormation: body.stateOfFormation,
+    primaryAddress: body.address,
+    city: body.city,
+    state: body.state,
+    researchScope: body.scope,
+    status: 'pending',
+  }).returning();
+
+  return Response.json(research);
+}
+
+// app/api/research/[id]/start/route.ts
+
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const researchId = parseInt(params.id);
+  
+  // Start research in background
+  researchService.runResearch(researchId).catch(console.error);
+  
+  return Response.json({ status: 'started' });
+}
+
+// app/api/research/[id]/route.ts
+
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const researchId = parseInt(params.id);
+  
+  const research = await db.query.backgroundResearch.findFirst({
+    where: eq(backgroundResearch.id, researchId),
+  });
+  
+  if (!research) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+  
+  // Get all related data
+  const [secFilings, corporate, leadership, litigation, uccFilings, liens, regulatory, news, redFlags] = await Promise.all([
+    db.query.researchSecFilings.findFirst({ where: eq(researchSecFilings.researchId, researchId) }),
+    db.query.researchCorporateStructure.findFirst({ where: eq(researchCorporateStructure.researchId, researchId) }),
+    db.query.researchLeadership.findMany({ where: eq(researchLeadership.researchId, researchId) }),
+    db.query.researchLitigation.findMany({ where: eq(researchLitigation.researchId, researchId) }),
+    db.query.researchUccFilings.findMany({ where: eq(researchUccFilings.researchId, researchId) }),
+    db.query.researchLiens.findMany({ where: eq(researchLiens.researchId, researchId) }),
+    db.query.researchRegulatoryActions.findMany({ where: eq(researchRegulatoryActions.researchId, researchId) }),
+    db.query.researchNewsMedia.findMany({ where: eq(researchNewsMedia.researchId, researchId) }),
+    db.query.researchRedFlags.findMany({ where: eq(researchRedFlags.researchId, researchId) }),
+  ]);
+
+  return Response.json({
+    ...research,
+    secFilings,
+    corporate,
+    leadership,
+    litigation,
+    uccFilings,
+    liens,
+    regulatory,
+    news,
+    redFlags,
+  });
+}
+```
+
+---
+
+## API SUMMARY TABLE
+
+| Data Source | API | Cost | Coverage | Auth Required |
+|-------------|-----|------|----------|---------------|
+| **SEC EDGAR** | Official SEC API | **Free** | All US public companies | No (User-Agent only) |
+| **OpenCorporates** | REST API | Free tier (500/mo) + Paid | Global corporate records | API Key |
+| **InfoTrack UCC** | REST API | Per-search ($5-15) | All 50 states | API Key + Account |
+| **CSC Global UCC** | REST API | Subscription | All 50 states | API Key + Account |
+| **Cobalt Intel UCC** | REST API | Per-search (~$5) | All 50 states | API Key |
+| **State Direct** | Manual | Free | Per-state | None |
+
+---
+
+## IMPLEMENTATION PRIORITY
+
+1. **Phase 1**: Database schema and basic CRUD
+2. **Phase 2**: SEC EDGAR API integration (free, high value)
+3. **Phase 3**: OpenCorporates integration (free tier available)
+4. **Phase 4**: UCC manual search tasks
+5. **Phase 5**: Web search integration for litigation/news
+6. **Phase 6**: AI analysis and red flag generation
+7. **Phase 7**: UCC API provider integration (when budget allows)
+8. **Phase 8**: Report generation
+9. **Phase 9**: Monitoring/alerts for changes

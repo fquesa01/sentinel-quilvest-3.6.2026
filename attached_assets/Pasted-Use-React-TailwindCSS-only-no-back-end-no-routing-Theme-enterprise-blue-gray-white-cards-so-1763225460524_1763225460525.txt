@@ -1,0 +1,584 @@
+Use React + TailwindCSS only (no back end, no routing).
+Theme: enterprise blue/gray, white cards, soft shadows, rounded corners, Inter font.
+
+Layout: full-screen responsive dashboard with a light gray background. Centered content max-width ~1280px. Add top-left title “Employee Communication Overview” and a small pill on the right showing “Robert Williams · Sales · High Risk”.
+
+Main grid (desktop: 2 columns, gap-6; mobile: stacked):
+
+Top-left card – Relationship Graph
+
+Title: “Communication Network”
+
+Show a central circle for “Robert Williams” in dark navy with white initials “RW”.
+
+Radiating from the center, show 8–10 smaller circles for counterparties (James Brown, Emily Patel, Jennifer Kim, Michael Green, Sarah Lee, David White, External Vendor, Personal Contact).
+
+Draw thin connecting lines.
+
+Color nodes by risk: green (low), yellow (medium), red (high), blue (normal).
+
+On hover over a node, show a small white tooltip with: Name, % of total messages, and channel (e.g., “James Brown – 18% of total – via email”).
+
+Top-right card – Top Communication Counterparties
+
+Title: “Top Communication Counterparties”
+
+For each contact show a horizontal bar (primary blue) over a light-gray track.
+
+Right-aligned text shows % of total messages (e.g., James Brown 18%, Emily Patel 12%, etc.).
+
+Small colored dot before each name for risk level (green/yellow/red).
+
+Bottom-left card – Activity Heat Strip + Channel Mix
+
+Top section: a horizontal mini heatmap of daily or weekly activity.
+
+30–40 small squares in a row.
+
+Color intensity from very light gray (low) to dark blue (high).
+
+One red-tinted square to show a day with flagged risk.
+
+Hover tooltip on a cell: “Apr 14 – 112 messages – 3 flagged events”.
+
+Bottom section: donut chart labeled “Channel Mix”.
+
+Segments for Email (dark blue), Teams (medium blue), SMS (light blue), External (red).
+
+Percentage label in the center (e.g., “61% Email”).
+
+Beneath donut, a KPI pill: red background, white text “External Exposure 38%”.
+
+Bottom-right card – Behavior Radar + Topics
+
+Split into two halves.
+
+Left: bubble group labeled “Communication Topics” with bubbles: “Sales Deals”, “Invoices”, “Vendor Issues”, “HR/Complaints”, “Personal”, sized by volume.
+
+Right: radar (spider) chart labeled “Behavior vs Peers” with axes: After-hours Messaging, External Comms, Risk Keywords, Attachments, Off-Channel Use.
+
+Fill the employee in dark blue; company average in gray outline.
+
+General styling:
+
+Background: #F5F7FB
+
+Primary blue: #1E4D8F
+
+Navy: #152238
+
+Slate text: #5F6B7A
+
+Light-gray card border: #E8ECF2
+
+High-risk red: #CE4242
+
+Medium-risk yellow: #F5C542
+
+Low-risk green: #3BAA67
+
+Cards: bg-white, rounded-2xl, shadow-sm, p-6.
+
+Use dummy static data; no real API calls.
+
+Make it responsive: stacked on small screens, 2×2 grid on large.
+
+Clean, no animation required.
+
+That should steer Replit’s AI very close to the mock you liked.
+
+2️⃣ Direct React + Tailwind implementation (if you want to just paste code)
+File structure
+src/
+  main.jsx
+  App.jsx
+  components/
+    NetworkGraph.jsx
+    TopContacts.jsx
+    ChannelMix.jsx
+    ActivityHeatStrip.jsx
+    BehaviorRadar.jsx
+    TopicBubbles.jsx
+
+src/main.jsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+src/App.jsx
+import NetworkGraph from "./components/NetworkGraph";
+import TopContacts from "./components/TopContacts";
+import ChannelMix from "./components/ChannelMix";
+import ActivityHeatStrip from "./components/ActivityHeatStrip";
+import BehaviorRadar from "./components/BehaviorRadar";
+import TopicBubbles from "./components/TopicBubbles";
+
+const contacts = [
+  { name: "James Brown", percent: 18, risk: "high" },
+  { name: "Emily Patel", percent: 12, risk: "medium" },
+  { name: "Jennifer Kim", percent: 11, risk: "medium" },
+  { name: "John Smith", percent: 9, risk: "low" },
+  { name: "Michael Green", percent: 8, risk: "low" },
+  { name: "Sarah Lee", percent: 7, risk: "low" },
+  { name: "David White", percent: 6, risk: "low" },
+  { name: "External Vendor", percent: 5, risk: "high" }
+];
+
+const heatData = Array.from({ length: 36 }).map((_, i) => {
+  const intensity = Math.floor(Math.random() * 4); // 0–3
+  return {
+    id: i,
+    label: `Day ${i + 1}`,
+    count: intensity * 20,
+    flagged: i === 22
+  };
+});
+
+const channelMix = {
+  email: 61,
+  teams: 21,
+  sms: 10,
+  external: 8
+};
+
+const radarData = {
+  employee: {
+    afterHours: 0.7,
+    externalComms: 0.8,
+    riskKeywords: 0.6,
+    attachments: 0.5,
+    offChannel: 0.75
+  },
+  average: {
+    afterHours: 0.4,
+    externalComms: 0.5,
+    riskKeywords: 0.35,
+    attachments: 0.45,
+    offChannel: 0.3
+  }
+};
+
+function App() {
+  return (
+    <div className="min-h-screen bg-[#F5F7FB] font-sans text-slate">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-navy">
+              Employee Communication Overview
+            </h1>
+            <p className="text-sm text-slate mt-1">
+              Communications, channels, and behavioral risk profile
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-sm font-medium text-navy">
+                Robert Williams
+              </div>
+              <div className="text-xs text-slate">Sales · Employee ID EMP-2023-0006</div>
+            </div>
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-danger/10 text-danger border border-danger/40">
+              High Risk
+            </span>
+          </div>
+        </div>
+
+        {/* Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Top-left: Network graph */}
+          <div className="bg-white rounded-2xl shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-navy mb-4">
+              Communication Network
+            </h2>
+            <NetworkGraph />
+          </div>
+
+          {/* Top-right: Top contacts */}
+          <div className="bg-white rounded-2xl shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-navy mb-4">
+              Top Communication Counterparties
+            </h2>
+            <TopContacts contacts={contacts} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Bottom-left: Heat + Channel mix */}
+          <div className="bg-white rounded-2xl shadow-sm p-6 flex flex-col gap-6">
+            <div>
+              <h2 className="text-sm font-semibold text-navy mb-3">
+                Activity Over Time
+              </h2>
+              <ActivityHeatStrip data={heatData} />
+            </div>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <ChannelMix mix={channelMix} />
+              <div className="md:w-1/2">
+                <div className="text-xs text-slate mb-1">
+                  External Exposure
+                </div>
+                <div className="inline-flex items-center px-3 py-2 rounded-xl bg-danger text-white text-sm font-medium">
+                  38% of total communications
+                </div>
+                <p className="mt-2 text-xs text-slate">
+                  Includes personal email, messaging apps, and unapproved channels.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom-right: Radar + topics */}
+          <div className="bg-white rounded-2xl shadow-sm p-6 flex flex-col gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-navy mb-3">
+                  Communication Topics
+                </h2>
+                <TopicBubbles />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-navy mb-3">
+                  Behavior vs Peers
+                </h2>
+                <BehaviorRadar data={radarData} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
+
+src/components/NetworkGraph.jsx
+
+(Simple faux-graph with positioned nodes; good enough for a demo)
+
+const nodes = [
+  { name: "James Brown", angle: -30, distance: 130, risk: "high" },
+  { name: "Emily Patel", angle: -90, distance: 130, risk: "medium" },
+  { name: "John Smith", angle: -150, distance: 130, risk: "low" },
+  { name: "Sarah Lee", angle: -210, distance: 130, risk: "low" },
+  { name: "External Vendor", angle: -260, distance: 150, risk: "high" },
+  { name: "Personal Contact", angle: -305, distance: 140, risk: "medium" },
+  { name: "David White", angle: 20, distance: 135, risk: "low" },
+  { name: "Michael Green", angle: 70, distance: 145, risk: "low" },
+  { name: "Jennifer Kim", angle: 130, distance: 135, risk: "medium" }
+];
+
+function riskColor(risk) {
+  if (risk === "high") return "bg-danger";
+  if (risk === "medium") return "bg-warning";
+  if (risk === "low") return "bg-success";
+  return "bg-primary";
+}
+
+export default function NetworkGraph() {
+  return (
+    <div className="relative h-72">
+      {/* Center node */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+        <div className="flex flex-col items-center">
+          <div className="h-24 w-24 rounded-full bg-primary flex items-center justify-center text-white text-xl font-semibold shadow-sm">
+            RW
+          </div>
+          <div className="mt-2 text-xs text-navy font-medium">
+            Robert Williams
+          </div>
+          <div className="text-[11px] text-slate">1,333 messages</div>
+        </div>
+      </div>
+
+      {/* Spokes & nodes */}
+      {nodes.map((n) => {
+        const rad = (n.angle * Math.PI) / 180;
+        const x = Math.cos(rad) * n.distance;
+        const y = Math.sin(rad) * n.distance;
+
+        return (
+          <div
+            key={n.name}
+            className="absolute top-1/2 left-1/2"
+            style={{
+              transform: `translate(${x}px, ${y}px)`
+            }}
+          >
+            {/* Line back to center */}
+            <svg className="absolute -z-10 -top-10 -left-10" width="120" height="120">
+              <line
+                x1="60"
+                y1="60"
+                x2="60"
+                y2="10"
+                stroke="#E0E6F0"
+                strokeWidth="1.5"
+              />
+            </svg>
+            <div className="flex flex-col items-center group">
+              <div
+                className={`h-9 w-9 rounded-full ${riskColor(
+                  n.risk
+                )} bg-opacity-80 flex items-center justify-center text-[11px] text-white shadow-sm`}
+              >
+                {n.name.split(" ")[0][0]}
+              </div>
+              <div className="mt-1 text-[11px] text-slate text-center max-w-[80px]">
+                {n.name}
+              </div>
+              {/* Fake tooltip */}
+              <div className="opacity-0 group-hover:opacity-100 transition bg-white border border-lightgray rounded-lg shadow-lg text-[11px] text-slate px-2 py-1 mt-1 whitespace-nowrap">
+                {n.name} – {Math.floor(Math.random() * 10 + 5)}% total · email
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+TopContacts.jsx
+export default function TopContacts({ contacts }) {
+  return (
+    <div className="space-y-3">
+      {contacts.map((c) => (
+        <div key={c.name} className="flex items-center gap-3">
+          <div className="w-40 flex items-center gap-2 text-xs text-navy">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                c.risk === "high"
+                  ? "bg-danger"
+                  : c.risk === "medium"
+                  ? "bg-warning"
+                  : "bg-success"
+              }`}
+            />
+            {c.name}
+          </div>
+          <div className="flex-1 bg-lightgray rounded-full h-3 overflow-hidden">
+            <div
+              className="bg-primary h-3 rounded-full"
+              style={{ width: `${c.percent}%` }}
+            />
+          </div>
+          <div className="w-10 text-right text-xs text-slate">
+            {c.percent}%
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+ChannelMix.jsx
+export default function ChannelMix({ mix }) {
+  const total =
+    mix.email + mix.teams + mix.sms + mix.external || 1;
+
+  return (
+    <div className="flex items-center gap-4">
+      {/* Simple donut with CSS */}
+      <div className="relative h-28 w-28 rounded-full bg-lightgray flex items-center justify-center">
+        <div className="absolute inset-1 rounded-full bg-white" />
+        <div className="absolute inset-0 rounded-full border-[6px] border-primary border-t-[#5F6B7A] border-l-[#8AA2C5] border-b-danger" />
+        <div className="relative text-center text-xs">
+          <div className="text-navy font-semibold">{mix.email}%</div>
+          <div className="text-[10px] text-slate">Email</div>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1 text-xs text-slate">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-4 bg-primary rounded" /> Email {mix.email}%
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-4 bg-slate rounded" /> Teams {mix.teams}%
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-4 bg-[#8AA2C5] rounded" /> SMS {mix.sms}%
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-4 bg-danger rounded" /> External {mix.external}%
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ActivityHeatStrip.jsx
+export default function ActivityHeatStrip({ data }) {
+  function color(count, flagged) {
+    if (flagged) return "bg-danger/80";
+    if (count === 0) return "bg-lightgray";
+    if (count < 40) return "bg-[#D4DFEF]";
+    if (count < 80) return "bg-[#8AA2C5]";
+    return "bg-primary";
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {data.map((d) => (
+          <div
+            key={d.id}
+            className={`h-4 w-4 rounded-sm ${color(d.count, d.flagged)} cursor-default`}
+            title={`${d.label} – ${d.count} messages${
+              d.flagged ? " – flagged risk events" : ""
+            }`}
+          />
+        ))}
+      </div>
+      <div className="text-[11px] text-slate">
+        Darker squares indicate higher message volume. Red days include flagged risk events.
+      </div>
+    </div>
+  );
+}
+
+BehaviorRadar.jsx
+
+This is a simplified “fake” radar using SVG.
+
+const axes = [
+  "After-hours",
+  "External comms",
+  "Risk keywords",
+  "Attachments",
+  "Off-channel"
+];
+
+export default function BehaviorRadar({ data }) {
+  // we won't do real polar math – just approximate positions
+  const pointsEmployee = "50,5 90,35 80,80 30,90 10,40";
+  const pointsAverage = "50,15 75,40 65,70 35,75 20,45";
+
+  return (
+    <div className="relative h-40">
+      <svg viewBox="0 0 100 100" className="w-full h-full">
+        {/* grid */}
+        <polygon
+          points="50,10 85,35 75,80 25,85 15,40"
+          fill="none"
+          stroke="#E0E6F0"
+          strokeWidth="0.5"
+        />
+        <polygon
+          points="50,20 80,38 70,75 30,80 20,45"
+          fill="none"
+          stroke="#E0E6F0"
+          strokeWidth="0.5"
+        />
+        {/* average */}
+        <polygon
+          points={pointsAverage}
+          fill="none"
+          stroke="#B0BCCF"
+          strokeWidth="1"
+        />
+        {/* employee */}
+        <polygon
+          points={pointsEmployee}
+          fill="#1E4D8F33"
+          stroke="#1E4D8F"
+          strokeWidth="1"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col justify-between text-[9px] text-slate">
+        <div className="flex justify-center">{axes[0]}</div>
+        <div className="flex justify-between px-1">
+          <span>{axes[1]}</span>
+          <span>{axes[2]}</span>
+        </div>
+        <div className="flex justify-between px-4">
+          <span>{axes[3]}</span>
+          <span>{axes[4]}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 mt-2 text-[10px] text-slate">
+        <div className="flex items-center gap-1">
+          <span className="h-2 w-4 bg-primary/70 rounded" /> Robert Williams
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="h-2 w-4 bg-[#B0BCCF] rounded" /> Company average
+        </div>
+      </div>
+    </div>
+  );
+}
+
+TopicBubbles.jsx
+const topics = [
+  { label: "Sales Deals", size: "w-20 h-20", tone: "bg-[#D4DFEF]" },
+  { label: "Invoices", size: "w-16 h-16", tone: "bg-[#E8ECF2]" },
+  { label: "Vendor Issues", size: "w-16 h-16", tone: "bg-danger/10" },
+  { label: "HR / Complaints", size: "w-14 h-14", tone: "bg-[#E8ECF2]" },
+  { label: "Personal", size: "w-16 h-16", tone: "bg-[#F5C54222]" }
+];
+
+export default function TopicBubbles() {
+  return (
+    <div className="relative h-40">
+      <div className="absolute left-4 top-4 flex flex-wrap gap-3">
+        {topics.map((t) => (
+          <div
+            key={t.label}
+            className={`${t.size} ${t.tone} rounded-full flex items-center justify-center text-[10px] text-navy text-center px-2`}
+          >
+            {t.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+Tailwind + base styles
+
+In index.css make sure you include Tailwind and set fonts:
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+.text-navy {
+  color: #152238;
+}
+
+.text-slate {
+  color: #5f6b7a;
+}
+
+.bg-lightgray {
+  background-color: #e8ecf2;
+}
+
+.bg-primary {
+  background-color: #1e4d8f;
+}
+
+.bg-danger {
+  background-color: #ce4242;
+}
+
+.bg-warning {
+  background-color: #f5c542;
+}
+
+.bg-success {
+  background-color: #3baa67;
+}

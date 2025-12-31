@@ -1,0 +1,1499 @@
+# Sentinel Counsel LLP - Data Room Access Control & Permissions
+
+## Current State
+
+The Data Rooms feature currently allows:
+- Creating data rooms linked to deals
+- Organizing documents in a hierarchical folder structure
+- Uploading documents to folders
+
+## Required Enhancements
+
+We need to add:
+1. **External party access** - Invite third parties via email with secure links
+2. **Granular folder/file permissions** - Control who sees what at folder and file level
+3. **Action-based permissions** - Separate view, download, upload, and admin rights
+4. **Permission groups** - Organize users into groups for easier management
+5. **Access tracking & audit** - Log who accessed what and when
+
+---
+
+## DATABASE SCHEMA
+
+Add these tables to your Drizzle schema:
+
+```typescript
+// Data Room Access & Permissions Schema
+
+// External users who can access data rooms (not full platform users)
+export const dataRoomGuests = pgTable('data_room_guests', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+  firstName: varchar('first_name', { length: 100 }),
+  lastName: varchar('last_name', { length: 100 }),
+  company: varchar('company', { length: 255 }),
+  phone: varchar('phone', { length: 50 }),
+  
+  // Authentication
+  inviteToken: varchar('invite_token', { length: 100 }).unique(),
+  inviteTokenExpires: timestamp('invite_token_expires'),
+  passwordHash: varchar('password_hash', { length: 255 }), // Set after first login
+  isActivated: boolean('is_activated').default(false),
+  
+  // Security
+  mfaEnabled: boolean('mfa_enabled').default(false),
+  mfaSecret: varchar('mfa_secret', { length: 100 }),
+  lastLoginAt: timestamp('last_login_at'),
+  loginCount: integer('login_count').default(0),
+  
+  // Status
+  status: varchar('status', { length: 50 }).default('pending'), // 'pending', 'active', 'suspended', 'revoked'
+  
+  // Metadata
+  invitedBy: integer('invited_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Permission groups for organizing access
+export const dataRoomGroups = pgTable('data_room_groups', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  color: varchar('color', { length: 20 }).default('#6366f1'), // For visual identification
+  
+  // Default permissions for group (can be overridden at folder level)
+  canView: boolean('can_view').default(true),
+  canDownload: boolean('can_download').default(false),
+  canUpload: boolean('can_upload').default(false),
+  canDelete: boolean('can_delete').default(false),
+  canManageAccess: boolean('can_manage_access').default(false),
+  
+  // Download restrictions
+  enableWatermark: boolean('enable_watermark').default(true),
+  enablePrintBlock: boolean('enable_print_block').default(false),
+  downloadFormat: varchar('download_format', { length: 20 }).default('original'), // 'original', 'pdf_only', 'view_only'
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Data room access - links users/guests to data rooms
+export const dataRoomAccess = pgTable('data_room_access', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  
+  // Either internal user OR external guest (one must be null)
+  userId: integer('user_id').references(() => users.id),
+  guestId: integer('guest_id').references(() => dataRoomGuests.id),
+  
+  // Group membership (optional - user can have direct access without group)
+  groupId: integer('group_id').references(() => dataRoomGroups.id),
+  
+  // Role in this data room
+  role: varchar('role', { length: 50 }).default('viewer'), // 'admin', 'manager', 'contributor', 'viewer'
+  
+  // Access window
+  accessGrantedAt: timestamp('access_granted_at').defaultNow(),
+  accessExpiresAt: timestamp('access_expires_at'), // null = no expiration
+  
+  // Status
+  status: varchar('status', { length: 50 }).default('active'), // 'active', 'suspended', 'expired', 'revoked'
+  
+  // Invitation tracking
+  invitedBy: integer('invited_by').references(() => users.id),
+  inviteSentAt: timestamp('invite_sent_at'),
+  inviteAcceptedAt: timestamp('invite_accepted_at'),
+  
+  // Notes
+  accessNotes: text('access_notes'), // Why this person has access
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Folder-level permissions (overrides group/access defaults)
+export const dataRoomFolderPermissions = pgTable('data_room_folder_permissions', {
+  id: serial('id').primaryKey(),
+  folderId: integer('folder_id').references(() => dataRoomFolders.id).notNull(),
+  
+  // Permission target (one of these must be set)
+  groupId: integer('group_id').references(() => dataRoomGroups.id),
+  accessId: integer('access_id').references(() => dataRoomAccess.id), // Direct user permission
+  
+  // Visibility
+  isVisible: boolean('is_visible').default(true), // If false, folder is hidden from this user/group
+  
+  // Granular permissions (null = inherit from group/access default)
+  canView: boolean('can_view'),
+  canDownload: boolean('can_download'),
+  canUpload: boolean('can_upload'),
+  canDelete: boolean('can_delete'),
+  
+  // Inheritance
+  applyToSubfolders: boolean('apply_to_subfolders').default(true),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// File-level permissions (for specific file overrides)
+export const dataRoomFilePermissions = pgTable('data_room_file_permissions', {
+  id: serial('id').primaryKey(),
+  fileId: integer('file_id').references(() => dataRoomFiles.id).notNull(),
+  
+  // Permission target
+  groupId: integer('group_id').references(() => dataRoomGroups.id),
+  accessId: integer('access_id').references(() => dataRoomAccess.id),
+  
+  // Visibility
+  isVisible: boolean('is_visible').default(true),
+  
+  // Granular permissions
+  canView: boolean('can_view'),
+  canDownload: boolean('can_download'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Audit log for all data room activity
+export const dataRoomAuditLog = pgTable('data_room_audit_log', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  
+  // Who performed the action
+  userId: integer('user_id').references(() => users.id),
+  guestId: integer('guest_id').references(() => dataRoomGuests.id),
+  
+  // What happened
+  action: varchar('action', { length: 50 }).notNull(), 
+  // Actions: 'view', 'download', 'upload', 'delete', 'print', 'invite_sent', 'invite_accepted', 
+  // 'access_granted', 'access_revoked', 'permission_changed', 'folder_created', 'file_uploaded'
+  
+  // What was affected
+  resourceType: varchar('resource_type', { length: 50 }), // 'folder', 'file', 'user', 'group'
+  resourceId: integer('resource_id'),
+  resourceName: varchar('resource_name', { length: 500 }),
+  
+  // Additional context
+  details: jsonb('details'), // Flexible JSON for action-specific data
+  ipAddress: varchar('ip_address', { length: 45 }),
+  userAgent: text('user_agent'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Q&A for data rooms (common in M&A)
+export const dataRoomQuestions = pgTable('data_room_questions', {
+  id: serial('id').primaryKey(),
+  dataRoomId: integer('data_room_id').references(() => dataRooms.id).notNull(),
+  
+  // Related to specific folder/file (optional)
+  folderId: integer('folder_id').references(() => dataRoomFolders.id),
+  fileId: integer('file_id').references(() => dataRoomFiles.id),
+  
+  // Question details
+  questionNumber: varchar('question_number', { length: 20 }), // e.g., "Q-001"
+  subject: varchar('subject', { length: 255 }).notNull(),
+  question: text('question').notNull(),
+  
+  // Asker
+  askedByUserId: integer('asked_by_user_id').references(() => users.id),
+  askedByGuestId: integer('asked_by_guest_id').references(() => dataRoomGuests.id),
+  askedAt: timestamp('asked_at').defaultNow(),
+  
+  // Assignment & Status
+  assignedTo: integer('assigned_to').references(() => users.id),
+  status: varchar('status', { length: 50 }).default('open'), // 'open', 'in_progress', 'answered', 'closed'
+  priority: varchar('priority', { length: 20 }).default('medium'), // 'low', 'medium', 'high', 'urgent'
+  dueDate: timestamp('due_date'),
+  
+  // Response
+  answer: text('answer'),
+  answeredByUserId: integer('answered_by_user_id').references(() => users.id),
+  answeredAt: timestamp('answered_at'),
+  
+  // Visibility
+  isPrivate: boolean('is_private').default(false), // Only visible to asking party
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+```
+
+---
+
+## UI/UX MODIFICATIONS
+
+### 1. Data Room Header - Add Access Management Button
+
+Modify the data room page header (where "Test Merger" and "Apply Template" are shown) to include prominent access controls:
+
+```tsx
+// components/data-room/DataRoomHeader.tsx
+
+interface DataRoomHeaderProps {
+  dataRoom: DataRoom;
+  deal: Deal;
+}
+
+export function DataRoomHeader({ dataRoom, deal }: DataRoomHeaderProps) {
+  const [showAccessPanel, setShowAccessPanel] = useState(false);
+  const [showActivityLog, setShowActivityLog] = useState(false);
+  
+  return (
+    <div className="flex items-center justify-between border-b pb-4">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-semibold">{deal.name}</h1>
+          <p className="text-sm text-muted-foreground">
+            Data Room • {accessCount} users with access
+          </p>
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-2">
+        {/* Access Summary Avatars */}
+        <div className="flex -space-x-2 mr-2">
+          {recentAccessors.slice(0, 4).map((user) => (
+            <Avatar key={user.id} className="h-8 w-8 border-2 border-background">
+              <AvatarFallback>{user.initials}</AvatarFallback>
+            </Avatar>
+          ))}
+          {accessCount > 4 && (
+            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium border-2 border-background">
+              +{accessCount - 4}
+            </div>
+          )}
+        </div>
+        
+        {/* Main Action Buttons */}
+        <Button variant="outline" onClick={() => setShowActivityLog(true)}>
+          <Activity className="h-4 w-4 mr-2" />
+          Activity
+        </Button>
+        
+        <Button variant="outline" onClick={() => setShowAccessPanel(true)}>
+          <Users className="h-4 w-4 mr-2" />
+          Manage Access
+        </Button>
+        
+        <Button onClick={handleInvite}>
+          <UserPlus className="h-4 w-4 mr-2" />
+          Invite
+        </Button>
+        
+        <Button variant="outline">
+          <FileText className="h-4 w-4 mr-2" />
+          Apply Template
+        </Button>
+        
+        <Button>
+          <Upload className="h-4 w-4 mr-2" />
+          Upload
+        </Button>
+      </div>
+      
+      {/* Slide-over panels */}
+      <AccessManagementPanel 
+        open={showAccessPanel} 
+        onClose={() => setShowAccessPanel(false)}
+        dataRoomId={dataRoom.id}
+      />
+      
+      <ActivityLogPanel
+        open={showActivityLog}
+        onClose={() => setShowActivityLog(false)}
+        dataRoomId={dataRoom.id}
+      />
+    </div>
+  );
+}
+```
+
+### 2. Invite Users Dialog
+
+Create an intuitive invitation flow:
+
+```tsx
+// components/data-room/InviteUsersDialog.tsx
+
+export function InviteUsersDialog({ open, onClose, dataRoomId, groups }: Props) {
+  const [inviteType, setInviteType] = useState<'email' | 'bulk'>('email');
+  const [emails, setEmails] = useState<string[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<number | null>(null);
+  const [customMessage, setCustomMessage] = useState('');
+  const [accessExpires, setAccessExpires] = useState<Date | null>(null);
+  const [folderAccess, setFolderAccess] = useState<'all' | 'select'>('all');
+  const [selectedFolders, setSelectedFolders] = useState<number[]>([]);
+  
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Invite to Data Room</DialogTitle>
+          <DialogDescription>
+            Invite external parties to access this data room
+          </DialogDescription>
+        </DialogHeader>
+        
+        <Tabs value={inviteType} onValueChange={setInviteType}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="email">Email Addresses</TabsTrigger>
+            <TabsTrigger value="bulk">Bulk Import (CSV)</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="email" className="space-y-4 mt-4">
+            {/* Email Input with Tags */}
+            <div>
+              <Label>Email Addresses</Label>
+              <EmailTagInput 
+                emails={emails} 
+                onChange={setEmails}
+                placeholder="Enter email addresses..."
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Press Enter or comma to add multiple emails
+              </p>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="bulk" className="space-y-4 mt-4">
+            <div className="border-2 border-dashed rounded-lg p-8 text-center">
+              <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+              <p className="text-sm text-muted-foreground">
+                Upload CSV with columns: email, first_name, last_name, company
+              </p>
+              <Button variant="outline" className="mt-2">
+                Choose File
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
+        
+        <Separator />
+        
+        {/* Permission Group Selection */}
+        <div className="space-y-3">
+          <Label>Permission Group</Label>
+          <RadioGroup value={selectedGroup?.toString()} onValueChange={(v) => setSelectedGroup(parseInt(v))}>
+            {groups.map((group) => (
+              <div key={group.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer">
+                <RadioGroupItem value={group.id.toString()} id={`group-${group.id}`} />
+                <div className="flex-1">
+                  <Label htmlFor={`group-${group.id}`} className="font-medium cursor-pointer">
+                    {group.name}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {group.description}
+                  </p>
+                  <div className="flex gap-2 mt-1">
+                    {group.canView && <Badge variant="secondary" className="text-xs">View</Badge>}
+                    {group.canDownload && <Badge variant="secondary" className="text-xs">Download</Badge>}
+                    {group.canUpload && <Badge variant="secondary" className="text-xs">Upload</Badge>}
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            <div className="flex items-center space-x-3 p-3 border rounded-lg border-dashed hover:bg-accent/50 cursor-pointer">
+              <RadioGroupItem value="new" id="group-new" />
+              <Label htmlFor="group-new" className="cursor-pointer">
+                <span className="flex items-center gap-2">
+                  <Plus className="h-4 w-4" />
+                  Create New Group
+                </span>
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
+        
+        <Separator />
+        
+        {/* Folder Access */}
+        <div className="space-y-3">
+          <Label>Folder Access</Label>
+          <RadioGroup value={folderAccess} onValueChange={setFolderAccess}>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="all" id="access-all" />
+              <Label htmlFor="access-all">All folders (based on group permissions)</Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="select" id="access-select" />
+              <Label htmlFor="access-select">Select specific folders</Label>
+            </div>
+          </RadioGroup>
+          
+          {folderAccess === 'select' && (
+            <div className="ml-6 mt-2 border rounded-lg p-3 max-h-48 overflow-y-auto">
+              <FolderSelectTree 
+                folders={folders}
+                selected={selectedFolders}
+                onChange={setSelectedFolders}
+              />
+            </div>
+          )}
+        </div>
+        
+        <Separator />
+        
+        {/* Access Expiration */}
+        <div className="space-y-3">
+          <Label>Access Duration</Label>
+          <Select>
+            <SelectTrigger>
+              <SelectValue placeholder="No expiration" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No expiration</SelectItem>
+              <SelectItem value="7">7 days</SelectItem>
+              <SelectItem value="30">30 days</SelectItem>
+              <SelectItem value="90">90 days</SelectItem>
+              <SelectItem value="custom">Custom date...</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* Custom Message */}
+        <div className="space-y-2">
+          <Label>Personal Message (optional)</Label>
+          <Textarea 
+            value={customMessage}
+            onChange={(e) => setCustomMessage(e.target.value)}
+            placeholder="Add a personal message to the invitation email..."
+            rows={3}
+          />
+        </div>
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSendInvites} disabled={emails.length === 0}>
+            <Send className="h-4 w-4 mr-2" />
+            Send {emails.length} Invite{emails.length !== 1 ? 's' : ''}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+### 3. Access Management Panel (Slide-over)
+
+Full access management in a side panel:
+
+```tsx
+// components/data-room/AccessManagementPanel.tsx
+
+export function AccessManagementPanel({ open, onClose, dataRoomId }: Props) {
+  const [activeTab, setActiveTab] = useState<'users' | 'groups' | 'permissions'>('users');
+  
+  return (
+    <Sheet open={open} onOpenChange={onClose}>
+      <SheetContent className="w-[600px] sm:max-w-[600px]">
+        <SheetHeader>
+          <SheetTitle>Manage Access</SheetTitle>
+          <SheetDescription>
+            Control who can access this data room and what they can do
+          </SheetDescription>
+        </SheetHeader>
+        
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="users">
+              <Users className="h-4 w-4 mr-2" />
+              Users ({userCount})
+            </TabsTrigger>
+            <TabsTrigger value="groups">
+              <FolderKey className="h-4 w-4 mr-2" />
+              Groups ({groupCount})
+            </TabsTrigger>
+            <TabsTrigger value="permissions">
+              <Shield className="h-4 w-4 mr-2" />
+              Permissions
+            </TabsTrigger>
+          </TabsList>
+          
+          {/* USERS TAB */}
+          <TabsContent value="users" className="mt-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search users..." className="pl-9" />
+              </div>
+              <Select defaultValue="all">
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Users</SelectItem>
+                  <SelectItem value="internal">Internal</SelectItem>
+                  <SelectItem value="external">External</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <ScrollArea className="h-[500px]">
+              <div className="space-y-2">
+                {users.map((user) => (
+                  <UserAccessCard 
+                    key={user.id} 
+                    user={user}
+                    onEdit={() => setEditingUser(user)}
+                    onRevoke={() => handleRevokeAccess(user)}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+          
+          {/* GROUPS TAB */}
+          <TabsContent value="groups" className="mt-4 space-y-4">
+            <Button className="w-full" variant="outline" onClick={() => setShowNewGroup(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Permission Group
+            </Button>
+            
+            <div className="space-y-3">
+              {groups.map((group) => (
+                <GroupCard 
+                  key={group.id}
+                  group={group}
+                  memberCount={group.members.length}
+                  onEdit={() => setEditingGroup(group)}
+                />
+              ))}
+            </div>
+          </TabsContent>
+          
+          {/* PERMISSIONS MATRIX TAB */}
+          <TabsContent value="permissions" className="mt-4">
+            <PermissionsMatrix 
+              folders={folders}
+              groups={groups}
+              onUpdatePermission={handleUpdatePermission}
+            />
+          </TabsContent>
+        </Tabs>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// User Access Card Component
+function UserAccessCard({ user, onEdit, onRevoke }: UserAccessCardProps) {
+  return (
+    <div className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50">
+      <div className="flex items-center gap-3">
+        <Avatar>
+          <AvatarFallback>{user.initials}</AvatarFallback>
+        </Avatar>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{user.name}</span>
+            {user.isExternal && (
+              <Badge variant="outline" className="text-xs">External</Badge>
+            )}
+            {user.status === 'pending' && (
+              <Badge variant="secondary" className="text-xs">Pending</Badge>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground">{user.email}</p>
+          {user.company && (
+            <p className="text-xs text-muted-foreground">{user.company}</p>
+          )}
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-2">
+        <Badge 
+          variant="secondary"
+          style={{ backgroundColor: user.group?.color + '20', color: user.group?.color }}
+        >
+          {user.group?.name || 'No Group'}
+        </Badge>
+        
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit Permissions
+            </DropdownMenuItem>
+            <DropdownMenuItem>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Resend Invite
+            </DropdownMenuItem>
+            <DropdownMenuItem>
+              <Clock className="h-4 w-4 mr-2" />
+              View Activity
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive" onClick={onRevoke}>
+              <UserMinus className="h-4 w-4 mr-2" />
+              Revoke Access
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+```
+
+### 4. Folder Tree with Permission Indicators
+
+Modify your existing folder tree to show permission status:
+
+```tsx
+// components/data-room/FolderTreeWithPermissions.tsx
+
+function FolderTreeItem({ folder, level = 0, onSelect, isSelected }: Props) {
+  const [expanded, setExpanded] = useState(true);
+  const [showPermissions, setShowPermissions] = useState(false);
+  
+  // Get permission summary for this folder
+  const permissionSummary = usePermissionSummary(folder.id);
+  
+  return (
+    <div>
+      <div 
+        className={cn(
+          "flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer group",
+          isSelected && "bg-primary/10 text-primary",
+          !isSelected && "hover:bg-accent"
+        )}
+        style={{ paddingLeft: `${level * 16 + 8}px` }}
+      >
+        {/* Expand/Collapse */}
+        {folder.children?.length > 0 ? (
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-5 w-5"
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          >
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </Button>
+        ) : (
+          <div className="w-5" />
+        )}
+        
+        {/* Folder Icon */}
+        <Folder className="h-4 w-4 text-amber-500" />
+        
+        {/* Folder Number & Name */}
+        <span className="text-sm text-muted-foreground">{folder.indexNumber}</span>
+        <span 
+          className="flex-1 text-sm truncate"
+          onClick={() => onSelect(folder)}
+        >
+          {folder.name}
+        </span>
+        
+        {/* Permission Indicator */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => { e.stopPropagation(); setShowPermissions(true); }}
+              >
+                {permissionSummary.hasCustomPermissions ? (
+                  <ShieldCheck className="h-3.5 w-3.5 text-amber-500" />
+                ) : (
+                  <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="text-xs">
+                <p className="font-medium mb-1">Access: {permissionSummary.groupCount} groups</p>
+                {permissionSummary.hasCustomPermissions && (
+                  <p className="text-amber-500">Custom permissions applied</p>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        
+        {/* Access Count Badge */}
+        {permissionSummary.restrictedGroups > 0 && (
+          <Badge variant="outline" className="text-xs h-5 px-1.5">
+            {permissionSummary.accessibleGroups}/{permissionSummary.totalGroups}
+          </Badge>
+        )}
+      </div>
+      
+      {/* Children */}
+      {expanded && folder.children?.map((child) => (
+        <FolderTreeItem 
+          key={child.id}
+          folder={child}
+          level={level + 1}
+          onSelect={onSelect}
+          isSelected={selectedId === child.id}
+        />
+      ))}
+      
+      {/* Folder Permissions Dialog */}
+      <FolderPermissionsDialog
+        open={showPermissions}
+        onClose={() => setShowPermissions(false)}
+        folder={folder}
+      />
+    </div>
+  );
+}
+```
+
+### 5. Folder Permissions Dialog
+
+Quick access to set folder-specific permissions:
+
+```tsx
+// components/data-room/FolderPermissionsDialog.tsx
+
+export function FolderPermissionsDialog({ open, onClose, folder }: Props) {
+  const { groups, permissions, updatePermission } = useFolderPermissions(folder.id);
+  
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Folder className="h-5 w-5 text-amber-500" />
+            {folder.name}
+          </DialogTitle>
+          <DialogDescription>
+            Set which groups can access this folder and its contents
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {/* Inheritance Toggle */}
+          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+            <div>
+              <p className="font-medium text-sm">Inherit from Parent</p>
+              <p className="text-xs text-muted-foreground">
+                Use permissions from "{folder.parent?.name || 'Root'}"
+              </p>
+            </div>
+            <Switch 
+              checked={folder.inheritPermissions}
+              onCheckedChange={handleInheritanceChange}
+            />
+          </div>
+          
+          {!folder.inheritPermissions && (
+            <>
+              <Separator />
+              
+              {/* Group Permissions Table */}
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[180px]">Group</TableHead>
+                      <TableHead className="text-center w-[80px]">Visible</TableHead>
+                      <TableHead className="text-center w-[80px]">View</TableHead>
+                      <TableHead className="text-center w-[80px]">Download</TableHead>
+                      <TableHead className="text-center w-[80px]">Upload</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groups.map((group) => {
+                      const perm = permissions.find(p => p.groupId === group.id);
+                      return (
+                        <TableRow key={group.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: group.color }}
+                              />
+                              <span className="font-medium">{group.name}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox 
+                              checked={perm?.isVisible ?? true}
+                              onCheckedChange={(checked) => 
+                                updatePermission(group.id, 'isVisible', checked)
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox 
+                              checked={perm?.canView ?? group.canView}
+                              onCheckedChange={(checked) => 
+                                updatePermission(group.id, 'canView', checked)
+                              }
+                              disabled={!perm?.isVisible}
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox 
+                              checked={perm?.canDownload ?? group.canDownload}
+                              onCheckedChange={(checked) => 
+                                updatePermission(group.id, 'canDownload', checked)
+                              }
+                              disabled={!perm?.isVisible}
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox 
+                              checked={perm?.canUpload ?? group.canUpload}
+                              onCheckedChange={(checked) => 
+                                updatePermission(group.id, 'canUpload', checked)
+                              }
+                              disabled={!perm?.isVisible}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              
+              {/* Apply to Subfolders */}
+              <div className="flex items-center space-x-2">
+                <Checkbox id="apply-subfolders" defaultChecked />
+                <Label htmlFor="apply-subfolders" className="text-sm">
+                  Apply these permissions to all subfolders
+                </Label>
+              </div>
+            </>
+          )}
+        </div>
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save Permissions</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+### 6. Permissions Matrix View
+
+Visual matrix for seeing all permissions at once:
+
+```tsx
+// components/data-room/PermissionsMatrix.tsx
+
+export function PermissionsMatrix({ folders, groups, onUpdatePermission }: Props) {
+  // Flatten folder tree for display
+  const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
+  
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Click cells to toggle permissions. Green = allowed, Red = denied, Gray = inherited
+        </p>
+        <div className="flex gap-2">
+          <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-200">
+            <Check className="h-3 w-3 mr-1" /> Allowed
+          </Badge>
+          <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-200">
+            <X className="h-3 w-3 mr-1" /> Denied
+          </Badge>
+          <Badge variant="outline" className="bg-gray-500/10 text-gray-600 border-gray-200">
+            <Minus className="h-3 w-3 mr-1" /> Inherited
+          </Badge>
+        </div>
+      </div>
+      
+      <div className="border rounded-lg overflow-auto max-h-[500px]">
+        <Table>
+          <TableHeader className="sticky top-0 bg-background z-10">
+            <TableRow>
+              <TableHead className="w-[250px] sticky left-0 bg-background">Folder</TableHead>
+              {groups.map((group) => (
+                <TableHead key={group.id} className="text-center min-w-[100px]">
+                  <div className="flex flex-col items-center gap-1">
+                    <div 
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: group.color }}
+                    />
+                    <span className="text-xs">{group.name}</span>
+                  </div>
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {flatFolders.map((folder) => (
+              <TableRow key={folder.id}>
+                <TableCell className="sticky left-0 bg-background">
+                  <div 
+                    className="flex items-center gap-2"
+                    style={{ paddingLeft: `${folder.depth * 16}px` }}
+                  >
+                    <Folder className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm truncate max-w-[180px]">{folder.name}</span>
+                  </div>
+                </TableCell>
+                {groups.map((group) => (
+                  <TableCell key={group.id} className="text-center p-1">
+                    <PermissionCell
+                      folderId={folder.id}
+                      groupId={group.id}
+                      permission={getPermission(folder.id, group.id)}
+                      onUpdate={onUpdatePermission}
+                    />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+// Individual permission cell with click-to-toggle
+function PermissionCell({ folderId, groupId, permission, onUpdate }: PermissionCellProps) {
+  const [showDetails, setShowDetails] = useState(false);
+  
+  const getStatusColor = () => {
+    if (permission.isInherited) return 'bg-gray-100 hover:bg-gray-200';
+    if (permission.isVisible && permission.canView) return 'bg-green-100 hover:bg-green-200';
+    return 'bg-red-100 hover:bg-red-200';
+  };
+  
+  const getIcon = () => {
+    if (permission.isInherited) return <Minus className="h-3 w-3 text-gray-400" />;
+    if (permission.isVisible && permission.canView) return <Check className="h-3 w-3 text-green-600" />;
+    return <X className="h-3 w-3 text-red-600" />;
+  };
+  
+  return (
+    <Popover open={showDetails} onOpenChange={setShowDetails}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn("h-8 w-8 p-0 rounded", getStatusColor())}
+        >
+          {getIcon()}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-2">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs">Visible</span>
+            <Switch 
+              checked={permission.isVisible}
+              onCheckedChange={(v) => onUpdate(folderId, groupId, 'isVisible', v)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs">View</span>
+            <Switch 
+              checked={permission.canView}
+              onCheckedChange={(v) => onUpdate(folderId, groupId, 'canView', v)}
+              disabled={!permission.isVisible}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs">Download</span>
+            <Switch 
+              checked={permission.canDownload}
+              onCheckedChange={(v) => onUpdate(folderId, groupId, 'canDownload', v)}
+              disabled={!permission.isVisible}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs">Upload</span>
+            <Switch 
+              checked={permission.canUpload}
+              onCheckedChange={(v) => onUpdate(folderId, groupId, 'canUpload', v)}
+              disabled={!permission.isVisible}
+            />
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+```
+
+### 7. Create Permission Group Dialog
+
+```tsx
+// components/data-room/CreateGroupDialog.tsx
+
+export function CreateGroupDialog({ open, onClose, dataRoomId }: Props) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [color, setColor] = useState('#6366f1');
+  const [permissions, setPermissions] = useState({
+    canView: true,
+    canDownload: false,
+    canUpload: false,
+    canDelete: false,
+  });
+  const [downloadRestrictions, setDownloadRestrictions] = useState({
+    enableWatermark: true,
+    enablePrintBlock: false,
+    downloadFormat: 'original',
+  });
+  
+  const presetGroups = [
+    { name: 'Bidders', description: 'External bidders with view-only access', canView: true, canDownload: false, canUpload: false, color: '#3b82f6' },
+    { name: 'Advisors', description: 'Legal/financial advisors with download access', canView: true, canDownload: true, canUpload: false, color: '#10b981' },
+    { name: 'Management', description: 'Full access for management team', canView: true, canDownload: true, canUpload: true, color: '#8b5cf6' },
+    { name: 'Lenders', description: 'Debt providers with limited access', canView: true, canDownload: true, canUpload: false, color: '#f59e0b' },
+  ];
+  
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create Permission Group</DialogTitle>
+          <DialogDescription>
+            Groups make it easy to manage access for multiple users
+          </DialogDescription>
+        </DialogHeader>
+        
+        {/* Quick Presets */}
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">Quick Start Templates</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {presetGroups.map((preset) => (
+              <Button
+                key={preset.name}
+                variant="outline"
+                size="sm"
+                className="justify-start h-auto py-2"
+                onClick={() => {
+                  setName(preset.name);
+                  setDescription(preset.description);
+                  setColor(preset.color);
+                  setPermissions({
+                    canView: preset.canView,
+                    canDownload: preset.canDownload,
+                    canUpload: preset.canUpload,
+                    canDelete: false,
+                  });
+                }}
+              >
+                <div 
+                  className="w-3 h-3 rounded-full mr-2"
+                  style={{ backgroundColor: preset.color }}
+                />
+                {preset.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+        
+        <Separator />
+        
+        {/* Group Details */}
+        <div className="space-y-4">
+          <div className="grid grid-cols-[1fr,auto] gap-4">
+            <div className="space-y-2">
+              <Label>Group Name</Label>
+              <Input 
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Bidders, Advisors, Management"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Color</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-12 h-10 p-0">
+                    <div 
+                      className="w-6 h-6 rounded"
+                      style={{ backgroundColor: color }}
+                    />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-3">
+                  <div className="grid grid-cols-5 gap-2">
+                    {['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e', 
+                      '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6',
+                      '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'].map((c) => (
+                      <Button
+                        key={c}
+                        variant="ghost"
+                        className="w-8 h-8 p-0 rounded-full"
+                        onClick={() => setColor(c)}
+                      >
+                        <div 
+                          className={cn(
+                            "w-6 h-6 rounded-full",
+                            color === c && "ring-2 ring-offset-2 ring-primary"
+                          )}
+                          style={{ backgroundColor: c }}
+                        />
+                      </Button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea 
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe who this group is for..."
+              rows={2}
+            />
+          </div>
+        </div>
+        
+        <Separator />
+        
+        {/* Default Permissions */}
+        <div className="space-y-3">
+          <Label>Default Permissions</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center justify-between p-3 border rounded-lg">
+              <div className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">View Documents</span>
+              </div>
+              <Switch 
+                checked={permissions.canView}
+                onCheckedChange={(v) => setPermissions({...permissions, canView: v})}
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg">
+              <div className="flex items-center gap-2">
+                <Download className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Download</span>
+              </div>
+              <Switch 
+                checked={permissions.canDownload}
+                onCheckedChange={(v) => setPermissions({...permissions, canDownload: v})}
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg">
+              <div className="flex items-center gap-2">
+                <Upload className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Upload</span>
+              </div>
+              <Switch 
+                checked={permissions.canUpload}
+                onCheckedChange={(v) => setPermissions({...permissions, canUpload: v})}
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg">
+              <div className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Delete</span>
+              </div>
+              <Switch 
+                checked={permissions.canDelete}
+                onCheckedChange={(v) => setPermissions({...permissions, canDelete: v})}
+              />
+            </div>
+          </div>
+        </div>
+        
+        {/* Download Restrictions (shown if download enabled) */}
+        {permissions.canDownload && (
+          <>
+            <Separator />
+            <div className="space-y-3">
+              <Label>Download Restrictions</Label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium">Watermark Downloads</p>
+                    <p className="text-xs text-muted-foreground">Add user email and timestamp to PDFs</p>
+                  </div>
+                  <Switch 
+                    checked={downloadRestrictions.enableWatermark}
+                    onCheckedChange={(v) => setDownloadRestrictions({...downloadRestrictions, enableWatermark: v})}
+                  />
+                </div>
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium">Block Printing</p>
+                    <p className="text-xs text-muted-foreground">Disable print function in PDF viewer</p>
+                  </div>
+                  <Switch 
+                    checked={downloadRestrictions.enablePrintBlock}
+                    onCheckedChange={(v) => setDownloadRestrictions({...downloadRestrictions, enablePrintBlock: v})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">Download Format</Label>
+                  <Select 
+                    value={downloadRestrictions.downloadFormat}
+                    onValueChange={(v) => setDownloadRestrictions({...downloadRestrictions, downloadFormat: v})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="original">Original Format</SelectItem>
+                      <SelectItem value="pdf_only">PDF Only (Convert all files)</SelectItem>
+                      <SelectItem value="view_only">View Only (No downloads)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={!name.trim()}>
+            Create Group
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+### 8. Activity Log Panel
+
+Track all data room activity:
+
+```tsx
+// components/data-room/ActivityLogPanel.tsx
+
+export function ActivityLogPanel({ open, onClose, dataRoomId }: Props) {
+  const [filter, setFilter] = useState<'all' | 'views' | 'downloads' | 'uploads' | 'access'>('all');
+  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('week');
+  
+  const { data: activities, isLoading } = useDataRoomActivity(dataRoomId, { filter, dateRange });
+  
+  return (
+    <Sheet open={open} onOpenChange={onClose}>
+      <SheetContent className="w-[500px] sm:max-w-[500px]">
+        <SheetHeader>
+          <SheetTitle>Activity Log</SheetTitle>
+          <SheetDescription>
+            Track all activity in this data room
+          </SheetDescription>
+        </SheetHeader>
+        
+        <div className="mt-6 space-y-4">
+          {/* Filters */}
+          <div className="flex gap-2">
+            <Select value={filter} onValueChange={setFilter}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Activity</SelectItem>
+                <SelectItem value="views">Views</SelectItem>
+                <SelectItem value="downloads">Downloads</SelectItem>
+                <SelectItem value="uploads">Uploads</SelectItem>
+                <SelectItem value="access">Access Changes</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={dateRange} onValueChange={setDateRange}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="week">This Week</SelectItem>
+                <SelectItem value="month">This Month</SelectItem>
+                <SelectItem value="all">All Time</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Button variant="outline" size="icon">
+              <Download className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          {/* Activity Feed */}
+          <ScrollArea className="h-[600px]">
+            <div className="space-y-1">
+              {activities?.map((activity, index) => (
+                <ActivityItem key={activity.id} activity={activity} />
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function ActivityItem({ activity }: { activity: DataRoomActivity }) {
+  const getIcon = () => {
+    switch (activity.action) {
+      case 'view': return <Eye className="h-4 w-4 text-blue-500" />;
+      case 'download': return <Download className="h-4 w-4 text-green-500" />;
+      case 'upload': return <Upload className="h-4 w-4 text-purple-500" />;
+      case 'invite_sent': return <Send className="h-4 w-4 text-amber-500" />;
+      case 'invite_accepted': return <UserCheck className="h-4 w-4 text-green-500" />;
+      case 'access_revoked': return <UserMinus className="h-4 w-4 text-red-500" />;
+      case 'permission_changed': return <Shield className="h-4 w-4 text-amber-500" />;
+      default: return <Activity className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+  
+  const getDescription = () => {
+    const userName = activity.user?.name || activity.guest?.email || 'Unknown';
+    switch (activity.action) {
+      case 'view': return <><strong>{userName}</strong> viewed <strong>{activity.resourceName}</strong></>;
+      case 'download': return <><strong>{userName}</strong> downloaded <strong>{activity.resourceName}</strong></>;
+      case 'upload': return <><strong>{userName}</strong> uploaded <strong>{activity.resourceName}</strong></>;
+      case 'invite_sent': return <>Invitation sent to <strong>{activity.details?.email}</strong></>;
+      case 'invite_accepted': return <><strong>{userName}</strong> accepted invitation</>;
+      case 'access_revoked': return <>Access revoked for <strong>{activity.details?.email}</strong></>;
+      default: return activity.action;
+    }
+  };
+  
+  return (
+    <div className="flex items-start gap-3 py-3 px-2 hover:bg-accent/50 rounded-lg">
+      <div className="mt-0.5">
+        {getIcon()}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm">{getDescription()}</p>
+        <p className="text-xs text-muted-foreground">
+          {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
+          {activity.ipAddress && ` • ${activity.ipAddress}`}
+        </p>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## API ENDPOINTS
+
+Add these API routes:
+
+```typescript
+// routes/data-room-access.ts
+
+// Guest Management
+POST   /api/data-rooms/:id/guests                    // Invite external users
+GET    /api/data-rooms/:id/guests                    // List all guests
+PATCH  /api/data-rooms/:id/guests/:guestId           // Update guest
+DELETE /api/data-rooms/:id/guests/:guestId           // Revoke guest access
+
+// Groups
+POST   /api/data-rooms/:id/groups                    // Create permission group
+GET    /api/data-rooms/:id/groups                    // List groups
+PATCH  /api/data-rooms/:id/groups/:groupId           // Update group
+DELETE /api/data-rooms/:id/groups/:groupId           // Delete group
+POST   /api/data-rooms/:id/groups/:groupId/members   // Add members to group
+
+// Access Management
+GET    /api/data-rooms/:id/access                    // List all access records
+POST   /api/data-rooms/:id/access                    // Grant access
+PATCH  /api/data-rooms/:id/access/:accessId          // Update access
+DELETE /api/data-rooms/:id/access/:accessId          // Revoke access
+
+// Folder Permissions
+GET    /api/data-rooms/:id/folders/:folderId/permissions
+PUT    /api/data-rooms/:id/folders/:folderId/permissions
+POST   /api/data-rooms/:id/folders/:folderId/permissions/bulk  // Update multiple
+
+// Permissions Matrix
+GET    /api/data-rooms/:id/permissions/matrix        // Full permission matrix
+PUT    /api/data-rooms/:id/permissions/matrix        // Bulk update
+
+// Activity/Audit
+GET    /api/data-rooms/:id/activity                  // Activity log
+GET    /api/data-rooms/:id/activity/export           // Export to CSV
+
+// Guest Portal Auth
+POST   /api/guest/login                              // Guest login
+POST   /api/guest/accept-invite/:token               // Accept invitation
+POST   /api/guest/reset-password                     // Password reset
+```
+
+---
+
+## GUEST PORTAL
+
+Create a separate guest login experience:
+
+```tsx
+// pages/guest/login.tsx - Dedicated login for external users
+
+export default function GuestLogin() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
+      <Card className="w-[400px]">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4">
+            <Shield className="h-12 w-12 text-primary" />
+          </div>
+          <CardTitle>Secure Data Room Access</CardTitle>
+          <CardDescription>
+            Enter your credentials to access the data room
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input type="email" placeholder="you@company.com" />
+            </div>
+            <div className="space-y-2">
+              <Label>Password</Label>
+              <Input type="password" />
+            </div>
+            <Button type="submit" className="w-full">
+              Sign In
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter className="flex flex-col gap-2 text-center text-sm text-muted-foreground">
+          <a href="/guest/forgot-password" className="hover:text-primary">
+            Forgot password?
+          </a>
+          <p>
+            Need help? Contact <a href="mailto:support@sentinelcounsel.com" className="text-primary">support</a>
+          </p>
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
+```
+
+---
+
+## IMPLEMENTATION PRIORITY
+
+1. **Phase 1**: Database schema and API endpoints
+2. **Phase 2**: Guest invitation flow and authentication
+3. **Phase 3**: Permission groups with default permissions
+4. **Phase 4**: Folder-level permission overrides
+5. **Phase 5**: Permissions matrix view
+6. **Phase 6**: Activity logging and audit trail
+7. **Phase 7**: Guest portal with secure access
+8. **Phase 8**: Download restrictions (watermarking, etc.)
+
+Start with Phase 1 and build incrementally. Each phase should be testable before moving to the next.

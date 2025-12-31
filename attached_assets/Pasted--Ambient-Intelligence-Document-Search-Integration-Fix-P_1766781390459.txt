@@ -1,0 +1,1292 @@
+# Ambient Intelligence - Document Search Integration Fix
+
+## Problem
+The Ambient Intelligence transcription works, but documents are not being surfaced. The AI needs to:
+1. Analyze the last ~20 seconds of transcript
+2. Generate boolean search queries compatible with the Email & Document Review search
+3. Execute searches against the case data room
+4. Display matching documents/emails in the AI Suggestions panel
+
+---
+
+## Part 1: Transcript Analysis Service
+
+Create a new service that buffers transcript segments and triggers analysis every 20 seconds.
+
+```typescript
+// services/ambient-analysis-service.ts
+import Anthropic from '@anthropic-ai/sdk';
+
+interface TranscriptSegment {
+  timestampMs: number;
+  speakerLabel: string;
+  content: string;
+}
+
+interface SearchSuggestion {
+  id: string;
+  topic: string;
+  booleanQuery: string;
+  naturalQuery: string;
+  explanation: string;
+  confidence: 'high' | 'medium' | 'low';
+  triggerQuote: string;
+  timestampMs: number;
+}
+
+export class AmbientAnalysisService {
+  private anthropic: Anthropic;
+  private transcriptBuffer: TranscriptSegment[] = [];
+  private previousQueries: string[] = [];
+  private analysisInterval: NodeJS.Timeout | null = null;
+  private onSuggestion: (suggestion: SearchSuggestion) => void;
+  private caseId: string | null = null;
+
+  constructor(apiKey: string) {
+    this.anthropic = new Anthropic({ apiKey });
+  }
+
+  setCaseContext(caseId: string) {
+    this.caseId = caseId;
+  }
+
+  addTranscript(segment: TranscriptSegment) {
+    this.transcriptBuffer.push(segment);
+    
+    // Keep only last 60 seconds of transcript in buffer
+    const cutoffTime = segment.timestampMs - 60000;
+    this.transcriptBuffer = this.transcriptBuffer.filter(
+      s => s.timestampMs >= cutoffTime
+    );
+  }
+
+  startAnalysis(onSuggestion: (suggestion: SearchSuggestion) => void) {
+    this.onSuggestion = onSuggestion;
+    
+    // Analyze every 20 seconds
+    this.analysisInterval = setInterval(() => {
+      this.analyzeBuffer();
+    }, 20000);
+  }
+
+  stopAnalysis() {
+    if (this.analysisInterval) {
+      clearInterval(this.analysisInterval);
+      this.analysisInterval = null;
+    }
+  }
+
+  private async analyzeBuffer() {
+    if (this.transcriptBuffer.length === 0) return;
+
+    // Get last 20 seconds of transcript
+    const now = this.transcriptBuffer[this.transcriptBuffer.length - 1].timestampMs;
+    const recentSegments = this.transcriptBuffer.filter(
+      s => s.timestampMs >= now - 20000
+    );
+
+    if (recentSegments.length === 0) return;
+
+    const transcriptText = recentSegments
+      .map(s => `[${s.speakerLabel}]: ${s.content}`)
+      .join('\n');
+
+    try {
+      const suggestions = await this.generateSearchQueries(transcriptText);
+      
+      for (const suggestion of suggestions) {
+        // Skip if we've already suggested this query
+        if (this.previousQueries.includes(suggestion.booleanQuery)) continue;
+        
+        this.previousQueries.push(suggestion.booleanQuery);
+        this.onSuggestion(suggestion);
+      }
+    } catch (error) {
+      console.error('Analysis error:', error);
+    }
+  }
+
+  private async generateSearchQueries(transcript: string): Promise<SearchSuggestion[]> {
+    const prompt = `You are an AI assistant helping lawyers during live conversations. Analyze this transcript excerpt and identify specific topics that warrant searching the case document database.
+
+TRANSCRIPT (last 20 seconds):
+${transcript}
+
+PREVIOUS SEARCHES ALREADY MADE (avoid duplicates):
+${this.previousQueries.slice(-10).join('\n') || 'None yet'}
+
+Your task:
+1. Identify specific documents, emails, people, dates, or topics mentioned that likely have corresponding evidence in the case files
+2. Generate BOOLEAN SEARCH QUERIES that will find relevant documents
+
+BOOLEAN QUERY SYNTAX:
+- Use AND to require multiple terms: tax AND returns AND 2023
+- Use OR for alternatives: (invoice OR receipt) AND payment
+- Use quotes for exact phrases: "water polo" AND membership
+- Use parentheses to group: (contract OR agreement) AND (signed OR executed)
+- Common patterns:
+  - Person searches: "John Smith" OR "Smith, John"
+  - Date searches: 2023 AND (January OR "Q1" OR "first quarter")
+  - Document types: (invoice OR receipt OR bill) AND vendor
+  - Email searches: from:john@company.com OR to:john@company.com
+
+For each reference found, provide:
+- topic: Brief description (3-5 words)
+- booleanQuery: The boolean search query to find relevant documents
+- naturalQuery: A natural language version of the search (for display)
+- explanation: Why this is relevant (1 sentence)
+- confidence: high (explicitly mentioned), medium (implied), low (tangential)
+- triggerQuote: The exact words from transcript that triggered this
+
+Respond ONLY with valid JSON array (no markdown, no explanation):
+[
+  {
+    "topic": "2023 Tax Returns",
+    "booleanQuery": "(tax OR taxes) AND (return OR returns OR filing) AND 2023",
+    "naturalQuery": "Tax returns from 2023",
+    "explanation": "Speaker mentioned reviewing last year's tax filings",
+    "confidence": "high",
+    "triggerQuote": "we need to look at those 2023 tax returns"
+  }
+]
+
+Rules:
+- Only return searches with high or medium confidence
+- Maximum 3 suggestions per analysis
+- Skip generic topics that wouldn't yield specific results
+- If nothing specific is mentioned, return empty array: []`;
+
+    const response = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const text = response.content[0].type === 'text' 
+      ? response.content[0].text 
+      : '';
+
+    try {
+      // Parse JSON response
+      const parsed = JSON.parse(text.trim());
+      
+      return parsed.map((item: any) => ({
+        id: crypto.randomUUID(),
+        topic: item.topic,
+        booleanQuery: item.booleanQuery,
+        naturalQuery: item.naturalQuery,
+        explanation: item.explanation,
+        confidence: item.confidence,
+        triggerQuote: item.triggerQuote,
+        timestampMs: Date.now()
+      }));
+    } catch (e) {
+      console.error('Failed to parse suggestions:', text);
+      return [];
+    }
+  }
+
+  clearBuffer() {
+    this.transcriptBuffer = [];
+    this.previousQueries = [];
+  }
+}
+```
+
+---
+
+## Part 2: Document Search Integration
+
+Create a service that executes searches against your Email & Document Review system.
+
+```typescript
+// services/ambient-document-search.ts
+
+interface DocumentSearchResult {
+  id: string;
+  title: string;
+  type: 'email' | 'document';
+  sender?: string;
+  recipient?: string;
+  date: string;
+  preview: string;
+  riskLevel?: string;
+  relevanceScore?: number;
+}
+
+interface SearchResponse {
+  results: DocumentSearchResult[];
+  totalCount: number;
+  query: string;
+}
+
+export class AmbientDocumentSearch {
+  private caseId: string;
+  private baseUrl: string;
+
+  constructor(caseId: string, baseUrl: string = '') {
+    this.caseId = caseId;
+    this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Execute a boolean search against the case document database
+   */
+  async search(booleanQuery: string, options?: {
+    maxResults?: number;
+    dateFrom?: string;
+    dateTo?: string;
+    documentTypes?: string[];
+  }): Promise<SearchResponse> {
+    const response = await fetch(`${this.baseUrl}/api/cases/${this.caseId}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: booleanQuery,
+        searchType: 'boolean', // Use boolean search mode
+        maxResults: options?.maxResults || 5,
+        filters: {
+          dateFrom: options?.dateFrom,
+          dateTo: options?.dateTo,
+          documentTypes: options?.documentTypes
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Execute a natural language search (falls back if boolean fails)
+   */
+  async naturalSearch(query: string, maxResults: number = 5): Promise<SearchResponse> {
+    const response = await fetch(`${this.baseUrl}/api/cases/${this.caseId}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        searchType: 'natural',
+        maxResults
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+}
+```
+
+---
+
+## Part 3: API Route for Ambient Search
+
+Create an API endpoint that the Ambient Intelligence feature calls.
+
+```typescript
+// pages/api/ambient/search.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { db } from '@/lib/db';
+import { documents, emails } from '@/schema';
+import { and, or, ilike, gte, lte, sql } from 'drizzle-orm';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { caseId, query, searchType, maxResults = 5, filters } = req.body;
+
+  if (!caseId || !query) {
+    return res.status(400).json({ error: 'caseId and query required' });
+  }
+
+  try {
+    let results;
+    
+    if (searchType === 'boolean') {
+      results = await executeBooleanSearch(caseId, query, maxResults, filters);
+    } else {
+      results = await executeNaturalSearch(caseId, query, maxResults);
+    }
+
+    return res.json({
+      results,
+      totalCount: results.length,
+      query
+    });
+  } catch (error) {
+    console.error('Ambient search error:', error);
+    return res.status(500).json({ error: 'Search failed' });
+  }
+}
+
+/**
+ * Parse boolean query and convert to SQL conditions
+ * Supports: AND, OR, quotes for phrases, parentheses
+ */
+function parseBooleanQuery(query: string): any {
+  // Simple boolean parser - handles basic AND/OR/quotes
+  // For production, use a proper parser library
+  
+  const tokens = tokenizeBooleanQuery(query);
+  return buildConditions(tokens);
+}
+
+function tokenizeBooleanQuery(query: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < query.length; i++) {
+    const char = query[i];
+    
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      if (!inQuotes && current) {
+        tokens.push(`"${current}"`);
+        current = '';
+      }
+    } else if (!inQuotes && (char === ' ' || char === '(' || char === ')')) {
+      if (current) {
+        tokens.push(current.toUpperCase() === 'AND' || current.toUpperCase() === 'OR' 
+          ? current.toUpperCase() 
+          : current);
+        current = '';
+      }
+      if (char === '(' || char === ')') {
+        tokens.push(char);
+      }
+    } else {
+      current += char;
+    }
+  }
+  
+  if (current) {
+    tokens.push(current);
+  }
+  
+  return tokens;
+}
+
+function buildConditions(tokens: string[]): any {
+  // Build SQL-like conditions from tokens
+  // This is a simplified version - expand for full boolean support
+  
+  const searchTerms: string[] = [];
+  
+  for (const token of tokens) {
+    if (token !== 'AND' && token !== 'OR' && token !== '(' && token !== ')') {
+      // Remove quotes if present
+      const term = token.replace(/^"|"$/g, '');
+      searchTerms.push(term);
+    }
+  }
+  
+  return searchTerms;
+}
+
+async function executeBooleanSearch(
+  caseId: string, 
+  query: string, 
+  maxResults: number,
+  filters?: any
+) {
+  const searchTerms = parseBooleanQuery(query);
+  
+  // Search documents
+  const documentResults = await db.execute(sql`
+    SELECT 
+      d.id,
+      d.title,
+      'document' as type,
+      d.created_at as date,
+      LEFT(d.content, 200) as preview,
+      d.metadata
+    FROM documents d
+    WHERE d.case_id = ${caseId}
+    AND (
+      ${sql.join(
+        searchTerms.map(term => 
+          sql`(d.title ILIKE ${'%' + term + '%'} OR d.content ILIKE ${'%' + term + '%'})`
+        ),
+        sql` OR `
+      )}
+    )
+    ORDER BY d.created_at DESC
+    LIMIT ${maxResults}
+  `);
+
+  // Search emails
+  const emailResults = await db.execute(sql`
+    SELECT 
+      e.id,
+      e.subject as title,
+      'email' as type,
+      e.sender,
+      e.recipient,
+      e.sent_at as date,
+      LEFT(e.body, 200) as preview,
+      e.risk_level as "riskLevel"
+    FROM emails e
+    WHERE e.case_id = ${caseId}
+    AND (
+      ${sql.join(
+        searchTerms.map(term => 
+          sql`(e.subject ILIKE ${'%' + term + '%'} OR e.body ILIKE ${'%' + term + '%'} OR e.sender ILIKE ${'%' + term + '%'})`
+        ),
+        sql` OR `
+      )}
+    )
+    ORDER BY e.sent_at DESC
+    LIMIT ${maxResults}
+  `);
+
+  // Combine and sort by date
+  const combined = [...documentResults.rows, ...emailResults.rows]
+    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, maxResults);
+
+  return combined;
+}
+
+async function executeNaturalSearch(caseId: string, query: string, maxResults: number) {
+  // Use your existing vector/semantic search here
+  // This is a fallback using simple text search
+  
+  const results = await db.execute(sql`
+    SELECT 
+      id,
+      title,
+      type,
+      date,
+      preview,
+      sender,
+      recipient
+    FROM (
+      SELECT 
+        d.id,
+        d.title,
+        'document' as type,
+        d.created_at as date,
+        LEFT(d.content, 200) as preview,
+        NULL as sender,
+        NULL as recipient
+      FROM documents d
+      WHERE d.case_id = ${caseId}
+      AND (d.title ILIKE ${'%' + query + '%'} OR d.content ILIKE ${'%' + query + '%'})
+      
+      UNION ALL
+      
+      SELECT 
+        e.id,
+        e.subject as title,
+        'email' as type,
+        e.sent_at as date,
+        LEFT(e.body, 200) as preview,
+        e.sender,
+        e.recipient
+      FROM emails e
+      WHERE e.case_id = ${caseId}
+      AND (e.subject ILIKE ${'%' + query + '%'} OR e.body ILIKE ${'%' + query + '%'})
+    ) combined
+    ORDER BY date DESC
+    LIMIT ${maxResults}
+  `);
+
+  return results.rows;
+}
+```
+
+---
+
+## Part 4: Updated Session Hook
+
+Update the `useAmbientSession` hook to integrate the analysis and search.
+
+```typescript
+// hooks/useAmbientSession.ts (updated relevant sections)
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { AmbientAnalysisService } from '@/services/ambient-analysis-service';
+import { AmbientDocumentSearch } from '@/services/ambient-document-search';
+
+interface DocumentSuggestion {
+  id: string;
+  topic: string;
+  booleanQuery: string;
+  naturalQuery: string;
+  explanation: string;
+  confidence: 'high' | 'medium' | 'low';
+  triggerQuote: string;
+  timestampMs: number;
+  status: 'pending' | 'searching' | 'found' | 'no_results' | 'dismissed';
+  results: DocumentSearchResult[];
+}
+
+export function useAmbientSession(sessionId: string) {
+  // ... existing state ...
+  const [suggestions, setSuggestions] = useState<DocumentSuggestion[]>([]);
+  
+  const analysisService = useRef<AmbientAnalysisService | null>(null);
+  const searchService = useRef<AmbientDocumentSearch | null>(null);
+
+  // Initialize services when session loads
+  useEffect(() => {
+    if (session?.caseId) {
+      // Initialize analysis service
+      analysisService.current = new AmbientAnalysisService(
+        process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY!
+      );
+      analysisService.current.setCaseContext(session.caseId);
+
+      // Initialize search service
+      searchService.current = new AmbientDocumentSearch(session.caseId);
+    }
+  }, [session?.caseId]);
+
+  // Handle new transcript segments
+  const handleNewTranscript = useCallback((segment: TranscriptSegment) => {
+    setTranscripts(prev => [...prev, segment]);
+    
+    // Feed to analysis service
+    if (analysisService.current) {
+      analysisService.current.addTranscript(segment);
+    }
+
+    // Save to database
+    fetch(`/api/ambient/sessions/${sessionId}/transcripts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(segment),
+    });
+  }, [sessionId]);
+
+  // Handle new search suggestions from analysis
+  const handleNewSuggestion = useCallback(async (suggestion: SearchSuggestion) => {
+    // Add suggestion with 'searching' status
+    const newSuggestion: DocumentSuggestion = {
+      ...suggestion,
+      status: 'searching',
+      results: []
+    };
+    
+    setSuggestions(prev => [newSuggestion, ...prev]);
+
+    // Execute search
+    if (searchService.current) {
+      try {
+        const searchResults = await searchService.current.search(
+          suggestion.booleanQuery,
+          { maxResults: 5 }
+        );
+
+        // Update suggestion with results
+        setSuggestions(prev => prev.map(s => 
+          s.id === suggestion.id
+            ? {
+                ...s,
+                status: searchResults.results.length > 0 ? 'found' : 'no_results',
+                results: searchResults.results
+              }
+            : s
+        ));
+
+        // Save to database
+        await fetch(`/api/ambient/sessions/${sessionId}/suggestions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...suggestion,
+            documentIds: searchResults.results.map(r => r.id),
+            status: searchResults.results.length > 0 ? 'found' : 'no_results'
+          }),
+        });
+
+      } catch (error) {
+        console.error('Search error:', error);
+        setSuggestions(prev => prev.map(s => 
+          s.id === suggestion.id ? { ...s, status: 'no_results' } : s
+        ));
+      }
+    }
+  }, [sessionId]);
+
+  // Start recording and analysis
+  const startRecording = useCallback(async () => {
+    // ... existing transcription setup ...
+
+    // Start analysis service
+    if (analysisService.current) {
+      analysisService.current.startAnalysis(handleNewSuggestion);
+    }
+
+    setIsRecording(true);
+  }, [handleNewSuggestion]);
+
+  // Stop recording and analysis
+  const endSession = useCallback(async () => {
+    // ... existing stop logic ...
+
+    // Stop analysis
+    if (analysisService.current) {
+      analysisService.current.stopAnalysis();
+    }
+
+    setIsRecording(false);
+  }, []);
+
+  const dismissSuggestion = useCallback((suggestionId: string) => {
+    setSuggestions(prev => prev.map(s => 
+      s.id === suggestionId ? { ...s, status: 'dismissed' } : s
+    ));
+  }, []);
+
+  return {
+    // ... existing returns ...
+    suggestions,
+    dismissSuggestion,
+  };
+}
+```
+
+---
+
+## Part 5: Updated AI Suggestions Panel Component
+
+Update the suggestions panel to display search results like the Email & Document Review.
+
+```tsx
+// components/ambient/AISuggestionsPanel.tsx
+import { useState } from 'react';
+import { formatDistanceToNow } from 'date-fns';
+
+interface DocumentResult {
+  id: string;
+  title: string;
+  type: 'email' | 'document';
+  sender?: string;
+  recipient?: string;
+  date: string;
+  preview: string;
+  riskLevel?: string;
+}
+
+interface Suggestion {
+  id: string;
+  topic: string;
+  booleanQuery: string;
+  naturalQuery: string;
+  explanation: string;
+  confidence: 'high' | 'medium' | 'low';
+  triggerQuote: string;
+  status: 'pending' | 'searching' | 'found' | 'no_results' | 'dismissed';
+  results: DocumentResult[];
+}
+
+interface AISuggestionsPanelProps {
+  suggestions: Suggestion[];
+  onViewDocument: (docId: string, type: 'email' | 'document') => void;
+  onDismiss: (suggestionId: string) => void;
+  onRefineSearch: (suggestionId: string, newQuery: string) => void;
+}
+
+export function AISuggestionsPanel({
+  suggestions,
+  onViewDocument,
+  onDismiss,
+  onRefineSearch
+}: AISuggestionsPanelProps) {
+  const [expandedSuggestion, setExpandedSuggestion] = useState<string | null>(null);
+
+  const visibleSuggestions = suggestions.filter(s => s.status !== 'dismissed');
+  const foundSuggestions = visibleSuggestions.filter(s => s.status === 'found');
+  const searchingSuggestions = visibleSuggestions.filter(s => s.status === 'searching');
+
+  return (
+    <div className="ai-suggestions-panel">
+      {/* Header */}
+      <div className="suggestions-header">
+        <div className="header-title">
+          <span className="sparkle-icon">✨</span>
+          <h3>AI Suggestions</h3>
+        </div>
+        {foundSuggestions.length > 0 && (
+          <span className="suggestion-count">
+            {foundSuggestions.length} found
+          </span>
+        )}
+      </div>
+
+      {/* Empty State */}
+      {visibleSuggestions.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-icon">✨</div>
+          <p className="empty-title">No suggestions yet.</p>
+          <p className="empty-subtitle">
+            Emma will analyze the conversation and suggest relevant documents.
+          </p>
+        </div>
+      )}
+
+      {/* Searching Indicator */}
+      {searchingSuggestions.length > 0 && (
+        <div className="searching-indicator">
+          <div className="spinner" />
+          <span>Searching for: {searchingSuggestions[0].topic}...</span>
+        </div>
+      )}
+
+      {/* Suggestions List */}
+      <div className="suggestions-list">
+        {foundSuggestions.map(suggestion => (
+          <div 
+            key={suggestion.id} 
+            className={`suggestion-card ${suggestion.confidence}`}
+          >
+            {/* Suggestion Header */}
+            <div className="suggestion-card-header">
+              <div className="topic-row">
+                <span className="topic-badge">{suggestion.topic}</span>
+                <span className={`confidence-badge ${suggestion.confidence}`}>
+                  {suggestion.confidence}
+                </span>
+              </div>
+              <button 
+                className="dismiss-btn"
+                onClick={() => onDismiss(suggestion.id)}
+                title="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Trigger Quote */}
+            <p className="trigger-quote">
+              "{suggestion.triggerQuote}"
+            </p>
+
+            {/* Search Query Display */}
+            <div className="search-query-row">
+              <span className="query-label">Search:</span>
+              <code className="query-text">{suggestion.naturalQuery}</code>
+            </div>
+
+            {/* Results Count */}
+            <div className="results-header">
+              <span>{suggestion.results.length} document{suggestion.results.length !== 1 ? 's' : ''} found</span>
+              <button
+                className="toggle-expand"
+                onClick={() => setExpandedSuggestion(
+                  expandedSuggestion === suggestion.id ? null : suggestion.id
+                )}
+              >
+                {expandedSuggestion === suggestion.id ? 'Collapse' : 'Expand'}
+              </button>
+            </div>
+
+            {/* Document Results - Styled like Email & Document Review */}
+            <div className={`results-list ${expandedSuggestion === suggestion.id ? 'expanded' : ''}`}>
+              {suggestion.results.slice(0, expandedSuggestion === suggestion.id ? undefined : 3).map(doc => (
+                <div 
+                  key={doc.id} 
+                  className="document-result"
+                  onClick={() => onViewDocument(doc.id, doc.type)}
+                >
+                  {/* Document Type Indicator */}
+                  <div className={`type-indicator ${doc.type}`}>
+                    {doc.type === 'email' ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="2" y="4" width="20" height="16" rx="2"/>
+                        <path d="M22 6L12 13L2 6"/>
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                    )}
+                  </div>
+
+                  {/* Document Info */}
+                  <div className="document-info">
+                    <div className="document-title">{doc.title}</div>
+                    
+                    {doc.type === 'email' && doc.sender && (
+                      <div className="document-meta">
+                        <span className="sender">{doc.sender}</span>
+                        <span className="date">
+                          {formatDistanceToNow(new Date(doc.date), { addSuffix: true })}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {doc.type === 'document' && (
+                      <div className="document-meta">
+                        <span className="date">
+                          {formatDistanceToNow(new Date(doc.date), { addSuffix: true })}
+                        </span>
+                      </div>
+                    )}
+                    
+                    <p className="document-preview">{doc.preview}</p>
+                    
+                    {doc.riskLevel && (
+                      <span className={`risk-badge risk-${doc.riskLevel.toLowerCase()}`}>
+                        Risk: {doc.riskLevel}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* View Arrow */}
+                  <div className="view-arrow">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Part 6: CSS for Updated Suggestions Panel
+
+```css
+/* styles/ambient-suggestions.css */
+
+.ai-suggestions-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #ffffff;
+  border-left: 1px solid #e5e7eb;
+}
+
+.suggestions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-title h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.sparkle-icon {
+  font-size: 18px;
+}
+
+.suggestion-count {
+  background: #3b82f6;
+  color: white;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.empty-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.empty-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin: 0 0 4px 0;
+}
+
+.empty-subtitle {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+/* Searching Indicator */
+.searching-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #f0f9ff;
+  border-bottom: 1px solid #e0f2fe;
+  color: #0369a1;
+  font-size: 13px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #0369a1;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Suggestions List */
+.suggestions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* Suggestion Card */
+.suggestion-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.suggestion-card.high {
+  border-left: 3px solid #3b82f6;
+}
+
+.suggestion-card.medium {
+  border-left: 3px solid #f59e0b;
+}
+
+.suggestion-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.topic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topic-badge {
+  font-weight: 600;
+  font-size: 14px;
+  color: #111827;
+}
+
+.confidence-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.confidence-badge.high {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.confidence-badge.medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.dismiss-btn {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.dismiss-btn:hover {
+  color: #6b7280;
+}
+
+.trigger-quote {
+  font-size: 13px;
+  color: #6b7280;
+  font-style: italic;
+  margin: 0 0 12px 0;
+  padding-left: 12px;
+  border-left: 2px solid #e5e7eb;
+}
+
+.search-query-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.query-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.query-text {
+  font-size: 12px;
+  background: #f3f4f6;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #374151;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.toggle-expand {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Document Results */
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.results-list:not(.expanded) {
+  max-height: 280px;
+  overflow: hidden;
+}
+
+.document-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.document-result:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.1);
+}
+
+.type-indicator {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.type-indicator svg {
+  width: 16px;
+  height: 16px;
+}
+
+.type-indicator.email {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.type-indicator.document {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.document-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.document-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #111827;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.document-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.document-preview {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.risk-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  margin-top: 6px;
+}
+
+.risk-badge.risk-low {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.risk-badge.risk-medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.risk-badge.risk-high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.view-arrow {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.view-arrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+.document-result:hover .view-arrow {
+  color: #3b82f6;
+}
+```
+
+---
+
+## Part 7: Integration with Existing Search Endpoint
+
+If you already have a search endpoint in your Email & Document Review, you can reuse it:
+
+```typescript
+// services/ambient-document-search.ts (alternative using existing endpoint)
+
+export class AmbientDocumentSearch {
+  private caseId: string;
+
+  constructor(caseId: string) {
+    this.caseId = caseId;
+  }
+
+  /**
+   * Use your existing Email & Document Review search endpoint
+   */
+  async search(booleanQuery: string, options?: {
+    maxResults?: number;
+  }): Promise<SearchResponse> {
+    // Call your existing search endpoint
+    // Adjust the URL/params to match your actual API
+    const response = await fetch(`/api/cases/${this.caseId}/communications/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: booleanQuery,
+        mode: 'boolean', // Your search mode parameter
+        limit: options?.maxResults || 5,
+        // Include any other filters your endpoint expects
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    // Transform response to match expected format
+    return {
+      results: data.results || data.documents || data.items || [],
+      totalCount: data.total || data.totalCount || 0,
+      query: booleanQuery
+    };
+  }
+}
+```
+
+---
+
+## Summary of Changes
+
+1. **AmbientAnalysisService** - Buffers transcript, analyzes every 20 seconds, generates boolean queries using Claude
+2. **AmbientDocumentSearch** - Executes searches against your existing document database
+3. **API Route** - `/api/ambient/search` handles boolean query parsing and search execution
+4. **Updated Hook** - Integrates analysis and search, manages suggestion state
+5. **Updated UI** - Displays results in Email & Document Review style with risk levels, previews, etc.
+
+**Key Points:**
+- The analysis runs every 20 seconds on the transcript buffer
+- Claude generates boolean queries compatible with your search system
+- Results are displayed immediately as they're found
+- The UI matches your existing document review interface
+- Previous queries are tracked to avoid duplicate suggestions
+
+**To implement:**
+1. Add the new `ambient-analysis-service.ts`
+2. Add the new `ambient-document-search.ts`
+3. Add or update the search API route
+4. Update your `useAmbientSession` hook
+5. Update the AI Suggestions panel component
+6. Add the new CSS
+
+The main change is that instead of using semantic/vector search, we're generating boolean queries that work with your existing search infrastructure.

@@ -1,0 +1,596 @@
+# Due Diligence Checklists for Sentinel
+
+## Legal Due Diligence Checklist
+
+### 1. Corporate Organization & Structure
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 1.1 | Certificate/Articles of Incorporation and all amendments | Critical | Verify current legal name, state of formation, authorized shares |  |
+| 1.2 | Bylaws/Operating Agreement and all amendments | Critical | Review governance provisions, voting requirements, transfer restrictions |  |
+| 1.3 | Certificate of Good Standing (state of formation) | Critical | Must be dated within 30 days of closing |  |
+| 1.4 | Certificates of Good Standing (all qualified states) | High | Verify qualification in all states where doing business |  |
+| 1.5 | List of jurisdictions where qualified to do business | High | Cross-reference with locations of employees, property, customers |  |
+| 1.6 | Organizational chart (all subsidiaries and affiliates) | Critical | Identify all entities, ownership percentages, jurisdiction |  |
+| 1.7 | List of current officers and directors | High | Verify authority to execute transaction documents |  |
+| 1.8 | Board meeting minutes (last 3 years) | High | Review for undisclosed commitments, disputes, material decisions |  |
+| 1.9 | Shareholder/Member meeting minutes (last 3 years) | High | Verify proper authorization of material actions |  |
+| 1.10 | Written consents in lieu of meetings | Medium | Ensure proper execution and filing |  |
+| 1.11 | Shareholder/Member agreements | Critical | Identify transfer restrictions, drag-along, tag-along, ROFR |  |
+| 1.12 | Voting agreements or voting trusts | High | Understand control dynamics |  |
+| 1.13 | Stockholders' list and stock ledger | Critical | Reconcile with cap table |  |
+| 1.14 | Stock certificates (or evidence of uncertificated shares) | High | Verify chain of title |  |
+| 1.15 | Stock option plans and all amendments | High | Review terms, acceleration provisions |  |
+| 1.16 | Outstanding options, warrants, convertible securities | Critical | Calculate fully diluted capitalization |  |
+| 1.17 | 409A valuation reports | High | Verify option pricing compliance |  |
+| 1.18 | Previous financing documents (all rounds) | High | Identify surviving rights, anti-dilution, preferences |  |
+| 1.19 | Investor rights agreements | Critical | Review registration rights, information rights, board seats |  |
+| 1.20 | Right of first refusal/Co-sale agreements | High | Understand transfer mechanics and waivers needed |  |
+
+### 2. Material Contracts
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 2.1 | Schedule of all material contracts (>$100K annual value) | Critical | Ensure completeness of contract review |  |
+| 2.2 | Top 10 customer contracts by revenue | Critical | Analyze concentration, terms, renewal risk |  |
+| 2.3 | Top 10 supplier/vendor contracts by spend | Critical | Identify critical suppliers, pricing commitments |  |
+| 2.4 | Contracts with change of control provisions | Critical | Flag termination rights, consent requirements |  |
+| 2.5 | Contracts requiring consent to assign | Critical | Identify consents needed for closing |  |
+| 2.6 | Distribution/reseller agreements | High | Review exclusivity, territory, termination |  |
+| 2.7 | Sales representative/agency agreements | High | Review commission obligations, termination |  |
+| 2.8 | Joint venture/partnership agreements | High | Understand governance, exit rights, obligations |  |
+| 2.9 | Strategic alliance agreements | High | Review exclusivity, IP sharing, non-competes |  |
+| 2.10 | Government contracts and subcontracts | Critical | Review compliance, assignment restrictions, termination |  |
+| 2.11 | Contracts with related parties | High | Verify arm's length terms |  |
+| 2.12 | Contracts with MFN (most favored nation) clauses | High | Assess pricing risk and compliance |  |
+| 2.13 | Contracts with exclusivity provisions | High | Evaluate business restrictions |  |
+| 2.14 | Non-compete agreements (as party bound) | High | Review scope and duration of restrictions |  |
+| 2.15 | Guaranty agreements | Critical | Identify contingent liabilities |  |
+| 2.16 | Indemnification agreements | High | Assess exposure and coverage |  |
+| 2.17 | Powers of attorney | Medium | Verify scope and current status |  |
+| 2.18 | Agreements with standstill provisions | High | Review duration and restrictions |  |
+| 2.19 | Material contracts expiring within 12 months | High | Assess renewal risk and strategy |  |
+| 2.20 | Contracts with unusual or non-standard terms | High | Flag for deal team review |  |
+
+### 3. Intellectual Property
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 3.1 | Schedule of all patents (issued and pending) | Critical | Include patent number, title, filing date, expiration |  |
+| 3.2 | Schedule of all trademarks (registered and common law) | Critical | Include registration number, class, status |  |
+| 3.3 | Schedule of all copyrights | High | Include registration number, work description |  |
+| 3.4 | Schedule of all domain names | High | Verify ownership and renewal dates |  |
+| 3.5 | Schedule of all trade secrets | High | Verify protection measures in place |  |
+| 3.6 | IP assignment agreements (employees) | Critical | Verify all current employees have signed |  |
+| 3.7 | IP assignment agreements (contractors) | Critical | Verify all contractors have assigned work product |  |
+| 3.8 | IP assignment agreements (founders/prior) | Critical | Verify chain of title from inception |  |
+| 3.9 | Invention disclosure records | Medium | Review process for capturing IP |  |
+| 3.10 | IP license agreements (inbound) | Critical | Review scope, restrictions, termination, fees |  |
+| 3.11 | IP license agreements (outbound) | Critical | Review scope, exclusivity, revenue share |  |
+| 3.12 | Technology transfer agreements | High | Understand IP sharing arrangements |  |
+| 3.13 | Source code escrow agreements | Medium | Review trigger conditions, beneficiaries |  |
+| 3.14 | Software license agreements (third-party) | High | Review compliance, assignment, usage rights |  |
+| 3.15 | Open source software inventory | Critical | Identify copyleft licenses, compliance |  |
+| 3.16 | Open source policy and compliance procedures | High | Verify ongoing compliance process |  |
+| 3.17 | IP-related litigation history | Critical | Review outcomes, ongoing exposure |  |
+| 3.18 | Cease and desist letters (sent) | High | Understand enforcement history |  |
+| 3.19 | Cease and desist letters (received) | Critical | Assess infringement risk |  |
+| 3.20 | Freedom to operate opinions | High | Verify product clearance |  |
+| 3.21 | IP insurance policies | Medium | Review coverage for defense and indemnity |  |
+| 3.22 | IP maintenance fee records | Medium | Verify timely payment of maintenance fees |  |
+
+### 4. Real Property
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 4.1 | Schedule of all owned real property | High | Include address, use, acquisition date, value |  |
+| 4.2 | Deeds for owned property | High | Verify ownership and legal description |  |
+| 4.3 | Title insurance policies | High | Review exceptions and coverage |  |
+| 4.4 | Surveys | Medium | Review for encroachments, easements |  |
+| 4.5 | Schedule of all leased real property | Critical | Include address, landlord, term, rent |  |
+| 4.6 | Real property lease agreements and amendments | Critical | Review term, renewal, assignment, CoC provisions |  |
+| 4.7 | Subleases (as sublandlord) | High | Review terms, compliance with master lease |  |
+| 4.8 | Subleases (as subtenant) | High | Review term alignment with master lease |  |
+| 4.9 | Lease guarantees | High | Identify guarantor obligations |  |
+| 4.10 | Estoppel certificates | Medium | Obtain for closing if required |  |
+| 4.11 | SNDAs (Subordination, Non-Disturbance, Attornment) | Medium | Review lender protections |  |
+| 4.12 | Notices from landlords | High | Review for defaults, violations |  |
+| 4.13 | Property tax assessments and bills | Medium | Verify current payment status |  |
+| 4.14 | Zoning and land use permits | High | Verify compliance with current use |  |
+| 4.15 | Certificates of occupancy | High | Verify current validity |  |
+| 4.16 | ADA compliance documentation | Medium | Review accessibility compliance |  |
+| 4.17 | Property condition assessments | Medium | Review for deferred maintenance |  |
+| 4.18 | Property insurance policies | High | Review coverage and claims history |  |
+| 4.19 | Mortgages and deeds of trust | Critical | Identify liens and payoff amounts |  |
+| 4.20 | Purchase options or rights of first refusal | High | Review terms and expiration |  |
+
+### 5. Employment & Labor
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 5.1 | Employee census | Critical | Name, title, hire date, salary, bonus, location, status |  |
+| 5.2 | Current organizational chart | High | Verify reporting structure |  |
+| 5.3 | Employment agreements (executives) | Critical | Review term, compensation, severance, CoC provisions |  |
+| 5.4 | Employment agreements (key employees) | High | Identify retention risks |  |
+| 5.5 | Offer letter templates | Medium | Review standard terms |  |
+| 5.6 | Employee handbook | High | Review policies, at-will disclaimers |  |
+| 5.7 | Independent contractor agreements | High | Review classification, IP assignment |  |
+| 5.8 | Consulting agreements | High | Review scope, term, IP provisions |  |
+| 5.9 | Non-competition agreements | High | Review scope, enforceability by state |  |
+| 5.10 | Non-solicitation agreements | High | Review scope of restrictions |  |
+| 5.11 | Confidentiality/NDA agreements | Critical | Verify all employees and contractors have signed |  |
+| 5.12 | Invention assignment agreements | Critical | Verify coverage for all employees |  |
+| 5.13 | Commission/bonus plans | High | Review terms, acceleration provisions |  |
+| 5.14 | Incentive compensation plans | High | Review metrics, payout provisions |  |
+| 5.15 | Retention agreements/bonuses | High | Identify commitments |  |
+| 5.16 | Severance agreements (executed) | High | Review ongoing obligations |  |
+| 5.17 | Severance plan/policy | High | Review CoC and termination triggers |  |
+| 5.18 | Change of control agreements | Critical | Calculate potential payout obligations |  |
+| 5.19 | 401(k) plan documents | High | Review compliance, matching obligations |  |
+| 5.20 | 401(k) compliance testing | High | Verify non-discrimination testing |  |
+| 5.21 | Health insurance plan documents | High | Review coverage, COBRA compliance |  |
+| 5.22 | Other benefit plan documents | Medium | Dental, vision, life, disability, etc. |  |
+| 5.23 | Plan summary descriptions (SPDs) | Medium | Verify distribution compliance |  |
+| 5.24 | ERISA compliance documentation | High | Review fiduciary compliance |  |
+| 5.25 | Form 5500 filings (last 3 years) | Medium | Review for issues |  |
+| 5.26 | Pension/defined benefit plans | Critical | Review funding status, PBGC obligations |  |
+| 5.27 | Deferred compensation plans | High | Review 409A compliance |  |
+| 5.28 | Worker classification analysis | High | Review IC vs employee classification |  |
+| 5.29 | I-9 compliance audit | High | Verify immigration compliance |  |
+| 5.30 | H-1B and other visa documentation | High | Identify sponsored employees |  |
+| 5.31 | WARN Act analysis | Critical | Review for closing-related obligations |  |
+| 5.32 | Collective bargaining agreements | Critical | Review terms, grievances, negotiations |  |
+| 5.33 | Union correspondence | High | Review for organizing activity |  |
+| 5.34 | NLRB proceedings | Critical | Review pending matters |  |
+| 5.35 | Workers compensation policies | High | Review coverage and claims |  |
+| 5.36 | Workers compensation claims history | High | Identify trends and exposure |  |
+| 5.37 | OSHA citations and violations | High | Review compliance status |  |
+| 5.38 | Safety records and incident reports | Medium | Review for patterns |  |
+| 5.39 | Employment litigation history | Critical | Review outcomes and exposure |  |
+| 5.40 | EEOC charges and responses | Critical | Review pending and resolved matters |  |
+| 5.41 | Department of Labor inquiries | High | Review pending matters |  |
+| 5.42 | Wage and hour audits/claims | Critical | Review compliance and exposure |  |
+| 5.43 | Employee complaints and investigations | High | Review HR files for patterns |  |
+| 5.44 | Separation agreements (recent) | High | Review release effectiveness |  |
+| 5.45 | Personnel files (key employees) | Medium | Review for issues |  |
+
+### 6. Litigation & Legal Proceedings
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 6.1 | Schedule of all pending litigation | Critical | Include case name, court, claims, status, exposure |  |
+| 6.2 | Schedule of all threatened litigation | Critical | Include basis, threatening party, exposure |  |
+| 6.3 | Schedule of litigation settled (last 5 years) | High | Include terms, ongoing obligations |  |
+| 6.4 | Complaint and answer (pending cases) | Critical | Review claims and defenses |  |
+| 6.5 | Material pleadings and court orders | High | Review for significant rulings |  |
+| 6.6 | Settlement agreements | High | Review release scope, ongoing obligations |  |
+| 6.7 | Judgment and order copies | High | Review payment status, compliance |  |
+| 6.8 | Litigation hold notices | Medium | Verify preservation compliance |  |
+| 6.9 | Attorney opinion letters on litigation | High | Review assessments of exposure |  |
+| 6.10 | Insurance coverage for pending litigation | High | Verify coverage and reservation of rights |  |
+| 6.11 | Schedule of arbitration proceedings | High | Include similar detail as litigation |  |
+| 6.12 | Arbitration awards | High | Review outcomes and compliance |  |
+| 6.13 | Administrative proceedings | High | Include agency, claims, status |  |
+| 6.14 | Governmental investigations | Critical | Include agency, scope, status |  |
+| 6.15 | Subpoenas received | High | Review scope and response status |  |
+| 6.16 | Consent decrees and compliance agreements | Critical | Review ongoing obligations |  |
+| 6.17 | Product liability claims | Critical | Review exposure and patterns |  |
+| 6.18 | Class action exposure analysis | High | Review potential claims |  |
+| 6.19 | Intellectual property litigation | Critical | Review infringement claims |  |
+| 6.20 | Antitrust/competition matters | Critical | Review exposure |  |
+
+### 7. Regulatory & Compliance
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 7.1 | Schedule of all permits, licenses, approvals | Critical | Include issuing authority, expiration, transferability |  |
+| 7.2 | Copies of material permits and licenses | High | Review terms and conditions |  |
+| 7.3 | Permit/license applications pending | High | Review status |  |
+| 7.4 | Regulatory filings (industry-specific) | High | Review compliance status |  |
+| 7.5 | Correspondence with regulatory agencies | High | Review for issues, violations |  |
+| 7.6 | Regulatory examination reports | High | Review findings and remediation |  |
+| 7.7 | Compliance audit reports (internal) | High | Review findings |  |
+| 7.8 | Compliance audit reports (external) | High | Review findings |  |
+| 7.9 | Compliance policies and procedures | Medium | Review comprehensiveness |  |
+| 7.10 | Compliance training records | Medium | Verify training completion |  |
+| 7.11 | Industry certifications | Medium | Review validity and requirements |  |
+| 7.12 | Export control compliance | High | Review ITAR, EAR compliance |  |
+| 7.13 | Export licenses | High | Review scope and compliance |  |
+| 7.14 | OFAC/sanctions screening procedures | High | Review compliance program |  |
+| 7.15 | Anti-corruption/FCPA compliance | High | Review policies and training |  |
+| 7.16 | Anti-money laundering compliance | High | Review AML program |  |
+| 7.17 | FDA registrations and approvals (if applicable) | Critical | Review product approvals, compliance |  |
+| 7.18 | FDA warning letters and 483s | Critical | Review findings and responses |  |
+| 7.19 | Healthcare regulatory compliance | Critical | HIPAA, Stark, Anti-Kickback |  |
+| 7.20 | Financial services regulatory compliance | Critical | SEC, FINRA, state requirements |  |
+| 7.21 | Privacy policy (website/app) | High | Review accuracy and compliance |  |
+| 7.22 | Privacy policy (internal) | High | Review data handling practices |  |
+| 7.23 | GDPR compliance documentation | Critical | Review for EU data processing |  |
+| 7.24 | CCPA compliance documentation | High | Review for CA consumer data |  |
+| 7.25 | Data processing agreements | High | Review with vendors and customers |  |
+| 7.26 | Data breach notification procedures | High | Review incident response plan |  |
+| 7.27 | Data breach history | Critical | Review incidents and responses |  |
+| 7.28 | SOC 1/SOC 2 reports | High | Review findings |  |
+| 7.29 | PCI DSS compliance | High | Review if processing card data |  |
+| 7.30 | Information security policies | High | Review comprehensiveness |  |
+
+### 8. Environmental
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 8.1 | Phase I Environmental Site Assessments | Critical | Review for all owned/leased property |  |
+| 8.2 | Phase II Environmental Site Assessments | Critical | Review if Phase I identified RECs |  |
+| 8.3 | Environmental permits | High | Review compliance status |  |
+| 8.4 | Air quality permits | High | Review emissions compliance |  |
+| 8.5 | Water discharge permits (NPDES) | High | Review compliance status |  |
+| 8.6 | Hazardous waste generator status | High | Review classification and compliance |  |
+| 8.7 | Hazardous materials inventory | High | Review storage and handling |  |
+| 8.8 | Waste disposal records and manifests | Medium | Review disposal compliance |  |
+| 8.9 | Underground storage tank documentation | High | Review registration, testing |  |
+| 8.10 | Aboveground storage tank documentation | Medium | Review compliance |  |
+| 8.11 | Asbestos surveys and management plans | High | Review for owned/leased buildings |  |
+| 8.12 | Lead-based paint assessments | Medium | Review for older buildings |  |
+| 8.13 | PCB inventory and records | Medium | Review if applicable |  |
+| 8.14 | Environmental compliance audit reports | High | Review findings |  |
+| 8.15 | EPA correspondence | High | Review for violations, enforcement |  |
+| 8.16 | State environmental agency correspondence | High | Review for violations |  |
+| 8.17 | Environmental notices of violation | Critical | Review status and remediation |  |
+| 8.18 | Environmental consent orders | Critical | Review ongoing obligations |  |
+| 8.19 | Environmental remediation records | Critical | Review cleanup status |  |
+| 8.20 | Environmental insurance policies | Medium | Review coverage |  |
+| 8.21 | Environmental indemnities received | High | Review scope and indemnitor creditworthiness |  |
+| 8.22 | Environmental indemnities given | High | Review exposure |  |
+| 8.23 | Superfund/CERCLA exposure | Critical | Review PRPs, contribution claims |  |
+| 8.24 | Environmental litigation | Critical | Review pending and threatened |  |
+
+### 9. Insurance
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 9.1 | Schedule of all insurance policies | Critical | Include carrier, policy number, limits, premium, expiration |  |
+| 9.2 | General liability insurance | Critical | Review limits, deductibles |  |
+| 9.3 | Professional liability/E&O insurance | Critical | Review limits, retroactive date |  |
+| 9.4 | Product liability insurance | Critical | Review limits, coverage scope |  |
+| 9.5 | Directors & Officers insurance | Critical | Review limits, coverage, tail provisions |  |
+| 9.6 | Employment practices liability insurance | High | Review limits, coverage |  |
+| 9.7 | Cyber liability insurance | Critical | Review limits, coverage triggers |  |
+| 9.8 | Property insurance | High | Review coverage, valuation |  |
+| 9.9 | Business interruption insurance | High | Review coverage period, limits |  |
+| 9.10 | Workers compensation insurance | High | Review coverage, experience mod |  |
+| 9.11 | Commercial auto insurance | Medium | Review coverage |  |
+| 9.12 | Umbrella/excess liability insurance | High | Review limits, drop-down coverage |  |
+| 9.13 | Key person life insurance | Medium | Review beneficiary, coverage amount |  |
+| 9.14 | Crime/fidelity insurance | Medium | Review coverage |  |
+| 9.15 | Representations and warranties insurance | High | Review if transaction-specific policy |  |
+| 9.16 | Insurance claims history (5 years) | Critical | Review patterns, reserves |  |
+| 9.17 | Pending insurance claims | High | Review status, coverage disputes |  |
+| 9.18 | Insurance coverage disputes | High | Review denied claims |  |
+| 9.19 | Loss runs | High | Review claims experience |  |
+| 9.20 | Insurance broker/agent information | Medium | Identify key contacts |  |
+
+### 10. Tax
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 10.1 | Federal income tax returns (3 years) | Critical | Review with schedules |  |
+| 10.2 | State income tax returns (3 years) | Critical | Review all filing jurisdictions |  |
+| 10.3 | Local income/franchise tax returns | High | Review where applicable |  |
+| 10.4 | Sales and use tax returns (3 years) | High | Review compliance |  |
+| 10.5 | Payroll tax returns (3 years) | High | Review compliance |  |
+| 10.6 | Property tax returns and assessments | Medium | Review payment status |  |
+| 10.7 | Tax provision workpapers | High | Review reserves, uncertain positions |  |
+| 10.8 | IRS audit reports | Critical | Review adjustments, settlements |  |
+| 10.9 | State tax audit reports | High | Review adjustments |  |
+| 10.10 | IRS correspondence | High | Review for pending issues |  |
+| 10.11 | State tax authority correspondence | High | Review for pending issues |  |
+| 10.12 | Tax sharing agreements | High | Review intercompany arrangements |  |
+| 10.13 | Transfer pricing documentation | High | Review for multinational operations |  |
+| 10.14 | Tax elections (entity classification) | Critical | Verify entity status |  |
+| 10.15 | S corporation election and maintenance | Critical | Verify if applicable |  |
+| 10.16 | Net operating loss carryforwards | High | Verify availability, Section 382 |  |
+| 10.17 | Tax credit carryforwards | High | Verify availability |  |
+| 10.18 | Tax indemnification agreements | High | Review scope |  |
+| 10.19 | Closing agreements with tax authorities | High | Review terms |  |
+| 10.20 | Private letter rulings | Medium | Review if applicable |  |
+| 10.21 | Sales tax nexus analysis | High | Review exposure |  |
+| 10.22 | Employment tax classification issues | High | Review IC vs employee |  |
+| 10.23 | International tax structure | High | Review if applicable |  |
+| 10.24 | FIRPTA analysis | High | Review for foreign sellers |  |
+| 10.25 | State tax apportionment | High | Review methodology |  |
+
+---
+
+## Financial Due Diligence Checklist
+
+### 1. Quality of Earnings
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 1.1 | Audited financial statements (3 years) | Critical | Review audit opinions, footnotes |  |
+| 1.2 | Unaudited interim financial statements (YTD) | Critical | Compare to prior year period |  |
+| 1.3 | Monthly financial statements (24 months) | Critical | Analyze trends, seasonality |  |
+| 1.4 | Trial balance (current and prior periods) | High | Support for financial analysis |  |
+| 1.5 | Chart of accounts | Medium | Understand account structure |  |
+| 1.6 | Revenue recognition policy documentation | Critical | Verify ASC 606 compliance |  |
+| 1.7 | Revenue by product/service line (monthly) | Critical | Analyze mix and trends |  |
+| 1.8 | Revenue by customer (monthly) | Critical | Identify concentration |  |
+| 1.9 | Revenue by geography (monthly) | High | Analyze geographic trends |  |
+| 1.10 | Recurring vs non-recurring revenue analysis | Critical | Understand revenue quality |  |
+| 1.11 | Deferred revenue rollforward | Critical | Verify recognition patterns |  |
+| 1.12 | Backlog/pipeline report | High | Analyze future revenue visibility |  |
+| 1.13 | Customer cohort analysis | High | Analyze retention, expansion |  |
+| 1.14 | Customer churn/retention metrics | Critical | Calculate net revenue retention |  |
+| 1.15 | Average revenue per user/customer | High | Analyze pricing trends |  |
+| 1.16 | Gross margin by product/service | Critical | Understand profitability drivers |  |
+| 1.17 | Cost of goods sold detail | Critical | Analyze components and trends |  |
+| 1.18 | Operating expense detail by category | Critical | Identify fixed vs variable |  |
+| 1.19 | Non-recurring expense identification | Critical | Calculate normalized EBITDA |  |
+| 1.20 | Related party transaction detail | Critical | Verify arm's length pricing |  |
+| 1.21 | Management fee/allocation analysis | High | Understand corporate charges |  |
+| 1.22 | Owner/executive compensation analysis | Critical | Identify above/below market compensation |  |
+| 1.23 | Stock-based compensation detail | High | Analyze expense and dilution |  |
+| 1.24 | Pro forma adjustments schedule | Critical | Document all EBITDA adjustments |  |
+| 1.25 | Run-rate analysis for recent changes | High | Calculate impact of changes |  |
+| 1.26 | Cost savings initiatives (planned/completed) | High | Verify achievability |  |
+| 1.27 | Synergy analysis support | High | Provide data for buyer synergies |  |
+| 1.28 | Accounting policy summary | High | Review for unusual policies |  |
+| 1.29 | Critical accounting estimates | High | Review judgments and assumptions |  |
+| 1.30 | Audit adjustments (last 3 years) | High | Review for patterns |  |
+
+### 2. Working Capital
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 2.1 | Accounts receivable aging (current) | Critical | Analyze collectability |  |
+| 2.2 | Accounts receivable aging (historical monthly) | Critical | Analyze DSO trends |  |
+| 2.3 | Allowance for doubtful accounts rollforward | Critical | Verify adequacy |  |
+| 2.4 | Bad debt write-off history | High | Analyze patterns |  |
+| 2.5 | Customer credit policies | Medium | Review credit standards |  |
+| 2.6 | Revenue concentration (top 10 customers) | Critical | Calculate concentration risk |  |
+| 2.7 | Inventory detail by category | Critical | Analyze composition |  |
+| 2.8 | Inventory aging | Critical | Identify slow-moving/obsolete |  |
+| 2.9 | Inventory reserve rollforward | Critical | Verify adequacy |  |
+| 2.10 | Inventory valuation methodology | High | Review cost method |  |
+| 2.11 | Inventory turnover analysis | High | Analyze efficiency |  |
+| 2.12 | Inventory count procedures | Medium | Review controls |  |
+| 2.13 | Prepaid expenses detail | High | Analyze components |  |
+| 2.14 | Other current assets detail | High | Analyze components |  |
+| 2.15 | Accounts payable aging (current) | Critical | Analyze payment patterns |  |
+| 2.16 | Accounts payable aging (historical monthly) | Critical | Analyze DPO trends |  |
+| 2.17 | Vendor concentration (top 10) | High | Identify key suppliers |  |
+| 2.18 | Accrued expenses detail | Critical | Verify completeness |  |
+| 2.19 | Accrued compensation detail | High | Verify bonus/commission accruals |  |
+| 2.20 | Deferred revenue detail | Critical | Analyze by customer/product |  |
+| 2.21 | Customer deposits detail | High | Analyze components |  |
+| 2.22 | Other current liabilities detail | High | Analyze components |  |
+| 2.23 | Working capital calculation (monthly, 24 months) | Critical | Identify normalized level |  |
+| 2.24 | Working capital seasonality analysis | Critical | Adjust for seasonal patterns |  |
+| 2.25 | Working capital normalization adjustments | Critical | Document excluded items |  |
+| 2.26 | Net working capital target calculation | Critical | Support for purchase agreement |  |
+| 2.27 | Cash conversion cycle analysis | High | Analyze efficiency |  |
+
+### 3. Debt & Cash
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 3.1 | Debt schedule (all obligations) | Critical | Include all debt-like items |  |
+| 3.2 | Credit agreement and amendments | Critical | Review terms, covenants |  |
+| 3.3 | Term loan agreements | Critical | Review terms, prepayment |  |
+| 3.4 | Revolving credit facility agreements | Critical | Review availability, terms |  |
+| 3.5 | Subordinated debt agreements | Critical | Review terms |  |
+| 3.6 | Promissory notes | High | Review terms |  |
+| 3.7 | Capital lease schedules | Critical | Review all lease obligations |  |
+| 3.8 | Operating lease schedules (ASC 842) | Critical | Review ROU assets and liabilities |  |
+| 3.9 | Debt covenant compliance calculations | Critical | Verify compliance, headroom |  |
+| 3.10 | Debt payoff letters/amounts | Critical | Obtain for closing |  |
+| 3.11 | Interest rate hedging agreements | High | Review mark-to-market |  |
+| 3.12 | Letters of credit outstanding | High | Review obligations |  |
+| 3.13 | Bank account listing | High | All accounts, signers |  |
+| 3.14 | Cash and cash equivalents detail | Critical | Verify availability |  |
+| 3.15 | Restricted cash detail | Critical | Identify restrictions |  |
+| 3.16 | Cash flow statement (monthly) | Critical | Analyze cash generation |  |
+| 3.17 | Free cash flow analysis | Critical | Calculate conversion |  |
+| 3.18 | CapEx history and budget | High | Analyze maintenance vs growth |  |
+| 3.19 | Cash forecasts/projections | High | Analyze liquidity |  |
+
+### 4. Financial Projections
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 4.1 | Annual operating budget (current year) | Critical | Compare to actuals |  |
+| 4.2 | Financial projections (3-5 years) | Critical | Review assumptions |  |
+| 4.3 | Revenue build-up by product/customer | Critical | Verify bottom-up support |  |
+| 4.4 | Headcount plan | High | Support for expense projections |  |
+| 4.5 | Capital expenditure plan | High | Review growth investments |  |
+| 4.6 | Key assumptions documentation | Critical | Document and stress test |  |
+| 4.7 | Historical budget vs actual analysis | Critical | Assess management credibility |  |
+| 4.8 | Sensitivity analysis | High | Test key assumptions |  |
+| 4.9 | Industry benchmarking | High | Compare to peers |  |
+| 4.10 | Market sizing analysis | Medium | Verify TAM/SAM/SOM |  |
+
+### 5. Customer Analysis
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 5.1 | Customer list with revenue (current and prior 2 years) | Critical | Analyze concentration, churn |  |
+| 5.2 | Top 20 customer revenue trend | Critical | Analyze retention |  |
+| 5.3 | New customer acquisition (monthly) | High | Analyze growth |  |
+| 5.4 | Lost customer analysis | Critical | Understand churn reasons |  |
+| 5.5 | Customer profitability analysis | High | Identify profitable segments |  |
+| 5.6 | Customer contract terms summary | High | Analyze pricing, terms |  |
+| 5.7 | Pricing history and changes | High | Analyze pricing power |  |
+| 5.8 | Customer satisfaction metrics (NPS, etc.) | High | Analyze relationship quality |  |
+| 5.9 | Key customer references | Medium | For commercial diligence |  |
+| 5.10 | Pipeline/bookings analysis | High | Analyze future revenue |  |
+
+### 6. Supplier/Vendor Analysis
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 6.1 | Vendor list with spend (current and prior 2 years) | High | Analyze concentration |  |
+| 6.2 | Top 20 vendor spend analysis | High | Identify critical suppliers |  |
+| 6.3 | Sole source supplier identification | Critical | Assess supply chain risk |  |
+| 6.4 | Supplier contract terms summary | High | Analyze pricing, terms |  |
+| 6.5 | Vendor payment terms | High | Analyze working capital |  |
+| 6.6 | Commodity/input cost analysis | High | Analyze margin risk |  |
+| 6.7 | Supply chain risk assessment | High | Identify vulnerabilities |  |
+
+### 7. Fixed Assets & CapEx
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 7.1 | Fixed asset register | Critical | Review major assets |  |
+| 7.2 | Depreciation schedules | High | Review policies |  |
+| 7.3 | Asset impairments (last 3 years) | High | Review write-downs |  |
+| 7.4 | CapEx by category (last 3 years) | Critical | Maintenance vs growth |  |
+| 7.5 | CapEx budget and plan | High | Future requirements |  |
+| 7.6 | Deferred maintenance assessment | High | Identify catch-up needs |  |
+| 7.7 | Asset appraisals | Medium | Verify values |  |
+| 7.8 | Lease vs buy analysis | Medium | Review decisions |  |
+
+### 8. Intangible Assets
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 8.1 | Intangible asset schedule | High | Review components |  |
+| 8.2 | Goodwill detail by acquisition | High | Review impairment testing |  |
+| 8.3 | Goodwill impairment testing | High | Review methodology |  |
+| 8.4 | Acquisition purchase price allocations | High | Review valuations |  |
+| 8.5 | Capitalized software costs | High | Review capitalization policy |  |
+| 8.6 | R&D expense analysis | High | Analyze investment |  |
+
+### 9. Contingencies & Off-Balance Sheet
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 9.1 | Contingent liability schedule | Critical | Review all contingencies |  |
+| 9.2 | Litigation reserves/accruals | Critical | Verify adequacy |  |
+| 9.3 | Warranty reserve analysis | High | Review claims history |  |
+| 9.4 | Product return reserves | High | Review return patterns |  |
+| 9.5 | Restructuring reserves | High | Review plans |  |
+| 9.6 | Environmental reserves | High | Verify adequacy |  |
+| 9.7 | Guarantees and indemnities | Critical | Identify exposure |  |
+| 9.8 | Off-balance sheet arrangements | Critical | Identify all items |  |
+| 9.9 | Variable interest entities | High | Review consolidation |  |
+| 9.10 | Purchase commitments | High | Review obligations |  |
+| 9.11 | Earn-out obligations | Critical | Review terms, likelihood |  |
+| 9.12 | Pension/OPEB obligations | Critical | Review funding status |  |
+
+### 10. Internal Controls
+
+| # | Item | Priority | Guidance | Status |
+|---|------|----------|----------|--------|
+| 10.1 | Management letter from auditors | High | Review control issues |  |
+| 10.2 | Internal control documentation | High | Review processes |  |
+| 10.3 | Significant deficiency identification | Critical | Review and remediation |  |
+| 10.4 | Material weakness identification | Critical | Review and remediation |  |
+| 10.5 | SOX compliance (if applicable) | Critical | Review 404 reports |  |
+| 10.6 | IT general controls | High | Review system controls |  |
+| 10.7 | Segregation of duties analysis | High | Review control gaps |  |
+| 10.8 | Bank reconciliation procedures | Medium | Review controls |  |
+| 10.9 | Month-end close procedures | Medium | Review process |  |
+| 10.10 | Journal entry controls | High | Review approval process |  |
+
+---
+
+## JSON Format for System Import
+
+```json
+{
+  "checklists": [
+    {
+      "id": "legal-dd-checklist-v1",
+      "name": "Legal Due Diligence Checklist",
+      "category": "legal",
+      "deal_types": ["ma_asset", "ma_stock", "merger", "investment", "debt", "jv"],
+      "version": "1.0",
+      "sections": [
+        {
+          "id": "corp-org",
+          "name": "Corporate Organization & Structure",
+          "order": 1,
+          "items": [
+            {
+              "id": "corp-1.1",
+              "item_number": "1.1",
+              "text": "Certificate/Articles of Incorporation and all amendments",
+              "priority": "critical",
+              "guidance": "Verify current legal name, state of formation, authorized shares",
+              "drl_category": "Corporate & Organization"
+            },
+            {
+              "id": "corp-1.2",
+              "item_number": "1.2",
+              "text": "Bylaws/Operating Agreement and all amendments",
+              "priority": "critical",
+              "guidance": "Review governance provisions, voting requirements, transfer restrictions",
+              "drl_category": "Corporate & Organization"
+            }
+          ]
+        },
+        {
+          "id": "material-contracts",
+          "name": "Material Contracts",
+          "order": 2,
+          "items": [
+            {
+              "id": "contracts-2.1",
+              "item_number": "2.1",
+              "text": "Schedule of all material contracts (>$100K annual value)",
+              "priority": "critical",
+              "guidance": "Ensure completeness of contract review",
+              "drl_category": "Material Contracts"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "financial-dd-checklist-v1",
+      "name": "Financial Due Diligence Checklist",
+      "category": "financial",
+      "deal_types": ["ma_asset", "ma_stock", "merger", "investment", "debt", "jv"],
+      "version": "1.0",
+      "sections": [
+        {
+          "id": "qoe",
+          "name": "Quality of Earnings",
+          "order": 1,
+          "items": [
+            {
+              "id": "qoe-1.1",
+              "item_number": "1.1",
+              "text": "Audited financial statements (3 years)",
+              "priority": "critical",
+              "guidance": "Review audit opinions, footnotes",
+              "drl_category": "Financial Information"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Severity/Priority Definitions
+
+| Priority | Definition | Response Time |
+|----------|------------|---------------|
+| Critical | Deal-breaker potential; must be resolved before signing/closing | Immediate |
+| High | Material risk; requires mitigation or negotiated protection | 48-72 hours |
+| Medium | Notable issue; should be addressed but not deal-critical | 1 week |
+| Low | Minor item; informational or best practice | As time permits |
+
+## Status Definitions
+
+| Status | Definition |
+|--------|------------|
+| Not Started | Item has not been reviewed |
+| In Progress | Review is underway |
+| Pending Info | Awaiting additional documents or information |
+| Flagged | Issue identified requiring follow-up |
+| Complete | Review complete, no issues |
+| N/A | Not applicable to this transaction |

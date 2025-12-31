@@ -1,0 +1,2297 @@
+# Sentinel Counsel LLP - Deal Templates Feature
+
+## Feature Overview
+
+Deal Templates provide pre-built, comprehensive checklists for common transaction types. Each template contains categories, checklist items, and document requirements that can be:
+- **Manually satisfied** - User marks item complete
+- **Auto-satisfied** - System detects when required document is uploaded
+- **Partially satisfied** - Some but not all required documents present
+
+Templates can be applied to deals, customized per-deal, and tracked through completion.
+
+---
+
+## DATABASE SCHEMA
+
+```typescript
+// Deal Templates Schema
+
+// Master template definitions
+export const dealTemplates = pgTable('deal_templates', {
+  id: serial('id').primaryKey(),
+  
+  // Template info
+  name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 100 }).notNull().unique(),
+  description: text('description'),
+  transactionType: varchar('transaction_type', { length: 100 }).notNull(),
+  // 'real_estate', 'acquisition', 'loan', 'general_corporate', 'joint_venture', 'financing'
+  
+  // Template metadata
+  version: integer('version').default(1),
+  isActive: boolean('is_active').default(true),
+  isDefault: boolean('is_default').default(false), // Default template for this transaction type
+  
+  // Customization
+  isSystemTemplate: boolean('is_system_template').default(false), // Built-in vs user-created
+  createdBy: integer('created_by').references(() => users.id),
+  organizationId: integer('organization_id'), // For org-specific templates
+  
+  // Statistics
+  usageCount: integer('usage_count').default(0),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Template categories (sections of the checklist)
+export const templateCategories = pgTable('template_categories', {
+  id: serial('id').primaryKey(),
+  templateId: integer('template_id').references(() => dealTemplates.id).notNull(),
+  
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  sortOrder: integer('sort_order').default(0),
+  
+  // Display options
+  icon: varchar('icon', { length: 50 }), // Lucide icon name
+  color: varchar('color', { length: 20 }),
+  isCollapsible: boolean('is_collapsible').default(true),
+  defaultExpanded: boolean('default_expanded').default(true),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Individual checklist items within categories
+export const templateItems = pgTable('template_items', {
+  id: serial('id').primaryKey(),
+  categoryId: integer('category_id').references(() => templateCategories.id).notNull(),
+  templateId: integer('template_id').references(() => dealTemplates.id).notNull(),
+  
+  // Item details
+  name: varchar('name', { length: 500 }).notNull(),
+  description: text('description'),
+  guidance: text('guidance'), // Help text for the user
+  sortOrder: integer('sort_order').default(0),
+  
+  // Item configuration
+  itemType: varchar('item_type', { length: 50 }).default('checklist'),
+  // 'checklist' - simple yes/no
+  // 'document' - requires document upload
+  // 'document_set' - requires multiple documents
+  // 'approval' - requires sign-off
+  // 'date' - requires date entry
+  // 'text' - requires text input
+  
+  // Document matching (for auto-satisfaction)
+  documentKeywords: jsonb('document_keywords'), // Keywords to match uploaded docs
+  documentTypes: jsonb('document_types'), // Expected file types
+  requiredDocumentCount: integer('required_document_count').default(1),
+  
+  // Requirements
+  isRequired: boolean('is_required').default(false),
+  isCritical: boolean('is_critical').default(false), // Blocks closing if not complete
+  
+  // Dependencies
+  dependsOnItemId: integer('depends_on_item_id'), // Can't start until this is done
+  
+  // Responsibility
+  defaultAssigneeRole: varchar('default_assignee_role', { length: 100 }),
+  // 'buyer_counsel', 'seller_counsel', 'buyer', 'seller', 'title_company', 'lender', etc.
+  
+  // Timing
+  typicalDaysFromStart: integer('typical_days_from_start'),
+  typicalDaysBeforeClose: integer('typical_days_before_close'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// When a template is applied to a deal, create instance records
+export const dealChecklists = pgTable('deal_checklists', {
+  id: serial('id').primaryKey(),
+  dealId: integer('deal_id').references(() => deals.id).notNull(),
+  templateId: integer('template_id').references(() => dealTemplates.id).notNull(),
+  
+  // Status tracking
+  totalItems: integer('total_items').default(0),
+  completedItems: integer('completed_items').default(0),
+  percentComplete: real('percent_complete').default(0),
+  
+  // Key dates (set when template applied)
+  effectiveDate: date('effective_date'),
+  targetCloseDate: date('target_close_date'),
+  
+  appliedBy: integer('applied_by').references(() => users.id),
+  appliedAt: timestamp('applied_at').defaultNow(),
+});
+
+// Individual checklist item instances for a deal
+export const dealChecklistItems = pgTable('deal_checklist_items', {
+  id: serial('id').primaryKey(),
+  dealChecklistId: integer('deal_checklist_id').references(() => dealChecklists.id).notNull(),
+  templateItemId: integer('template_item_id').references(() => templateItems.id).notNull(),
+  dealId: integer('deal_id').references(() => deals.id).notNull(),
+  
+  // Instance-specific overrides
+  customName: varchar('custom_name', { length: 500 }),
+  customDescription: text('custom_description'),
+  
+  // Status
+  status: varchar('status', { length: 50 }).default('pending'),
+  // 'pending', 'in_progress', 'waiting', 'complete', 'na', 'waived'
+  
+  // Satisfaction
+  satisfactionMethod: varchar('satisfaction_method', { length: 50 }),
+  // 'manual', 'document', 'auto', 'waived'
+  satisfiedAt: timestamp('satisfied_at'),
+  satisfiedBy: integer('satisfied_by').references(() => users.id),
+  
+  // Assignment
+  assignedTo: integer('assigned_to').references(() => users.id),
+  assignedRole: varchar('assigned_role', { length: 100 }),
+  
+  // Dates
+  dueDate: date('due_date'),
+  completedDate: date('completed_date'),
+  
+  // Notes & Comments
+  notes: text('notes'),
+  internalNotes: text('internal_notes'), // Not visible to external parties
+  
+  // For date/text item types
+  dateValue: date('date_value'),
+  textValue: text('text_value'),
+  
+  // Flags
+  isBlocked: boolean('is_blocked').default(false),
+  blockedReason: text('blocked_reason'),
+  needsAttention: boolean('needs_attention').default(false),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Documents linked to checklist items
+export const checklistItemDocuments = pgTable('checklist_item_documents', {
+  id: serial('id').primaryKey(),
+  checklistItemId: integer('checklist_item_id').references(() => dealChecklistItems.id).notNull(),
+  documentId: integer('document_id').references(() => dataRoomFiles.id),
+  
+  // Or external reference
+  externalUrl: text('external_url'),
+  externalName: varchar('external_name', { length: 255 }),
+  
+  // Document status
+  documentStatus: varchar('document_status', { length: 50 }).default('uploaded'),
+  // 'uploaded', 'under_review', 'approved', 'rejected', 'superseded'
+  
+  // Review
+  reviewedBy: integer('reviewed_by').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewNotes: text('review_notes'),
+  
+  // Version tracking
+  versionNumber: integer('version_number').default(1),
+  isCurrentVersion: boolean('is_current_version').default(true),
+  
+  uploadedBy: integer('uploaded_by').references(() => users.id),
+  uploadedAt: timestamp('uploaded_at').defaultNow(),
+});
+
+// Comments/activity on checklist items
+export const checklistItemComments = pgTable('checklist_item_comments', {
+  id: serial('id').primaryKey(),
+  checklistItemId: integer('checklist_item_id').references(() => dealChecklistItems.id).notNull(),
+  
+  commentText: text('comment_text').notNull(),
+  commentType: varchar('comment_type', { length: 50 }).default('comment'),
+  // 'comment', 'status_change', 'assignment', 'document_upload', 'system'
+  
+  isInternal: boolean('is_internal').default(false), // Only visible to internal team
+  
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+```
+
+---
+
+## REAL ESTATE PURCHASE AND SALE TEMPLATE
+
+This is a comprehensive template for commercial real estate acquisitions. The checklist follows the typical transaction timeline from LOI through post-closing.
+
+```typescript
+// seed/templates/real-estate-purchase-sale.ts
+
+export const realEstatePurchaseSaleTemplate = {
+  name: 'Real Estate Purchase and Sale',
+  slug: 'real-estate-purchase-sale',
+  description: 'Comprehensive checklist for commercial real estate acquisition transactions including due diligence, title, survey, environmental, financing, and closing requirements.',
+  transactionType: 'real_estate',
+  isSystemTemplate: true,
+  isDefault: true,
+  
+  categories: [
+    // ============================================
+    // CATEGORY 1: PRE-CONTRACT / LOI PHASE
+    // ============================================
+    {
+      name: 'Pre-Contract / LOI Phase',
+      description: 'Initial deal setup and letter of intent',
+      icon: 'FileSignature',
+      sortOrder: 1,
+      items: [
+        {
+          name: 'Letter of Intent (LOI) / Term Sheet',
+          description: 'Executed letter of intent or term sheet outlining key deal terms',
+          guidance: 'Should include purchase price, deposit amounts, due diligence period, closing timeline, and any contingencies.',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['letter of intent', 'LOI', 'term sheet', 'indication of interest'],
+          defaultAssigneeRole: 'buyer',
+          typicalDaysFromStart: 0,
+        },
+        {
+          name: 'Confidentiality Agreement / NDA',
+          description: 'Non-disclosure agreement between buyer and seller',
+          itemType: 'document',
+          isRequired: false,
+          documentKeywords: ['NDA', 'non-disclosure', 'confidentiality agreement'],
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'Identify Key Deal Terms',
+          description: 'Document agreed-upon key terms: price, deposits, contingencies, timeline',
+          itemType: 'checklist',
+          isRequired: true,
+        },
+        {
+          name: 'Preliminary Property Information Received',
+          description: 'Initial property information package from seller',
+          itemType: 'document',
+          documentKeywords: ['offering memorandum', 'OM', 'property information', 'investment summary'],
+        },
+        {
+          name: 'Buyer Entity Formation / Confirmation',
+          description: 'Confirm or form the acquiring entity',
+          guidance: 'Determine if new SPV needed, confirm capitalization, obtain formation documents.',
+          itemType: 'checklist',
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 2: PURCHASE AND SALE AGREEMENT
+    // ============================================
+    {
+      name: 'Purchase and Sale Agreement',
+      description: 'Negotiation and execution of the PSA',
+      icon: 'FileText',
+      sortOrder: 2,
+      items: [
+        {
+          name: 'Initial Draft PSA',
+          description: 'First draft of Purchase and Sale Agreement',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['purchase and sale agreement', 'PSA', 'purchase agreement', 'sale agreement', 'draft'],
+          defaultAssigneeRole: 'seller_counsel',
+          typicalDaysFromStart: 7,
+        },
+        {
+          name: 'Buyer Comments to PSA',
+          description: 'Buyer counsel markup/comments to draft PSA',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['PSA comments', 'PSA markup', 'redline', 'buyer comments'],
+          defaultAssigneeRole: 'buyer_counsel',
+          typicalDaysFromStart: 14,
+        },
+        {
+          name: 'PSA Negotiations Complete',
+          description: 'All business and legal terms agreed upon',
+          itemType: 'checklist',
+          isRequired: true,
+        },
+        {
+          name: 'Executed Purchase and Sale Agreement',
+          description: 'Fully executed PSA by all parties',
+          itemType: 'document',
+          isRequired: true,
+          isCritical: true,
+          documentKeywords: ['executed PSA', 'signed purchase agreement', 'fully executed'],
+          defaultAssigneeRole: 'buyer_counsel',
+          typicalDaysFromStart: 21,
+        },
+        {
+          name: 'Earnest Money Deposit - Initial',
+          description: 'Initial earnest money deposit delivered to escrow',
+          guidance: 'Typically 1-3% of purchase price, due within 2-3 business days of PSA execution.',
+          itemType: 'document',
+          isRequired: true,
+          isCritical: true,
+          documentKeywords: ['earnest money', 'deposit receipt', 'escrow receipt', 'wire confirmation'],
+          defaultAssigneeRole: 'buyer',
+          typicalDaysFromStart: 24,
+        },
+        {
+          name: 'Escrow Instructions',
+          description: 'Escrow/closing instructions to title company',
+          itemType: 'document',
+          documentKeywords: ['escrow instructions', 'closing instructions'],
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'PSA Exhibits and Schedules Complete',
+          description: 'All exhibits and schedules to PSA finalized',
+          itemType: 'checklist',
+          isRequired: true,
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 3: DUE DILIGENCE - GENERAL
+    // ============================================
+    {
+      name: 'Due Diligence - General',
+      description: 'General due diligence items and property information',
+      icon: 'Search',
+      sortOrder: 3,
+      items: [
+        {
+          name: 'Due Diligence Checklist / Request List',
+          description: 'Comprehensive due diligence request list sent to seller',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['due diligence request', 'DD checklist', 'information request'],
+          defaultAssigneeRole: 'buyer_counsel',
+          typicalDaysFromStart: 22,
+        },
+        {
+          name: 'Seller Due Diligence Deliveries',
+          description: 'Track receipt of all seller DD deliveries',
+          itemType: 'checklist',
+          isRequired: true,
+        },
+        {
+          name: 'Property Tax Bills (3 years)',
+          description: 'Historical property tax bills and assessment notices',
+          itemType: 'document_set',
+          requiredDocumentCount: 3,
+          documentKeywords: ['property tax', 'tax bill', 'tax assessment', 'real estate tax'],
+        },
+        {
+          name: 'Insurance Certificates / Policies',
+          description: 'Current property insurance policies and certificates',
+          itemType: 'document',
+          documentKeywords: ['insurance certificate', 'insurance policy', 'COI', 'property insurance'],
+        },
+        {
+          name: 'Insurance Loss History (5 years)',
+          description: 'Claims history and loss runs',
+          itemType: 'document',
+          documentKeywords: ['loss run', 'claims history', 'insurance claims'],
+        },
+        {
+          name: 'Organizational Documents - Seller',
+          description: 'Seller entity formation documents, good standing, authority to sell',
+          itemType: 'document_set',
+          documentKeywords: ['articles of incorporation', 'operating agreement', 'bylaws', 'certificate of formation', 'good standing'],
+          defaultAssigneeRole: 'seller_counsel',
+        },
+        {
+          name: 'Property Management Agreement',
+          description: 'Current property management agreement (if any)',
+          itemType: 'document',
+          documentKeywords: ['property management', 'management agreement'],
+        },
+        {
+          name: 'Vendor/Service Contracts List',
+          description: 'List of all service contracts (HVAC, elevator, security, etc.)',
+          itemType: 'document',
+          documentKeywords: ['service contract', 'vendor contract', 'maintenance contract'],
+        },
+        {
+          name: 'Historical Operating Statements (3 years)',
+          description: 'Income and expense statements for past 3 years',
+          itemType: 'document_set',
+          requiredDocumentCount: 3,
+          documentKeywords: ['operating statement', 'income statement', 'P&L', 'profit and loss'],
+        },
+        {
+          name: 'Current Year Budget',
+          description: 'Current operating budget',
+          itemType: 'document',
+          documentKeywords: ['budget', 'operating budget', 'annual budget'],
+        },
+        {
+          name: 'Rent Roll - Current Certified',
+          description: 'Current certified rent roll from seller',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['rent roll', 'tenant schedule', 'lease schedule'],
+        },
+        {
+          name: 'Accounts Receivable Aging',
+          description: 'Current AR aging report',
+          itemType: 'document',
+          documentKeywords: ['accounts receivable', 'AR aging', 'receivables'],
+        },
+        {
+          name: 'Capital Expenditure History',
+          description: 'Historical capex and planned improvements',
+          itemType: 'document',
+          documentKeywords: ['capital expenditure', 'capex', 'capital improvement'],
+        },
+        {
+          name: 'Site Visit / Property Inspection Completed',
+          description: 'Physical inspection of the property completed',
+          itemType: 'checklist',
+          isRequired: true,
+          defaultAssigneeRole: 'buyer',
+        },
+        {
+          name: 'Due Diligence Expiration Date',
+          description: 'Track the DD period expiration',
+          itemType: 'date',
+          isRequired: true,
+          isCritical: true,
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 4: TITLE AND SURVEY
+    // ============================================
+    {
+      name: 'Title and Survey',
+      description: 'Title insurance and survey matters',
+      icon: 'Map',
+      sortOrder: 4,
+      items: [
+        {
+          name: 'Title Commitment / Preliminary Title Report',
+          description: 'Initial title commitment from title company',
+          itemType: 'document',
+          isRequired: true,
+          isCritical: true,
+          documentKeywords: ['title commitment', 'preliminary title', 'title report', 'PTR'],
+          defaultAssigneeRole: 'title_company',
+          typicalDaysFromStart: 14,
+        },
+        {
+          name: 'Title Exception Documents',
+          description: 'All documents referenced as title exceptions',
+          itemType: 'document_set',
+          documentKeywords: ['easement', 'CC&R', 'covenant', 'restriction', 'encumbrance'],
+        },
+        {
+          name: 'Buyer Title Objection Letter',
+          description: 'Buyer objections to title matters',
+          itemType: 'document',
+          documentKeywords: ['title objection', 'title objections'],
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'Seller Title Cure Letter / Response',
+          description: 'Seller response to title objections',
+          itemType: 'document',
+          documentKeywords: ['title cure', 'title response'],
+          defaultAssigneeRole: 'seller_counsel',
+        },
+        {
+          name: 'Title Issues Resolved',
+          description: 'All title objections resolved or waived',
+          itemType: 'checklist',
+          isRequired: true,
+        },
+        {
+          name: 'ALTA Survey - Existing',
+          description: 'Existing survey provided by seller',
+          itemType: 'document',
+          documentKeywords: ['survey', 'ALTA survey', 'boundary survey', 'land survey'],
+        },
+        {
+          name: 'ALTA Survey - Updated/New',
+          description: 'New or updated ALTA/NSPS survey',
+          itemType: 'document',
+          isRequired: true,
+          isCritical: true,
+          documentKeywords: ['ALTA survey', 'NSPS survey', 'updated survey', 'new survey'],
+          defaultAssigneeRole: 'buyer',
+          typicalDaysBeforeClose: 14,
+        },
+        {
+          name: 'Survey Certification to Buyer/Lender',
+          description: 'Survey certified to buyer and lender (if applicable)',
+          itemType: 'checklist',
+          isRequired: true,
+        },
+        {
+          name: 'Survey Review / Objections',
+          description: 'Review survey for encroachments, easements, boundary issues',
+          itemType: 'checklist',
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'UCC Search - Seller',
+          description: 'UCC lien search against seller',
+          itemType: 'document',
+          documentKeywords: ['UCC search', 'UCC-1', 'lien search'],
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Judgment/Lien Search - Seller',
+          description: 'Judgment and lien search against seller',
+          itemType: 'document',
+          documentKeywords: ['judgment search', 'lien search', 'litigation search'],
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Tax Lien Search',
+          description: 'Federal and state tax lien search',
+          itemType: 'document',
+          documentKeywords: ['tax lien search', 'federal tax lien', 'state tax lien'],
+        },
+        {
+          name: 'Pro Forma Title Policy',
+          description: 'Pro forma owner\'s title policy for review',
+          itemType: 'document',
+          documentKeywords: ['pro forma', 'title policy', 'owner policy'],
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Title Endorsements List',
+          description: 'Required title endorsements identified',
+          itemType: 'checklist',
+          guidance: 'Common endorsements: access, contiguity, survey, zoning, environmental, etc.',
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 5: ENVIRONMENTAL
+    // ============================================
+    {
+      name: 'Environmental',
+      description: 'Environmental due diligence and compliance',
+      icon: 'Leaf',
+      sortOrder: 5,
+      items: [
+        {
+          name: 'Phase I Environmental Site Assessment',
+          description: 'Phase I ESA in accordance with ASTM standards',
+          itemType: 'document',
+          isRequired: true,
+          isCritical: true,
+          documentKeywords: ['Phase I', 'Phase 1', 'ESA', 'environmental site assessment', 'environmental report'],
+          defaultAssigneeRole: 'buyer',
+          typicalDaysFromStart: 21,
+        },
+        {
+          name: 'Phase I Reliance Letter to Buyer/Lender',
+          description: 'Reliance letter from environmental consultant',
+          itemType: 'document',
+          documentKeywords: ['reliance letter', 'Phase I reliance'],
+        },
+        {
+          name: 'Phase II Environmental Assessment',
+          description: 'Phase II investigation (if required by Phase I findings)',
+          itemType: 'document',
+          documentKeywords: ['Phase II', 'Phase 2', 'subsurface investigation'],
+          guidance: 'Only required if Phase I identifies RECs requiring further investigation.',
+        },
+        {
+          name: 'Environmental Liens / Deed Restrictions Check',
+          description: 'Check for environmental liens or activity use limitations',
+          itemType: 'checklist',
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'Regulatory Database Review',
+          description: 'Review of environmental regulatory databases (included in Phase I)',
+          itemType: 'checklist',
+        },
+        {
+          name: 'Asbestos Survey / O&M Plan',
+          description: 'Asbestos survey and operations & maintenance plan',
+          itemType: 'document',
+          documentKeywords: ['asbestos', 'ACM', 'O&M plan', 'asbestos survey'],
+        },
+        {
+          name: 'Lead-Based Paint Disclosure',
+          description: 'Lead-based paint disclosure (for pre-1978 buildings)',
+          itemType: 'document',
+          documentKeywords: ['lead paint', 'lead-based paint', 'lead disclosure'],
+        },
+        {
+          name: 'UST/AST Documentation',
+          description: 'Underground/aboveground storage tank records',
+          itemType: 'document',
+          documentKeywords: ['UST', 'AST', 'storage tank', 'underground tank'],
+        },
+        {
+          name: 'Environmental Insurance Quote',
+          description: 'Pollution legal liability insurance quote (if applicable)',
+          itemType: 'document',
+          documentKeywords: ['environmental insurance', 'pollution liability', 'PLL'],
+        },
+        {
+          name: 'Environmental Issues Resolution',
+          description: 'All environmental concerns resolved or addressed',
+          itemType: 'checklist',
+          isRequired: true,
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 6: ZONING AND PERMITS
+    // ============================================
+    {
+      name: 'Zoning and Permits',
+      description: 'Zoning compliance and permit status',
+      icon: 'Building2',
+      sortOrder: 6,
+      items: [
+        {
+          name: 'Zoning Report / Letter',
+          description: 'Zoning report or compliance letter',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['zoning report', 'zoning letter', 'zoning compliance', 'zoning certificate'],
+          defaultAssigneeRole: 'buyer',
+        },
+        {
+          name: 'Certificate of Occupancy',
+          description: 'Certificate of occupancy for current use',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['certificate of occupancy', 'CO', 'C of O', 'occupancy permit'],
+        },
+        {
+          name: 'Building Permits - Historical',
+          description: 'Historical building permits and sign-offs',
+          itemType: 'document',
+          documentKeywords: ['building permit', 'construction permit'],
+        },
+        {
+          name: 'Open Permits / Violations Check',
+          description: 'Search for open permits or code violations',
+          itemType: 'checklist',
+          isRequired: true,
+          defaultAssigneeRole: 'buyer',
+        },
+        {
+          name: 'Variance / Special Use Permits',
+          description: 'Any variances or special use permits for the property',
+          itemType: 'document',
+          documentKeywords: ['variance', 'special use permit', 'conditional use'],
+        },
+        {
+          name: 'Site Plan Approval',
+          description: 'Approved site plan (if applicable)',
+          itemType: 'document',
+          documentKeywords: ['site plan', 'development plan'],
+        },
+        {
+          name: 'Wetlands / Floodplain Determination',
+          description: 'Wetlands delineation or flood zone determination',
+          itemType: 'document',
+          documentKeywords: ['wetlands', 'floodplain', 'FEMA', 'flood zone', 'LOMA'],
+        },
+        {
+          name: 'ADA Compliance Assessment',
+          description: 'Americans with Disabilities Act compliance review',
+          itemType: 'document',
+          documentKeywords: ['ADA', 'accessibility', 'Americans with Disabilities'],
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 7: LEASES AND TENANTS
+    // ============================================
+    {
+      name: 'Leases and Tenants',
+      description: 'Tenant lease review and estoppels',
+      icon: 'Users',
+      sortOrder: 7,
+      items: [
+        {
+          name: 'All Lease Agreements',
+          description: 'Complete copies of all tenant leases',
+          itemType: 'document_set',
+          isRequired: true,
+          documentKeywords: ['lease agreement', 'lease', 'rental agreement'],
+          defaultAssigneeRole: 'seller',
+        },
+        {
+          name: 'Lease Amendments and Modifications',
+          description: 'All amendments, modifications, and side letters',
+          itemType: 'document_set',
+          documentKeywords: ['lease amendment', 'lease modification', 'side letter'],
+        },
+        {
+          name: 'Lease Abstract / Summary',
+          description: 'Lease abstracts or summary schedule',
+          itemType: 'document',
+          documentKeywords: ['lease abstract', 'lease summary'],
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'Tenant Estoppel Certificates',
+          description: 'Estoppel certificates from all/major tenants',
+          itemType: 'document_set',
+          isRequired: true,
+          isCritical: true,
+          documentKeywords: ['estoppel', 'tenant estoppel', 'estoppel certificate'],
+          defaultAssigneeRole: 'seller',
+          typicalDaysBeforeClose: 10,
+        },
+        {
+          name: 'SNDA Agreements',
+          description: 'Subordination, non-disturbance, and attornment agreements',
+          itemType: 'document_set',
+          documentKeywords: ['SNDA', 'subordination', 'non-disturbance', 'attornment'],
+        },
+        {
+          name: 'Security Deposit Schedule',
+          description: 'Schedule of all tenant security deposits',
+          itemType: 'document',
+          documentKeywords: ['security deposit', 'deposit schedule'],
+        },
+        {
+          name: 'Tenant Correspondence File',
+          description: 'Material correspondence with tenants',
+          itemType: 'document',
+          documentKeywords: ['tenant correspondence', 'tenant letter'],
+        },
+        {
+          name: 'Pending Lease Negotiations',
+          description: 'Status of any pending lease negotiations or renewals',
+          itemType: 'checklist',
+        },
+        {
+          name: 'Tenant Defaults / Disputes',
+          description: 'List of any tenant defaults or disputes',
+          itemType: 'document',
+          documentKeywords: ['tenant default', 'lease default', 'tenant dispute'],
+        },
+        {
+          name: 'Ground Lease (if applicable)',
+          description: 'Ground lease agreement if property is leasehold',
+          itemType: 'document',
+          documentKeywords: ['ground lease'],
+        },
+        {
+          name: 'Ground Lessor Estoppel / Consent',
+          description: 'Estoppel and consent from ground lessor',
+          itemType: 'document',
+          documentKeywords: ['ground lessor estoppel', 'ground lease consent'],
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 8: PHYSICAL CONDITION
+    // ============================================
+    {
+      name: 'Physical / Engineering',
+      description: 'Property condition and engineering reports',
+      icon: 'Wrench',
+      sortOrder: 8,
+      items: [
+        {
+          name: 'Property Condition Assessment (PCA)',
+          description: 'Physical condition report / engineering report',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['PCA', 'property condition', 'engineering report', 'physical condition', 'building assessment'],
+          defaultAssigneeRole: 'buyer',
+          typicalDaysFromStart: 21,
+        },
+        {
+          name: 'PCA Reliance Letter to Lender',
+          description: 'Reliance letter for PCA if required by lender',
+          itemType: 'document',
+          documentKeywords: ['PCA reliance', 'reliance letter'],
+        },
+        {
+          name: 'Roof Report / Warranty',
+          description: 'Roof condition report and any existing warranties',
+          itemType: 'document',
+          documentKeywords: ['roof report', 'roof warranty', 'roof condition'],
+        },
+        {
+          name: 'HVAC Report',
+          description: 'HVAC systems assessment',
+          itemType: 'document',
+          documentKeywords: ['HVAC', 'mechanical systems', 'heating cooling'],
+        },
+        {
+          name: 'Elevator Inspection / Certification',
+          description: 'Current elevator inspection certificates',
+          itemType: 'document',
+          documentKeywords: ['elevator inspection', 'elevator certificate'],
+        },
+        {
+          name: 'Fire/Life Safety Systems Report',
+          description: 'Fire alarm, sprinkler, and life safety inspection',
+          itemType: 'document',
+          documentKeywords: ['fire safety', 'life safety', 'sprinkler', 'fire alarm'],
+        },
+        {
+          name: 'Structural Report (if needed)',
+          description: 'Structural engineering report if concerns identified',
+          itemType: 'document',
+          documentKeywords: ['structural report', 'structural engineering'],
+        },
+        {
+          name: 'Seismic Report (if applicable)',
+          description: 'Seismic / PML report for earthquake zones',
+          itemType: 'document',
+          documentKeywords: ['seismic', 'PML', 'earthquake', 'probable maximum loss'],
+        },
+        {
+          name: 'Equipment List / Inventory',
+          description: 'List of FF&E and equipment conveying with sale',
+          itemType: 'document',
+          documentKeywords: ['equipment list', 'FF&E', 'inventory'],
+        },
+        {
+          name: 'Warranties and Guaranties',
+          description: 'Existing warranties on building systems/components',
+          itemType: 'document',
+          documentKeywords: ['warranty', 'guaranty', 'guarantee'],
+        },
+        {
+          name: 'As-Built Drawings / Plans',
+          description: 'As-built architectural and engineering drawings',
+          itemType: 'document',
+          documentKeywords: ['as-built', 'floor plan', 'architectural drawing', 'CAD'],
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 9: FINANCING (ACQUISITION LOAN)
+    // ============================================
+    {
+      name: 'Financing',
+      description: 'Acquisition financing and lender requirements',
+      icon: 'Landmark',
+      sortOrder: 9,
+      items: [
+        {
+          name: 'Loan Application Submitted',
+          description: 'Loan application submitted to lender',
+          itemType: 'checklist',
+          defaultAssigneeRole: 'buyer',
+        },
+        {
+          name: 'Loan Term Sheet / Commitment',
+          description: 'Loan term sheet or commitment letter from lender',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['loan commitment', 'term sheet', 'commitment letter'],
+          defaultAssigneeRole: 'lender',
+        },
+        {
+          name: 'Loan Agreement - Draft',
+          description: 'Draft loan agreement from lender',
+          itemType: 'document',
+          documentKeywords: ['loan agreement', 'credit agreement'],
+          defaultAssigneeRole: 'lender_counsel',
+        },
+        {
+          name: 'Loan Document Review / Comments',
+          description: 'Borrower counsel review and comments to loan docs',
+          itemType: 'document',
+          documentKeywords: ['loan comments', 'loan markup'],
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'Appraisal',
+          description: 'MAI appraisal ordered by lender',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['appraisal', 'MAI appraisal', 'property appraisal'],
+          defaultAssigneeRole: 'lender',
+        },
+        {
+          name: 'Lender Title Requirements',
+          description: 'Lender title requirements and endorsements',
+          itemType: 'document',
+          documentKeywords: ['lender title requirements', 'title requirements'],
+        },
+        {
+          name: 'Lender Survey Requirements',
+          description: 'Lender survey certification requirements',
+          itemType: 'checklist',
+        },
+        {
+          name: 'Loan Documents - Final',
+          description: 'Final loan document package',
+          itemType: 'document_set',
+          isRequired: true,
+          isCritical: true,
+          documentKeywords: ['final loan documents', 'loan package'],
+          defaultAssigneeRole: 'lender_counsel',
+        },
+        {
+          name: 'Borrower Entity Documents for Lender',
+          description: 'Entity documents required by lender (cert of formation, operating agreement, incumbency)',
+          itemType: 'document_set',
+          documentKeywords: ['borrower certificate', 'incumbency', 'secretary certificate'],
+        },
+        {
+          name: 'Guaranty Agreement',
+          description: 'Guaranty from principals (if required)',
+          itemType: 'document',
+          documentKeywords: ['guaranty', 'guarantee', 'personal guaranty'],
+        },
+        {
+          name: 'Environmental Indemnity',
+          description: 'Environmental indemnity agreement for lender',
+          itemType: 'document',
+          documentKeywords: ['environmental indemnity'],
+        },
+        {
+          name: 'Lender Legal Opinion',
+          description: 'Legal opinion to lender from borrower counsel',
+          itemType: 'document',
+          documentKeywords: ['legal opinion', 'opinion letter'],
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'Loan Funding Confirmed',
+          description: 'Confirmation loan will fund at closing',
+          itemType: 'checklist',
+          isRequired: true,
+          isCritical: true,
+          defaultAssigneeRole: 'lender',
+          typicalDaysBeforeClose: 1,
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 10: CLOSING PREPARATION
+    // ============================================
+    {
+      name: 'Closing Preparation',
+      description: 'Pre-closing document preparation and logistics',
+      icon: 'ClipboardCheck',
+      sortOrder: 10,
+      items: [
+        {
+          name: 'Closing Checklist / Timeline',
+          description: 'Detailed closing checklist and timeline',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['closing checklist', 'closing timeline', 'closing schedule'],
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'Deed - Draft',
+          description: 'Draft deed for review',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['deed', 'grant deed', 'warranty deed', 'special warranty deed', 'bargain and sale'],
+          defaultAssigneeRole: 'seller_counsel',
+        },
+        {
+          name: 'Bill of Sale',
+          description: 'Bill of sale for personal property',
+          itemType: 'document',
+          documentKeywords: ['bill of sale'],
+          defaultAssigneeRole: 'seller_counsel',
+        },
+        {
+          name: 'Assignment of Leases',
+          description: 'Assignment and assumption of leases',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['assignment of leases', 'lease assignment'],
+        },
+        {
+          name: 'Assignment of Contracts',
+          description: 'Assignment of service contracts and warranties',
+          itemType: 'document',
+          documentKeywords: ['assignment of contracts', 'contract assignment'],
+        },
+        {
+          name: 'Assignment of Intangibles',
+          description: 'Assignment of intangible property (permits, licenses, etc.)',
+          itemType: 'document',
+          documentKeywords: ['assignment of intangibles', 'intangible assignment'],
+        },
+        {
+          name: 'Seller Closing Certificate',
+          description: 'Seller certificate re: representations and warranties',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['seller certificate', 'closing certificate', 'bring-down certificate'],
+          defaultAssigneeRole: 'seller_counsel',
+        },
+        {
+          name: 'Buyer Closing Certificate',
+          description: 'Buyer certificate re: representations',
+          itemType: 'document',
+          documentKeywords: ['buyer certificate'],
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'FIRPTA Certificate / Affidavit',
+          description: 'FIRPTA non-foreign certification from seller',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['FIRPTA', 'non-foreign', 'foreign investment'],
+          defaultAssigneeRole: 'seller_counsel',
+        },
+        {
+          name: 'Transfer Tax Declarations',
+          description: 'State/local transfer tax forms and declarations',
+          itemType: 'document',
+          documentKeywords: ['transfer tax', 'documentary stamp', 'conveyance tax'],
+        },
+        {
+          name: '1099-S Information',
+          description: 'Information for 1099-S reporting',
+          itemType: 'document',
+          documentKeywords: ['1099', '1099-S'],
+        },
+        {
+          name: 'Settlement Statement - Draft',
+          description: 'Draft closing/settlement statement',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['settlement statement', 'closing statement', 'HUD', 'ALTA settlement'],
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Settlement Statement - Approved',
+          description: 'Final approved settlement statement by all parties',
+          itemType: 'document',
+          isRequired: true,
+          isCritical: true,
+          documentKeywords: ['final settlement', 'approved settlement'],
+        },
+        {
+          name: 'Proration Schedule',
+          description: 'Schedule of prorations (taxes, rents, utilities, etc.)',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['proration', 'proration schedule'],
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Tenant Notice Letters',
+          description: 'Tenant notification letters re: change of ownership',
+          itemType: 'document',
+          documentKeywords: ['tenant notice', 'change of ownership letter'],
+        },
+        {
+          name: 'Vendor Notification Letters',
+          description: 'Notices to vendors/service providers',
+          itemType: 'document',
+          documentKeywords: ['vendor notice', 'vendor notification'],
+        },
+        {
+          name: 'Utility Transfer Instructions',
+          description: 'Instructions for utility account transfers',
+          itemType: 'checklist',
+        },
+        {
+          name: 'Keys / Access Cards / Codes',
+          description: 'Inventory of keys, access cards, security codes',
+          itemType: 'checklist',
+          defaultAssigneeRole: 'seller',
+        },
+        {
+          name: 'Wire Instructions - Verified',
+          description: 'Wire transfer instructions verified (anti-fraud)',
+          itemType: 'checklist',
+          isRequired: true,
+          isCritical: true,
+          guidance: 'ALWAYS verify wire instructions by phone using known contact numbers.',
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 11: CLOSING
+    // ============================================
+    {
+      name: 'Closing',
+      description: 'Closing day execution and funding',
+      icon: 'CheckCircle2',
+      sortOrder: 11,
+      items: [
+        {
+          name: 'Pre-Closing Walkthrough',
+          description: 'Final property walkthrough completed',
+          itemType: 'checklist',
+          isRequired: true,
+          defaultAssigneeRole: 'buyer',
+          typicalDaysBeforeClose: 1,
+        },
+        {
+          name: 'Bring-Down Title Search',
+          description: 'Updated title search at closing',
+          itemType: 'checklist',
+          isRequired: true,
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'All Closing Documents Executed',
+          description: 'Confirm all documents signed by all parties',
+          itemType: 'checklist',
+          isRequired: true,
+          isCritical: true,
+        },
+        {
+          name: 'Additional Earnest Money Deposit (if applicable)',
+          description: 'Additional deposit released from escrow',
+          itemType: 'checklist',
+        },
+        {
+          name: 'Buyer Funds Wired',
+          description: 'Buyer closing funds wired to escrow',
+          itemType: 'checklist',
+          isRequired: true,
+          isCritical: true,
+          defaultAssigneeRole: 'buyer',
+        },
+        {
+          name: 'Loan Funds Received',
+          description: 'Lender funds received by title company',
+          itemType: 'checklist',
+          isRequired: true,
+          isCritical: true,
+          defaultAssigneeRole: 'lender',
+        },
+        {
+          name: 'Deed Recorded',
+          description: 'Deed recorded with county recorder',
+          itemType: 'checklist',
+          isRequired: true,
+          isCritical: true,
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Mortgage / Deed of Trust Recorded',
+          description: 'Security instrument recorded',
+          itemType: 'checklist',
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Seller Payoffs Completed',
+          description: 'Existing mortgages/liens paid off',
+          itemType: 'checklist',
+          isRequired: true,
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Proceeds Disbursed to Seller',
+          description: 'Net proceeds wired to seller',
+          itemType: 'checklist',
+          isRequired: true,
+          isCritical: true,
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Closing Confirmation',
+          description: 'Written confirmation of closing from title company',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['closing confirmation', 'recording confirmation'],
+        },
+      ],
+    },
+
+    // ============================================
+    // CATEGORY 12: POST-CLOSING
+    // ============================================
+    {
+      name: 'Post-Closing',
+      description: 'Post-closing deliveries and follow-up items',
+      icon: 'Archive',
+      sortOrder: 12,
+      items: [
+        {
+          name: 'Recorded Deed Received',
+          description: 'Recorded deed returned from county',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['recorded deed'],
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Owner\'s Title Policy Issued',
+          description: 'Final owner\'s title insurance policy',
+          itemType: 'document',
+          isRequired: true,
+          documentKeywords: ['title policy', 'owner policy', 'title insurance'],
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Lender\'s Title Policy Issued',
+          description: 'Final lender\'s title insurance policy',
+          itemType: 'document',
+          documentKeywords: ['lender policy', 'loan policy'],
+          defaultAssigneeRole: 'title_company',
+        },
+        {
+          name: 'Final Title Marked-Up Commitment',
+          description: 'Title commitment marked as policy',
+          itemType: 'document',
+        },
+        {
+          name: 'Property Insurance in Place',
+          description: 'Confirm property insurance effective',
+          itemType: 'checklist',
+          isRequired: true,
+          defaultAssigneeRole: 'buyer',
+        },
+        {
+          name: 'Tenant Notices Sent',
+          description: 'Confirm all tenant notices mailed',
+          itemType: 'checklist',
+          isRequired: true,
+          defaultAssigneeRole: 'buyer',
+        },
+        {
+          name: 'Property Management Transition',
+          description: 'Property management transitioned to buyer\'s team',
+          itemType: 'checklist',
+          defaultAssigneeRole: 'buyer',
+        },
+        {
+          name: 'Security Deposit Transfer',
+          description: 'Security deposits transferred to buyer',
+          itemType: 'checklist',
+          isRequired: true,
+        },
+        {
+          name: 'Post-Closing Adjustments',
+          description: 'Calculate and settle any post-closing prorations',
+          itemType: 'checklist',
+        },
+        {
+          name: 'Original Documents to Buyer',
+          description: 'Original documents delivered to buyer',
+          itemType: 'checklist',
+        },
+        {
+          name: 'Closing Binder Compiled',
+          description: 'Complete closing binder assembled',
+          itemType: 'checklist',
+          defaultAssigneeRole: 'buyer_counsel',
+        },
+        {
+          name: 'Post-Closing Escrow Items (if any)',
+          description: 'Track any post-closing escrow holdbacks',
+          itemType: 'checklist',
+        },
+      ],
+    },
+  ],
+};
+```
+
+---
+
+## UI COMPONENTS
+
+### 1. Deal Templates List Page
+
+```tsx
+// pages/transactions/templates/index.tsx
+
+export default function DealTemplatesPage() {
+  const { data: templates } = useTemplates();
+  
+  const templatesByType = useMemo(() => {
+    return templates?.reduce((acc, t) => {
+      if (!acc[t.transactionType]) acc[t.transactionType] = [];
+      acc[t.transactionType].push(t);
+      return acc;
+    }, {} as Record<string, Template[]>);
+  }, [templates]);
+
+  return (
+    <div className="container py-8">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-semibold">Deal Templates</h1>
+          <p className="text-muted-foreground">
+            Pre-built checklists for common transaction types
+          </p>
+        </div>
+        <Button>
+          <Plus className="h-4 w-4 mr-2" />
+          Create Custom Template
+        </Button>
+      </div>
+
+      {/* Template Categories */}
+      <div className="space-y-8">
+        {/* Real Estate */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Building2 className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-medium">Real Estate</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {templatesByType?.real_estate?.map((template) => (
+              <TemplateCard key={template.id} template={template} />
+            ))}
+          </div>
+        </section>
+
+        {/* M&A / Acquisitions */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Briefcase className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-medium">Mergers & Acquisitions</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {templatesByType?.acquisition?.map((template) => (
+              <TemplateCard key={template.id} template={template} />
+            ))}
+            <CreateTemplateCard type="acquisition" />
+          </div>
+        </section>
+
+        {/* Financing */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Landmark className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-medium">Financing</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {templatesByType?.loan?.map((template) => (
+              <TemplateCard key={template.id} template={template} />
+            ))}
+            <CreateTemplateCard type="loan" />
+          </div>
+        </section>
+
+        {/* General Corporate */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Scale className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-medium">General Corporate</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {templatesByType?.general_corporate?.map((template) => (
+              <TemplateCard key={template.id} template={template} />
+            ))}
+            <CreateTemplateCard type="general_corporate" />
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function TemplateCard({ template }: { template: Template }) {
+  const router = useRouter();
+  const categoryCount = template.categories?.length || 0;
+  const itemCount = template.categories?.reduce((sum, c) => sum + (c.items?.length || 0), 0) || 0;
+  
+  return (
+    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push(`/transactions/templates/${template.slug}`)}>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <FileText className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-base">{template.name}</CardTitle>
+              {template.isSystemTemplate && (
+                <Badge variant="secondary" className="text-xs mt-1">
+                  <Shield className="h-3 w-3 mr-1" />
+                  System Template
+                </Badge>
+              )}
+            </div>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>
+                <Eye className="h-4 w-4 mr-2" />
+                Preview
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Copy className="h-4 w-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              {!template.isSystemTemplate && (
+                <>
+                  <DropdownMenuItem>
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-destructive">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
+          {template.description}
+        </p>
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <FolderOpen className="h-4 w-4" />
+            {categoryCount} sections
+          </span>
+          <span className="flex items-center gap-1">
+            <CheckSquare className="h-4 w-4" />
+            {itemCount} items
+          </span>
+        </div>
+        {template.usageCount > 0 && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Used {template.usageCount} times
+          </p>
+        )}
+      </CardContent>
+      <CardFooter className="pt-0">
+        <Button className="w-full" onClick={(e) => { e.stopPropagation(); /* apply to deal */ }}>
+          Apply to Deal
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+```
+
+### 2. Template Detail / Preview Page
+
+```tsx
+// pages/transactions/templates/[slug].tsx
+
+export default function TemplateDetailPage({ template }: Props) {
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(
+    template.categories.map(c => c.id.toString())
+  );
+
+  const stats = useMemo(() => {
+    const items = template.categories.flatMap(c => c.items);
+    return {
+      totalItems: items.length,
+      requiredItems: items.filter(i => i.isRequired).length,
+      criticalItems: items.filter(i => i.isCritical).length,
+      documentItems: items.filter(i => i.itemType === 'document' || i.itemType === 'document_set').length,
+    };
+  }, [template]);
+
+  return (
+    <div className="container py-8">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-8">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold">{template.name}</h1>
+              {template.isSystemTemplate && (
+                <Badge variant="secondary">
+                  <Shield className="h-3 w-3 mr-1" />
+                  System
+                </Badge>
+              )}
+            </div>
+            <p className="text-muted-foreground mt-1">{template.description}</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline">
+            <Copy className="h-4 w-4 mr-2" />
+            Duplicate
+          </Button>
+          <Button>
+            <Play className="h-4 w-4 mr-2" />
+            Apply to Deal
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-8">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold">{stats.totalItems}</div>
+            <p className="text-sm text-muted-foreground">Total Items</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-amber-600">{stats.requiredItems}</div>
+            <p className="text-sm text-muted-foreground">Required Items</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-red-600">{stats.criticalItems}</div>
+            <p className="text-sm text-muted-foreground">Critical Items</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-3xl font-bold text-blue-600">{stats.documentItems}</div>
+            <p className="text-sm text-muted-foreground">Document Items</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Checklist Preview */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Checklist Items</CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setExpandedCategories(template.categories.map(c => c.id.toString()))}>
+                Expand All
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setExpandedCategories([])}>
+                Collapse All
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Accordion 
+            type="multiple" 
+            value={expandedCategories}
+            onValueChange={setExpandedCategories}
+          >
+            {template.categories.map((category, catIndex) => {
+              const CategoryIcon = Icons[category.icon] || FolderOpen;
+              const requiredCount = category.items.filter(i => i.isRequired).length;
+              const criticalCount = category.items.filter(i => i.isCritical).length;
+              
+              return (
+                <AccordionItem key={category.id} value={category.id.toString()}>
+                  <AccordionTrigger className="hover:no-underline">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
+                        {catIndex + 1}
+                      </div>
+                      <CategoryIcon className="h-5 w-5 text-muted-foreground" />
+                      <span className="font-medium">{category.name}</span>
+                      <Badge variant="outline" className="ml-2">
+                        {category.items.length} items
+                      </Badge>
+                      {criticalCount > 0 && (
+                        <Badge variant="destructive" className="text-xs">
+                          {criticalCount} critical
+                        </Badge>
+                      )}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="pl-12 space-y-2">
+                      {category.description && (
+                        <p className="text-sm text-muted-foreground mb-4">{category.description}</p>
+                      )}
+                      {category.items.map((item, itemIndex) => (
+                        <TemplateItemRow key={item.id} item={item} index={itemIndex + 1} />
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function TemplateItemRow({ item, index }: { item: TemplateItem; index: number }) {
+  return (
+    <div className={cn(
+      "flex items-start gap-3 p-3 rounded-lg border",
+      item.isCritical && "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20"
+    )}>
+      <div className="flex items-center justify-center w-6 h-6 rounded bg-muted text-xs">
+        {index}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-sm">{item.name}</span>
+          {item.isRequired && (
+            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+              Required
+            </Badge>
+          )}
+          {item.isCritical && (
+            <Badge variant="destructive" className="text-xs">
+              Critical
+            </Badge>
+          )}
+          {item.itemType === 'document' && (
+            <Badge variant="secondary" className="text-xs">
+              <FileUp className="h-3 w-3 mr-1" />
+              Document
+            </Badge>
+          )}
+          {item.itemType === 'document_set' && (
+            <Badge variant="secondary" className="text-xs">
+              <Files className="h-3 w-3 mr-1" />
+              Multiple Docs
+            </Badge>
+          )}
+        </div>
+        {item.description && (
+          <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+        )}
+        {item.guidance && (
+          <div className="flex items-start gap-2 mt-2 p-2 bg-blue-50 dark:bg-blue-950/30 rounded text-xs text-blue-700 dark:text-blue-300">
+            <Info className="h-3 w-3 mt-0.5 shrink-0" />
+            {item.guidance}
+          </div>
+        )}
+        {item.documentKeywords && item.documentKeywords.length > 0 && (
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-muted-foreground">Auto-match:</span>
+            <div className="flex flex-wrap gap-1">
+              {item.documentKeywords.slice(0, 3).map((kw, i) => (
+                <code key={i} className="text-xs bg-muted px-1.5 py-0.5 rounded">{kw}</code>
+              ))}
+              {item.documentKeywords.length > 3 && (
+                <span className="text-xs text-muted-foreground">+{item.documentKeywords.length - 3} more</span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      {item.defaultAssigneeRole && (
+        <Badge variant="outline" className="text-xs shrink-0">
+          {formatRole(item.defaultAssigneeRole)}
+        </Badge>
+      )}
+    </div>
+  );
+}
+```
+
+### 3. Apply Template to Deal Dialog
+
+```tsx
+// components/templates/ApplyTemplateDialog.tsx
+
+export function ApplyTemplateDialog({ open, onClose, template, deals }: Props) {
+  const [selectedDealId, setSelectedDealId] = useState<number | null>(null);
+  const [effectiveDate, setEffectiveDate] = useState<Date | null>(null);
+  const [targetCloseDate, setTargetCloseDate] = useState<Date | null>(null);
+  const [assignments, setAssignments] = useState<Record<string, number>>({});
+
+  const roleOptions = [
+    { value: 'buyer', label: 'Buyer' },
+    { value: 'seller', label: 'Seller' },
+    { value: 'buyer_counsel', label: 'Buyer Counsel' },
+    { value: 'seller_counsel', label: 'Seller Counsel' },
+    { value: 'title_company', label: 'Title Company' },
+    { value: 'lender', label: 'Lender' },
+    { value: 'lender_counsel', label: 'Lender Counsel' },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Apply Template to Deal</DialogTitle>
+          <DialogDescription>
+            Configure the checklist for your specific transaction
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          {/* Select Deal */}
+          <div className="space-y-2">
+            <Label>Select Deal *</Label>
+            <Select value={selectedDealId?.toString()} onValueChange={(v) => setSelectedDealId(parseInt(v))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a deal..." />
+              </SelectTrigger>
+              <SelectContent>
+                {deals.map((deal) => (
+                  <SelectItem key={deal.id} value={deal.id.toString()}>
+                    {deal.name} ({deal.dealNumber})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Separator />
+
+          {/* Key Dates */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Effective Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start text-left font-normal">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {effectiveDate ? format(effectiveDate, 'PPP') : 'Select date'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar mode="single" selected={effectiveDate} onSelect={setEffectiveDate} />
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-muted-foreground">PSA execution date</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Target Close Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start text-left font-normal">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {targetCloseDate ? format(targetCloseDate, 'PPP') : 'Select date'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar mode="single" selected={targetCloseDate} onSelect={setTargetCloseDate} />
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-muted-foreground">Anticipated closing</p>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Role Assignments */}
+          <div className="space-y-3">
+            <Label>Team Assignments (Optional)</Label>
+            <p className="text-xs text-muted-foreground">
+              Assign team members to roles. Items will be auto-assigned based on these.
+            </p>
+            <div className="space-y-2">
+              {roleOptions.map((role) => (
+                <div key={role.value} className="flex items-center gap-3">
+                  <span className="text-sm w-32">{role.label}</span>
+                  <Select 
+                    value={assignments[role.value]?.toString()} 
+                    onValueChange={(v) => setAssignments({...assignments, [role.value]: parseInt(v)})}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Unassigned</SelectItem>
+                      {teamMembers.map((member) => (
+                        <SelectItem key={member.id} value={member.id.toString()}>
+                          {member.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleApply} disabled={!selectedDealId}>
+            Apply Template
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+### 4. Deal Checklist View (Applied Template)
+
+```tsx
+// components/deals/DealChecklist.tsx
+
+export function DealChecklist({ dealId, checklistId }: Props) {
+  const { data: checklist } = useDealChecklist(checklistId);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  if (!checklist) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-6">
+      {/* Progress Header */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold">{checklist.template.name}</h2>
+              <p className="text-sm text-muted-foreground">
+                Applied {formatDistanceToNow(checklist.appliedAt, { addSuffix: true })}
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-bold">{Math.round(checklist.percentComplete)}%</div>
+              <p className="text-sm text-muted-foreground">
+                {checklist.completedItems} of {checklist.totalItems} complete
+              </p>
+            </div>
+          </div>
+          <Progress value={checklist.percentComplete} className="h-2" />
+          
+          {/* Key Dates */}
+          <div className="flex gap-6 mt-4 pt-4 border-t">
+            <div>
+              <span className="text-xs text-muted-foreground">Effective Date</span>
+              <p className="font-medium">{checklist.effectiveDate ? format(new Date(checklist.effectiveDate), 'MMM d, yyyy') : '—'}</p>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Target Close</span>
+              <p className="font-medium">{checklist.targetCloseDate ? format(new Date(checklist.targetCloseDate), 'MMM d, yyyy') : '—'}</p>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground">Days to Close</span>
+              <p className="font-medium">
+                {checklist.targetCloseDate ? differenceInDays(new Date(checklist.targetCloseDate), new Date()) : '—'}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Filters */}
+      <div className="flex items-center gap-4">
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Items</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="complete">Complete</SelectItem>
+            <SelectItem value="needs_attention">Needs Attention</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex-1" />
+        <Button variant="outline" size="sm">
+          <Download className="h-4 w-4 mr-2" />
+          Export
+        </Button>
+      </div>
+
+      {/* Checklist Items by Category */}
+      <Accordion type="multiple" value={expandedCategories} onValueChange={setExpandedCategories}>
+        {checklist.categories.map((category) => {
+          const completedInCategory = category.items.filter(i => i.status === 'complete').length;
+          const criticalPending = category.items.filter(i => i.isCritical && i.status !== 'complete').length;
+          
+          return (
+            <AccordionItem key={category.id} value={category.id.toString()}>
+              <AccordionTrigger className="hover:no-underline">
+                <div className="flex items-center justify-between w-full pr-4">
+                  <div className="flex items-center gap-3">
+                    <CategoryIcon name={category.icon} className="h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium">{category.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {criticalPending > 0 && (
+                      <Badge variant="destructive" className="text-xs">
+                        {criticalPending} critical pending
+                      </Badge>
+                    )}
+                    <span className="text-sm text-muted-foreground">
+                      {completedInCategory}/{category.items.length}
+                    </span>
+                    <Progress 
+                      value={(completedInCategory / category.items.length) * 100} 
+                      className="w-24 h-2"
+                    />
+                  </div>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-2 pt-2">
+                  {category.items
+                    .filter(item => filterStatus === 'all' || item.status === filterStatus)
+                    .map((item) => (
+                      <ChecklistItemCard 
+                        key={item.id} 
+                        item={item}
+                        dealId={dealId}
+                        onUpdate={refetch}
+                      />
+                    ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          );
+        })}
+      </Accordion>
+    </div>
+  );
+}
+```
+
+### 5. Individual Checklist Item Card
+
+```tsx
+// components/deals/ChecklistItemCard.tsx
+
+export function ChecklistItemCard({ item, dealId, onUpdate }: Props) {
+  const [showDetails, setShowDetails] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const handleStatusChange = async (newStatus: string) => {
+    await updateChecklistItem(item.id, { status: newStatus });
+    onUpdate();
+  };
+
+  const handleFileUpload = async (files: File[]) => {
+    setUploading(true);
+    try {
+      await uploadChecklistDocuments(item.id, files);
+      onUpdate();
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Card className={cn(
+      "transition-all",
+      item.isCritical && item.status !== 'complete' && "border-red-200 dark:border-red-900",
+      item.needsAttention && "border-amber-200 dark:border-amber-900",
+      item.status === 'complete' && "opacity-60"
+    )}>
+      <CardContent className="py-3 px-4">
+        <div className="flex items-start gap-3">
+          {/* Status Checkbox/Indicator */}
+          <div className="pt-0.5">
+            {item.itemType === 'checklist' ? (
+              <Checkbox
+                checked={item.status === 'complete'}
+                onCheckedChange={(checked) => handleStatusChange(checked ? 'complete' : 'pending')}
+              />
+            ) : (
+              <StatusIndicator status={item.status} size="sm" />
+            )}
+          </div>
+
+          {/* Item Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={cn(
+                "font-medium text-sm",
+                item.status === 'complete' && "line-through text-muted-foreground"
+              )}>
+                {item.customName || item.templateItem.name}
+              </span>
+              
+              {item.isRequired && (
+                <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                  Required
+                </Badge>
+              )}
+              {item.isCritical && (
+                <Badge variant="destructive" className="text-xs">
+                  Critical
+                </Badge>
+              )}
+              {item.itemType === 'document' && item.documents.length === 0 && (
+                <Badge variant="secondary" className="text-xs">
+                  <FileUp className="h-3 w-3 mr-1" />
+                  Doc Required
+                </Badge>
+              )}
+              {item.itemType === 'document' && item.documents.length > 0 && (
+                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                  <Check className="h-3 w-3 mr-1" />
+                  {item.documents.length} doc(s)
+                </Badge>
+              )}
+            </div>
+
+            {/* Description */}
+            {item.templateItem.description && (
+              <p className="text-sm text-muted-foreground mt-1">
+                {item.templateItem.description}
+              </p>
+            )}
+
+            {/* Document Upload Area */}
+            {(item.itemType === 'document' || item.itemType === 'document_set') && (
+              <div className="mt-3">
+                {item.documents.length > 0 && (
+                  <div className="space-y-1 mb-2">
+                    {item.documents.map((doc) => (
+                      <div key={doc.id} className="flex items-center gap-2 text-sm p-2 bg-muted/50 rounded">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        <span className="flex-1 truncate">{doc.fileName}</span>
+                        <Badge variant={getDocStatusVariant(doc.documentStatus)}>
+                          {doc.documentStatus}
+                        </Badge>
+                        <Button variant="ghost" size="icon" className="h-6 w-6">
+                          <ExternalLink className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <div 
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-3 text-center cursor-pointer hover:bg-accent/50 transition-colors",
+                    uploading && "opacity-50 pointer-events-none"
+                  )}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                >
+                  {uploading ? (
+                    <Loader2 className="h-5 w-5 mx-auto animate-spin text-muted-foreground" />
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
+                      <p className="text-xs text-muted-foreground">
+                        Drop files or click to upload
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            {item.notes && (
+              <div className="mt-2 p-2 bg-muted/50 rounded text-sm">
+                <span className="text-muted-foreground">Note:</span> {item.notes}
+              </div>
+            )}
+          </div>
+
+          {/* Right Side - Assignment & Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Due Date */}
+            {item.dueDate && (
+              <div className={cn(
+                "text-xs",
+                isPast(new Date(item.dueDate)) && item.status !== 'complete' && "text-red-600"
+              )}>
+                {format(new Date(item.dueDate), 'MMM d')}
+              </div>
+            )}
+
+            {/* Assignee */}
+            {item.assignedTo ? (
+              <Avatar className="h-7 w-7">
+                <AvatarFallback className="text-xs">
+                  {item.assignedTo.initials}
+                </AvatarFallback>
+              </Avatar>
+            ) : (
+              <Button variant="ghost" size="icon" className="h-7 w-7">
+                <UserPlus className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            )}
+
+            {/* More Actions */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setShowDetails(true)}>
+                  <Info className="h-4 w-4 mr-2" />
+                  View Details
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Assign
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Set Due Date
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Add Note
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <Ban className="h-4 w-4 mr-2" />
+                  Mark N/A
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  Flag for Attention
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </CardContent>
+
+      {/* Item Details Dialog */}
+      <ChecklistItemDetailsDialog
+        open={showDetails}
+        onClose={() => setShowDetails(false)}
+        item={item}
+        onUpdate={onUpdate}
+      />
+    </Card>
+  );
+}
+```
+
+---
+
+## API ENDPOINTS
+
+```typescript
+// Templates
+GET    /api/templates                          // List all templates
+GET    /api/templates/:slug                    // Get template details
+POST   /api/templates                          // Create custom template
+PUT    /api/templates/:id                      // Update template
+DELETE /api/templates/:id                      // Delete template
+POST   /api/templates/:id/duplicate            // Duplicate template
+
+// Deal Checklists
+POST   /api/deals/:dealId/checklists           // Apply template to deal
+GET    /api/deals/:dealId/checklists           // Get deal checklists
+GET    /api/deals/:dealId/checklists/:id       // Get specific checklist
+DELETE /api/deals/:dealId/checklists/:id       // Remove checklist from deal
+
+// Checklist Items
+GET    /api/checklists/:checklistId/items      // Get all items
+PATCH  /api/checklist-items/:itemId            // Update item (status, notes, assignment)
+POST   /api/checklist-items/:itemId/documents  // Upload document to item
+DELETE /api/checklist-items/:itemId/documents/:docId  // Remove document
+
+// Auto-matching
+POST   /api/deals/:dealId/match-documents      // Run auto-matching against uploaded docs
+```
+
+---
+
+## DOCUMENT AUTO-MATCHING LOGIC
+
+```typescript
+// services/document-matching.ts
+
+export async function matchDocumentsToChecklist(dealId: number, checklistId: number) {
+  // Get all documents in the deal's data room
+  const documents = await getDataRoomDocuments(dealId);
+  
+  // Get all checklist items that accept documents
+  const checklistItems = await getChecklistItemsWithDocumentRequirements(checklistId);
+  
+  const matches: Match[] = [];
+  
+  for (const doc of documents) {
+    const docText = doc.fileName.toLowerCase() + ' ' + (doc.extractedText?.toLowerCase() || '');
+    
+    for (const item of checklistItems) {
+      if (!item.documentKeywords || item.documentKeywords.length === 0) continue;
+      
+      // Check if document matches any keywords
+      const matchedKeywords = item.documentKeywords.filter(keyword => 
+        docText.includes(keyword.toLowerCase())
+      );
+      
+      if (matchedKeywords.length > 0) {
+        // Calculate confidence score based on keyword matches
+        const confidence = matchedKeywords.length / item.documentKeywords.length;
+        
+        matches.push({
+          documentId: doc.id,
+          checklistItemId: item.id,
+          matchedKeywords,
+          confidence,
+        });
+      }
+    }
+  }
+  
+  // Sort by confidence and apply matches
+  const sortedMatches = matches.sort((a, b) => b.confidence - a.confidence);
+  
+  // Apply top matches (avoiding duplicate assignments)
+  const assignedDocs = new Set<number>();
+  const assignedItems = new Set<number>();
+  
+  for (const match of sortedMatches) {
+    // Skip if document already assigned or item already satisfied
+    if (assignedDocs.has(match.documentId)) continue;
+    
+    // Check if item needs more documents
+    const itemDocs = await getChecklistItemDocuments(match.checklistItemId);
+    const item = checklistItems.find(i => i.id === match.checklistItemId);
+    
+    if (itemDocs.length >= (item?.requiredDocumentCount || 1)) continue;
+    
+    // Create the link
+    await linkDocumentToChecklistItem(match.checklistItemId, match.documentId, {
+      matchedKeywords: match.matchedKeywords,
+      confidence: match.confidence,
+      autoMatched: true,
+    });
+    
+    assignedDocs.add(match.documentId);
+    
+    // Update item status if requirements met
+    const updatedDocs = await getChecklistItemDocuments(match.checklistItemId);
+    if (updatedDocs.length >= (item?.requiredDocumentCount || 1)) {
+      await updateChecklistItem(match.checklistItemId, {
+        status: 'complete',
+        satisfactionMethod: 'auto',
+        satisfiedAt: new Date(),
+      });
+    }
+  }
+  
+  return matches;
+}
+```
+
+---
+
+## IMPLEMENTATION PRIORITY
+
+1. **Phase 1**: Database schema and template CRUD
+2. **Phase 2**: Real Estate template data seeding
+3. **Phase 3**: Template list and preview pages
+4. **Phase 4**: Apply template to deal functionality
+5. **Phase 5**: Deal checklist view with item management
+6. **Phase 6**: Document upload to checklist items
+7. **Phase 7**: Document auto-matching
+8. **Phase 8**: Additional templates (Acquisition, Loan, General Corporate)
+
+Start with Phase 1 and proceed incrementally.

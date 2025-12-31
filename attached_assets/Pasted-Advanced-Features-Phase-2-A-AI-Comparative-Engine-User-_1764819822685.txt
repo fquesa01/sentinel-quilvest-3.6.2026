@@ -1,0 +1,341 @@
+Advanced Features (Phase 2)
+A. AI Comparative Engine
+
+User can issue commands:
+
+“Compare Steve's interview to Bob's and highlight inconsistencies.”
+
+“Show where the documents contradict Frank’s testimony.”
+
+“Identify which parts of Frank’s interview are corroborated by the emails.”
+
+“Which witness is least credible and why?”
+
+“List all statements about the December 1 event and synthesize a timeline.”
+
+System returns:
+
+Contradiction tables
+
+Narrative timelines
+
+Heatmaps of agreement vs conflict
+
+Credibility scoring
+
+B. Legal Analysis Engine
+
+User selects an issue:
+
+Apply Title VII Retaliation
+Apply Antitrust – Anticompetitive Conduct
+Apply Whistleblower Interference
+Apply Fiduciary Duty Breach
+Apply Harassment Policy
+Apply State Law: FL §448.102 Retaliation
+
+The engine does:
+
+Element-by-element analysis
+
+Whether facts satisfy or contradict elements
+
+Missing evidence
+
+Required next steps
+
+Exposure assessment
+
+Recommendations
+
+C. “Theory Builder”
+
+User clicks:
+
+“Build a theory of the case from all data.”
+
+AI produces:
+
+Primary theory
+
+Alternative theories
+
+What evidence supports/undermines each
+
+What evidence is missing
+
+What additional data should be collected
+
+D. “Draft Final Report”
+
+One click:
+
+“Generate disciplinary recommendation / investigative conclusion.”
+
+4. Data Model / Objects
+
+This is the internal structure your devs can use:
+
+CaseFindings {
+  id
+  case_id
+  created_by
+  created_at
+  updated_at
+  entries: [
+    {
+      id
+      type: ENUM("note","theory","legal_issue","contradiction","credibility","research","article","to_do")
+      title
+      text
+      ai_assisted: boolean
+      linked_items: [doc_id, interview_id, message_id, timeline_event_id]
+      tags: [string]
+      citations: [string]
+      version_history: [ { timestamp, text, edited_by } ]
+    }
+  ]
+  ai_tools_enabled: [
+    compare_witnesses,
+    compare_documents,
+    law_analysis,
+    contradiction_finder,
+    theory_builder,
+    draft_conclusion
+  ]
+}
+
+5. User Workflows
+Workflow 1: Creating Findings While Reviewing Interviews
+
+User opens an interview →
+Clicks “Add to Findings” →
+Modal opens:
+
+Title
+
+Note type
+
+Findings text
+
+Auto-insert transcript snippet
+
+Link to specific timestamp
+
+User saves.
+Sentinel auto-links it back to the interview.
+
+Workflow 2: Comparing Witnesses
+
+User selects two interviews →
+Clicks “AI Compare” →
+Sentinel generates:
+
+Points of agreement
+
+Points of contradiction
+
+Missing information
+
+Credibility analysis
+
+Suggested follow-up questions
+
+User can click “Save to Findings.”
+
+Workflow 3: Legal Application
+
+User navigates to Findings →
+Button:
+
+Apply Law to Facts
+
+Dropdown of legal domains.
+User selects:
+
+Title VII
+
+Antitrust
+
+Harassment
+
+Fraud
+
+Contract breach
+
+Insurance coverage
+
+Etc.
+
+AI produces:
+
+Element-by-element chart
+
+Evidence matrix
+
+Missing proof
+
+Exposure levels
+
+Recommendations
+
+User can save entire output as a standalone Finding entry.
+
+Workflow 4: Building the Final Report
+
+Once Findings are complete, user clicks:
+
+Generate Report from Findings
+
+AI compiles:
+
+Summary
+
+Factual findings
+
+Credibility findings
+
+Legal conclusions
+
+Recommended action
+
+Supporting citations
+
+Editable like Google Docs.
+
+6. UI/UX Layout (Foundry-Inspired)
+Section Location
+
+Add a new top-level tab:
+Findings
+
+Inside Findings Tab
+A. Left Sidebar (like Palantir Foundry):
+
+All Entries (list view)
+
+Theories
+
+Legal Issues
+
+Evidence Conflicts
+
+Credibility
+
+Research
+
+Recommendations
+
+Trash / Version History
+
+B. Top Bar
+
+New Entry
+
+AI Compare
+
+Apply Law
+
+Build Theory
+
+Draft Report
+
+C. Main Panel: Entry Viewer
+
+Large text area (editable)
+
+Linked evidence sidebar
+
+AI suggestions panel
+
+Version history dropdown
+
+Tags panel
+
+D. AI Tool Drawer (slides from right)
+
+Compare Witnesses
+
+Compare Docs
+
+Build Element-by-Element Legal Analysis
+
+Contradiction Matrix
+
+Timeline Reconciliation
+
+Draft Recommendations
+
+7. Automations & Alerts
+A. Auto-Generated Findings
+
+As new evidence is added:
+
+“This contradicts Steve’s prior interview → Auto-suggest new Finding entry.”
+
+“This email contains legal exposure language → Tag to Findings: Legal Issue.”
+
+B. Missing Evidence Alerts
+
+“Interview mentions Charlie but Charlie has no interview scheduled.”
+
+C. Legal Exposure Alerts
+
+If AI detects elements of:
+
+retaliation
+
+discrimination
+
+antitrust behavior
+
+harassment
+
+fraud
+Sentinel generates a “Risk Finding” suggestion.
+
+8. Replit-Ready Build Outline
+
+I can generate full code scaffolding when you're ready.
+
+Backend Components
+
+/models/findings.js
+
+/routes/findings.js
+
+/controllers/findingsController.js
+
+Integrate LangChain pipelines for:
+
+witness comparison
+
+contradiction detection
+
+legal application (custom prompts)
+
+summary synthesis
+
+Frontend Components
+
+/components/Findings/FindingsList.tsx
+
+/components/Findings/FindingsEditor.tsx
+
+/components/Findings/AIToolDrawer.tsx
+
+/components/Findings/EvidenceLinker.tsx
+
+Database
+
+Tables:
+
+case_findings
+
+findings_entries
+
+findings_links
+
+findings_versions
+
+findings_tags

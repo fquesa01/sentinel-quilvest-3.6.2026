@@ -1,0 +1,138 @@
+Core / Standard Capabilities
+
+These are the baseline features included in the platform for end-to-end e-discovery. 
+Relativity
++3
+help.relativity.com
++3
+Relativity
++3
+
+Legal Hold / Preservation of Electronically Stored Information (ESI)
+
+Data Collection from multiple sources (emails, files, chats, etc)
+
+Processing of data: extracting metadata, text, native image conversion, near-duplication, OCR, etc. 
+FTI Consulting
++2
+Software Advice
++2
+
+Early Case Assessment (ECA) / Investigation dashboards to understand dataset, custodians, size, file types, languages etc. 
+CYFOR Forensics
++1
+
+Review / Coding: document review interface, tagging, filtering, search (keyword, metadata, full-text) 
+Software Advice
++1
+
+Analytics & Visualizations: dashboards of review progress, cluster maps, email threading, duplicate/near duplicate reduction. 
+CYFOR Forensics
++1
+
+Production: preparation of documents for disclosure/production in litigation (native, TIFF/PDF, load files, redactions) 
+static2.ftitechnology.com
++1
+
+Security, permissions, audit trails: role-based access, user permissions, tracking review activity, compliance monitoring. 
+g2.com
++1
+
+Scalability and performance: able to handle large matters (tens of millions of records) and multiple jurisdictions. 
+static2.ftitechnology.com
+
+Platform extensibility: open architecture, integrations, custom workflows and templates. 
+Software Advice
++1
+
+Advanced/Extended Capabilities & Modules
+
+In addition to the core, RelativityOne offers extend or add-on modules (often additional cost) for more specialized workflows. 
+help.relativity.com
++1
+
+Generative AI / Machine Learning modules:
+
+Relativity aiR for Review — uses AI to surface key documents, provide rationales, prioritize review. 
+altlaw.co.uk
++1
+
+Relativity aiR for Privilege — AI-powered privilege review, generating draft privilege logs, identifying privileged communications. 
+Relativity
++1
+
+Relativity aiR for Case Strategy — assists in building case narratives, fact chronologies, deposition outlines, linking key facts/issues. 
+Relativity
++1
+
+Native chat/collaboration data support: ingesting Slack, Teams, collaboration tools and analyzing them in context. 
+Software Advice
++1
+
+Contract review & structured data: Relativity Contracts — transform contracts into structured data, use AI models, compare contracts, handle regulatory/transactional workflows. 
+Relativity
+
+Multi-jurisdiction/global deployment & cloud region choice: available in many countries with enterprise grade security, data residency choices. 
+Relativity
+
+Data-breach response module: identify personal information, assess impacted data, create notification lists etc. 
+Relativity
+
+Investigations / Internal Investigations module: collaboration across departments, reuse of workflows for investigations beyond litigation. 
+Relativity
++1
+
+Redaction automation (including AI-based redactions) and re-produce documents. 
+Relativity
++1
+
+Reporting, metrics and monitoring: detailed reporting on reviewers, project templates, project analytics. 
+g2.com
+
+Workflow / Feature Highlights & Examples
+
+Here are some of the practical features you’ll want to consider when evaluating or using RelativityOne:
+
+Near-duplicate detection / textual near duplicates — helps reduce review volume. 
+CYFOR Forensics
+
+Email threading + visualizations — view full email chains, identify missing pieces, speed review. 
+CYFOR Forensics
+
+Document Skip: once you code a parent document (e.g., email) attachments or duplicates may auto-be coded same to skip redundant work. 
+CYFOR Forensics
+
+Flexible review templates and workflows — consistent matter setup, reduce manual configuration. 
+g2.com
+
+Advanced search: keyword, metadata, full text, analytics (clusters, themes) to focus review faster. 
+Software Advice
++1
+
+Role-based permissions + audit trail: control access to privileged material, track every action for defensibility. 
+g2.com
++1
+
+Scalability: designed for large, complex matters (tens of millions of records) with enterprise-grade infrastructure. 
+static2.ftitechnology.com
++1
+
+Considerations / Things to Evaluate
+
+Since you are building or evaluating workflows (and given your background in technology/data), here are some considerations:
+
+Flexibility vs complexity: As noted by users, while Relativity offers great customization and extensibility, the trade-off can be a steeper learning curve and more configuration overhead. 
+Reddit
++1
+
+Cloud vs on-prem: RelativityOne is the cloud SaaS offering; check data-residency, security/regulation compliance (especially if cross-border).
+
+Licensing / cost: Advanced modules (aiR, Contracts, etc) may be additional cost.
+
+Integration and APIs: If you plan to build connectors (for example, your LifeChain product linking to medical records), check the API/SDK, scripting capabilities, automation support.
+
+Review workflow efficiency: Even with all the features, the way you set up templates/workflows, train reviewers, apply analytics will affect cost/time savings.
+
+Data reduction and defensibility: Features like de-duplication, email threading, clustering reduce volume, but you’ll want to ensure audit trails, defensible workflows are in place. 
+static2.ftitechnology.com
++1

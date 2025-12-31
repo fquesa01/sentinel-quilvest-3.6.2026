@@ -1,0 +1,132 @@
+Awesome—here’s the implementation checklist for eDiscovery-grade functionality (docs, email, chats, audio/video) you can hand to engineers. It’s grouped end-to-end from collection → processing → review → production, plus governance and integrations.
+
+⸻
+
+1) Collection & Preservation
+	•	Data sources (connectors): M365/Exchange, Gmail/Google Vault, SharePoint/OneDrive/Google Drive/Box/Dropbox, Slack/Teams/Zoom/Meet chat, Bloomberg chat, SMS/MMS (MDM/corp devices), social (LinkedIn/Twitter export), databases/CSV, SFTP file drops.
+	•	Targeted collection: by custodian, date range, keywords, matter ID, mailbox/folder, channel, file types.
+	•	In-place legal hold: issue, track acknowledgments, reminders/escalations, custodian interviews, hold notices versioning, release holds.
+	•	Preservation: defensible copy with cryptographic hash (SHA-256), chain-of-custody records, immutable storage options (e.g., object lock/WORM).
+	•	Change capture: deltas for versioned repos (SharePoint/Drive), chat edits/deletes with original & revised text.
+	•	BYOD/off-channel handling: policy prompts, consent capture, exception logging.
+
+2) Processing & Normalization
+	•	Archive/container handling: ZIP, RAR, 7z, PST/OST, MBOX/EML/MSG, NSF, TAR/GZ, Apple mail; nested archives.
+	•	De-NIST: filter system files using NIST lists.
+	•	De-duplication: global & custodial, family-based (keep family if any member is unique), near-dupe with similarity (shingle/SimHash).
+	•	Family linking: email + attachments, calendar invites, embedded objects.
+	•	Time zone normalization: per-matter default with per-custodian override; preserve original sent/received and normalized fields.
+	•	Metadata extraction: full email headers, message-IDs/in-reply-to, file system dates, author/editor, hash values.
+	•	OCR: images/PDFs with auto-rotation, skew correction, multi-language; extract searchable text; confidence scores.
+	•	Language ID & translation: field-level language tagging; on-demand machine translation with provenance.
+	•	Chat normalization: threads, reactions, emojis, mentions, edits/deletes, channel/private channel context, participants at time-of-message.
+	•	Audio/video: speech-to-text, diarization (speaker labels), word-timing, waveform thumbnails; frame capture for key moments.
+	•	PII/PHI detection: regex + ML entities with auto-redaction suggestions.
+	•	Processing exceptions queue: password-protected/corrupt files workflow, password hunting, retry scheduling.
+
+3) Indexing, Search & Culling (ECA)
+	•	Indexing: full-text + metadata + attachments + transcripts; index versions/history.
+	•	Search syntax: Boolean, phrase, wildcard, proximity, fuzzy, regex, fielded search, date math.
+	•	Analytics for early case assessment: volume by custodian/date/source, heatmaps, comms maps, pivot tables, top terms/topics, file type distributions.
+	•	Email threading: inclusive message detection; thread visualization; “unique inclusive” review.
+	•	Near-duplicate analysis: similarity clusters with representative selection and propagate-coding option.
+	•	Concept/topics: LSI/embeddings for thematic clusters; query expansion/suggestions.
+	•	Sampling: random/statistical samples; stratified by custodian/date; exportable sample sets.
+	•	Culling controls: keyword hit reports, dedupe decisions, date filtering, custodian prioritization, language filtering.
+
+4) Review Workspace
+	•	Doc viewer: native, extracted text, image/TIFF/PDF, side-by-side rendition switching; page thumbnails; bookmarks.
+	•	Chat/AV viewers: chat timeline with thread context; AV player with transcript follow-along & segment bookmarks.
+	•	Coding forms: customizable fields (responsiveness, issue tags, privilege, confidentiality, hot, needs translation, etc.); keyboard shortcuts.
+	•	Tagging/issue codes: multi-value issue lists, hierarchical issues, color coding.
+	•	Batching: auto-batch by custodian/thread/topic; rolling batches; lock/unlock; reassignment; capacity management.
+	•	Reviewer management: roles (first-level, QC, privilege), conflict walls/ethical walls; inter-reviewer messaging.
+	•	Quality control: second-pass QC, overturn tracking, metrics (precision/recall, overturn rate), elusion testing.
+	•	Audit trail: every view/click/coding/annotation/redaction/export with timestamp, user, IP/device.
+	•	Annotations & notes: highlights, sticky notes, comment threads, anchored to text/timecodes for AV.
+
+5) AI/TAR (Technology Assisted Review)
+	•	CAL/TAR 2.0: continuous active learning; seed sets; model metrics (gain curves, richness, elusion); workflow to “stabilization.”
+	•	Prioritization: rank by likelihood responsive/privileged/issue; triage queues.
+	•	Auto-coding suggestions: with human-in-the-loop acceptance; reason-snippets; bias/QA reports.
+	•	Privilege detection: attorney names/domains lists, privilege cues (“request legal advice”, “work product”), privilege family propagation & exceptions.
+
+6) Redaction & Markups
+	•	Redaction types: text, box/area, multi-page, pattern-based (SSN, bank, DOB, email), entity-based (names), translucent/black/white; reasons.
+	•	Auto-redaction: rules (regex/ML entities) with preview & QA sampling.
+	•	Metadata scrubbing: remove EXIF/author fields on production; configurable.
+	•	Audio/video redaction: mute/bleep segments, blur faces/screens; burn-in on production copy.
+	•	Stamping/headers/footers: “Confidential,” “Privileged,” doc IDs, version labels.
+
+7) Productions & Exports
+	•	Production sets: define scope, numbering, metadata map, redaction rules, confidentiality designations; rolling productions; re-productions with change log.
+	•	Bates numbering: prefix, padding, page-level or doc-level; family consistency.
+	•	Renditions: native, near-native, TIFF/PDF (single/multi-page), text sidecars.
+	•	Load files: Relativity (.DAT + .OPT), iPro/Concordance, Summation, CSV/JSON, SEC/DOJ bundle formats.
+	•	Branding & slipsheets: for withheld/placeholder docs (privilege, technical, encrypted).
+	•	Production validation: hash checks, missing text, missing natives, confidential stamps present, color detection rules.
+	•	Transmittal: secure link/portal, delivery receipts, production logs, cover letters.
+
+8) Privilege, Confidentiality & Logs
+	•	Privilege review workspace: restricted access, auto-route hits to privilege team, challenge/overturn workflow.
+	•	Privilege log builder: templates (Rule 26 compliant), fields (author, recipients, role, basis of privilege, subject synopsis), bulk generation; redaction reason tags feed logs.
+	•	Confidentiality tiers: AEO, Confidential, Public; export-aware.
+	•	Clawback/502(d): marking/automation to request return of inadvertently produced privileged docs; audit evidence.
+
+9) Case/Matter Management
+	•	Matters & custodians: profiles, roles, HR/AD sync, legal hold linkage, custodian questionnaires.
+	•	Tasking & SLAs: assignments, due dates, reminders; kanban board.
+	•	Comms maps: who-talks-to-whom networks; anomalies; community detection.
+	•	Reporting dashboards: throughput, coding rates, error rates, cost per GB/custodian, production timelines.
+	•	Cost tracking: storage, compute, reviewer hours, vendor pass-throughs; budget vs actual.
+
+10) Security, Compliance & Admin
+	•	Identity: SSO (SAML/OIDC), SCIM provisioning, MFA, IP allow-lists, device posture checks.
+	•	RBAC/ABAC: roles (admin/PM/attorney/reviewer/auditor), matter-level access, field-level restrictions, ethical walls.
+	•	Encryption: at rest (CMK/HSM/BYOK), in transit (TLS 1.2+); per-tenant keys.
+	•	Audit & compliance: immutable audit logs, exportable for regulators; retention & defensible deletion policies.
+	•	Data residency: region pinning; cross-border transfer rules; project-level residency locks.
+	•	Backups & DR: RPO/RTO configs, runbook tests.
+	•	Config management: environments (dev/stage/prod), feature flags, migration/versioning.
+	•	Admin UX: source management, processing profiles, metadata maps, production templates, hold templates, term lists, attorney lists (privilege).
+
+11) Integrations & APIs
+	•	Capture/archiving: journaling, enterprise exports, partner APIs.
+	•	eDiscovery platforms: import/export mappings for Relativity/Nuix/Reveal/Everlaw/Smarsh/Global Relay/Theta Lake.
+	•	SIEM/SOAR: push notable events; webhooks for automations.
+	•	Calendaring/meeting: Google/Microsoft for interview scheduling and auto-record consent flows.
+	•	Ticketing: Jira/ServiceNow for tasks/incidents.
+	•	Billing: time entries per matter; LEDES export.
+
+12) Modern Data Types (beyond email/docs)
+	•	Collaboration: Slack/Teams threads, reactions, files, calls metadata; channel membership timelines.
+	•	Project tools: Jira/GitHub issues/PR comments (with code snippets handling).
+	•	Structured data: CSV extracts with schema mapping; SQL snapshots for point-in-time review.
+	•	Mobile: iOS/Android device backups (corporate), chat apps where enterprise capture supported.
+	•	Whiteboards/boards: Miro/FigJam exports (SVG/PDF) with object text.
+
+13) Quality, Metrics & Defensibility
+	•	Processing reports: itemized counts, errors, exceptions, hash manifests.
+	•	Search hit reports: term statistics, unique doc hits, false-positive drill-downs.
+	•	Review performance: reviewer speed, consistency, overturn by user/issue.
+	•	TAR validation: richness estimates, elusion tests, control set management, audit notebook.
+	•	Production validation & reconciliation: pre/post hash compare, metadata field checks, sampling of redactions.
+
+14) Usability & Ops
+	•	Saved searches: shareable, versioned; alerts on new hits.
+	•	Layouts & dashboards: per-role defaults; dark mode; accessibility (WCAG).
+	•	Keyboard-driven review: next/previous, quick-codes, batch stamping.
+	•	In-product guidance: checklists, playbooks (privilege review, redaction QC, 502(d) clawback).
+	•	Localization: UI languages, date/time/local sorting rules.
+
+⸻
+
+Suggested MVP Cut (to reach parity quickly)
+	1.	Collection & holds (M365, Slack, Drive/SharePoint)
+	2.	Processing (PST/EML/MSG, PDFs, common archives), OCR, de-dup, threading, near-dupe
+	3.	Review workspace with coding forms, batching, audit log
+	4.	Redactions (text/area, auto-regex), Bates, TIFF/PDF productions, Relativity load files
+	5.	Privilege log builder + basic TAR/CAL
+	6.	Security (SSO/RBAC, tenant keys) + Reporting dashboards
+
+If you want, I can turn this into a requirements PRD with user stories and acceptance criteria, plus data models (document, family, custodian, batch, production, redaction, audit event) and API contracts for each module.

@@ -1,0 +1,407 @@
+# Video Conferencing Flexible Layout System - Implementation Spec
+
+## Overview
+
+Implement a flexible, resizable layout system for the video conferencing feature that allows users to dynamically adjust their view based on their current task. Legal professionals have different focus needs: a litigator taking a deposition may want to maximize transcript visibility, while someone observing witness reactions needs to maximize video. This system provides three primary view modes with seamless switching.
+
+## Three View Modes
+
+### 1. Transcript Focus Mode
+**Use case:** Paralegal documentation, court reporter mode, reviewing testimony
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Top Bar: Meeting Title | Timer | Ambient AI Badge | Controls│
+├─────────────────────────────────────────────────────────────┤
+│ On Call: [Frank Quesada (You)] [Sarah Chen ◉] [Michael] ... │  ← 40px height
+├────────────────────────────────┬────────────────────────────┤
+│                                │                            │
+│       Live Transcript          │      AI Suggestions        │
+│       (resizable width)        │      (resizable width)     │
+│                                │                            │
+│       Full height              │      Full height           │
+│                                │                            │
+├────────────────────────────────┴────────────────────────────┤
+│ Controls: Mic | Camera | Screen Share | AI Toggle | Leave   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Specifications:**
+- Participant bar: Horizontal row of name pills at top, ~40px height
+- Active speaker indicated with animated audio waveform icon (3 bars pulsing)
+- Active speaker pill has blue background/ring highlight
+- Transcript panel: Default 55-60% width, resizable via drag handle
+- AI Suggestions panel: Default 40-45% width
+- Draggable divider between panels with visible grip handle on hover
+- Both panels get full remaining viewport height
+- Minimum panel width: 25%
+
+### 2. Balanced Mode
+**Use case:** General meetings, want to see faces while monitoring transcript
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Top Bar: Meeting Title | Timer | Ambient AI Badge | Controls│
+├─────────────────────────────────────────────────────────────┤
+│ On Call: [Frank Quesada (You)] [Sarah Chen ◉] [Michael] ... │
+├──────────┬─────────────────────────────┬────────────────────┤
+│ FQ    SC │                             │                    │
+│ ┌──┐┌──┐ │                             │   AI Suggestions   │
+│ └──┘└──┘ │     Live Transcript         │                    │
+│ MT    JW │                             │   - Document 1     │
+│ ┌──┐┌──┐ │     (scrollable)            │   - Document 2     │
+│ └──┘└──┘ │                             │   - Document 3     │
+├──────────┴─────────────────────────────┴────────────────────┤
+│ Controls: Mic | Camera | Screen Share | AI Toggle | Leave   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Specifications:**
+- Participant bar: Same horizontal name pills as Transcript Focus
+- Video panel: Fixed 256px (w-64) left sidebar with 2x2 grid of small video tiles
+- Transcript panel: Flexible width, fills remaining space
+- AI panel: Fixed 288px (w-72) right sidebar
+- Video tiles show initials/avatar with name overlay at bottom
+- Active speaker highlighted with blue ring
+
+### 3. Video Focus Mode
+**Use case:** Watching witness reactions, client meetings, observing body language
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Top Bar: Meeting Title | Timer | Ambient AI Badge | Controls│
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│    ┌─────────────────┐    ┌─────────────────┐              │
+│    │                 │    │                 │              │
+│    │   Frank Q (You) │    │   Sarah Chen ◉  │              │
+│    │                 │    │                 │              │
+│    └─────────────────┘    └─────────────────┘              │
+│                                                             │
+│    ┌─────────────────┐    ┌─────────────────┐              │
+│    │                 │    │                 │              │
+│    │  Michael Torres │    │  Jennifer Walsh │              │
+│    │                 │    │                 │              │
+│    └─────────────────┘    └─────────────────┘              │
+│                                                             │
+├───────────────────────────────────┬─────────────────────────┤
+│ 📝 Transcript: "He said he would  │ ✨ AI: 3 High relevance │  ← 40px minimized
+│    look into it..." [Expand]      │                         │
+├───────────────────────────────────┴─────────────────────────┤
+│ Controls: Mic | Camera | Screen Share | AI Toggle | Leave   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Specifications:**
+- NO audio bar at top - video takes full space
+- Video grid: 2x2 layout with gap-2 (or gap-3), padding p-3
+- Videos fill available height (use grid with auto-rows-fr)
+- Minimized transcript bar: 40px height, shows latest utterance truncated
+- Minimized AI bar: 40px height, shows count of high-relevance suggestions
+- "Expand" button in transcript bar switches to Balanced mode
+- Support Grid and Speaker video layouts (toggle in top bar)
+
+**Speaker Layout (sub-option):**
+```
+┌─────────────────────────────────────┐
+│                                     │
+│         Active Speaker              │
+│         (large, ~80% height)        │
+│                                     │
+├─────────┬─────────┬─────────────────┤
+│  Other  │  Other  │  Other          │  ← Small strip ~80px
+└─────────┴─────────┴─────────────────┘
+```
+
+## Component Structure
+
+```
+VideoConferenceRoom/
+├── TopBar
+│   ├── MeetingInfo (title, timer, recording indicator, ambient badge)
+│   └── ViewControls
+│       ├── ViewModePicker (dropdown: Transcript Focus, Balanced, Video Focus)
+│       └── VideoLayoutToggle (Grid/Speaker - only visible when video shown)
+├── ParticipantAudioBar (horizontal name pills - for Transcript/Balanced modes)
+├── ContentArea
+│   ├── TranscriptFocusLayout
+│   │   ├── TranscriptPanel (resizable)
+│   │   ├── ResizeHandle
+│   │   └── AISuggestionsPanel (resizable)
+│   ├── BalancedLayout
+│   │   ├── VideoSidebar (fixed 256px)
+│   │   ├── TranscriptPanel (flexible)
+│   │   └── AISuggestionsPanel (fixed 288px)
+│   └── VideoFocusLayout
+│       ├── VideoGrid (or SpeakerView)
+│       └── MinimizedInfoBar
+│           ├── TranscriptPreview
+│           └── AISummary
+└── ControlBar
+    └── MeetingControls (mic, camera, screen, AI toggle, leave)
+```
+
+## State Management
+
+```typescript
+interface VideoConferenceState {
+  // View mode
+  viewMode: 'transcript' | 'balanced' | 'video';
+  
+  // Video layout (for video focus and balanced modes)
+  videoLayout: 'grid' | 'speaker';
+  
+  // Panel widths for transcript focus mode (percentages)
+  panelWidths: {
+    transcript: number; // 25-80
+    ai: number;         // 100 - transcript
+  };
+  
+  // UI state
+  showViewPicker: boolean;
+  isResizing: boolean;
+}
+```
+
+## Participant Audio Bar Component
+
+```tsx
+// Compact horizontal bar showing who's on the call
+const ParticipantAudioBar = ({ participants }) => (
+  <div className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 border-b border-slate-700/50">
+    <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">On Call:</span>
+    {participants.map(p => (
+      <div 
+        key={p.id}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+          p.isSpeaking 
+            ? 'bg-blue-500/30 text-blue-300 ring-1 ring-blue-400' 
+            : 'bg-slate-700/60 text-slate-300'
+        }`}
+      >
+        {p.isSpeaking && <SpeakingIndicator />}
+        <span>{p.name}</span>
+        {p.isYou && <span className="text-slate-500">(You)</span>}
+      </div>
+    ))}
+  </div>
+);
+
+// Animated speaking indicator (3 bars)
+const SpeakingIndicator = () => (
+  <span className="flex gap-0.5 items-end h-3">
+    <span className="w-0.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+    <span className="w-0.5 h-2.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '75ms' }} />
+    <span className="w-0.5 h-1.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+  </span>
+);
+```
+
+## Resizable Panel Implementation
+
+```tsx
+// Drag handle for resizing panels
+const ResizeHandle = ({ onMouseDown }) => (
+  <div
+    onMouseDown={onMouseDown}
+    className="w-1 bg-slate-700/50 hover:bg-blue-500 cursor-col-resize flex items-center justify-center group transition-colors relative z-10"
+  >
+    {/* Larger invisible hit area */}
+    <div className="absolute inset-y-0 -left-2 -right-2" />
+    <GripVertical className="w-3 h-3 text-slate-600 group-hover:text-white" />
+  </div>
+);
+
+// Resize logic
+const handleMouseMove = useCallback((e) => {
+  if (!isResizing || !containerRef.current) return;
+  
+  const containerRect = containerRef.current.getBoundingClientRect();
+  const mouseX = e.clientX - containerRect.left;
+  const percentage = (mouseX / containerRect.width) * 100;
+  
+  // Clamp between 25% and 80%
+  const newTranscriptWidth = Math.max(25, Math.min(80, percentage));
+  setPanelWidths({
+    transcript: newTranscriptWidth,
+    ai: 100 - newTranscriptWidth
+  });
+}, [isResizing]);
+```
+
+## Minimized Info Bar (Video Focus Mode)
+
+```tsx
+const MinimizedInfoBar = ({ latestTranscript, aiSuggestions, onExpand }) => (
+  <div className="shrink-0 border-t border-slate-700/50 flex h-10">
+    {/* Transcript Preview */}
+    <div className="flex-1 border-r border-slate-700/30 flex items-center px-3 gap-3 bg-slate-800/50">
+      <div className="flex items-center gap-2">
+        <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+        <span className="text-xs text-slate-400">Transcript</span>
+      </div>
+      <div className="flex-1 overflow-hidden">
+        <p className="text-xs text-slate-500 truncate">
+          {latestTranscript.speaker}: {latestTranscript.text}
+        </p>
+      </div>
+      <button 
+        onClick={onExpand}
+        className="text-[10px] text-blue-400 hover:text-blue-300 whitespace-nowrap"
+      >
+        Expand
+      </button>
+    </div>
+    
+    {/* AI Summary */}
+    <div className="w-72 shrink-0 flex items-center px-3 gap-2 bg-slate-800/50">
+      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+      <span className="text-xs text-slate-400">AI Suggestions</span>
+      <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 text-[10px] rounded">
+        {highRelevanceCount} High
+      </span>
+    </div>
+  </div>
+);
+```
+
+## View Mode Picker
+
+```tsx
+const VIEW_MODES = {
+  transcript: { 
+    name: 'Transcript Focus', 
+    icon: FileText, 
+    description: 'Maximize transcript & AI' 
+  },
+  balanced: { 
+    name: 'Balanced', 
+    icon: Layout, 
+    description: 'Video + Transcript + AI' 
+  },
+  video: { 
+    name: 'Video Focus', 
+    icon: Users, 
+    description: 'Maximize participant video' 
+  },
+};
+
+const ViewModePicker = ({ currentMode, onChange }) => (
+  <div className="relative">
+    <button
+      onClick={() => setShowPicker(!showPicker)}
+      className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs text-slate-200"
+    >
+      {React.createElement(VIEW_MODES[currentMode].icon, { className: "w-4 h-4" })}
+      <span>{VIEW_MODES[currentMode].name}</span>
+      <ChevronDown className="w-3 h-3 text-slate-400" />
+    </button>
+    
+    {showPicker && (
+      <div className="absolute top-full right-0 mt-1 w-52 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-50">
+        <div className="p-2 border-b border-slate-700">
+          <span className="text-[10px] text-slate-500 uppercase tracking-wide">View Layout</span>
+        </div>
+        {Object.entries(VIEW_MODES).map(([key, mode]) => (
+          <button
+            key={key}
+            onClick={() => { onChange(key); setShowPicker(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-700 ${
+              currentMode === key ? 'bg-blue-500/20 text-blue-400' : 'text-slate-300'
+            }`}
+          >
+            <mode.icon className="w-4 h-4" />
+            <div>
+              <div className="text-xs font-medium">{mode.name}</div>
+              <div className="text-[10px] text-slate-500">{mode.description}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+);
+```
+
+## Video Layout Toggle (Grid/Speaker)
+
+```tsx
+const VIDEO_LAYOUTS = {
+  grid: { name: 'Grid', icon: Grid },
+  speaker: { name: 'Speaker', icon: User },
+};
+
+const VideoLayoutToggle = ({ currentLayout, onChange, visible }) => {
+  if (!visible) return null;
+  
+  return (
+    <div className="flex items-center bg-slate-700 rounded-lg p-0.5">
+      {Object.entries(VIDEO_LAYOUTS).map(([key, layout]) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={`p-1.5 rounded transition-colors ${
+            currentLayout === key 
+              ? 'bg-slate-600 text-white' 
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+          title={layout.name}
+        >
+          <layout.icon className="w-3.5 h-3.5" />
+        </button>
+      ))}
+    </div>
+  );
+};
+```
+
+## Integration Points
+
+### Ambient Intelligence Integration
+- When ambient AI is enabled, the AI Suggestions panel should auto-update based on transcript content
+- The "Ambient AI" badge in top bar indicates feature is active
+- AI suggestions come from the existing RAG system querying case documents
+
+### Case/Transaction Linking
+- Meeting should be linkable to a case (existing functionality)
+- When linked, AI suggestions filter to documents from that case
+- Transcript is auto-associated with the case for later review
+
+### Recording Integration
+- Recording indicator (red dot) in top bar when active
+- Transcript is tied to recording timestamps
+- Video Focus mode should still show recording indicator prominently
+
+## Styling Guidelines
+
+Consistent with Sentinel's existing dark theme:
+- Background: `bg-slate-900`
+- Panel backgrounds: `bg-slate-800/50`, `bg-slate-800/30`
+- Borders: `border-slate-700/50`, `border-slate-700/30`
+- Text primary: `text-slate-200`, `text-white`
+- Text secondary: `text-slate-400`, `text-slate-500`
+- Text muted: `text-slate-600`
+- Accent blue: `text-blue-400`, `bg-blue-500/20`, `ring-blue-400`
+- Accent amber (AI): `text-amber-400`
+- Accent green (high relevance): `text-green-400`, `bg-green-500/20`
+- Interactive hover: `hover:bg-slate-700`, `hover:bg-slate-600`
+
+## Keyboard Shortcuts (Optional Enhancement)
+
+- `1` - Switch to Transcript Focus
+- `2` - Switch to Balanced
+- `3` - Switch to Video Focus
+- `G` - Toggle Grid/Speaker layout (when video visible)
+- `M` - Toggle mute
+- `V` - Toggle camera
+
+## Implementation Priority
+
+1. **Phase 1:** Implement the three view modes with basic switching
+2. **Phase 2:** Add resizable panels in Transcript Focus mode
+3. **Phase 3:** Add Grid/Speaker toggle for video layouts
+4. **Phase 4:** Polish animations and transitions between modes
+5. **Phase 5:** Add keyboard shortcuts and persist user preferences

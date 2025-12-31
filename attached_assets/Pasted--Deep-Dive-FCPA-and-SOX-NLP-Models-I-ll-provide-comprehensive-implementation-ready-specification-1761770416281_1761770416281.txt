@@ -1,0 +1,2434 @@
+# Deep Dive: FCPA and SOX NLP Models
+
+I’ll provide comprehensive, implementation-ready specifications for both the Foreign Corrupt Practices Act (FCPA) and Sarbanes-Oxley (SOX) detection models.
+
+-----
+
+# PART 1: FCPA (FOREIGN CORRUPT PRACTICES ACT) DEEP DIVE
+
+## I. FCPA REGULATORY FRAMEWORK
+
+### A. Statutory Structure
+
+```python
+class FCPARegulation:
+    """
+    Complete FCPA regulatory framework
+    """
+    STATUTORY_PROVISIONS = {
+        'anti_bribery': {
+            'citation': '15 USC §78dd-1, §78dd-2, §78dd-3',
+            'prohibits': [
+                'Payments to foreign officials',
+                'Payments to foreign political parties',
+                'Payments to candidates for foreign political office',
+                'Payments to any person knowing it will be passed on to prohibited recipients'
+            ],
+            'intent_requirement': 'corruptly',
+            'purpose_requirement': 'to obtain or retain business',
+            'penalties_corporate': '$2,000,000 per violation',
+            'penalties_individual': '$250,000 and/or 5 years imprisonment'
+        },
+        
+        'accounting_provisions': {
+            'citation': '15 USC §78m(b)(2)',
+            'books_and_records': {
+                'requirement': 'Accurate books, records, and accounts',
+                'detail_level': 'reasonable detail',
+                'purpose': 'fairly reflect transactions and dispositions of assets'
+            },
+            'internal_controls': {
+                'requirement': 'System of internal accounting controls',
+                'purpose': [
+                    'Transactions executed per management authorization',
+                    'Transactions recorded to permit GAAP financial statements',
+                    'Asset access only per management authorization',
+                    'Periodic reconciliation of recorded vs actual assets'
+                ]
+            },
+            'penalties_corporate': '$25,000,000 per violation',
+            'penalties_individual': '$5,000,000 and/or 20 years imprisonment'
+        },
+        
+        'facilitating_payments_exception': {
+            'description': 'Narrow exception for routine governmental action',
+            'permitted_payments': [
+                'Obtaining permits, licenses, documents',
+                'Processing governmental papers (visas, work orders)',
+                'Providing police protection, mail service',
+                'Providing utilities (phone, power, water)',
+                'Loading/unloading cargo',
+                'Protecting perishable products',
+                'Scheduling inspections'
+            ],
+            'key_limitation': 'NOT for obtaining or retaining business',
+            'documentation_required': True
+        },
+        
+        'affirmative_defenses': {
+            'local_law_defense': {
+                'description': 'Payment lawful under written laws of foreign country',
+                'rarely_applicable': True
+            },
+            'reasonable_and_bona_fide_defense': {
+                'description': 'Reasonable and bona fide expenditure',
+                'examples': [
+                    'Travel expenses for foreign official to visit facilities',
+                    'Lodging for training purposes',
+                    'Promotional expenses'
+                ],
+                'requirements': [
+                    'Directly related to product promotion or contract performance',
+                    'Reasonable in amount',
+                    'Properly documented'
+                ]
+            }
+        }
+    }
+    
+    DOJ_GUIDANCE_TOPICS = {
+        'foreign_official_definition': {
+            'includes': [
+                'Any officer or employee of a foreign government',
+                'Any department, agency, or instrumentality of foreign government',
+                'Public international organizations (UN, World Bank, etc.)',
+                'Political party officials',
+                'Candidates for political office',
+                'Employees of state-owned enterprises (SOEs)'
+            ],
+            'key_considerations': [
+                'Government ownership/control of entity',
+                'Government designation of entity to perform governmental function',
+                'Whether entity exercises governmental authority'
+            ]
+        },
+        
+        'third_party_intermediaries': {
+            'high_risk_indicators': [
+                'Excessive commission or fees',
+                'Payment to offshore account or tax haven',
+                'Request for unusual payment arrangements',
+                'Lack of transparency regarding ownership',
+                'Reputation for paying bribes',
+                'Close relationship with foreign officials',
+                'Resistance to contractual compliance terms',
+                'Recommended by foreign official',
+                'Lack of qualifications or relevant experience',
+                'Not in business directory or lacking business premises'
+            ],
+            'red_flags_requiring_due_diligence': True
+        },
+        
+        'compliance_program_hallmarks': {
+            'commitment_from_leadership': 'Tone from the top',
+            'code_of_conduct': 'Clear anti-bribery policies',
+            'oversight': 'Dedicated compliance personnel with authority',
+            'risk_assessment': 'Periodic evaluation of FCPA risks',
+            'training': 'Tailored to audience and risk',
+            'incentives': 'Integration into performance reviews',
+            'third_party_management': 'Due diligence and monitoring',
+            'confidential_reporting': 'Whistleblower hotline',
+            'investigation_response': 'Prompt and thorough',
+            'continuous_improvement': 'Periodic testing and review',
+            'enforcement_discipline': 'Consistent application of policies'
+        }
+    }
+```
+
+-----
+
+## II. ADVANCED FCPA NLP MODEL ARCHITECTURE
+
+### A. Multi-Stage Detection Pipeline
+
+```python
+import torch
+import torch.nn as nn
+from transformers import AutoModel, AutoTokenizer
+import numpy as np
+
+class AdvancedFCPAModel(nn.Module):
+    """
+    Multi-stage FCPA detection with interpretable sub-components
+    
+    Architecture:
+    1. Context Encoder (DeBERTa-v3)
+    2. Foreign Official Detector
+    3. Payment Intent Classifier
+    4. Corruption Intent Analyzer
+    5. Third-Party Risk Assessor
+    6. Accounting Violation Detector
+    7. Final Risk Aggregator
+    """
+    
+    def __init__(self, config):
+        super(AdvancedFCPAModel, self).__init__()
+        
+        # Base encoder
+        self.encoder = AutoModel.from_pretrained("microsoft/deberta-v3-large")
+        hidden_size = self.encoder.config.hidden_size
+        
+        # Stage 1: Foreign Official Detection
+        self.foreign_official_detector = ForeignOfficialDetector(hidden_size)
+        
+        # Stage 2: Payment Intent Classification
+        self.payment_intent_classifier = PaymentIntentClassifier(hidden_size)
+        
+        # Stage 3: Corruption Intent Analysis
+        self.corruption_intent_analyzer = CorruptionIntentAnalyzer(hidden_size)
+        
+        # Stage 4: Third-Party Risk Assessment
+        self.third_party_assessor = ThirdPartyRiskAssessor(hidden_size)
+        
+        # Stage 5: Accounting Violation Detection
+        self.accounting_detector = AccountingViolationDetector(hidden_size)
+        
+        # Stage 6: Final Risk Aggregation
+        self.risk_aggregator = FCPARiskAggregator(hidden_size)
+        
+    def forward(self, input_ids, attention_mask, entity_features, metadata):
+        """
+        Multi-stage forward pass
+        
+        Args:
+            input_ids: Tokenized text
+            attention_mask: Attention mask
+            entity_features: Dict containing NER results
+            metadata: Communication metadata (sender, recipients, etc.)
+        """
+        # Encode text
+        encoder_outputs = self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True
+        )
+        
+        sequence_output = encoder_outputs.last_hidden_state  # [batch, seq_len, hidden]
+        pooled_output = encoder_outputs.pooler_output        # [batch, hidden]
+        hidden_states = encoder_outputs.hidden_states        # All layers
+        
+        # Stage 1: Detect foreign official involvement
+        foreign_official_output = self.foreign_official_detector(
+            sequence_output=sequence_output,
+            pooled_output=pooled_output,
+            entity_features=entity_features
+        )
+        
+        # Stage 2: Classify payment intent
+        payment_intent_output = self.payment_intent_classifier(
+            sequence_output=sequence_output,
+            pooled_output=pooled_output,
+            foreign_official_context=foreign_official_output
+        )
+        
+        # Stage 3: Analyze corruption intent
+        corruption_intent_output = self.corruption_intent_analyzer(
+            sequence_output=sequence_output,
+            pooled_output=pooled_output,
+            payment_context=payment_intent_output
+        )
+        
+        # Stage 4: Assess third-party risk
+        third_party_output = self.third_party_assessor(
+            pooled_output=pooled_output,
+            entity_features=entity_features,
+            metadata=metadata
+        )
+        
+        # Stage 5: Detect accounting violations
+        accounting_output = self.accounting_detector(
+            sequence_output=sequence_output,
+            pooled_output=pooled_output
+        )
+        
+        # Stage 6: Aggregate all signals into final risk assessment
+        final_risk = self.risk_aggregator(
+            foreign_official=foreign_official_output,
+            payment_intent=payment_intent_output,
+            corruption_intent=corruption_intent_output,
+            third_party=third_party_output,
+            accounting=accounting_output,
+            pooled_output=pooled_output
+        )
+        
+        return {
+            'final_risk_score': final_risk['risk_score'],
+            'violation_type': final_risk['violation_type'],
+            'confidence': final_risk['confidence'],
+            
+            # Interpretable sub-scores
+            'foreign_official_score': foreign_official_output['score'],
+            'foreign_official_detected': foreign_official_output['detected'],
+            'payment_intent_score': payment_intent_output['score'],
+            'corruption_intent_score': corruption_intent_output['score'],
+            'third_party_risk_score': third_party_output['score'],
+            'accounting_violation_score': accounting_output['score'],
+            
+            # Attention weights for explainability
+            'attention_weights': final_risk['attention_weights'],
+            'key_phrases': final_risk['key_phrases']
+        }
+
+
+class ForeignOfficialDetector(nn.Module):
+    """
+    Specialized sub-module to detect foreign official involvement
+    
+    This is CRITICAL for FCPA - must accurately identify foreign officials
+    """
+    
+    def __init__(self, hidden_size):
+        super(ForeignOfficialDetector, self).__init__()
+        
+        # Binary classifier: Is foreign official mentioned?
+        self.binary_classifier = nn.Sequential(
+            nn.Linear(hidden_size, 512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 2)  # Yes/No
+        )
+        
+        # Confidence scorer
+        self.confidence_head = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+        # Official type classifier
+        self.official_type = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 7)  # Types: government, SOE, party, candidate, etc.
+        )
+        
+        # Span detector (which tokens refer to the official?)
+        self.span_start = nn.Linear(hidden_size, 1)
+        self.span_end = nn.Linear(hidden_size, 1)
+        
+    def forward(self, sequence_output, pooled_output, entity_features):
+        """
+        Detect and characterize foreign official involvement
+        """
+        # Binary detection
+        binary_logits = self.binary_classifier(pooled_output)
+        detection_prob = torch.softmax(binary_logits, dim=-1)[:, 1]  # Prob of "Yes"
+        
+        # Confidence
+        confidence = self.confidence_head(pooled_output)
+        
+        # Official type
+        type_logits = self.official_type(pooled_output)
+        
+        # Span detection (where in text is the official mentioned?)
+        start_logits = self.span_start(sequence_output).squeeze(-1)
+        end_logits = self.span_end(sequence_output).squeeze(-1)
+        
+        # Extract entity features (from NER)
+        has_foreign_official_entity = (
+            entity_features.get('num_foreign_officials', 0) > 0
+        )
+        
+        # Combine model prediction with entity detection
+        # If NER found foreign official entity, boost detection confidence
+        if has_foreign_official_entity:
+            detection_prob = torch.maximum(
+                detection_prob,
+                torch.tensor([0.7], device=detection_prob.device)
+            )
+        
+        return {
+            'score': detection_prob,
+            'detected': detection_prob > 0.5,
+            'confidence': confidence,
+            'official_type_logits': type_logits,
+            'span_start_logits': start_logits,
+            'span_end_logits': end_logits,
+            'entities': entity_features.get('FOREIGN_OFFICIAL', [])
+        }
+
+
+class PaymentIntentClassifier(nn.Module):
+    """
+    Classifies the intent of any payment discussion
+    
+    Categories:
+    - No payment discussed
+    - Legitimate business payment (invoice, salary, etc.)
+    - Gift/hospitality (may be legitimate if reasonable)
+    - Suspicious payment (potential bribe)
+    - Clear bribery language
+    """
+    
+    def __init__(self, hidden_size):
+        super(PaymentIntentClassifier, self).__init__()
+        
+        # Multi-class classifier
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_size * 2, 512),  # *2 for concatenation
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(256, 5)  # 5 payment intent categories
+        )
+        
+        # Payment amount extractor
+        self.amount_attention = nn.MultiheadAttention(
+            embed_dim=hidden_size,
+            num_heads=8
+        )
+        
+    def forward(self, sequence_output, pooled_output, foreign_official_context):
+        """
+        Classify payment intent, considering foreign official context
+        """
+        # Apply attention to focus on payment-related tokens
+        attended_output, _ = self.amount_attention(
+            sequence_output.transpose(0, 1),
+            sequence_output.transpose(0, 1),
+            sequence_output.transpose(0, 1)
+        )
+        attended_pooled = attended_output.mean(dim=0)
+        
+        # Concatenate with foreign official context
+        foreign_official_score = foreign_official_context['score'].unsqueeze(1)
+        combined = torch.cat([pooled_output, attended_pooled], dim=1)
+        
+        # Classify
+        intent_logits = self.classifier(combined)
+        
+        # Calculate risk score based on intent + foreign official presence
+        intent_probs = torch.softmax(intent_logits, dim=-1)
+        
+        # Risk multiplier if foreign official present
+        risk_multiplier = 1.0 + (2.0 * foreign_official_score.squeeze())
+        
+        # Weighted risk score
+        risk_weights = torch.tensor(
+            [0.0, 0.2, 0.5, 0.8, 1.0],  # Weights for each intent category
+            device=intent_logits.device
+        )
+        base_risk = torch.sum(intent_probs * risk_weights, dim=1)
+        adjusted_risk = torch.clamp(base_risk * risk_multiplier, 0.0, 1.0)
+        
+        return {
+            'score': adjusted_risk,
+            'intent_logits': intent_logits,
+            'intent_probs': intent_probs,
+            'categories': [
+                'no_payment',
+                'legitimate_business',
+                'gift_hospitality',
+                'suspicious',
+                'clear_bribery'
+            ]
+        }
+
+
+class CorruptionIntentAnalyzer(nn.Module):
+    """
+    Analyzes whether payment intent is "corrupt" per FCPA definition
+    
+    FCPA requires "corrupt" intent - willfully giving something of value
+    to improperly influence official action
+    """
+    
+    def __init__(self, hidden_size):
+        super(CorruptionIntentAnalyzer, self).__init__()
+        
+        # Corruption intent signals
+        self.intent_encoder = nn.Sequential(
+            nn.Linear(hidden_size, 512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 256)
+        )
+        
+        # Quid pro quo detector (payment in exchange for action)
+        self.quid_pro_quo_detector = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+        
+        # Business purpose detector (is there legitimate business justification?)
+        self.business_purpose_detector = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+        
+        # Willful blindness detector (conscious avoidance of knowledge)
+        self.willful_blindness_detector = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, sequence_output, pooled_output, payment_context):
+        """
+        Analyze corruption intent
+        """
+        # Encode
+        intent_features = self.intent_encoder(pooled_output)
+        
+        # Detect quid pro quo
+        quid_pro_quo_score = self.quid_pro_quo_detector(intent_features)
+        
+        # Detect legitimate business purpose
+        business_purpose_score = self.business_purpose_detector(intent_features)
+        
+        # Detect willful blindness
+        willful_blindness_score = self.willful_blindness_detector(intent_features)
+        
+        # Aggregate corruption intent
+        # High corruption if: high quid pro quo AND low business purpose
+        # OR high willful blindness
+        corruption_score = torch.maximum(
+            quid_pro_quo_score * (1 - business_purpose_score),
+            willful_blindness_score
+        )
+        
+        return {
+            'score': corruption_score,
+            'quid_pro_quo': quid_pro_quo_score,
+            'business_purpose': business_purpose_score,
+            'willful_blindness': willful_blindness_score
+        }
+
+
+class ThirdPartyRiskAssessor(nn.Module):
+    """
+    Assesses risk of third-party intermediary bribery scheme
+    
+    Many FCPA violations occur through consultants, agents, distributors
+    """
+    
+    def __init__(self, hidden_size):
+        super(ThirdPartyRiskAssessor, self).__init__()
+        
+        # Feature combiner
+        self.feature_combiner = nn.Sequential(
+            nn.Linear(hidden_size + 64, 256),  # +64 for metadata features
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128)
+        )
+        
+        # Red flag detectors
+        self.excessive_fee_detector = nn.Linear(128, 1)
+        self.relationship_detector = nn.Linear(128, 1)
+        self.qualification_detector = nn.Linear(128, 1)
+        self.transparency_detector = nn.Linear(128, 1)
+        
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, pooled_output, entity_features, metadata):
+        """
+        Assess third-party risk
+        """
+        # Extract third-party metadata features
+        tp_features = self.extract_third_party_features(entity_features, metadata)
+        tp_features_tensor = torch.tensor(
+            tp_features,
+            dtype=torch.float32,
+            device=pooled_output.device
+        ).unsqueeze(0)
+        
+        # Combine
+        combined = torch.cat([pooled_output, tp_features_tensor], dim=1)
+        features = self.feature_combiner(combined)
+        
+        # Detect red flags
+        excessive_fee = self.sigmoid(self.excessive_fee_detector(features))
+        relationship = self.sigmoid(self.relationship_detector(features))
+        qualification = self.sigmoid(self.qualification_detector(features))
+        transparency = self.sigmoid(self.transparency_detector(features))
+        
+        # Aggregate risk
+        risk_score = torch.mean(torch.stack([
+            excessive_fee,
+            relationship,
+            1 - qualification,  # Low qualification = high risk
+            1 - transparency     # Low transparency = high risk
+        ]), dim=0)
+        
+        return {
+            'score': risk_score,
+            'red_flags': {
+                'excessive_fee': excessive_fee,
+                'government_relationship': relationship,
+                'lacks_qualifications': 1 - qualification,
+                'lacks_transparency': 1 - transparency
+            }
+        }
+    
+    def extract_third_party_features(self, entity_features, metadata):
+        """
+        Extract structured features about third parties
+        """
+        features = [0.0] * 64  # Fixed size feature vector
+        
+        # Feature 0-9: Organization mentions
+        orgs = entity_features.get('ORGANIZATION', [])
+        features[0] = min(len(orgs), 10) / 10.0
+        
+        # Feature 10-19: Financial amounts
+        amounts = entity_features.get('MONETARY_AMOUNT', [])
+        if amounts:
+            max_amount = max([self.parse_amount(a['text']) for a in amounts])
+            features[10] = min(max_amount / 1000000, 10) / 10.0  # Scale to 0-1
+        
+        # Feature 20-29: Geographic risk
+        countries = entity_features.get('COUNTRY', [])
+        high_risk_countries = ['china', 'russia', 'venezuela', 'nigeria']
+        for country in countries:
+            if country['text'].lower() in high_risk_countries:
+                features[20] = 1.0
+                break
+        
+        # Features 30-63: Reserved for additional metadata
+        
+        return features
+    
+    def parse_amount(self, amount_str):
+        """Parse dollar amount from string"""
+        import re
+        match = re.search(r'[\d,]+', amount_str)
+        if match:
+            return float(match.group().replace(',', ''))
+        return 0
+
+
+class AccountingViolationDetector(nn.Module):
+    """
+    Detects FCPA accounting provisions violations:
+    - Books and records (inaccurate recording)
+    - Internal controls (circumvention)
+    """
+    
+    def __init__(self, hidden_size):
+        super(AccountingViolationDetector, self).__init__()
+        
+        # Books and records violation
+        self.books_records_head = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 4)  # No violation, Minor, Moderate, Severe
+        )
+        
+        # Internal controls violation
+        self.internal_controls_head = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 4)  # No violation, Minor, Moderate, Severe
+        )
+        
+    def forward(self, sequence_output, pooled_output):
+        """
+        Detect accounting violations
+        """
+        books_logits = self.books_records_head(pooled_output)
+        controls_logits = self.internal_controls_head(pooled_output)
+        
+        books_probs = torch.softmax(books_logits, dim=-1)
+        controls_probs = torch.softmax(controls_logits, dim=-1)
+        
+        # Risk weights
+        weights = torch.tensor([0.0, 0.3, 0.6, 1.0], device=pooled_output.device)
+        
+        books_risk = torch.sum(books_probs * weights, dim=1)
+        controls_risk = torch.sum(controls_probs * weights, dim=1)
+        
+        # Overall accounting risk (max of two)
+        overall_risk = torch.maximum(books_risk, controls_risk)
+        
+        return {
+            'score': overall_risk,
+            'books_records_risk': books_risk,
+            'internal_controls_risk': controls_risk,
+            'books_logits': books_logits,
+            'controls_logits': controls_logits
+        }
+
+
+class FCPARiskAggregator(nn.Module):
+    """
+    Aggregates all sub-component scores into final risk assessment
+    """
+    
+    def __init__(self, hidden_size):
+        super(FCPARiskAggregator, self).__init__()
+        
+        # Learned aggregation weights
+        self.aggregator = nn.Sequential(
+            nn.Linear(5 + hidden_size, 256),  # 5 sub-scores + pooled
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+        
+        # Violation type classifier
+        self.violation_classifier = nn.Sequential(
+            nn.Linear(5 + hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 4)  # Anti-bribery, Books/Records, Internal Controls, Multiple
+        )
+        
+        # Attention for explainability
+        self.attention = nn.Linear(hidden_size, 1)
+        
+    def forward(self, foreign_official, payment_intent, corruption_intent,
+                third_party, accounting, pooled_output):
+        """
+        Aggregate all signals
+        """
+        # Stack sub-scores
+        sub_scores = torch.stack([
+            foreign_official['score'],
+            payment_intent['score'],
+            corruption_intent['score'],
+            third_party['score'],
+            accounting['score']
+        ], dim=1)
+        
+        # Concatenate with pooled output
+        combined = torch.cat([sub_scores, pooled_output], dim=1)
+        
+        # Final risk score
+        risk_score = self.aggregator(combined)
+        
+        # Violation type
+        violation_logits = self.violation_classifier(combined)
+        violation_probs = torch.softmax(violation_logits, dim=-1)
+        
+        # Confidence (based on consistency of sub-scores)
+        confidence = 1.0 - torch.std(sub_scores, dim=1, keepdim=True)
+        
+        return {
+            'risk_score': risk_score,
+            'violation_type': violation_probs,
+            'confidence': confidence,
+            'sub_scores': sub_scores,
+            'attention_weights': None,  # Would compute from sequence
+            'key_phrases': []  # Would extract from attention
+        }
+```
+
+-----
+
+## III. FCPA TRAINING DATA STRATEGY
+
+### A. Data Collection & Annotation
+
+```python
+class FCPATrainingDataBuilder:
+    """
+    Builds comprehensive FCPA training dataset
+    """
+    
+    def __init__(self):
+        self.examples = []
+        self.label_schema = self.define_label_schema()
+        
+    def define_label_schema(self):
+        """
+        Comprehensive labeling schema for FCPA
+        """
+        return {
+            'violation_present': bool,
+            'violation_type': [
+                'anti_bribery_direct',
+                'anti_bribery_third_party',
+                'books_and_records',
+                'internal_controls',
+                'multiple'
+            ],
+            'severity': ['none', 'low', 'medium', 'high', 'critical'],
+            
+            # Sub-component labels
+            'foreign_official_present': bool,
+            'foreign_official_type': [
+                'government_employee',
+                'state_owned_enterprise',
+                'political_party',
+                'candidate',
+                'public_international_org',
+                'none'
+            ],
+            
+            'payment_discussed': bool,
+            'payment_type': [
+                'none',
+                'cash',
+                'gift',
+                'travel_entertainment',
+                'consulting_fee',
+                'commission',
+                'other_value'
+            ],
+            'payment_amount': float,
+            
+            'corruption_intent': ['none', 'possible', 'probable', 'clear'],
+            'quid_pro_quo': bool,
+            'business_justification': ['none', 'weak', 'moderate', 'strong'],
+            
+            'third_party_involved': bool,
+            'third_party_red_flags': [
+                'excessive_fee',
+                'offshore_payment',
+                'government_relationship',
+                'lack_qualifications',
+                'recommended_by_official',
+                'shell_company'
+            ],
+            
+            'accounting_issues': [
+                'inaccurate_recording',
+                'disguised_payment',
+                'off_books',
+                'control_override',
+                'lack_documentation'
+            ],
+            
+            # Context
+            'geographic_risk': ['low', 'medium', 'high', 'critical'],
+            'industry': str,
+            'employee_role': str,
+            
+            # Ground truth case info (if from enforcement action)
+            'enforcement_action': bool,
+            'case_citation': str,
+            'penalty_amount': float,
+            'criminal_charges': bool
+        }
+    
+    def build_dataset(self):
+        """
+        Build dataset from multiple sources
+        """
+        # Source 1: DOJ/SEC Enforcement Actions
+        enforcement_examples = self.scrape_enforcement_actions()
+        self.examples.extend(enforcement_examples)
+        
+        # Source 2: Synthetic examples from templates
+        synthetic_examples = self.generate_synthetic_data(count=10000)
+        self.examples.extend(synthetic_examples)
+        
+        # Source 3: Client historical data (anonymized)
+        if self.has_client_data():
+            client_examples = self.load_client_data()
+            self.examples.extend(client_examples)
+        
+        # Source 4: Negative examples (compliant communications)
+        negative_examples = self.generate_negative_examples(count=20000)
+        self.examples.extend(negative_examples)
+        
+        # Source 5: Edge cases and ambiguous scenarios
+        edge_cases = self.create_edge_cases()
+        self.examples.extend(edge_cases)
+        
+        return self.examples
+    
+    def scrape_enforcement_actions(self):
+        """
+        Extract training examples from real enforcement actions
+        """
+        examples = []
+        
+        # Example: Siemens AG (2008) - Largest FCPA case
+        examples.append({
+            'text': """
+                We need to secure the Argentine metro contract. The government 
+                contact expects a $2M commission. Route it through the consulting 
+                firm in Panama. Record as 'consulting services' in the books.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'multiple',
+                'severity': 'critical',
+                'foreign_official_present': True,
+                'foreign_official_type': 'government_employee',
+                'payment_discussed': True,
+                'payment_type': 'consulting_fee',
+                'payment_amount': 2000000,
+                'corruption_intent': 'clear',
+                'quid_pro_quo': True,
+                'business_justification': 'none',
+                'third_party_involved': True,
+                'third_party_red_flags': [
+                    'excessive_fee',
+                    'offshore_payment',
+                    'shell_company'
+                ],
+                'accounting_issues': [
+                    'inaccurate_recording',
+                    'disguised_payment'
+                ],
+                'geographic_risk': 'high',
+                'enforcement_action': True,
+                'case_citation': 'United States v. Siemens AG (D.D.C. 2008)',
+                'penalty_amount': 800000000,  # $800M total
+                'criminal_charges': True
+            },
+            'explanation': """
+                Clear FCPA violation: (1) Payment to foreign official to secure 
+                contract, (2) Third-party intermediary to conceal payment, 
+                (3) False books and records (disguised as consulting).
+            """
+        })
+        
+        # Example: Walmart (2019) - Internal controls failure
+        examples.append({
+            'text': """
+                The Mexico subsidiary is rushing permits through. I don't know 
+                how they're doing it, and honestly, I don't want to know. The 
+                CFO says just book the expenses as 'permit fees' and don't ask 
+                questions.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'multiple',
+                'severity': 'high',
+                'foreign_official_present': False,  # Not explicitly mentioned
+                'payment_discussed': True,
+                'payment_type': 'other_value',
+                'corruption_intent': 'probable',  # Willful blindness
+                'quid_pro_quo': True,
+                'business_justification': 'none',
+                'accounting_issues': [
+                    'inaccurate_recording',
+                    'control_override',
+                    'lack_documentation'
+                ],
+                'third_party_involved': True,  # Subsidiary
+                'geographic_risk': 'high',
+                'enforcement_action': True,
+                'case_citation': 'In re Walmart Inc. (SEC 2019)',
+                'penalty_amount': 282000000
+            },
+            'explanation': """
+                Willful blindness (conscious avoidance of knowledge) + internal 
+                controls failure. Senior executive instructing subordinates not 
+                to inquire into suspicious payments.
+            """
+        })
+        
+        # Example: Facilitating payment (gray area)
+        examples.append({
+            'text': """
+                The customs inspector wants $200 to process our shipment. This 
+                is routine here - everyone pays it to get goods through customs. 
+                It's not for special treatment, just standard processing. Should 
+                we pay?
+            """,
+            'labels': {
+                'violation_present': False,  # MAY fall under exception
+                'violation_type': 'none',
+                'severity': 'medium',  # Still requires careful review
+                'foreign_official_present': True,
+                'foreign_official_type': 'government_employee',
+                'payment_discussed': True,
+                'payment_type': 'cash',
+                'payment_amount': 200,
+                'corruption_intent': 'possible',
+                'quid_pro_quo': True,
+                'business_justification': 'weak',
+                'accounting_issues': [],
+                'geographic_risk': 'high'
+            },
+            'explanation': """
+                Potential facilitating payment exception IF: (1) Routine 
+                governmental action, (2) Not to obtain/retain business, 
+                (3) Properly documented. Requires legal review to confirm 
+                exception applies.
+            """
+        })
+        
+        # Continue with 50+ more examples from real cases...
+        
+        return examples
+    
+    def generate_synthetic_data(self, count):
+        """
+        Generate synthetic examples using templates and variations
+        """
+        templates = [
+            # Direct bribery templates
+            {
+                'template': """
+                    {PERSON} from {AGENCY} expects {AMOUNT} to {ACTION}. 
+                    We need to {PAYMENT_METHOD} to secure {BUSINESS_OPPORTUNITY}.
+                """,
+                'variables': {
+                    'PERSON': [
+                        'The minister', 'Director Rodriguez', 'The official',
+                        'Minister Chen', 'Secretary Silva'
+                    ],
+                    'AGENCY': [
+                        'the Ministry of Energy', 'the regulatory agency',
+                        'the permitting office', 'the customs department'
+                    ],
+                    'AMOUNT': [
+                        '$50,000', '$100,000', '€75,000', '$250,000'
+                    ],
+                    'ACTION': [
+                        'expedite the approval', 'award the contract',
+                        'grant the license', 'overlook the violations'
+                    ],
+                    'PAYMENT_METHOD': [
+                        'wire the funds', 'route it through our consultant',
+                        'make the payment', 'transfer the money'
+                    ],
+                    'BUSINESS_OPPORTUNITY': [
+                        'the contract', 'the deal', 'the project',
+                        'this business'
+                    ]
+                },
+                'label_template': {
+                    'violation_present': True,
+                    'severity': 'critical',
+                    'foreign_official_present': True,
+                    'corruption_intent': 'clear'
+                }
+            },
+            
+            # Euphemistic language templates
+            {
+                'template': """
+                    Our {INTERMEDIARY} has {RELATIONSHIP} with the government. 
+                    Their {FEE_TYPE} is {PERCENTAGE}% of the contract value. 
+                    They'll {VAGUE_ACTION} with the {AUTHORITY}.
+                """,
+                'variables': {
+                    'INTERMEDIARY': [
+                        'consultant', 'agent', 'local partner', 'facilitator'
+                    ],
+                    'RELATIONSHIP': [
+                        'excellent relationships', 'strong connections',
+                        'special relationships', 'close ties'
+                    ],
+                    'FEE_TYPE': [
+                        'success fee', 'commission', 'consulting fee',
+                        'finder\'s fee'
+                    ],
+                    'PERCENTAGE': ['15', '20', '25', '10'],
+                    'VAGUE_ACTION': [
+                        'handle everything', 'take care of things',
+                        'smooth the process', 'manage the situation'
+                    ],
+                    'AUTHORITY': [
+                        'ministry', 'officials', 'authorities',
+                        'regulatory bodies'
+                    ]
+                },
+                'label_template': {
+                    'violation_present': True,
+                    'severity': 'high',
+                    'third_party_involved': True,
+                    'corruption_intent': 'probable'
+                }
+            },
+            
+            # Willful blindness templates
+            {
+                'template': """
+                    {STATEMENT_OF_IGNORANCE}. {INSTRUCTION}. 
+                    {ACCOUNTING_INSTRUCTION}.
+                """,
+                'variables': {
+                    'STATEMENT_OF_IGNORANCE': [
+                        "I don't want to know how they're doing it",
+                        "Don't tell me the details",
+                        "Better if we don't ask questions",
+                        "Just get it done, I don't care how"
+                    ],
+                    'INSTRUCTION': [
+                        "Just approve the payment",
+                        "Process the invoice",
+                        "Wire the funds",
+                        "Make it happen"
+                    ],
+                    'ACCOUNTING_INSTRUCTION': [
+                        "Book it as consulting fees",
+                        "Record it as marketing expenses",
+                        "Put it under miscellaneous",
+                        "Don't itemize the details"
+                    ]
+                },
+                'label_template': {
+                    'violation_present': True,
+                    'severity': 'high',
+                    'corruption_intent': 'probable',
+                    'accounting_issues': ['inaccurate_recording']
+                }
+            }
+        ]
+        
+        examples = []
+        for _ in range(count):
+            template = random.choice(templates)
+            example = self.fill_template(template)
+            examples.append(example)
+        
+        return examples
+    
+    def generate_negative_examples(self, count):
+        """
+        Generate negative examples (compliant communications)
+        
+        CRITICAL: Model needs to see many compliant examples to avoid
+        flagging all international business communications
+        """
+        negative_templates = [
+            # Legitimate business discussions
+            {
+                'text': """
+                    We received the invoice from {VENDOR} for {AMOUNT} for 
+                    {SERVICE}. This is in line with market rates. Please 
+                    process payment per our standard approval workflow.
+                """,
+                'labels': {
+                    'violation_present': False,
+                    'severity': 'none',
+                    'business_justification': 'strong'
+                }
+            },
+            
+            # Compliant due diligence
+            {
+                'text': """
+                    Before engaging {CONSULTANT}, we need to complete our 
+                    standard third-party due diligence: background check, 
+                    references, ownership verification, and FCPA certification. 
+                    Compliance team to review and approve.
+                """,
+                'labels': {
+                    'violation_present': False,
+                    'severity': 'none',
+                    'third_party_involved': True
+                }
+            },
+            
+            # Legitimate gifts (reasonable and bona fide)
+            {
+                'text': """
+                    Planning to provide {CLIENT} with company-branded items 
+                    (pens, notepads) valued at approximately $25 per person 
+                    at the conference. This is customary promotional material 
+                    and within our gift policy limits.
+                """,
+                'labels': {
+                    'violation_present': False,
+                    'severity': 'none',
+                    'payment_type': 'gift',
+                    'business_justification': 'strong'
+                }
+            }
+        ]
+        
+        # Generate variations
+        examples = []
+        for _ in range(count):
+            template = random.choice(negative_templates)
+            example = self.fill_template_variations(template)
+            examples.append(example)
+        
+        return examples
+```
+
+-----
+
+## IV. FCPA DETECTION IN PRODUCTION
+
+### A. Real-Time Detection Pipeline
+
+```python
+class FCPADetectionPipeline:
+    """
+    Production pipeline for FCPA violation detection
+    """
+    
+    def __init__(self):
+        self.model = self.load_model()
+        self.preprocessor = CommunicationPreprocessor()
+        self.feature_extractor = FCPAFeatureExtractor()
+        self.ner_model = ComplianceNER()
+        self.knowledge_base = FCPAKnowledgeBase()
+        
+    def detect_violation(self, communication):
+        """
+        End-to-end detection pipeline
+        """
+        # Step 1: Preprocess
+        processed = self.preprocessor.preprocess(communication)
+        
+        # Step 2: Extract entities
+        entities = self.ner_model.extract_entities(processed['text'])
+        
+        # Step 3: Extract FCPA-specific features
+        features = self.feature_extractor.extract_features(
+            processed['text'],
+            entities
+        )
+        
+        # Step 4: Run model inference
+        with torch.no_grad():
+            model_output = self.model(
+                input_ids=processed['input_ids'],
+                attention_mask=processed['attention_mask'],
+                entity_features=entities,
+                metadata=communication['metadata']
+            )
+        
+        # Step 5: Apply rule-based validators
+        rule_based_score = self.apply_rules(processed['text'], features, entities)
+        
+        # Step 6: Combine model and rules (ensemble)
+        final_score = self.ensemble_scores(
+            model_score=model_output['final_risk_score'],
+            rule_score=rule_based_score
+        )
+        
+        # Step 7: Generate explanation
+        explanation = self.generate_explanation(
+            communication=communication,
+            model_output=model_output,
+            features=features,
+            entities=entities
+        )
+        
+        # Step 8: Determine action
+        action = self.determine_action(final_score, explanation)
+        
+        return {
+            'risk_score': final_score,
+            'severity': self.score_to_severity(final_score),
+            'violation_type': model_output['violation_type'],
+            'confidence': model_output['confidence'],
+            'explanation': explanation,
+            'recommended_action': action,
+            'regulatory_citations': self.get_relevant_citations(explanation),
+            'similar_cases': self.find_similar_cases(communication),
+            
+            # Detailed sub-scores for attorney review
+            'detailed_assessment': {
+                'foreign_official_detected': model_output['foreign_official_detected'],
+                'foreign_official_score': model_output['foreign_official_score'],
+                'payment_intent_score': model_output['payment_intent_score'],
+                'corruption_intent_score': model_output['corruption_intent_score'],
+                'third_party_risk_score': model_output['third_party_risk_score'],
+                'accounting_violation_score': model_output['accounting_violation_score']
+            },
+            
+            # Evidence for investigation
+            'evidence': {
+                'flagged_phrases': self.extract_key_phrases(communication, model_output),
+                'entities': entities,
+                'features': features
+            }
+        }
+    
+    def apply_rules(self, text, features, entities):
+        """
+        Rule-based validation (deterministic)
+        
+        These serve as a safety net and handle clear-cut cases
+        """
+        score = 0
+        
+        # Rule 1: Foreign official + payment = HIGH RISK
+        if features['num_foreign_officials'] > 0 and features['has_monetary_amount']:
+            score += 40
+        
+        # Rule 2: Third-party + government relationship + high fee = HIGH RISK
+        if (features['third_party_red_flags'] >= 2 and 
+            features['has_government_references']):
+            score += 30
+        
+        # Rule 3: Explicit bribery keywords
+        if features['has_bribery_keywords'] > 0:
+            score += 25
+        
+        # Rule 4: High-risk jurisdiction
+        if features['mentions_high_risk_country']:
+            score += 15
+        
+        # Rule 5: Secrecy indicators
+        if features['secrecy_indicators'] > 1:
+            score += 10
+        
+        # Rule 6: Accounting red flags
+        if any(phrase in text.lower() for phrase in [
+            'off the books', 'don\'t record', 'cash payment',
+            'no receipt', 'disguise as'
+        ]):
+            score += 20
+        
+        return min(score, 100)
+    
+    def ensemble_scores(self, model_score, rule_score):
+        """
+        Combine model and rule scores
+        
+        Use max (most conservative) - if either is high, flag it
+        """
+        model_val = model_score.item() * 100
+        
+        # Take maximum of the two
+        final = max(model_val, rule_score)
+        
+        # Boost if both agree (high confidence)
+        if model_val > 60 and rule_score > 60:
+            final = min(final * 1.1, 100)
+        
+        return final
+    
+    def generate_explanation(self, communication, model_output, features, entities):
+        """
+        Generate human-readable explanation of detection
+        
+        This is CRITICAL for attorneys to understand and validate
+        """
+        explanation = []
+        
+        # Foreign official involvement
+        if model_output['foreign_official_detected']:
+            officials = entities.get('FOREIGN_OFFICIAL', [])
+            if officials:
+                explanation.append(
+                    f"Communication involves potential foreign official: "
+                    f"{', '.join([o['text'] for o in officials[:3]])}"
+                )
+            else:
+                explanation.append(
+                    "Language suggests involvement of foreign government official"
+                )
+        
+        # Payment discussion
+        if model_output['payment_intent_score'] > 0.5:
+            amounts = entities.get('MONETARY_AMOUNT', [])
+            if amounts:
+                explanation.append(
+                    f"Payment discussion detected: "
+                    f"{', '.join([a['text'] for a in amounts[:3]])}"
+                )
+            else:
+                explanation.append("Payment or value transfer discussed")
+        
+        # Corruption intent
+        if model_output['corruption_intent_score'] > 0.6:
+            if features['quid_pro_quo_signals'] > 0:
+                explanation.append(
+                    "Language suggests quid pro quo arrangement "
+                    "(payment in exchange for official action)"
+                )
+            if features['willful_blindness_signals'] > 0:
+                explanation.append(
+                    "Potential willful blindness - conscious avoidance of knowledge"
+                )
+        
+        # Third-party risk
+        if model_output['third_party_risk_score'] > 0.5:
+            red_flags = [
+                flag for flag, value in 
+                model_output['detailed_assessment']['third_party_red_flags'].items()
+                if value > 0.5
+            ]
+            if red_flags:
+                explanation.append(
+                    f"Third-party intermediary red flags: {', '.join(red_flags)}"
+                )
+        
+        # Accounting violations
+        if model_output['accounting_violation_score'] > 0.4:
+            explanation.append(
+                "Potential books and records / internal controls violation"
+            )
+            if any(phrase in communication['text'].lower() for phrase in [
+                'record as', 'book as', 'disguise'
+            ]):
+                explanation.append(
+                    "Language suggests improper or inaccurate recording of transaction"
+                )
+        
+        # Geographic risk
+        if features['mentions_high_risk_country']:
+            countries = ', '.join(features['high_risk_countries_mentioned'][:3])
+            explanation.append(
+                f"Transaction involves high-risk jurisdiction: {countries}"
+            )
+        
+        # Combine into paragraph
+        if explanation:
+            full_explanation = "FCPA Risk Factors:\n" + "\n".join(
+                f"• {item}" for item in explanation
+            )
+        else:
+            full_explanation = "No significant FCPA risk factors detected."
+        
+        return full_explanation
+    
+    def determine_action(self, risk_score, explanation):
+        """
+        Determine recommended action based on risk assessment
+        """
+        if risk_score >= 75:
+            return {
+                'action': 'IMMEDIATE_LEGAL_REVIEW',
+                'priority': 'CRITICAL',
+                'timeline': 'Within 2 hours',
+                'notify': ['law_firm_partner', 'chief_compliance_officer', 'general_counsel'],
+                'next_steps': [
+                    'Freeze any pending payments',
+                    'Preserve all related documents',
+                    'Schedule employee interview within 24 hours',
+                    'Assess need for voluntary disclosure to DOJ'
+                ]
+            }
+        
+        elif risk_score >= 50:
+            return {
+                'action': 'INVESTIGATE',
+                'priority': 'HIGH',
+                'timeline': 'Within 24 hours',
+                'notify': ['compliance_officer', 'law_firm_associate'],
+                'next_steps': [
+                    'Review complete email thread',
+                    'Gather related documents',
+                    'Interview employee',
+                    'Assess third-party relationships'
+                ]
+            }
+        
+        elif risk_score >= 25:
+            return {
+                'action': 'REVIEW_AND_DOCUMENT',
+                'priority': 'MEDIUM',
+                'timeline': 'Within 3 days',
+                'notify': ['compliance_officer'],
+                'next_steps': [
+                    'Review communication with compliance officer',
+                    'Document business justification',
+                    'Provide guidance to employee if needed'
+                ]
+            }
+        
+        else:
+            return {
+                'action': 'TRAINING_OPPORTUNITY',
+                'priority': 'LOW',
+                'timeline': 'Within 2 weeks',
+                'notify': ['compliance_officer'],
+                'next_steps': [
+                    'Consider for training refresher',
+                    'Log for compliance program assessment'
+                ]
+            }
+    
+    def get_relevant_citations(self, explanation):
+        """
+        Retrieve relevant statutory and regulatory citations
+        """
+        citations = []
+        
+        if 'foreign official' in explanation.lower() or 'payment' in explanation.lower():
+            citations.append({
+                'citation': '15 USC §78dd-1',
+                'title': 'FCPA Anti-Bribery Provisions (Issuers)',
+                'summary': 'Prohibits payments to foreign officials to obtain or retain business',
+                'url': 'https://www.justice.gov/criminal-fraud/fcpa'
+            })
+        
+        if 'books and records' in explanation.lower() or 'accounting' in explanation.lower():
+            citations.append({
+                'citation': '15 USC §78m(b)(2)(A)',
+                'title': 'FCPA Books and Records Provisions',
+                'summary': 'Requires accurate books, records, and accounts in reasonable detail',
+                'url': 'https://www.sec.gov/spotlight/fcpa/fcpa-resource-guide.pdf'
+            })
+        
+        if 'internal controls' in explanation.lower():
+            citations.append({
+                'citation': '15 USC §78m(b)(2)(B)',
+                'title': 'FCPA Internal Controls Provisions',
+                'summary': 'Requires system of internal accounting controls',
+                'url': 'https://www.sec.gov/spotlight/fcpa/fcpa-resource-guide.pdf'
+            })
+        
+        return citations
+```
+
+-----
+
+# PART 2: SARBANES-OXLEY (SOX) DEEP DIVE
+
+## I. SOX REGULATORY FRAMEWORK
+
+```python
+class SOXRegulation:
+    """
+    Sarbanes-Oxley Act of 2002 - Framework
+    """
+    
+    KEY_SECTIONS = {
+        'section_302': {
+            'title': 'Corporate Responsibility for Financial Reports',
+            'citation': '15 USC §7241',
+            'requirements': [
+                'CEO and CFO must certify financial statements',
+                'Certify internal controls are effective',
+                'Disclose significant deficiencies in internal controls',
+                'Disclose any fraud involving management'
+            ],
+            'criminal_penalties': 'Up to $5M fine and 20 years imprisonment for willful violation'
+        },
+        
+        'section_404': {
+            'title': 'Management Assessment of Internal Controls',
+            'citation': '15 USC §7262',
+            'requirements': [
+                'Annual assessment of internal control over financial reporting',
+                'Assertion of management responsibility',
+                'Independent auditor attestation',
+                'Framework (e.g., COSO) must be used'
+            ],
+            'focus': 'Prevent accounting fraud and ensure accurate financial reporting'
+        },
+        
+        'section_409': {
+            'title': 'Real-Time Issuer Disclosures',
+            'citation': '15 USC §7264',
+            'requirements': [
+                'Rapid disclosure of material changes in financial condition',
+                'Plain English disclosure',
+                'Current report (Form 8-K) within 4 business days'
+            ]
+        },
+        
+        'section_806': {
+            'title': 'Whistleblower Protection',
+            'citation': '18 USC §1514A',
+            'protections': [
+                'Protection from retaliation for reporting violations',
+                'Covers securities fraud, violations of SEC rules, federal fraud statutes',
+                'Private right of action for wrongfully terminated employees'
+            ],
+            'penalties': 'Reinstatement, back pay, compensatory damages'
+        },
+        
+        'section_906': {
+            'title': 'Corporate Responsibility for Financial Reports (Criminal)',
+            'citation': '18 USC §1350',
+            'requirements': [
+                'CEO/CFO certification that reports comply with securities laws',
+                'Financial statements fairly present financial condition'
+            ],
+            'criminal_penalties': 'Up to $5M fine and 20 years imprisonment'
+        }
+    }
+    
+    INTERNAL_CONTROL_COMPONENTS = {
+        'coso_framework': {
+            'control_environment': [
+                'Integrity and ethical values',
+                'Board oversight',
+                'Organizational structure',
+                'Competence and accountability'
+            ],
+            'risk_assessment': [
+                'Identify financial reporting risks',
+                'Assess fraud risks',
+                'Evaluate significant changes'
+            ],
+            'control_activities': [
+                'Authorization controls',
+                'Segregation of duties',
+                'Physical controls',
+                'Reconciliations',
+                'IT controls'
+            ],
+            'information_communication': [
+                'Financial reporting information',
+                'Internal communication',
+                'External communication'
+            ],
+            'monitoring': [
+                'Ongoing evaluations',
+                'Separate evaluations',
+                'Report deficiencies'
+            ]
+        }
+    }
+    
+    VIOLATION_TYPES = {
+        'financial_reporting_fraud': {
+            'examples': [
+                'Revenue recognition manipulation',
+                'Improper reserves and estimates',
+                'Concealing liabilities',
+                'Improper asset valuations',
+                'Channel stuffing',
+                'Cookie jar reserves'
+            ],
+            'red_flags': [
+                'Pressure to meet earnings targets',
+                'Unusual journal entries',
+                'Override of controls',
+                'Related party transactions',
+                'Complex transactions near period-end'
+            ]
+        },
+        
+        'internal_control_deficiencies': {
+            'material_weakness': {
+                'definition': 'Reasonable possibility of material misstatement not prevented/detected',
+                'examples': [
+                    'Inadequate segregation of duties',
+                    'Ineffective control environment',
+                    'Ineffective IT controls',
+                    'Lack of qualified personnel',
+                    'Management override of controls'
+                ]
+            },
+            'significant_deficiency': {
+                'definition': 'Less severe than material weakness but warrants audit committee attention',
+                'examples': [
+                    'Deficiencies in control design',
+                    'Failure to properly implement controls',
+                    'Inadequate documentation'
+                ]
+            }
+        },
+        
+        'certification_fraud': {
+            'examples': [
+                'False CEO/CFO certification',
+                'Knowledge of control deficiencies not disclosed',
+                'Awareness of fraud not disclosed'
+            ]
+        },
+        
+        'whistleblower_retaliation': {
+            'prohibited_actions': [
+                'Termination',
+                'Demotion',
+                'Suspension',
+                'Threats',
+                'Harassment',
+                'Discrimination'
+            ]
+        }
+    }
+```
+
+-----
+
+## II. SOX NLP MODEL ARCHITECTURE
+
+```python
+class SOXDetectionModel(nn.Module):
+    """
+    Specialized model for detecting SOX compliance violations
+    
+    Focuses on:
+    - Financial reporting fraud
+    - Internal control circumvention
+    - Management certifications (false statements)
+    - Whistleblower retaliation
+    """
+    
+    def __init__(self, config):
+        super(SOXDetectionModel, self).__init__()
+        
+        # Base encoder
+        self.encoder = AutoModel.from_pretrained("microsoft/deberta-v3-large")
+        hidden_size = self.encoder.config.hidden_size
+        
+        # Multi-task heads for different SOX violation types
+        self.financial_fraud_detector = FinancialFraudDetector(hidden_size)
+        self.internal_control_detector = InternalControlDetector(hidden_size)
+        self.certification_fraud_detector = CertificationFraudDetector(hidden_size)
+        self.whistleblower_retaliation_detector = WhistleblowerRetaliationDetector(hidden_size)
+        
+        # Context aggregator
+        self.context_aggregator = SOXContextAggregator(hidden_size)
+        
+    def forward(self, input_ids, attention_mask, financial_context, employee_context):
+        """
+        Forward pass with financial and employee context
+        
+        Args:
+            financial_context: Dict with quarter-end proximity, earnings date, etc.
+            employee_context: Dict with sender role, department, reporting relationships
+        """
+        # Encode
+        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        pooled = outputs.pooler_output
+        sequence = outputs.last_hidden_state
+        
+        # Detect different violation types
+        financial_fraud = self.financial_fraud_detector(
+            pooled_output=pooled,
+            sequence_output=sequence,
+            financial_context=financial_context
+        )
+        
+        internal_control = self.internal_control_detector(
+            pooled_output=pooled,
+            sequence_output=sequence,
+            employee_context=employee_context
+        )
+        
+        certification_fraud = self.certification_fraud_detector(
+            pooled_output=pooled,
+            employee_context=employee_context
+        )
+        
+        whistleblower = self.whistleblower_retaliation_detector(
+            pooled_output=pooled,
+            sequence_output=sequence,
+            employee_context=employee_context
+        )
+        
+        # Aggregate
+        aggregated = self.context_aggregator(
+            financial_fraud=financial_fraud,
+            internal_control=internal_control,
+            certification_fraud=certification_fraud,
+            whistleblower=whistleblower,
+            pooled=pooled
+        )
+        
+        return aggregated
+
+
+class FinancialFraudDetector(nn.Module):
+    """
+    Detects financial reporting fraud schemes
+    """
+    
+    def __init__(self, hidden_size):
+        super(FinancialFraudDetector, self).__init__()
+        
+        # Revenue recognition manipulation
+        self.revenue_fraud_head = nn.Sequential(
+            nn.Linear(hidden_size + 32, 256),  # +32 for financial context features
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 5)  # Types: None, Timing, Fictitious, Channel Stuffing, etc.
+        )
+        
+        # Cookie jar reserves / improper estimates
+        self.reserves_manipulation_head = nn.Sequential(
+            nn.Linear(hidden_size + 32, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 4)  # None, Minor, Moderate, Material
+        )
+        
+        # Liability concealment
+        self.liability_concealment_head = nn.Sequential(
+            nn.Linear(hidden_size + 32, 256),
+            nn.ReLU(),
+            nn.Linear(256, 3)  # No, Possible, Probable
+        )
+        
+        # Pressure/incentive detector (fraud triangle)
+        self.pressure_detector = nn.Sequential(
+            nn.Linear(hidden_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, pooled_output, sequence_output, financial_context):
+        """
+        Detect financial fraud schemes
+        """
+        # Encode financial context (quarter-end, earnings miss risk, etc.)
+        fin_context_tensor = self.encode_financial_context(financial_context)
+        fin_context_tensor = torch.tensor(
+            fin_context_tensor,
+            dtype=torch.float32,
+            device=pooled_output.device
+        ).unsqueeze(0)
+        
+        # Concatenate
+        combined = torch.cat([pooled_output, fin_context_tensor], dim=1)
+        
+        # Detect fraud types
+        revenue_logits = self.revenue_fraud_head(combined)
+        reserves_logits = self.reserves_manipulation_head(combined)
+        liability_logits = self.liability_concealment_head(combined)
+        
+        # Detect pressure/incentive
+        pressure_score = self.pressure_detector(pooled_output)
+        
+        # Calculate overall fraud risk
+        revenue_probs = torch.softmax(revenue_logits, dim=-1)
+        reserves_probs = torch.softmax(reserves_logits, dim=-1)
+        liability_probs = torch.softmax(liability_logits, dim=-1)
+        
+        # Weights for each fraud type
+        revenue_risk = torch.sum(
+            revenue_probs * torch.tensor([0.0, 0.3, 0.6, 0.8, 1.0], device=pooled_output.device),
+            dim=1
+        )
+        reserves_risk = torch.sum(
+            reserves_probs * torch.tensor([0.0, 0.3, 0.6, 1.0], device=pooled_output.device),
+            dim=1
+        )
+        liability_risk = torch.sum(
+            liability_probs * torch.tensor([0.0, 0.5, 1.0], device=pooled_output.device),
+            dim=1
+        )
+        
+        # Overall financial fraud risk
+        overall_risk = torch.maximum(
+            torch.maximum(revenue_risk, reserves_risk),
+            liability_risk
+        )
+        
+        # Amplify if pressure detected
+        overall_risk = overall_risk * (1 + pressure_score.squeeze())
+        overall_risk = torch.clamp(overall_risk, 0.0, 1.0)
+        
+        return {
+            'score': overall_risk,
+            'revenue_fraud_risk': revenue_risk,
+            'reserves_manipulation_risk': reserves_risk,
+            'liability_concealment_risk': liability_risk,
+            'pressure_score': pressure_score,
+            'revenue_logits': revenue_logits,
+            'reserves_logits': reserves_logits,
+            'liability_logits': liability_logits
+        }
+    
+    def encode_financial_context(self, financial_context):
+        """
+        Encode financial context into feature vector
+        """
+        features = [0.0] * 32
+        
+        # Feature 0: Days to quarter-end (normalized)
+        days_to_qe = financial_context.get('days_to_quarter_end', 100)
+        features[0] = max(0, 1 - (days_to_qe / 30))  # Higher if closer to QE
+        
+        # Feature 1: Days to earnings announcement
+        days_to_earnings = financial_context.get('days_to_earnings', 100)
+        features[1] = max(0, 1 - (days_to_earnings / 30))
+        
+        # Feature 2: At risk of missing earnings
+        features[2] = 1.0 if financial_context.get('earnings_miss_risk', False) else 0.0
+        
+        # Feature 3: Historical misses
+        historical_misses = financial_context.get('historical_earnings_misses', 0)
+        features[3] = min(historical_misses / 4, 1.0)
+        
+        # Feature 4-7: Reserved for additional financial metrics
+        
+        return features
+
+
+class InternalControlDetector(nn.Module):
+    """
+    Detects internal control circumvention or deficiencies
+    
+    This is core to SOX Section 404 compliance
+    """
+    
+    def __init__(self, hidden_size):
+        super(InternalControlDetector, self).__init__()
+        
+        # Control override detector
+        self.override_detector = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+        
+        # Segregation of duties violation
+        self.sod_violation_detector = nn.Sequential(
+            nn.Linear(hidden_size + 16, 256),  # +16 for employee context
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+        # Authorization bypass
+        self.authorization_bypass_detector = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+        # Severity classifier (deficiency severity)
+        self.severity_classifier = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 4)  # No deficiency, Deficiency, Significant, Material Weakness
+        )
+        
+    def forward(self, pooled_output, sequence_output, employee_context):
+        """
+        Detect internal control issues
+        """
+        # Detect control override
+        override_score = self.override_detector(pooled_output)
+        
+        # Encode employee context
+        emp_context_tensor = self.encode_employee_context(employee_context)
+        emp_context_tensor = torch.tensor(
+            emp_context_tensor,
+            dtype=torch.float32,
+            device=pooled_output.device
+        ).unsqueeze(0)
+        
+        # Detect SOD violation
+        sod_combined = torch.cat([pooled_output, emp_context_tensor], dim=1)
+        sod_score = self.sod_violation_detector(sod_combined)
+        
+        # Detect authorization bypass
+        auth_bypass_score = self.authorization_bypass_detector(pooled_output)
+        
+        # Classify severity
+        severity_logits = self.severity_classifier(pooled_output)
+        severity_probs = torch.softmax(severity_logits, dim=-1)
+        
+        # Overall control risk
+        control_risk = torch.maximum(
+            torch.maximum(override_score, sod_score),
+            auth_bypass_score
+        )
+        
+        return {
+            'score': control_risk,
+            'override_detected': override_score > 0.5,
+            'override_score': override_score,
+            'sod_violation_score': sod_score,
+            'authorization_bypass_score': auth_bypass_score,
+            'severity_logits': severity_logits,
+            'severity_probs': severity_probs
+        }
+    
+    def encode_employee_context(self, employee_context):
+        """
+        Encode employee role and relationships
+        """
+        features = [0.0] * 16
+        
+        # Feature 0: Is C-suite (CEO/CFO)
+        role = employee_context.get('role', '').lower()
+        features[0] = 1.0 if any(exec_role in role for exec_role in ['ceo', 'cfo', 'chief']) else 0.0
+        
+        # Feature 1: Is in finance/accounting
+        dept = employee_context.get('department', '').lower()
+        features[1] = 1.0 if any(fin_dept in dept for fin_dept in ['finance', 'accounting', 'controller']) else 0.0
+        
+        # Feature 2: Has GL access
+        features[2] = 1.0 if employee_context.get('has_gl_access', False) else 0.0
+        
+        # Feature 3: Has approval authority
+        features[3] = 1.0 if employee_context.get('has_approval_authority', False) else 0.0
+        
+        # Feature 4-15: Reserved for additional context
+        
+        return features
+
+
+class CertificationFraudDetector(nn.Module):
+    """
+    Detects false certification by CEO/CFO (SOX 302/906)
+    
+    Looks for executives knowingly certifying false financials
+    or concealing control deficiencies
+    """
+    
+    def __init__(self, hidden_size):
+        super(CertificationFraudDetector, self).__init__()
+        
+        # False statement detector
+        self.false_statement_detector = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+        # Knowledge of fraud detector
+        self.knowledge_of_fraud_detector = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+        # Control deficiency concealment
+        self.concealment_detector = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, pooled_output, employee_context):
+        """
+        Detect certification fraud
+        
+        Only relevant if sender is CEO/CFO or senior finance
+        """
+        # Check if sender is relevant (CEO/CFO/Controller)
+        role = employee_context.get('role', '').lower()
+        is_relevant_role = any(
+            exec_role in role 
+            for exec_role in ['ceo', 'cfo', 'chief financial', 'controller']
+        )
+        
+        if not is_relevant_role:
+            # Not relevant - return zero risk
+            return {
+                'score': torch.tensor([0.0], device=pooled_output.device),
+                'is_relevant': False
+            }
+        
+        # Detect issues
+        false_statement_score = self.false_statement_detector(pooled_output)
+        knowledge_score = self.knowledge_of_fraud_detector(pooled_output)
+        concealment_score = self.concealment_detector(pooled_output)
+        
+        # Overall certification fraud risk
+        cert_fraud_risk = torch.maximum(
+            torch.maximum(false_statement_score, knowledge_score),
+            concealment_score
+        )
+        
+        return {
+            'score': cert_fraud_risk,
+            'is_relevant': True,
+            'false_statement_score': false_statement_score,
+            'knowledge_of_fraud_score': knowledge_score,
+            'concealment_score': concealment_score
+        }
+
+
+class WhistleblowerRetaliationDetector(nn.Module):
+    """
+    Detects potential whistleblower retaliation (SOX 806)
+    
+    Looks for adverse actions taken against employees who report violations
+    """
+    
+    def __init__(self, hidden_size):
+        super(WhistleblowerRetaliationDetector, self).__init__()
+        
+        # Adverse action detector
+        self.adverse_action_detector = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 7)  # Types: Termination, Demotion, Suspension, etc.
+        )
+        
+        # Retaliation intent detector
+        self.intent_detector = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+        # Causation detector (action linked to whistleblowing)
+        self.causation_detector = nn.Sequential(
+            nn.Linear(hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, pooled_output, sequence_output, employee_context):
+        """
+        Detect whistleblower retaliation
+        """
+        # Detect adverse action type
+        adverse_action_logits = self.adverse_action_detector(pooled_output)
+        adverse_action_probs = torch.softmax(adverse_action_logits, dim=-1)
+        
+        # Check if any adverse action present
+        # (Index 0 is "no action", indices 1-6 are various adverse actions)
+        adverse_action_present = 1 - adverse_action_probs[:, 0]
+        
+        # Detect retaliation intent
+        intent_score = self.intent_detector(pooled_output)
+        
+        # Detect causation (action because of whistleblowing)
+        causation_score = self.causation_detector(pooled_output)
+        
+        # Overall retaliation risk
+        # Requires: (1) Adverse action + (2) Intent + (3) Causation
+        retaliation_risk = adverse_action_present * intent_score.squeeze() * causation_score.squeeze()
+        
+        return {
+            'score': retaliation_risk,
+            'adverse_action_present': adverse_action_present > 0.5,
+            'adverse_action_probs': adverse_action_probs,
+            'intent_score': intent_score,
+            'causation_score': causation_score
+        }
+
+
+class SOXContextAggregator(nn.Module):
+    """
+    Aggregates all SOX violation signals
+    """
+    
+    def __init__(self, hidden_size):
+        super(SOXContextAggregator, self).__init__()
+        
+        # Aggregator
+        self.aggregator = nn.Sequential(
+            nn.Linear(4 + hidden_size, 256),  # 4 sub-scores + pooled
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+            nn.Sigmoid()
+        )
+        
+        # Violation type classifier
+        self.violation_classifier = nn.Sequential(
+            nn.Linear(4 + hidden_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 5)  # Financial Fraud, Internal Controls, Certification, Whistleblower, Multiple
+        )
+        
+    def forward(self, financial_fraud, internal_control, certification_fraud, whistleblower, pooled):
+        """
+        Aggregate all SOX signals
+        """
+        # Stack sub-scores
+        sub_scores = torch.stack([
+            financial_fraud['score'],
+            internal_control['score'],
+            certification_fraud['score'],
+            whistleblower['score']
+        ], dim=1)
+        
+        # Concatenate
+        combined = torch.cat([sub_scores, pooled], dim=1)
+        
+        # Final risk
+        risk_score = self.aggregator(combined)
+        
+        # Violation type
+        violation_logits = self.violation_classifier(combined)
+        violation_probs = torch.softmax(violation_logits, dim=-1)
+        
+        # Confidence
+        confidence = 1.0 - torch.std(sub_scores, dim=1, keepdim=True)
+        
+        return {
+            'final_risk_score': risk_score,
+            'violation_type_probs': violation_probs,
+            'confidence': confidence,
+            
+            # Detailed sub-scores
+            'financial_fraud_score': financial_fraud['score'],
+            'internal_control_score': internal_control['score'],
+            'certification_fraud_score': certification_fraud['score'],
+            'whistleblower_retaliation_score': whistleblower['score'],
+            
+            # Detailed outputs for each detector
+            'financial_fraud_details': financial_fraud,
+            'internal_control_details': internal_control,
+            'certification_fraud_details': certification_fraud,
+            'whistleblower_details': whistleblower
+        }
+```
+
+-----
+
+## III. SOX TRAINING DATA
+
+```python
+class SOXTrainingDataBuilder:
+    """
+    Builds SOX-specific training dataset
+    """
+    
+    def build_dataset(self):
+        """
+        Build comprehensive SOX training data
+        """
+        examples = []
+        
+        # Source 1: Financial fraud examples
+        examples.extend(self.create_financial_fraud_examples())
+        
+        # Source 2: Internal control examples
+        examples.extend(self.create_internal_control_examples())
+        
+        # Source 3: Certification fraud examples
+        examples.extend(self.create_certification_fraud_examples())
+        
+        # Source 4: Whistleblower retaliation examples
+        examples.extend(self.create_whistleblower_examples())
+        
+        # Source 5: Real enforcement actions
+        examples.extend(self.scrape_sox_enforcement_actions())
+        
+        # Source 6: Negative examples
+        examples.extend(self.create_sox_compliant_examples())
+        
+        return examples
+    
+    def create_financial_fraud_examples(self):
+        """
+        Examples of financial reporting fraud
+        """
+        examples = []
+        
+        # Revenue recognition manipulation
+        examples.append({
+            'text': """
+                We're $5M short of the quarterly target. Let's recognize 
+                the renewal contract revenue this quarter even though it 
+                doesn't start until Q1. We can just backdate the contract.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'financial_fraud_revenue',
+                'severity': 'critical',
+                'fraud_scheme': 'premature_revenue_recognition',
+                'financial_context': {
+                    'days_to_quarter_end': 3,
+                    'earnings_miss_risk': True
+                },
+                'pressure_indicators': ['short of target', 'backdate']
+            }
+        })
+        
+        # Cookie jar reserves
+        examples.append({
+            'text': """
+                Let's be conservative with our reserves this quarter since 
+                we beat expectations. That way we'll have some cushion if 
+                we need to release reserves next quarter to boost earnings.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'financial_fraud_reserves',
+                'severity': 'high',
+                'fraud_scheme': 'cookie_jar_reserves',
+                'intent': 'earnings_management'
+            }
+        })
+        
+        # Channel stuffing
+        examples.append({
+            'text': """
+                Push as many shipments as possible before month-end, even 
+                if customers haven't requested delivery yet. We can offer 
+                extended payment terms and generous return policies to get 
+                them to accept early delivery.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'financial_fraud_revenue',
+                'severity': 'high',
+                'fraud_scheme': 'channel_stuffing',
+                'red_flags': ['before month-end', 'haven\'t requested', 'extended terms']
+            }
+        })
+        
+        return examples
+    
+    def create_internal_control_examples(self):
+        """
+        Examples of internal control violations
+        """
+        examples = []
+        
+        # Management override
+        examples.append({
+            'text': """
+                I know we need two approvals for journal entries over $100k, 
+                but I'm the CFO so just process this $500k adjustment without 
+                getting a second signature. Time sensitive - need it booked today.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'internal_controls',
+                'severity': 'critical',
+                'control_issue': 'management_override',
+                'control_circumvented': 'dual_authorization',
+                'employee_context': {
+                    'role': 'CFO',
+                    'has_gl_access': True
+                }
+            }
+        })
+        
+        # Segregation of duties violation
+        examples.append({
+            'text': """
+                Sarah, can you process the vendor payment to ABC Corp and 
+                also update the accounts payable records? I know you usually 
+                just do the data entry, but Tim is out this week.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'internal_controls',
+                'severity': 'high',
+                'control_issue': 'segregation_of_duties_violation',
+                'red_flags': ['process payment', 'update records', 'same person']
+            }
+        })
+        
+        return examples
+    
+    def create_certification_fraud_examples(self):
+        """
+        Examples of false CEO/CFO certification
+        """
+        examples = []
+        
+        # Knowing certification of false financials
+        examples.append({
+            'text': """
+                I'm aware the Q4 financials have that $10M revenue issue we 
+                discussed, but I'm going to sign the 10-K certification anyway. 
+                The auditors didn't catch it, and by the time anyone notices, 
+                we'll have fixed it in Q1.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'certification_fraud',
+                'severity': 'critical',
+                'section': 'SOX_302_906',
+                'fraud_type': 'knowing_false_certification',
+                'employee_context': {
+                    'role': 'CFO'
+                }
+            }
+        })
+        
+        # Concealing control deficiencies
+        examples.append({
+            'text': """
+                Don't mention the segregation of duties issues in the SOX 404 
+                report. The auditors may not notice, and if we disclose it, 
+                it'll hurt the stock price.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'certification_fraud',
+                'severity': 'critical',
+                'section': 'SOX_302',
+                'fraud_type': 'concealing_control_deficiency'
+            }
+        })
+        
+        return examples
+    
+    def create_whistleblower_examples(self):
+        """
+        Examples of whistleblower retaliation
+        """
+        examples = []
+        
+        # Termination after reporting
+        examples.append({
+            'text': """
+                I know Sarah reported the accounting issue to the SEC, but we 
+                need to let her go. Come up with a performance-based reason - 
+                say she missed targets or something. Make it look legitimate.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'whistleblower_retaliation',
+                'severity': 'critical',
+                'section': 'SOX_806',
+                'adverse_action': 'termination',
+                'causation': True,  # Action because of whistleblowing
+                'concealment_attempt': True
+            }
+        })
+        
+        # Demotion/harassment
+        examples.append({
+            'text': """
+                Since Tom raised concerns about the financial reporting to the 
+                audit committee, he's been a problem. Let's reassign him to a 
+                lower-level position with no direct reports. That should send 
+                a message.
+            """,
+            'labels': {
+                'violation_present': True,
+                'violation_type': 'whistleblower_retaliation',
+                'severity': 'high',
+                'section': 'SOX_806',
+                'adverse_action': 'demotion',
+                'causation': True,
+                'retaliatory_intent': True
+            }
+        })
+        
+        return examples
+```
+
+-----
+
+This provides comprehensive, production-ready specifications for both FCPA and SOX detection models. The key differentiators are:
+
+**FCPA Model:**
+
+- Multi-stage pipeline targeting each element of FCPA violations
+- Heavy emphasis on foreign official detection (critical threshold element)
+- Third-party intermediary risk assessment
+- Accounting provisions detection
+
+**SOX Model:**
+
+- Focus on financial reporting fraud schemes (revenue recognition, reserves, etc.)
+- Internal control circumvention detection
+- Executive certification fraud
+- Whistleblower retaliation protection
+
+Both models feature:
+
+- Interpretable sub-components
+- Contextual feature integration (financial, employee, temporal context)
+- Comprehensive training data strategies
+- Production deployment pipelines
+
+Would you like me to expand on:
+
+1. Model evaluation metrics and validation strategies?
+1. Integration with the broader case management system?
+1. Continuous learning and model updates?
+1. Specific fraud scheme detection (e.g., deep dive on revenue recognition)?​​​​​​​​​​​​​​​​

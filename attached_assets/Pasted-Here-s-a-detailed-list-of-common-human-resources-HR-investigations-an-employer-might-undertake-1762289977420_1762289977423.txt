@@ -1,0 +1,89 @@
+Here’s a detailed list of **common human-resources (HR) investigations** an employer might undertake — along with the key **federal laws** and **Florida-state laws** that may apply. This should help you (for example at your company) understand the risks, triggers, and legal framework when you need to launch an investigation.
+
+---
+
+## Common HR Investigations
+
+Below are frequent categories of investigations in the workplace, with a short description of each.
+
+| #  | Investigation Type                                                  | Description / Typical Trigger                                                                                                                                                                                                                       |
+| -- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1  | Discrimination (Protected-class)                                    | Allegations that an employee (or applicant) was treated less favourably because of a protected characteristic (race, sex, religion, national origin, age, disability etc). ([Employers Council][1])                                                 |
+| 2  | Harassment (including sexual harassment)                            | Unwelcome conduct based on a protected characteristic (or perhaps more general—for bullying etc) that creates a hostile or offensive work environment. ([EEOC][2])                                                                                  |
+| 3  | Retaliation                                                         | Allegations that the employer took an adverse action (or threatened one) because the employee engaged in protected activity (complained about discrimination/harassment, participated in an investigation, exercised some legal right). ([EEOC][3]) |
+| 4  | Wage/Hour / Overtime / Minimum Wage Violations                      | Complaints about non-payment of wages, overtime, mis-classification, tipped employees, etc. Investigations may trigger by employee complaints or government audits. ([Ayo and Iken][4])                                                             |
+| 5  | Health & Safety / OSHA / Workplace Safety Issues                    | Incidents or complaints about unsafe working conditions, failure to follow safety regulations, or work-environment hazards. Investigation may be required by law or internal policy. ([Employers Council][1])                                       |
+| 6  | Workplace Bullying / Hostile Work Environment (non-protected class) | Even when the target is not a protected class or characteristic, the behaviour (bullying, verbal abuse, violence) may trigger an investigation — especially if the employer’s policy prohibits it. ([Scott Law Team][5])                            |
+| 7  | Theft / Fraud / Misconduct / Embezzlement                           | Allegations of financial misconduct, theft of assets, falsification of records, misuse of company property. These often require immediate investigation. ([Employers Council][1])                                                                   |
+| 8  | Policy Violations / Code of Conduct Issues                          | Violations of internal policies such as conflict of interest, computer misuse, social media misuse, non-compliance with handbook rules, substance abuse etc. ([Scott Law Team][5])                                                                  |
+| 9  | Whistleblower / Internal Reporting of Legal/Regulatory Violations   | Employees report possible violations of law/regulation (for example environmental, safety, medical-records, compliance) and the employer must investigate. ([Rutgers SMLR][6])                                                                      |
+| 10 | Reasonable Accommodation / Disability / Leave of Absence Issues     | Complaints that an employee’s rights under disability laws or leave laws (e.g., the Family and Medical Leave Act) were violated. Investigation may be required when accommodation was requested or denied. ([L&E Global][7])                        |
+
+---
+
+## Applicable Federal Laws
+
+Here are several major federal statutes that often come into play when HR investigations are required:
+
+* Title VII of the Civil Rights Act of 1964 (race, color, religion, sex, national origin) – prohibits discrimination, harassment, and retaliation. ([Department of Justice][8])
+* Age Discrimination in Employment Act of 1967 (ADEA) – prohibits discrimination based on age (40+). ([L&E Global][7])
+* Americans with Disabilities Act of 1990 (ADA) – prohibits discrimination based on disability, requires reasonable accommodation. ([L&E Global][7])
+* Equal Pay Act of 1963 (EPA) – prohibits unequal pay based on sex for equal work. ([L&E Global][7])
+* Family and Medical Leave Act (FMLA) – requires eligible employees be allowed job-protected leave for certain family/medical reasons. Violations may trigger investigations. ([Ayo and Iken][4])
+* Fair Labor Standards Act of 1938 (FLSA) – governs minimum wage, overtime, record-keeping; investigations may relate to wage/hour complaints. ([DOL][9])
+* Occupational Safety and Health Act of 1970 (OSHA) – requires safe work environment; complaints may lead to investigations. ([Employers Council][1])
+
+Other federal obligations:
+
+* Retaliation protections under many statutes (e.g., cannot retaliate for asserting rights) ([DOL][10])
+* Privacy and record‐keeping obligations, especially in sensitive investigations.
+* Federal whistleblower laws may apply depending on industry/sector.
+
+---
+
+## Applicable Florida Laws
+
+When your employer is operating in Florida (or has a Florida workforce), state laws add additional layers. Some key ones:
+
+* Florida Statute §760.10 — Florida’s employment discrimination statute: prohibits discrimination on basis of race, color, religion, sex, pregnancy, national origin, age, handicap, marital status. ([Online Sunshine][11])
+* The statute of limitations: In Florida, workers generally have up to 365 days to file a discrimination/retaliation complaint with the Florida Commission on Human Relations (FCHR) after an alleged unlawful employment practice. ([Florida Commission on Human Relations][12])
+* Florida minimum wage & wage matters: For example, Florida law prohibits retaliation against employees who complain about wages. ([Online Sunshine][13])
+* Florida requires prompt investigations of harassment/discrimination/retaliation claims. ([wannoslaw.com][14])
+* Florida law also governs internal investigations when involving public agencies or state employees (e.g., Florida Statute §112.31895) which “receive and investigate complaints from employees alleging retaliation by state agencies.” ([The Florida Senate][15])
+
+---
+
+## Putting it All Together — What HR Should Do
+
+Given your role (and the fact your company maybe in Florida or has Florida employees), here are some practical take-aways:
+
+* **Trigger quickly**: When any allegation arises in one of the categories above (especially discrimination/harassment/retaliation) you must assess whether a formal investigation is required. Several sources say that investigations should be prompt, thorough, and unbiased. ([Brick Business Law, P.A. -][16])
+* **Use applicable policy + law**: Ensure the complaint is evaluated under both company policy *and* applicable laws (federal + state).
+* **Document everything**: Who was interviewed, what evidence was considered, how findings were reached. This is critical if litigation or agency claim arises. ([Miller Johnson][17])
+* **Be aware of legal obligations**: For example, discrimination/harassment/retaliation claims often trigger *mandatory* or very strongly recommended investigations; wage/hour or safety issues may trigger investigations even without a complaint.
+* **Florida-specific**: If you employ in Florida, ensure you’re complying with the Florida statutes (for example §760.10) and using FCHR deadlines, etc.
+* **Train your HR/investigators**: They should understand protected characteristics, retaliation definitions, state vs federal law, how to conduct interviews, maintain confidentiality, protect the rights of the accused and the accuser.
+* **Follow up**: After the investigation, ensure corrective action (if required) and monitor to prevent recurrence.
+* **Get legal counsel when necessary**: Some incidents (e.g., senior leadership misconduct, discrimination claims with high risk) warrant outside counsel.
+
+---
+
+If you like, I can **prepare a detailed checklist** of “when an investigation is required + key steps + legal touchpoints” tailored for Florida employers (and also include a quick reference matrix of federal & Florida laws). Would you like that?
+
+[1]: https://www.employerscouncil.org/resources/understanding-the-most-common-types-of-workplace-investigations/?utm_source=chatgpt.com "Understanding the most common types of workplace ..."
+[2]: https://www.eeoc.gov/harassment?utm_source=chatgpt.com "Harassment | U.S. Equal Employment Opportunity ..."
+[3]: https://www.eeoc.gov/retaliation?utm_source=chatgpt.com "Retaliation | U.S. Equal Employment Opportunity ..."
+[4]: https://www.myfloridalaw.com/employee-laws-in-florida/?utm_source=chatgpt.com "Employee Laws in Florida - Ayo and Iken"
+[5]: https://www.floridalaborlawyer.com/complaints-in-the-workplace-when-should-an-employer-conduct-a-workplace-investigation/?utm_source=chatgpt.com "Complaints In The Workplace - Florida Employment Lawyer"
+[6]: https://smlr.rutgers.edu/sites/default/files/Documents/Centers/WJL/Toolbox_Tool11_Retaliation_Nuts_and_Bolts.pdf?utm_source=chatgpt.com "The Nuts and Bolts of a Retaliation Investigation: Part I"
+[7]: https://leglobal.law/countries/usa/employment-law/employment-law-overview-usa/04-anti-discrimination-laws/?utm_source=chatgpt.com "Anti-discrimination laws & legislation in the United States ..."
+[8]: https://www.justice.gov/crt/laws-we-enforce?utm_source=chatgpt.com "Civil Rights Division | Laws We Enforce"
+[9]: https://www.dol.gov/agencies/whd/fact-sheets/44-flsa-visits-to-employers?utm_source=chatgpt.com "Fact Sheet #44: Visits to Employers"
+[10]: https://www.dol.gov/agencies/whd/retaliation?utm_source=chatgpt.com "Retaliation | U.S. Department of Labor"
+[11]: https://www.leg.state.fl.us/statutes/index.cfm?App_mode=Display_Statute&URL=0700-0799%2F0760%2FSections%2F0760.10.html&utm_source=chatgpt.com "Florida Statutes § 760.10(1)(a) - Online Sunshine"
+[12]: https://fchr.myflorida.com/employment?utm_source=chatgpt.com "Employment - Florida Commission on Human Relations"
+[13]: https://www.leg.state.fl.us/statutes/index.cfm?App_mode=Display_Statute&URL=0400-0499%2F0448%2F0448.html&utm_source=chatgpt.com "The 2024 Florida Statutes (including 2025 Special Session C)"
+[14]: https://www.wannoslaw.com/workplace-investigation?utm_source=chatgpt.com "Florida Workplace Investigations - The Wannos Law Firm"
+[15]: https://www.flsenate.gov/laws/statutes/2021/112.31895?utm_source=chatgpt.com "Chapter 112 Section 31895 - 2021 Florida Statutes - Florida Senate"
+[16]: https://brickbusinesslaw.com/blog/florida-workplace-investigations-legal-guide/?utm_source=chatgpt.com "Conducting Workplace Investigations in Florida - Brick Business Law"
+[17]: https://millerjohnson.com/8-els-2022-ppt-investigations-gr/?utm_source=chatgpt.com "The Do's and Don'ts of Workplace Investigations"

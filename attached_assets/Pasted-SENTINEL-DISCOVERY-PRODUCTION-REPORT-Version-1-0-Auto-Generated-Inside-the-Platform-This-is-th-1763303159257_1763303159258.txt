@@ -1,0 +1,1254 @@
+SENTINEL — DISCOVERY PRODUCTION REPORT
+Version 1.0 • Auto-Generated Inside the Platform
+This is the report your users expect from an enterprise-grade e-discovery system.
+It covers:
+•	What was uploaded
+•	What was processed
+•	Who is involved
+•	What communications occurred
+•	What tags were used
+•	Privilege findings
+•	Document types
+•	Volumes, counts, errors
+•	Production batches
+________________________________________
+1. Report Structure
+SECTION A — Matter Metadata
+•	Case Name
+•	Case ID
+•	Client
+•	Date Range of Documents
+•	Total Documents Ingested
+•	Total Documents Culled
+•	Total Responsive
+•	Total Privileged
+•	Total Produced
+•	Processing Start/End Times
+________________________________________
+SECTION B — Custodian Summary
+For each custodian:
+Custodian	Email Count	Chat Count	File Count	De-duplicated	Responsive	Privileged	Produced
+Also include:
+•	Custodian → Top 10 people they communicate with
+•	Custodian message volume timeline (weekly aggregation)
+________________________________________
+SECTION C — Communication Map
+Graph metrics:
+•	Top 10 communication pairs
+•	Top communication channels (Email, Teams, Slack, WhatsApp, SMS)
+•	Keyword or theme clusters (AI topic modeling)
+•	Sentiment anomalies (optional)
+•	Potential spike days (e.g., incident days, data breach, bad behavior)
+________________________________________
+SECTION D — Tag Analysis
+Tag	Count	Percentage	Applied By	Overlaps
+Categories:
+•	Responsive
+•	Non-Responsive
+•	Issue Tags
+•	Privilege Tags
+•	Hot Documents
+•	Attorney Eyes Only
+________________________________________
+SECTION E — Document Types
+File Type	Count	Size	Examples
+Breakdown:
+•	Emails
+•	Chat messages
+•	PDFs
+•	Word
+•	Spreadsheets
+•	Images
+•	Audio
+•	Video
+•	System logs
+________________________________________
+SECTION F — Privilege Review
+•	Total documents flagged as:
+o	Attorney-Client
+o	Attorney Work Product
+o	Redacted
+o	Possibly Privileged (AI model)
+•	Privilege tag conflicts
+•	“Inadvertent Production Risk” items
+•	Privilege log table for export
+________________________________________
+SECTION G — Production Batches
+Batch ID	Date	Docs Produced	Docs Withheld	Redacted	Format	Hash of Set
+Also include a full chain-of-custody hash.
+________________________________________
+SECTION H — File Inventory (Full Detail) — CSV Tab
+Like Logicull, but improved:
+| DocID | Custodian | FileName | FilePath | Loaded From | Upload Set | Date | Sender | Recipients | Tags | Privilege | FamilyID | Hash | Size | Type |
+________________________________________
+2. Data Model Sentinel Must Have
+Your current schema already includes most, but here’s what’s required:
+Document {
+  id
+  caseId
+  custodian
+  sender
+  recipients[]
+  fileName
+  fileType
+  mimeType
+  fileSize
+  hash
+  uploadBatch
+  date
+  tags[]
+  privilegeTags[]
+  processingStatus
+  isProduced
+}
+Communication {
+  id
+  docId
+  sender
+  recipients[]
+  timestamp
+  communicationType (email/chat/sms/etc.)
+}
+ProductionBatch {
+  id
+  caseId
+  batchName
+  productionDate
+  documentIds[]
+  hash
+}
+________________________________________
+3. Backend API Logic (Express + Prisma Example)
+GET /api/reports/:caseId/discovery
+This endpoint:
+1.	Validates RBAC (admin, firm_user, or client for their own case)
+2.	Runs the full set of analytics queries
+3.	Bundles into one JSON or downloadable file (PDF/Excel/CSV)
+Example Code Skeleton
+router.get(
+  "/reports/:caseId/discovery",
+  authMiddleware,
+  requireCaseAccess,
+  async (req, res) => {
+    const caseId = req.params.caseId;
+
+    const documents = await prisma.document.findMany({
+      where: { caseId },
+      include: { tags: true, privilegeTags: true }
+    });
+
+    const communications = await prisma.communication.findMany({
+      where: { caseId }
+    });
+
+    const batches = await prisma.productionBatch.findMany({
+      where: { caseId }
+    });
+
+    const custodians = groupBy(documents, "custodian");
+    const fileTypes = groupBy(documents, "fileType");
+    const tagCounts = countTags(documents);
+    const privilegeStats = countPrivilege(documents);
+    const commMap = buildCommunicationGraph(communications);
+
+    const report = {
+      metadata: computeMetadata(documents),
+      custodians: computeCustodianSummary(custodians),
+      communications: commMap,
+      tagAnalysis: tagCounts,
+      fileTypes,
+      privilege: privilegeStats,
+      production: batches,
+      inventory: documents
+    };
+
+    res.json(report);
+  }
+);
+________________________________________
+4. Export Options
+A. CSV / Excel
+Use json2csv or exceljs:
+const workbook = new ExcelJS.Workbook();
+const sheet = workbook.addWorksheet("Inventory");
+
+sheet.addRow([...column headers...]);
+documents.forEach(doc => sheet.addRow([...values...]));
+
+await workbook.xlsx.write(res);
+B. PDF
+Use pdfmake or puppeteer to print a styled HTML report.
+________________________________________
+5. Replit Prompt (Paste Directly for Auto-Build)
+Copy/paste this into Vibe Coding in Replit:
+________________________________________
+REPLIT BUILD PROMPT — DISCOVERY REPORT FEATURE
+Add a new backend endpoint:
+GET /api/reports/:caseId/discovery
+Requirements:
+•	Enforce RBAC using authMiddleware and requireCaseAccess.
+•	Pull all documents, communications, tags, privilege tags, and production batches for that case.
+•	Generate a JSON structure with the following sections:
+o	metadata (counts, date range, totals)
+o	custodianSummary
+o	communicationGraph
+o	tagAnalysis
+o	privilegeSummary
+o	fileTypeBreakdown
+o	productionBatches
+o	fullInventory (list of every doc with fields: id, custodian, fileName, hash, fileType, size, date, tags, privilegeTags, sender, recipients, uploadBatch)
+•	Add an export endpoint:
+GET /api/reports/:caseId/discovery/export?format=csv|excel|pdf
+•	Implement CSV/Excel export using exceljs.
+•	Implement PDF export using Puppeteer to print an HTML template.
+Add a front-end button in the Case Dashboard → “Download Discovery Report”.
+•	When clicked, call the export endpoint and download the file.
+Style the PDF to match Sentinel dark mode branding.
+
+
+PDF Layout Template (HTML + CSS)
+Assume you’ll render this HTML with data (e.g., Handlebars/EJS) and then print it to PDF with Puppeteer.
+server/reports/templates/discoveryReport.html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Discovery Production Report - {{caseName}}</title>
+  <style>
+    :root {
+      --bg-main: #050816;
+      --bg-panel: #111827;
+      --bg-chip: #1f2937;
+      --accent: #6366f1;
+      --accent-soft: #4b5563;
+      --danger: #ef4444;
+      --text-main: #f9fafb;
+      --text-muted: #9ca3af;
+      --border-subtle: #1f2937;
+      --badge-bg: #111827;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px 36px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg-main);
+      color: var(--text-main);
+      font-size: 12px;
+    }
+    .page {
+      width: 100%;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 10px;
+    }
+    .header-left {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .header-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .severity-pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--badge-bg);
+      border: 1px solid var(--accent-soft);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .section {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      page-break-inside: avoid;
+    }
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .section-heading {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .kpi-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .kpi {
+      flex: 1 1 120px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--bg-chip);
+    }
+    .kpi-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 2px;
+    }
+    .kpi-value {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .kpi-subvalue {
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+      font-size: 10px;
+    }
+    thead tr {
+      background: #020617;
+    }
+    th, td {
+      padding: 4px 5px;
+      border-bottom: 1px solid #1e293b;
+      text-align: left;
+    }
+    th {
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-size: 9px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: #111827;
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+    .pill-danger { color: #fecaca; border: 1px solid var(--danger); }
+    .pill-accent { color: #c7d2fe; border: 1px solid var(--accent); }
+    .muted { color: var(--text-muted); }
+    .mt-4 { margin-top: 16px; }
+    .mt-2 { margin-top: 8px; }
+
+    /* Print */
+    @page { margin: 24px 24px; }
+    .page-break { page-break-before: always; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <!-- HEADER -->
+    <header class="header">
+      <div>
+        <div class="header-left">Sentinel Counsel LLP</div>
+        <div class="header-sub">
+          Discovery Production Report &mdash; {{caseName}} (Case ID: {{caseId}})
+        </div>
+        <div class="header-sub">
+          Generated: {{generatedAt}} &middot; Timezone: {{timezone}}
+        </div>
+      </div>
+      <div class="severity-pill">
+        Compliance Health: {{healthGrade}} · {{healthStatus}}
+      </div>
+    </header>
+
+    <!-- SECTION A: METADATA -->
+    <section class="section">
+      <div class="section-title">Section A</div>
+      <div class="section-heading">Matter Overview</div>
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-label">Client</div>
+          <div class="kpi-value">{{clientName}}</div>
+          <div class="kpi-subvalue">Primary custodians: {{primaryCustodians}}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Documents Ingested</div>
+          <div class="kpi-value">{{totalDocuments}}</div>
+          <div class="kpi-subvalue">Processed: {{processedDocuments}}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Discovery Date Range</div>
+          <div class="kpi-value">{{dateRange}}</div>
+          <div class="kpi-subvalue muted">Earliest: {{earliestDate}} · Latest: {{latestDate}}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Production</div>
+          <div class="kpi-value">{{totalProduced}}</div>
+          <div class="kpi-subvalue">Batches: {{productionBatchesCount}}</div>
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-label">Responsive</div>
+          <div class="kpi-value">{{responsiveCount}}</div>
+          <div class="kpi-subvalue">{{responsivePercent}}% of processed</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Privileged</div>
+          <div class="kpi-value">{{privilegedCount}}</div>
+          <div class="kpi-subvalue">{{privilegedPercent}}% of processed</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Withheld</div>
+          <div class="kpi-value">{{withheldCount}}</div>
+          <div class="kpi-subvalue">Incl. privileged and non-responsive</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION B: CUSTODIANS -->
+    <section class="section">
+      <div class="section-title">Section B</div>
+      <div class="section-heading">Custodian Summary</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Custodian</th>
+            <th>Total Docs</th>
+            <th>Responsive</th>
+            <th>Privileged</th>
+            <th>Produced</th>
+            <th>Primary Channels</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each custodianSummary}}
+          <tr>
+            <td>{{this.name}}</td>
+            <td>{{this.total}}</td>
+            <td>{{this.responsive}}</td>
+            <td>{{this.privileged}}</td>
+            <td>{{this.produced}}</td>
+            <td class="muted">{{this.topChannels}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECTION C: TAGS / PRIVILEGE -->
+    <section class="section">
+      <div class="section-title">Section C</div>
+      <div class="section-heading">Tag & Privilege Analysis</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Tag</th>
+            <th>Category</th>
+            <th>Count</th>
+            <th>Percent</th>
+            <th>Applied By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each tagAnalysis}}
+          <tr>
+            <td>{{this.tag}}</td>
+            <td><span class="pill pill-accent">{{this.category}}</span></td>
+            <td>{{this.count}}</td>
+            <td>{{this.percent}}%</td>
+            <td class="muted">{{this.appliedBy}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+
+      <div class="mt-4">
+        <div class="kpi-label">Privilege Summary</div>
+        <div class="kpi-row">
+          <div class="kpi">
+            <div class="kpi-label">Attorney–Client</div>
+            <div class="kpi-value">{{privilegeSummary.ac}}</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Work Product</div>
+            <div class="kpi-value">{{privilegeSummary.wp}}</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Redacted</div>
+            <div class="kpi-value">{{privilegeSummary.redacted}}</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Possible Inadvertent</div>
+            <div class="kpi-value">{{privilegeSummary.risk}}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION D: PRODUCTION BATCHES -->
+    <section class="section page-break">
+      <div class="section-title">Section D</div>
+      <div class="section-heading">Production Batches</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Batch ID</th>
+            <th>Date</th>
+            <th>Docs Produced</th>
+            <th>Withheld</th>
+            <th>Redacted</th>
+            <th>Format</th>
+            <th>Set Hash</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each productionBatches}}
+          <tr>
+            <td>{{this.id}}</td>
+            <td>{{this.date}}</td>
+            <td>{{this.produced}}</td>
+            <td>{{this.withheld}}</td>
+            <td>{{this.redacted}}</td>
+            <td>{{this.format}}</td>
+            <td class="muted">{{this.hash}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+      <div class="mt-2 muted">
+        Chain-of-custody hash for full data set: <strong>{{globalHash}}</strong>
+      </div>
+    </section>
+
+    <!-- SECTION E: FILE TYPE SUMMARY -->
+    <section class="section">
+      <div class="section-title">Section E</div>
+      <div class="section-heading">File Type Breakdown</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Count</th>
+            <th>Total Size</th>
+            <th>Examples</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each fileTypes}}
+          <tr>
+            <td>{{this.type}}</td>
+            <td>{{this.count}}</td>
+            <td>{{this.size}}</td>
+            <td class="muted">{{this.examples}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>
+You can render this with Handlebars and print via Puppeteer:
+// server/reports/generateDiscoveryPdf.ts
+import puppeteer from "puppeteer";
+import handlebars from "handlebars";
+import fs from "fs/promises";
+import path from "path";
+
+export async function generateDiscoveryPdf(reportData: any): Promise<Buffer> {
+  const templatePath = path.join(__dirname, "templates", "discoveryReport.html");
+  const htmlSource = await fs.readFile(templatePath, "utf8");
+  const template = handlebars.compile(htmlSource);
+  const html = template(reportData);
+
+  const browser = await puppeteer.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.setContent(html, { waitUntil: "networkidle0" });
+  const pdf = await page.pdf({ format: "Letter", printBackground: true });
+  await browser.close();
+  return pdf;
+}
+________________________________________
+2️⃣ Excel Formatting (Multiple Sheets, Ready for exceljs)
+We’ll create these sheets:
+1.	Summary
+2.	Custodians
+3.	Tags
+4.	Privilege
+5.	FileTypes
+6.	ProductionBatches
+7.	Inventory (Logicull-style table)
+Helper: column style pattern
+import ExcelJS from "exceljs";
+
+export async function buildDiscoveryWorkbook(report: any): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Sentinel Counsel LLP";
+  wb.created = new Date();
+
+  const headerStyle = {
+    font: { bold: true, color: { argb: "FFFFFFFF" } },
+    fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF111827" } },
+    alignment: { vertical: "middle", horizontal: "left" }
+  };
+
+  const thinBorder = {
+    top: { style: "thin", color: { argb: "FF1F2937" } },
+    left: { style: "thin", color: { argb: "FF1F2937" } },
+    bottom: { style: "thin", color: { argb: "FF1F2937" } },
+    right: { style: "thin", color: { argb: "FF1F2937" } }
+  };
+
+  /* SUMMARY SHEET */
+  const summary = wb.addWorksheet("Summary", { views: [{ state: "frozen", ySplit: 2 }] });
+  summary.columns = [
+    { header: "Metric", key: "metric", width: 32 },
+    { header: "Value", key: "value", width: 25 },
+    { header: "Notes", key: "notes", width: 40 }
+  ];
+  summary.getRow(1).eachCell(cell => {
+    cell.style = { ...cell.style, ...headerStyle, border: thinBorder };
+  });
+
+  const sRows = [
+    ["Case Name", report.metadata.caseName, `Case ID: ${report.metadata.caseId}`],
+    ["Client", report.metadata.clientName, ""],
+    ["Date Range", report.metadata.dateRange, ""],
+    ["Documents Ingested", report.metadata.totalDocuments, ""],
+    ["Processed Documents", report.metadata.processedDocuments, ""],
+    ["Responsive", report.metadata.responsiveCount, `${report.metadata.responsivePercent}% of processed`],
+    ["Privileged", report.metadata.privilegedCount, `${report.metadata.privilegedPercent}% of processed`],
+    ["Produced", report.metadata.totalProduced, `Batches: ${report.productionBatches.length}`]
+  ];
+  sRows.forEach(r => {
+    const row = summary.addRow({ metric: r[0], value: r[1], notes: r[2] });
+    row.eachCell(c => (c.border = thinBorder));
+  });
+
+  /* CUSTODIANS SHEET */
+  const cust = wb.addWorksheet("Custodians", { views: [{ state: "frozen", ySplit: 1 }] });
+  cust.columns = [
+    { header: "Custodian", key: "name", width: 28 },
+    { header: "Total Docs", key: "total", width: 14 },
+    { header: "Responsive", key: "responsive", width: 14 },
+    { header: "Privileged", key: "privileged", width: 14 },
+    { header: "Produced", key: "produced", width: 14 },
+    { header: "Primary Channels", key: "channels", width: 24 }
+  ];
+  cust.getRow(1).eachCell(c => { c.style = { ...c.style, ...headerStyle, border: thinBorder }; });
+
+  report.custodianSummary.forEach(cu => {
+    const row = cust.addRow({
+      name: cu.name,
+      total: cu.total,
+      responsive: cu.responsive,
+      privileged: cu.privileged,
+      produced: cu.produced,
+      channels: cu.topChannels
+    });
+    row.eachCell(c => (c.border = thinBorder));
+  });
+
+  /* TAGS SHEET */
+  const tags = wb.addWorksheet("Tags", { views: [{ state: "frozen", ySplit: 1 }] });
+  tags.columns = [
+    { header: "Tag", key: "tag", width: 26 },
+    { header: "Category", key: "category", width: 18 },
+    { header: "Count", key: "count", width: 12 },
+    { header: "Percent", key: "percent", width: 12 },
+    { header: "Applied By", key: "appliedBy", width: 28 }
+  ];
+  tags.getRow(1).eachCell(c => { c.style = { ...c.style, ...headerStyle, border: thinBorder }; });
+
+  report.tagAnalysis.forEach(t => {
+    const row = tags.addRow({
+      tag: t.tag,
+      category: t.category,
+      count: t.count,
+      percent: t.percent,
+      appliedBy: t.appliedBy
+    });
+    row.getCell("percent").numFmt = "0.00%";
+    row.eachCell(c => (c.border = thinBorder));
+  });
+
+  /* PRIVILEGE SHEET */
+  const priv = wb.addWorksheet("Privilege", { views: [{ state: "frozen", ySplit: 1 }] });
+  priv.columns = [
+    { header: "Category", key: "category", width: 30 },
+    { header: "Count", key: "count", width: 14 },
+    { header: "Notes", key: "notes", width: 40 }
+  ];
+  priv.getRow(1).eachCell(c => { c.style = { ...c.style, ...headerStyle, border: thinBorder }; });
+
+  [
+    ["Attorney–Client", report.privilegeSummary.ac, ""],
+    ["Work Product", report.privilegeSummary.wp, ""],
+    ["Redacted", report.privilegeSummary.redacted, ""],
+    ["Possible Inadvertent", report.privilegeSummary.risk, "Review for clawback / clawback notice."]
+  ].forEach(p => {
+    const row = priv.addRow({ category: p[0], count: p[1], notes: p[2] });
+    row.eachCell(c => (c.border = thinBorder));
+  });
+
+  /* FILE TYPES SHEET */
+  const ft = wb.addWorksheet("FileTypes", { views: [{ state: "frozen", ySplit: 1 }] });
+  ft.columns = [
+    { header: "Type", key: "type", width: 20 },
+    { header: "Count", key: "count", width: 14 },
+    { header: "Total Size (MB)", key: "sizeMb", width: 18 },
+    { header: "Examples", key: "examples", width: 40 }
+  ];
+  ft.getRow(1).eachCell(c => { c.style = { ...c.style, ...headerStyle, border: thinBorder }; });
+
+  report.fileTypes.forEach(f => {
+    const row = ft.addRow({
+      type: f.type,
+      count: f.count,
+      sizeMb: f.sizeMb,
+      examples: f.examples
+    });
+    row.getCell("sizeMb").numFmt = "0.00";
+    row.eachCell(c => (c.border = thinBorder));
+  });
+
+  /* PRODUCTION BATCHES SHEET */
+  const pb = wb.addWorksheet("ProductionBatches", { views: [{ state: "frozen", ySplit: 1 }] });
+  pb.columns = [
+    { header: "Batch ID", key: "id", width: 20 },
+    { header: "Date", key: "date", width: 16 },
+    { header: "Docs Produced", key: "produced", width: 16 },
+    { header: "Withheld", key: "withheld", width: 14 },
+    { header: "Redacted", key: "redacted", width: 14 },
+    { header: "Format", key: "format", width: 14 },
+    { header: "Set Hash", key: "hash", width: 50 }
+  ];
+  pb.getRow(1).eachCell(c => { c.style = { ...c.style, ...headerStyle, border: thinBorder }; });
+
+  report.productionBatches.forEach(b => {
+    const row = pb.addRow(b);
+    row.eachCell(c => (c.border = thinBorder));
+  });
+
+  /* INVENTORY SHEET (FULL DETAIL) */
+  const inv = wb.addWorksheet("Inventory", { views: [{ state: "frozen", ySplit: 1 }] });
+  inv.columns = [
+    { header: "Doc ID", key: "id", width: 20 },
+    { header: "Custodian", key: "custodian", width: 22 },
+    { header: "File Name", key: "fileName", width: 40 },
+    { header: "File Path", key: "filePath", width: 40 },
+    { header: "Upload Batch", key: "uploadBatch", width: 18 },
+    { header: "Date", key: "date", width: 18 },
+    { header: "Sender", key: "sender", width: 26 },
+    { header: "Recipients", key: "recipients", width: 36 },
+    { header: "Tags", key: "tags", width: 36 },
+    { header: "Privilege Tags", key: "privTags", width: 28 },
+    { header: "Family ID", key: "familyId", width: 16 },
+    { header: "Hash", key: "hash", width: 50 },
+    { header: "Size (KB)", key: "sizeKb", width: 14 },
+    { header: "Type", key: "fileType", width: 16 }
+  ];
+  inv.getRow(1).eachCell(c => { c.style = { ...c.style, ...headerStyle, border: thinBorder }; });
+
+  report.inventory.forEach(d => {
+    const row = inv.addRow({
+      id: d.id,
+      custodian: d.custodian,
+      fileName: d.fileName,
+      filePath: d.filePath,
+      uploadBatch: d.uploadBatch,
+      date: d.date,
+      sender: d.sender,
+      recipients: (d.recipients || []).join("; "),
+      tags: (d.tags || []).join("; "),
+      privTags: (d.privilegeTags || []).join("; "),
+      familyId: d.familyId,
+      hash: d.hash,
+      sizeKb: d.sizeKb,
+      fileType: d.fileType
+    });
+    row.eachCell(c => (c.border = thinBorder));
+  });
+
+  return wb;
+}
+Then in your export endpoint:
+router.get("/reports/:caseId/discovery/export?format=excel", async (req, res) => {
+  const report = await buildReportObject(req.params.caseId); // your analytics
+  const wb = await buildDiscoveryWorkbook(report);
+
+  res.setHeader("Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition",
+    `attachment; filename="Sentinel_Discovery_Report_${report.metadata.caseId}.xlsx"`);
+
+  await wb.xlsx.write(res);
+  res.end();
+});
+
+
+
+Let me wire the report structure directly onto these tables and give you a concrete buildDiscoveryReport using Drizzle.
+________________________________________
+1. What counts as a “document” in Sentinel?
+For your Logicull-style report, we’ll treat these as the core “documents”:
+•	communications
+o	Emails, chats, etc. This already has:
+	subject, body, sender, recipients
+	communicationType, sourceType
+	custodianId, custodianName, custodianDepartment
+	caseId
+	documentHash, nearDuplicateHash
+	fileSize, filePath, fileExtension, mimeType
+	privilegeStatus, isRedacted, batesNumber, batesRange
+	productionSetId, productionStatus (not_produced, produced, withheld, etc.)
+•	custodians – custodian profiles for each case.
+•	documentCodings – responsiveness & privilege coding:
+o	documentId (→ communications.id)
+o	responsiveness (responsive, non_responsive, etc.)
+o	isPrivileged, privilegeType, isHot, confidentialityLevel
+•	tags + documentTags – generic tagging:
+o	documentTags.entityType = "communication"
+o	documentTags.entityId = communications.id
+•	productionSets – production batches/sets.
+•	privilegeLogs – formal privilege log entries per case.
+So the Discovery Report will be driven almost entirely by:
+cases, communications, custodians, documentCodings, tags, documentTags, productionSets, privilegeLogs.
+________________________________________
+2. Mapping report sections → your tables/columns
+A. Metadata
+•	Case info
+o	caseId → cases.id
+o	caseNumber → cases.caseNumber
+o	caseName → cases.title
+o	violationType → cases.violationType
+•	Document totals (for that case):
+o	totalDocuments → count of communications where communications.caseId = cases.id
+o	processedDocuments → same for now (you can later add a processed flag)
+•	Responsive:
+o	from documentCodings where documentCodings.documentId IN docIds && responsiveness = 'responsive'
+•	Privileged:
+o	from documentCodings.isPrivileged = 'true' or
+o	communications.privilegeStatus != 'none'
+•	Produced / withheld:
+o	from communications.productionStatus:
+	produced → productionStatus = 'produced'
+	withheld → productionStatus = 'withheld'
+•	Date range:
+o	earliestDate / latestDate → MIN/MAX of communications.timestamp for that case.
+________________________________________
+B. Custodian Summary
+Use both communications and custodians:
+•	Group communications by custodianId (or custodianName if null).
+•	Join custodians on custodians.id = communications.custodianId to get:
+o	fullName, department, location, etc.
+•	For each custodian:
+o	totalDocs = count communications
+o	responsive = docs whose documentCodings.responsiveness = 'responsive'
+o	privileged = docs with isPrivileged = true or privilegeStatus != 'none'
+o	produced = docs with productionStatus = 'produced'
+________________________________________
+C. Tags & Issue Coding
+•	tags table:
+o	name, category, color
+•	documentTags:
+o	entityType = 'communication'
+o	entityId = communications.id
+•	Join documentTags → tags to compute:
+o	For each tag: count, % of docs, who applied it (documentTags.taggedBy).
+________________________________________
+D. Privilege Summary
+•	From documentCodings:
+o	isPrivileged, privilegeType (enum: attorney_client_privileged, work_product, both)
+•	From communications.privilegeStatus as another signal
+•	From privilegeLogs:
+o	For the case: privilegeLogs.caseId = cases.id.
+You can classify:
+•	AC: docs with privilegeType = 'attorney_client_privileged' or privilegeStatus = 'attorney_client_privileged'
+•	WP: work_product
+•	Both: both
+•	Risk: anything in privilegeLogs with isPartiallyPrivileged = true or redactionApplied = true or docs where privileged but productionStatus = 'produced' → possible inadvertent.
+________________________________________
+E. File Types
+•	From communications:
+o	fileExtension, mimeType, fileSize
+•	Optionally combine with ingestionFiles if you want ingest-level file types (fileType, fileSize, metadata).
+Aggregate:
+•	type = fileExtension (fallback to communicationType or mimeType if missing)
+•	count, total size, a few sample file names.
+________________________________________
+F. Production Batches
+•	From productionSets (this is your “ProductionBatch”):
+o	id, productionNumber, productionName
+o	exportFormat, renditionType, batesPrefix, batesStartNumber/EndNumber
+o	documentIds (jsonb array) and documentCount
+o	hashManifest (document-level hashes)
+o	transmittedAt, transmittedTo, exportPackageUrl
+•	Link each production set back to communications via:
+o	communications.productionSetId = productionSets.id
+o	and productionStatus per doc (produced vs withheld).
+Then for each production set:
+•	Docs Produced = # comms where productionSetId = ps.id && productionStatus = 'produced'
+•	Withheld = productionStatus = 'withheld'
+•	Redacted = isRedacted = 'true' or privilegeLogs.redactionApplied.
+________________________________________
+G. Inventory (Logicull-style row)
+Use communications as the base:
+Columns like:
+•	Doc ID → communications.id
+•	Case ID → communications.caseId
+•	Custodian → communications.custodianName (or join custodians.fullName)
+•	Sender → communications.sender
+•	Recipients → communications.recipients (JSON array)
+•	Subject → communications.subject
+•	Date → communications.timestamp
+•	File Name → communications.filePath last path segment or from metadata
+•	File Path → communications.filePath
+•	File Extension → communications.fileExtension
+•	Mime Type → communications.mimeType
+•	Size → communications.fileSize
+•	Hash → communications.documentHash
+•	Near Dup Hash → communications.nearDuplicateHash
+•	Thread / Family → communications.emailThreadId, communications.documentFamilyId
+•	Production Status → communications.productionStatus
+•	Bates → communications.batesNumber, communications.batesRange
+•	Tags → from documentTags + tags
+•	Privilege Status → communications.privilegeStatus
+________________________________________
+3. Concrete buildDiscoveryReport using Drizzle
+Here’s a focused implementation that matches your schema.
+// src/server/reports/buildDiscoveryReport.ts
+import { db } from "@/server/db"; // adjust path to your drizzle instance
+import {
+  cases,
+  communications,
+  custodians,
+  tags,
+  documentTags,
+  documentCodings,
+  productionSets,
+  privilegeLogs,
+} from "@/server/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
+
+export async function buildDiscoveryReport(caseId: string) {
+  // 1) Case metadata
+  const [caseRow] = await db
+    .select()
+    .from(cases)
+    .where(eq(cases.id, caseId));
+
+  if (!caseRow) throw new Error("Case not found");
+
+  // 2) All communications (documents) for this case
+  const docs = await db
+    .select()
+    .from(communications)
+    .where(eq(communications.caseId, caseId));
+
+  const docIds = docs.map((d) => d.id);
+  const totalDocuments = docs.length;
+
+  // 3) Codings: responsiveness + privilege
+  const codings = docIds.length
+    ? await db
+        .select()
+        .from(documentCodings)
+        .where(inArray(documentCodings.documentId, docIds))
+    : [];
+
+  const codingByDocId = new Map<string, typeof codings[number][]>();
+  for (const c of codings) {
+    const arr = codingByDocId.get(c.documentId) ?? [];
+    arr.push(c);
+    codingByDocId.set(c.documentId, arr);
+  }
+
+  // 4) Tags
+  const docTagRows = docIds.length
+    ? await db
+        .select({
+          documentId: documentTags.entityId,
+          tagId: documentTags.tagId,
+          tagName: tags.name,
+          tagCategory: tags.category,
+          taggedBy: documentTags.taggedBy,
+        })
+        .from(documentTags)
+        .innerJoin(tags, eq(tags.id, documentTags.tagId))
+        .where(
+          and(
+            eq(documentTags.entityType, "communication"),
+            inArray(documentTags.entityId, docIds)
+          )
+        )
+    : [];
+
+  // 5) Custodians for this case
+  const custRows = await db
+    .select()
+    .from(custodians)
+    .where(eq(custodians.caseId, caseId));
+
+  const custodiansById = new Map(custRows.map((c) => [c.id, c]));
+
+  // 6) Production sets for this case
+  const prodSets = await db
+    .select()
+    .from(productionSets)
+    .where(eq(productionSets.caseId, caseId));
+
+  // 7) Privilege logs for this case
+  const privLogs = await db
+    .select()
+    .from(privilegeLogs)
+    .where(eq(privilegeLogs.caseId, caseId));
+
+  // ---------- METADATA ----------
+  const timestamps = docs
+    .map((d) => d.timestamp)
+    .filter(Boolean) as Date[];
+
+  const earliestDate =
+    timestamps.length && new Date(Math.min(...timestamps.map((d) => d.getTime())));
+  const latestDate =
+    timestamps.length && new Date(Math.max(...timestamps.map((d) => d.getTime())));
+
+  const responsiveDocIds = new Set(
+    codings
+      .filter((c) => c.responsiveness === "responsive")
+      .map((c) => c.documentId)
+  );
+  const privilegedDocIds = new Set(
+    codings
+      .filter((c) => c.isPrivileged === "true")
+      .map((c) => c.documentId)
+  );
+  // also add comms with privilegeStatus != 'none'
+  for (const d of docs) {
+    if (d.privilegeStatus && d.privilegeStatus !== "none") {
+      privilegedDocIds.add(d.id);
+    }
+  }
+
+  const producedDocs = docs.filter(
+    (d) => d.productionStatus === "produced"
+  );
+
+  const metadata = {
+    caseId: caseRow.id,
+    caseNumber: caseRow.caseNumber,
+    caseName: caseRow.title,
+    violationType: caseRow.violationType,
+    totalDocuments,
+    processedDocuments: totalDocuments,
+    responsiveCount: responsiveDocIds.size,
+    responsivePercent:
+      totalDocuments > 0 ? (responsiveDocIds.size / totalDocuments) * 100 : 0,
+    privilegedCount: privilegedDocIds.size,
+    privilegedPercent:
+      totalDocuments > 0 ? (privilegedDocIds.size / totalDocuments) * 100 : 0,
+    totalProduced: producedDocs.length,
+    dateRange:
+      earliestDate && latestDate
+        ? `${earliestDate.toISOString().slice(0, 10)} – ${latestDate
+            .toISOString()
+            .slice(0, 10)}`
+        : "N/A",
+    earliestDate: earliestDate?.toISOString() ?? null,
+    latestDate: latestDate?.toISOString() ?? null,
+  };
+
+  // ---------- CUSTODIAN SUMMARY ----------
+  const custodianMap: Record<
+    string,
+    {
+      name: string;
+      total: number;
+      responsive: number;
+      privileged: number;
+      produced: number;
+      department?: string | null;
+    }
+  > = {};
+
+  for (const d of docs) {
+    const key = d.custodianId || d.custodianName || "Unknown";
+    if (!custodianMap[key]) {
+      const cust =
+        d.custodianId && custodiansById.get(d.custodianId as string);
+      custodianMap[key] = {
+        name: cust?.fullName || d.custodianName || "Unknown",
+        total: 0,
+        responsive: 0,
+        privileged: 0,
+        produced: 0,
+        department: cust?.department ?? d.custodianDepartment,
+      };
+    }
+    const c = custodianMap[key];
+    c.total++;
+    if (responsiveDocIds.has(d.id)) c.responsive++;
+    if (privilegedDocIds.has(d.id)) c.privileged++;
+    if (d.productionStatus === "produced") c.produced++;
+  }
+
+  const custodianSummary = Object.values(custodianMap);
+
+  // ---------- TAG ANALYSIS ----------
+  const tagMap: Record<
+    string,
+    { tag: string; category: string; count: number; appliedBy: Set<string> }
+  > = {};
+  for (const dt of docTagRows) {
+    const key = dt.tagName;
+    if (!tagMap[key]) {
+      tagMap[key] = {
+        tag: dt.tagName,
+        category: dt.tagCategory,
+        count: 0,
+        appliedBy: new Set(),
+      };
+    }
+    tagMap[key].count++;
+    if (dt.taggedBy) tagMap[key].appliedBy.add(dt.taggedBy);
+  }
+
+  const tagAnalysis = Object.values(tagMap).map((t) => ({
+    tag: t.tag,
+    category: t.category,
+    count: t.count,
+    percent: totalDocuments ? (t.count / totalDocuments) * 100 : 0,
+    appliedBy: [...t.appliedBy].join("; "),
+  }));
+
+  // ---------- PRIVILEGE SUMMARY ----------
+  const privilegeSummary = {
+    ac: 0,
+    wp: 0,
+    both: 0,
+    risk: 0,
+  };
+
+  for (const c of codings) {
+    if (c.isPrivileged === "true") {
+      if (c.privilegeType === "attorney_client_privileged") privilegeSummary.ac++;
+      else if (c.privilegeType === "work_product") privilegeSummary.wp++;
+      else if (c.privilegeType === "both") privilegeSummary.both++;
+    }
+  }
+
+  // risk: privileged docs with productionStatus = produced, or from privilegeLogs
+  const privilegedProduced = docs.filter(
+    (d) => privilegedDocIds.has(d.id) && d.productionStatus === "produced"
+  ).length;
+  privilegeSummary.risk = privilegedProduced + privLogs.length;
+
+  // ---------- FILE TYPES ----------
+  const ftMap: Record<
+    string,
+    { type: string; count: number; sizeBytes: number; examples: string[] }
+  > = {};
+  for (const d of docs) {
+    const key = d.fileExtension || d.mimeType || d.communicationType || "unknown";
+    if (!ftMap[key]) {
+      ftMap[key] = { type: key, count: 0, sizeBytes: 0, examples: [] };
+    }
+    const f = ftMap[key];
+    f.count++;
+    f.sizeBytes += d.fileSize ?? 0;
+    if (f.examples.length < 3) f.examples.push(d.subject || d.filePath || d.id);
+  }
+  const fileTypes = Object.values(ftMap).map((f) => ({
+    type: f.type,
+    count: f.count,
+    sizeMb: f.sizeBytes / 1024 / 1024,
+    examples: f.examples.join(", "),
+  }));
+
+  // ---------- PRODUCTION BATCHES ----------
+  const productionBatches = prodSets.map((ps) => {
+    const docsInSet = docs.filter(
+      (d) => d.productionSetId === ps.id
+    );
+    const produced = docsInSet.filter(
+      (d) => d.productionStatus === "produced"
+    ).length;
+    const withheld = docsInSet.filter(
+      (d) => d.productionStatus === "withheld"
+    ).length;
+    const redacted = docsInSet.filter(
+      (d) => d.isRedacted === "true"
+    ).length;
+
+    return {
+      id: ps.id,
+      number: ps.productionNumber,
+      name: ps.productionName,
+      date: ps.transmittedAt?.toISOString().slice(0, 10) ?? "",
+      produced,
+      withheld,
+      redacted,
+      format: ps.exportFormat,
+      hash: JSON.stringify(ps.hashManifest ?? {}),
+    };
+  });
+
+  // ---------- INVENTORY ----------
+  const tagsByDocId = new Map<string, string[]>();
+  const privTagsByDocId = new Map<string, string[]>();
+  for (const dt of docTagRows) {
+    const arr = tagsByDocId.get(dt.documentId) ?? [];
+    arr.push(dt.tagName);
+    tagsByDocId.set(dt.documentId, arr);
+  }
+
+  // you can also add privilege log info per doc if desired
+
+  const inventory = docs.map((d) => ({
+    id: d.id,
+    caseId: d.caseId,
+    custodian: d.custodianName,
+    sender: d.sender,
+    recipients: d.recipients ?? [],
+    subject: d.subject,
+    date: d.timestamp?.toISOString() ?? "",
+    filePath: d.filePath,
+    fileExtension: d.fileExtension,
+    mimeType: d.mimeType,
+    sizeKb: d.fileSize ? d.fileSize / 1024 : null,
+    hash: d.documentHash,
+    nearDuplicateHash: d.nearDuplicateHash,
+    threadId: d.emailThreadId,
+    familyId: d.documentFamilyId,
+    productionStatus: d.productionStatus,
+    batesNumber: d.batesNumber,
+    batesRange: d.batesRange,
+    tags: tagsByDocId.get(d.id) ?? [],
+    privilegeStatus: d.privilegeStatus,
+  }));
+
+  return {
+    metadata,
+    custodianSummary,
+    tagAnalysis,
+    privilegeSummary,
+    fileTypes,
+    productionBatches,
+    inventory,
+  };
+}
+
+
+
+

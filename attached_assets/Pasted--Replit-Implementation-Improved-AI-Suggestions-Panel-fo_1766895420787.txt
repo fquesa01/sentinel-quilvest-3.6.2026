@@ -1,0 +1,849 @@
+# Replit Implementation: Improved AI Suggestions Panel for Ambient Intelligence
+
+Improve the AI Suggestions panel in the Ambient Intelligence feature to be glanceable during live conversations. Users are cognitively loaded during meetings and need to make quick decisions about documents without reading lengthy text.
+
+---
+
+## Task 1: Create the new SuggestionCard component
+
+Create file: `components/ambient/SuggestionCard.tsx`
+
+```tsx
+import { useState } from 'react';
+
+interface DocumentResult {
+  id: string;
+  title: string;
+  type: 'email' | 'document';
+  sender?: string;
+  date: string;
+  preview: string;
+}
+
+interface SuggestionCardProps {
+  suggestion: {
+    id: string;
+    topic: string;
+    triggerQuote: string;
+    confidence: 'high' | 'medium' | 'low';
+    results: DocumentResult[];
+    status: 'found' | 'searching' | 'no_results';
+  };
+  onViewDocument: (docId: string) => void;
+  onDismiss: () => void;
+  onDismissDocument: (docId: string) => void;
+}
+
+export function SuggestionCard({
+  suggestion,
+  onViewDocument,
+  onDismiss,
+  onDismissDocument
+}: SuggestionCardProps) {
+  const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState<string | null>(null);
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
+
+  const handleSummarize = async (docId: string) => {
+    setSummarizing(docId);
+    try {
+      const response = await fetch(`/api/documents/${docId}/summarize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context: suggestion.triggerQuote })
+      });
+      const { summary } = await response.json();
+      setSummaries(prev => ({ ...prev, [docId]: summary }));
+      setExpandedDoc(docId);
+    } catch (error) {
+      console.error('Summarization failed:', error);
+    }
+    setSummarizing(null);
+  };
+
+  // Searching state
+  if (suggestion.status === 'searching') {
+    return (
+      <div className="suggestion-card searching">
+        <div className="searching-content">
+          <div className="pulse-ring" />
+          <span className="searching-topic">{suggestion.topic}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (suggestion.results.length === 0) return null;
+
+  return (
+    <div className="suggestion-card">
+      {/* Header - What triggered this */}
+      <div className="card-header">
+        <div className="trigger-indicator">
+          <span className="quote-icon">"</span>
+          <span className="trigger-text">{suggestion.triggerQuote}</span>
+        </div>
+        <button className="dismiss-card" onClick={onDismiss} aria-label="Dismiss">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Topic with confidence indicator */}
+      <div className="topic-row">
+        <span className={`confidence-dot ${suggestion.confidence}`} />
+        <span className="topic-label">{suggestion.topic}</span>
+        <span className="result-count">{suggestion.results.length}</span>
+      </div>
+
+      {/* Document list */}
+      <div className="documents-list">
+        {suggestion.results.map((doc) => (
+          <div key={doc.id} className={`document-item ${expandedDoc === doc.id ? 'expanded' : ''}`}>
+            <div className="document-row">
+              {/* Type icon */}
+              <div className={`doc-type-icon ${doc.type}`}>
+                {doc.type === 'email' ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/>
+                    <path d="M22 6L12 13L2 6"/>
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                )}
+              </div>
+
+              {/* Document info */}
+              <div className="doc-info">
+                <span className="doc-title">{doc.title}</span>
+                {doc.sender && <span className="doc-meta">{doc.sender}</span>}
+              </div>
+
+              {/* Action buttons */}
+              <div className="quick-actions">
+                <button 
+                  className="action-btn view"
+                  onClick={() => onViewDocument(doc.id)}
+                  title="View"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+                <button 
+                  className="action-btn summarize"
+                  onClick={() => handleSummarize(doc.id)}
+                  disabled={summarizing === doc.id}
+                  title="Summarize"
+                >
+                  {summarizing === doc.id ? (
+                    <div className="mini-spinner" />
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="21" y1="10" x2="3" y2="10"/>
+                      <line x1="21" y1="6" x2="3" y2="6"/>
+                      <line x1="21" y1="14" x2="3" y2="14"/>
+                      <line x1="21" y1="18" x2="10" y2="18"/>
+                    </svg>
+                  )}
+                </button>
+                <button 
+                  className="action-btn skip"
+                  onClick={() => onDismissDocument(doc.id)}
+                  title="Skip"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="13 17 18 12 13 7"/>
+                    <polyline points="6 17 11 12 6 7"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Expanded summary */}
+            {expandedDoc === doc.id && summaries[doc.id] && (
+              <div className="document-summary">
+                <div className="summary-label">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                  </svg>
+                  AI Summary
+                </div>
+                <p className="summary-text">{summaries[doc.id]}</p>
+                <button 
+                  className="view-full-btn"
+                  onClick={() => onViewDocument(doc.id)}
+                >
+                  View Full Document →
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Task 2: Create the updated AISuggestionsPanel component
+
+Create or replace file: `components/ambient/AISuggestionsPanel.tsx`
+
+```tsx
+import { SuggestionCard } from './SuggestionCard';
+
+interface DocumentResult {
+  id: string;
+  title: string;
+  type: 'email' | 'document';
+  sender?: string;
+  date: string;
+  preview: string;
+}
+
+interface Suggestion {
+  id: string;
+  topic: string;
+  triggerQuote: string;
+  confidence: 'high' | 'medium' | 'low';
+  results: DocumentResult[];
+  status: 'found' | 'searching' | 'no_results' | 'dismissed';
+}
+
+interface AISuggestionsPanelProps {
+  suggestions: Suggestion[];
+  onViewDocument: (docId: string) => void;
+  onDismissSuggestion: (suggestionId: string) => void;
+  onDismissDocument: (suggestionId: string, docId: string) => void;
+}
+
+export function AISuggestionsPanel({
+  suggestions,
+  onViewDocument,
+  onDismissSuggestion,
+  onDismissDocument
+}: AISuggestionsPanelProps) {
+  const activeSuggestions = suggestions.filter(s => 
+    s.status !== 'dismissed' && (s.status === 'searching' || s.results.length > 0)
+  );
+
+  const totalDocs = activeSuggestions.reduce((sum, s) => sum + (s.results?.length || 0), 0);
+
+  return (
+    <div className="ai-suggestions-panel">
+      {/* Header */}
+      <div className="panel-header">
+        <div className="header-left">
+          <span className="ai-icon">✨</span>
+          <span className="header-title">AI Suggestions</span>
+        </div>
+        {totalDocs > 0 && (
+          <div className="doc-counter">
+            <span className="counter-number">{totalDocs}</span>
+            <span className="counter-label">found</span>
+          </div>
+        )}
+      </div>
+
+      {/* Suggestions list */}
+      <div className="suggestions-stream">
+        {activeSuggestions.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                <line x1="9" y1="9" x2="9.01" y2="9"/>
+                <line x1="15" y1="9" x2="15.01" y2="9"/>
+              </svg>
+            </div>
+            <p className="empty-text">Listening for relevant topics...</p>
+          </div>
+        ) : (
+          activeSuggestions.map(suggestion => (
+            <SuggestionCard
+              key={suggestion.id}
+              suggestion={suggestion}
+              onViewDocument={onViewDocument}
+              onDismiss={() => onDismissSuggestion(suggestion.id)}
+              onDismissDocument={(docId) => onDismissDocument(suggestion.id, docId)}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Footer */}
+      {totalDocs > 0 && (
+        <div className="panel-footer">
+          <button className="footer-action">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+            </svg>
+            View All in Split
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+## Task 3: Add the CSS styles
+
+Add to your styles or create file: `styles/ambient-suggestions.css`
+
+```css
+/* AI SUGGESTIONS PANEL */
+.ai-suggestions-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fafbfc;
+  border-left: 1px solid #e1e5eb;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: white;
+  border-bottom: 1px solid #e1e5eb;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-icon {
+  font-size: 16px;
+}
+
+.header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.doc-counter {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.counter-number {
+  font-size: 18px;
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+.counter-label {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.suggestions-stream {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* EMPTY STATE */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.empty-icon {
+  color: #d1d5db;
+  margin-bottom: 12px;
+}
+
+.empty-text {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+/* SUGGESTION CARD */
+.suggestion-card {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.suggestion-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+/* Searching state */
+.suggestion-card.searching {
+  background: linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 50%, #f0f9ff 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.searching-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+
+.pulse-ring {
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.7; }
+}
+
+.searching-topic {
+  font-size: 13px;
+  color: #0369a1;
+  font-weight: 500;
+}
+
+/* CARD HEADER */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px 12px 8px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.trigger-indicator {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.quote-icon {
+  font-size: 20px;
+  line-height: 1;
+  color: #cbd5e1;
+  font-family: Georgia, serif;
+}
+
+.trigger-text {
+  font-size: 12px;
+  color: #64748b;
+  font-style: italic;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dismiss-card {
+  background: none;
+  border: none;
+  color: #cbd5e1;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.dismiss-card:hover {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+/* TOPIC ROW */
+.topic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.confidence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.confidence-dot.high { background: #22c55e; }
+.confidence-dot.medium { background: #f59e0b; }
+.confidence-dot.low { background: #94a3b8; }
+
+.topic-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  flex: 1;
+}
+
+.result-count {
+  width: 20px;
+  height: 20px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* DOCUMENTS LIST */
+.documents-list {
+  padding: 0 8px 8px 8px;
+}
+
+.document-item {
+  border-radius: 8px;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.document-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.document-row:hover {
+  background: #f1f5f9;
+}
+
+.document-item.expanded .document-row {
+  border-radius: 8px 8px 0 0;
+}
+
+/* TYPE ICON */
+.doc-type-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.doc-type-icon.email {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.doc-type-icon.document {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+/* DOCUMENT INFO */
+.doc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.doc-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* QUICK ACTIONS */
+.quick-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.action-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.action-btn.view {
+  background: #3b82f6;
+  color: white;
+}
+
+.action-btn.view:hover {
+  background: #2563eb;
+  transform: scale(1.05);
+}
+
+.action-btn.summarize {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+
+.action-btn.summarize:hover {
+  background: #dcfce7;
+}
+
+.action-btn.summarize:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.action-btn.skip {
+  background: transparent;
+  color: #94a3b8;
+}
+
+.action-btn.skip:hover {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.mini-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #bbf7d0;
+  border-top-color: #16a34a;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* DOCUMENT SUMMARY */
+.document-summary {
+  padding: 12px;
+  background: #f0fdf4;
+  border-top: 1px solid #bbf7d0;
+}
+
+.summary-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #16a34a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.summary-text {
+  font-size: 13px;
+  color: #166534;
+  line-height: 1.5;
+  margin: 0 0 12px 0;
+}
+
+.view-full-btn {
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.view-full-btn:hover {
+  background: #15803d;
+}
+
+/* PANEL FOOTER */
+.panel-footer {
+  padding: 12px;
+  background: white;
+  border-top: 1px solid #e1e5eb;
+}
+
+.footer-action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.footer-action:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+```
+
+---
+
+## Task 4: Create the document summarization API endpoint
+
+Create file: `pages/api/documents/[id]/summarize.ts` (or equivalent for your routing)
+
+```typescript
+import { NextApiRequest, NextApiResponse } from 'next';
+import Anthropic from '@anthropic-ai/sdk';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { id } = req.query;
+  const { context } = req.body;
+
+  try {
+    // Fetch document content from your database
+    // Replace this with your actual document fetching logic
+    const document = await fetchDocumentById(id as string);
+    
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY
+    });
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 200,
+      messages: [{
+        role: 'user',
+        content: `You are helping a lawyer during a live meeting. They heard "${context}" and need to quickly understand if this document is relevant.
+
+DOCUMENT: ${document.title}
+CONTENT (first 3000 chars):
+${document.content.substring(0, 3000)}
+
+Provide a 2-3 sentence summary that:
+1. States what this document IS (contract, email, invoice, etc.)
+2. Highlights anything relevant to "${context}"
+3. Notes any red flags or key dates
+
+Be direct. No preamble. Start with "This is a..."`
+      }]
+    });
+
+    const summary = response.content[0].type === 'text' 
+      ? response.content[0].text 
+      : '';
+
+    return res.json({ summary });
+  } catch (error) {
+    console.error('Summarization error:', error);
+    return res.status(500).json({ error: 'Failed to summarize' });
+  }
+}
+
+// Replace with your actual database query
+async function fetchDocumentById(id: string) {
+  // Example: return await db.select().from(documents).where(eq(documents.id, id));
+  return null;
+}
+```
+
+---
+
+## Task 5: Update the session page to use the new components
+
+In your ambient intelligence session page, update the imports and usage:
+
+```tsx
+import { AISuggestionsPanel } from '@/components/ambient/AISuggestionsPanel';
+
+// In your component:
+<AISuggestionsPanel
+  suggestions={suggestions}
+  onViewDocument={(docId) => {
+    // Open document in split view or full view
+    viewDocument(docId);
+  }}
+  onDismissSuggestion={(suggestionId) => {
+    // Mark suggestion as dismissed
+    dismissSuggestion(suggestionId);
+  }}
+  onDismissDocument={(suggestionId, docId) => {
+    // Remove specific document from suggestion results
+    dismissDocumentFromSuggestion(suggestionId, docId);
+  }}
+/>
+```
+
+---
+
+## Summary
+
+This implementation provides:
+
+1. **Glanceable design** - Color dots for confidence, icons for doc types, truncated text
+2. **Three quick actions per document**:
+   - 👁 View (blue) - Opens document
+   - 📝 Summarize (green) - AI summary expands inline
+   - ⏭ Skip (gray) - Dismisses that document
+3. **Trigger context** - Shows what was said that triggered the suggestion
+4. **Inline AI summaries** - 2-3 sentence contextual summaries without leaving the panel
+5. **Clean visual hierarchy** - Most important info is immediately visible
+
+The user can now glance at the panel during conversation and make quick decisions without reading walls of text.

@@ -1,0 +1,548 @@
+1. Matching logic (how it should behave)
+
+When we see an identity from Slack/M365/Dropbox/etc. (like james@company.com or a Slack profile), we want to:
+
+Inputs per identity:
+
+type ExternalIdentity = {
+  email?: string | null;
+  displayName?: string | null;
+  userId?: string | null;        // Slack/M365 id
+  caseId?: string | null;
+  sourceType: "chat_slack" | "email_m365" | "file_share_drive" | string;
+  companyName?: string | null;   // if available from profile
+};
+
+
+Match priority:
+
+Exact custodian for this case
+custodians.caseId = caseId AND custodians.email = email → highest confidence.
+
+Existing custodian in any case (same email)
+Same email, different case: reuse profile (copy into this case).
+
+Employee record by email → create custodian using employees.
+
+User record by email → internal user as custodian.
+
+Vendor contact by email → create vendor-type custodian.
+
+Name-based fuzzy match in custodians / caseParties if email missing.
+
+Otherwise create a new custodian.
+
+We also want a confidence score and a match type so UI can show:
+
+“Auto-matched: James Carter (Employee)” – 0.95
+
+“New custodian created: ext-consultant@vendor.com
+” – 0.7
+
+2. custodianResolver service (Drizzle, using your schema)
+
+Create src/server/services/custodianResolver.ts:
+
+// src/server/services/custodianResolver.ts
+import { db } from "@/server/db";
+import {
+  custodians,
+  employees,
+  users,
+  vendorContacts,
+  caseParties,
+} from "@/server/db/schema";
+import { and, eq, ilike, or } from "drizzle-orm";
+
+export type ExternalIdentity = {
+  email?: string | null;
+  displayName?: string | null;
+  userId?: string | null;
+  caseId?: string | null;
+  sourceType: string;
+  companyName?: string | null;
+};
+
+export type CustodianMatchType =
+  | "EXACT_CASE_CUSTODIAN"
+  | "EXISTING_CUSTODIAN_ANY_CASE"
+  | "EMPLOYEE_RECORD"
+  | "USER_RECORD"
+  | "VENDOR_CONTACT"
+  | "NAME_FUZZY_MATCH"
+  | "NEW_CREATED";
+
+export type CustodianResolution = {
+  identity: ExternalIdentity;
+  custodianId: string;
+  matchType: CustodianMatchType;
+  confidence: number; // 0–1
+  displayName: string;
+  email?: string | null;
+};
+
+function normalizeEmail(email?: string | null): string | null {
+  if (!email) return null;
+  return email.trim().toLowerCase();
+}
+
+function normalizeName(name?: string | null): string | null {
+  if (!name) return null;
+  return name.trim();
+}
+
+async function findByEmailCaseCustodian(email: string, caseId: string) {
+  const rows = await db
+    .select()
+    .from(custodians)
+    .where(and(eq(custodians.caseId, caseId), eq(custodians.email, email)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function findAnyCustodianByEmail(email: string) {
+  const rows = await db
+    .select()
+    .from(custodians)
+    .where(eq(custodians.email, email))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function findEmployeeByEmail(email: string) {
+  const rows = await db
+    .select()
+    .from(employees)
+    .where(eq(employees.email, email))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function findUserByEmail(email: string) {
+  const rows = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function findVendorContactByEmail(email: string) {
+  const rows = await db
+    .select()
+    .from(vendorContacts)
+    .where(eq(vendorContacts.email, email))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function fuzzyMatchByName(
+  name: string,
+  caseId?: string | null
+) {
+  const pattern = `%${name}%`;
+  if (caseId) {
+    const [cust] = await db
+      .select()
+      .from(custodians)
+      .where(
+        and(
+          eq(custodians.caseId, caseId),
+          or(
+            ilike(custodians.fullName, pattern),
+            ilike(custodians.notes ?? "", pattern)
+          )
+        )
+      )
+      .limit(1);
+    if (cust) return { type: "custodian" as const, row: cust };
+  }
+
+  const [party] = await db
+    .select()
+    .from(caseParties)
+    .where(
+      caseId
+        ? and(
+            eq(caseParties.caseId, caseId),
+            ilike(caseParties.name, pattern)
+          )
+        : ilike(caseParties.name, pattern)
+    )
+    .limit(1);
+
+  if (party) return { type: "case_party" as const, row: party };
+  return null;
+}
+
+async function createCustodianFromEmployee(
+  emp: typeof employees.$inferSelect,
+  caseId?: string | null
+) {
+  const [row] = await db
+    .insert(custodians)
+    .values({
+      caseId: caseId ?? null,
+      fullName: `${emp.firstName} ${emp.lastName}`,
+      email: emp.email,
+      title: emp.position,
+      department: emp.department,
+      location: emp.location,
+      custodianType: "employee",
+      isCritical: "false",
+    })
+    .returning();
+  return row;
+}
+
+async function createCustodianFromVendorContact(
+  vc: typeof vendorContacts.$inferSelect,
+  caseId?: string | null
+) {
+  const [row] = await db
+    .insert(custodians)
+    .values({
+      caseId: caseId ?? null,
+      fullName: `${vc.firstName} ${vc.lastName}`,
+      email: vc.email,
+      title: vc.position,
+      department: vc.location,
+      custodianType: "contractor",
+      isCritical: "false",
+      notes: `Vendor: ${vc.companyName}`,
+    })
+    .returning();
+  return row;
+}
+
+async function createCustodianFromIdentity(
+  identity: ExternalIdentity,
+  custodianType: "employee" | "contractor" | "third_party" | "other" = "employee"
+) {
+  const email = normalizeEmail(identity.email);
+  const name = normalizeName(identity.displayName) ?? email ?? "Unknown";
+  const [row] = await db
+    .insert(custodians)
+    .values({
+      caseId: identity.caseId ?? null,
+      fullName: name,
+      email,
+      title: null,
+      department: null,
+      custodianType,
+      isCritical: "false",
+      notes: `Created from ${identity.sourceType} identity`,
+    })
+    .returning();
+  return row;
+}
+
+export async function resolveIdentityToCustodian(
+  identity: ExternalIdentity
+): Promise<CustodianResolution> {
+  const email = normalizeEmail(identity.email);
+  const name = normalizeName(identity.displayName);
+  const caseId = identity.caseId ?? null;
+
+  // 1) Exact case-level custodian by email
+  if (email && caseId) {
+    const cust = await findByEmailCaseCustodian(email, caseId);
+    if (cust) {
+      return {
+        identity,
+        custodianId: cust.id,
+        matchType: "EXACT_CASE_CUSTODIAN",
+        confidence: 0.99,
+        displayName: cust.fullName ?? email,
+        email: cust.email,
+      };
+    }
+  }
+
+  // 2) Any existing custodian by email
+  if (email) {
+    const cust = await findAnyCustodianByEmail(email);
+    if (cust) {
+      // Optionally clone to new case if different
+      if (caseId && cust.caseId !== caseId) {
+        const [clone] = await db
+          .insert(custodians)
+          .values({
+            caseId,
+            fullName: cust.fullName,
+            email: cust.email,
+            title: cust.title,
+            department: cust.department,
+            custodianType: cust.custodianType,
+            isCritical: cust.isCritical,
+            notes: `Cloned from custodian ${cust.id} for new case`,
+          })
+          .returning();
+        return {
+          identity,
+          custodianId: clone.id,
+          matchType: "EXISTING_CUSTODIAN_ANY_CASE",
+          confidence: 0.96,
+          displayName: clone.fullName ?? email,
+          email: clone.email,
+        };
+      }
+
+      return {
+        identity,
+        custodianId: cust.id,
+        matchType: "EXISTING_CUSTODIAN_ANY_CASE",
+        confidence: 0.95,
+        displayName: cust.fullName ?? email,
+        email: cust.email,
+      };
+    }
+  }
+
+  // 3) Employee record by email
+  if (email) {
+    const emp = await findEmployeeByEmail(email);
+    if (emp) {
+      const cust = await createCustodianFromEmployee(emp, caseId);
+      return {
+        identity,
+        custodianId: cust.id,
+        matchType: "EMPLOYEE_RECORD",
+        confidence: 0.93,
+        displayName: cust.fullName ?? email,
+        email: cust.email,
+      };
+    }
+  }
+
+  // 4) User record by email
+  if (email) {
+    const usr = await findUserByEmail(email);
+    if (usr) {
+      const [cust] = await db
+        .insert(custodians)
+        .values({
+          caseId,
+          fullName:
+            (usr.firstName && usr.lastName
+              ? `${usr.firstName} ${usr.lastName}`
+              : usr.email) ?? usr.email,
+          email: usr.email,
+          title: null,
+          department: null,
+          custodianType: "employee",
+          isCritical: "false",
+          notes: "Derived from Sentinel user account",
+        })
+        .returning();
+
+      return {
+        identity,
+        custodianId: cust.id,
+        matchType: "USER_RECORD",
+        confidence: 0.9,
+        displayName: cust.fullName ?? email,
+        email: cust.email,
+      };
+    }
+  }
+
+  // 5) Vendor contact by email
+  if (email) {
+    const vc = await findVendorContactByEmail(email);
+    if (vc) {
+      const cust = await createCustodianFromVendorContact(vc, caseId);
+      return {
+        identity,
+        custodianId: cust.id,
+        matchType: "VENDOR_CONTACT",
+        confidence: 0.9,
+        displayName: cust.fullName ?? email,
+        email: cust.email,
+      };
+    }
+  }
+
+  // 6) Fuzzy name match in case-level custodians / parties
+  if (name) {
+    const fuzzy = await fuzzyMatchByName(name, caseId);
+    if (fuzzy) {
+      if (fuzzy.type === "custodian") {
+        return {
+          identity,
+          custodianId: fuzzy.row.id,
+          matchType: "NAME_FUZZY_MATCH",
+          confidence: 0.75,
+          displayName: fuzzy.row.fullName ?? name,
+          email: fuzzy.row.email,
+        };
+      } else {
+        // case_party → create custodian from party
+        const party = fuzzy.row;
+        const [cust] = await db
+          .insert(custodians)
+          .values({
+            caseId,
+            fullName: party.name,
+            email: party.email,
+            department: party.department,
+            title: party.title,
+            custodianType: "employee",
+            isCritical: "false",
+            notes: `Derived from case party role: ${party.caseRole}`,
+          })
+          .returning();
+        return {
+          identity,
+          custodianId: cust.id,
+          matchType: "NAME_FUZZY_MATCH",
+          confidence: 0.78,
+          displayName: cust.fullName ?? name,
+          email: cust.email,
+        };
+      }
+    }
+  }
+
+  // 7) Create new custodian
+  const type: "employee" | "contractor" | "third_party" | "other" =
+    identity.companyName &&
+    identity.companyName.toLowerCase().includes("llc") // silly heuristic
+      ? "third_party"
+      : "employee";
+
+  const newCust = await createCustodianFromIdentity(identity, type);
+
+  return {
+    identity,
+    custodianId: newCust.id,
+    matchType: "NEW_CREATED",
+    confidence: 0.7,
+    displayName: newCust.fullName ?? (email ?? "Unknown"),
+    email: newCust.email,
+  };
+}
+
+3. Bulk auto-mapping for the Connect UI
+
+When the user picks Slack/M365 channels/mailboxes, you’ll have a set of identities like { email, displayName, caseId }.
+
+Create:
+
+// src/server/services/custodianResolver.ts (continue)
+export async function autoMapIdentitiesToCustodians(
+  identities: ExternalIdentity[]
+): Promise<CustodianResolution[]> {
+  const results: CustodianResolution[] = [];
+  for (const id of identities) {
+    const res = await resolveIdentityToCustodian(id);
+    results.push(res);
+  }
+  return results;
+}
+
+
+Then expose an API endpoint for the UI:
+
+// src/app/api/cases/[caseId]/auto-map-custodians/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { autoMapIdentitiesToCustodians, ExternalIdentity } from "@/server/services/custodianResolver";
+import { requireAuth } from "@/server/auth"; // your auth guard
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { caseId: string } }
+) {
+  const user = await requireAuth(req);
+  const caseId = params.caseId;
+
+  const body = (await req.json()) as { identities: Omit<ExternalIdentity, "caseId">[] };
+
+  const identities: ExternalIdentity[] = body.identities.map((i) => ({
+    ...i,
+    caseId,
+  }));
+
+  const mappings = await autoMapIdentitiesToCustodians(identities);
+
+  return NextResponse.json({ mappings });
+}
+
+4. How the UI uses this
+
+On the “Connect Slack / M365” wizard (Step 3 – Map Custodians):
+
+You call provider APIs to get a list of unique identities:
+
+Slack: email + real_name from users.list
+
+M365: mailbox identities (SMTP address, displayName)
+
+Send these to the API:
+
+const res = await fetch(`/api/cases/${caseId}/auto-map-custodians`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    identities: slackUsers.map((u) => ({
+      email: u.email,
+      displayName: u.real_name,
+      userId: u.id,
+      sourceType: "chat_slack",
+      companyName: u.profile?.company,
+    })),
+  }),
+});
+
+const { mappings } = await res.json();
+
+
+Render table:
+
+External Identity	Suggested Custodian	Match Type	Confidence	Action
+james@company.com
+	James Carter (Employee)	EMPLOYEE_RECORD	0.93	Change
+ext-consultant@vendor.com
+	New: ext-consultant@vendor.com
+	NEW_CREATED	0.70	Change
+“GC – Maria Lopez” (no @)	Maria Lopez (Case Party)	NAME_FUZZY_MATCH	0.78	Change
+
+You can highlight:
+
+≥0.9 as “Confident match” (green pill)
+
+0.75–0.9 as “Review recommended” (amber pill)
+
+<0.75 as “Needs attention” (red pill, but still pre-created for them)
+
+If the user clicks Change, you open a small search/select:
+
+Search in existing custodians for this case
+
+Or create a new one manually.
+
+5. Plugging into the ingestion engine
+
+In your connector ingestion engine (where we earlier had resolveCustodianId), replace the stub with this:
+
+import { resolveIdentityToCustodian } from "@/server/services/custodianResolver";
+
+async function resolveCustodianId(email?: string | null, caseId?: string | null) {
+  if (!email) return null;
+  const res = await resolveIdentityToCustodian({
+    email,
+    displayName: null,
+    userId: null,
+    caseId,
+    sourceType: "auto_ingestion",
+    companyName: null,
+  });
+  return res.custodianId;
+}
+
+
+That way:
+
+If they did the mapping in the UI first, it will re-use those custodians.
+
+If not, ingestion still auto-creates / auto-maps behind the scenes.

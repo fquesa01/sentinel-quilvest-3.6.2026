@@ -1,0 +1,1963 @@
+# Sentinel Counsel: Enterprise Risk Management (ERM) Module
+## Comprehensive Feature Specification
+
+---
+
+# TABLE OF CONTENTS
+
+1. [Module Overview](#1-module-overview)
+2. [Navigation & Architecture](#2-navigation--architecture)
+3. [Database Schema](#3-database-schema)
+4. [Enterprise Risk Register](#4-enterprise-risk-register)
+5. [Risk Assessment Workflows](#5-risk-assessment-workflows)
+6. [Risk Quantification](#6-risk-quantification)
+7. [Key Risk Indicators (KRIs)](#7-key-risk-indicators-kris)
+8. [Risk Appetite Framework](#8-risk-appetite-framework)
+9. [Bow-Tie Analysis](#9-bow-tie-analysis)
+10. [Business Continuity Planning](#10-business-continuity-planning)
+11. [Risk Aggregation & Reporting](#11-risk-aggregation--reporting)
+12. [API Endpoints](#12-api-endpoints)
+13. [UI Components](#13-ui-components)
+14. [Implementation Roadmap](#14-implementation-roadmap)
+
+---
+
+# 1. MODULE OVERVIEW
+
+## 1.1 Purpose
+
+The Enterprise Risk Management (ERM) module transforms Sentinel Counsel into a comprehensive GRC platform capable of competing with IBM OpenPages, MetricStream, ServiceNow GRC, Diligent, and NAVEX.
+
+**Core Capabilities:**
+- **Visibility**: Complete view of all organizational risks across business units, geographies, and risk categories
+- **Quantification**: Financial impact modeling using Monte Carlo simulation and VaR
+- **Monitoring**: Real-time KRI tracking with automated alerting
+- **Governance**: Risk appetite framework with cascading tolerance levels
+- **Resilience**: Business continuity and disaster recovery planning
+- **Intelligence**: AI-powered risk identification and predictive analytics
+
+## 1.2 Target Users
+
+| User Role | Primary Functions |
+|-----------|-------------------|
+| Chief Risk Officer (CRO) | Enterprise-wide oversight, board reporting, appetite setting |
+| Risk Managers | Risk identification, assessment, monitoring, reporting |
+| Business Unit Leaders | Operational risk ownership, control attestation |
+| Internal Audit | Risk-based audit planning, control testing |
+| Compliance Officers | Regulatory risk monitoring, compliance mapping |
+| Executive Leadership | Dashboard consumption, decision support |
+| Board/Audit Committee | Governance oversight, fiduciary review |
+
+## 1.3 Integration with Existing Sentinel Modules
+
+| Existing Module | ERM Integration Points |
+|-----------------|----------------------|
+| Investigations | Convert incidents to risks; Link risks to cases |
+| Business Transactions | M&A risk assessments; Due diligence risks |
+| eDiscovery | Evidence collection; Litigation risk tracking |
+| Compliance Monitoring | Regulatory requirements; Compliance status |
+| Communications Analysis | Detect emerging risks from communication patterns |
+| Case Management | Risk event cases; Remediation tracking |
+
+---
+
+# 2. NAVIGATION & ARCHITECTURE
+
+## 2.1 Left Sidebar Addition
+
+Add "RISK MANAGEMENT" section to the left navigation ribbon:
+
+```
+🏛 My Queue
+
+INVESTIGATIONS ▼
+BUSINESS TRANSACTIONS ▼
+RISK MANAGEMENT ▼  ← NEW SECTION
+├── 📊 Risk Dashboard
+├── 📋 Risk Register
+├── 🎯 Risk Assessments
+├── 📈 Risk Quantification
+├── 🔔 Key Risk Indicators
+├── ⚖️ Risk Appetite
+├── 🔀 Bow-Tie Analysis
+├── 🛡️ Business Continuity
+├── 📊 Risk Reports
+└── ⚙️ ERM Administration
+
+INTAKE & MONITORING ▼
+DISCOVERY & PRODUCTIONS ▼
+GRC & COMPLIANCE ▼
+ANALYTICS & INTELLIGENCE ▼
+KNOWLEDGE CENTER ▼
+ADMINISTRATION ▼
+```
+
+---
+
+# 3. DATABASE SCHEMA
+
+## 3.1 Core Risk Tables
+
+```sql
+-- =====================================================
+-- RISK TAXONOMY & CATEGORIES
+-- =====================================================
+
+CREATE TABLE risk_categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    parent_category_id UUID REFERENCES risk_categories(id),
+    level INTEGER DEFAULT 1, -- 1=Top, 2=Sub, 3=Detailed
+    sort_order INTEGER DEFAULT 0,
+    color VARCHAR(20),
+    icon VARCHAR(100),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed data for standard risk taxonomy
+INSERT INTO risk_categories (code, name, description, level) VALUES
+('STRATEGIC', 'Strategic Risk', 'Risks affecting long-term organizational objectives', 1),
+('OPERATIONAL', 'Operational Risk', 'Risks arising from internal processes, people, and systems', 1),
+('FINANCIAL', 'Financial Risk', 'Risks affecting financial position and performance', 1),
+('COMPLIANCE', 'Compliance Risk', 'Risks of regulatory violations and legal exposure', 1),
+('REPUTATIONAL', 'Reputational Risk', 'Risks affecting organizational reputation and brand', 1),
+('TECHNOLOGY', 'Technology Risk', 'Risks related to IT systems, cybersecurity, and data', 1),
+('THIRD_PARTY', 'Third-Party Risk', 'Risks from vendors, suppliers, and business partners', 1),
+('ESG', 'ESG Risk', 'Environmental, Social, and Governance risks', 1);
+
+
+-- =====================================================
+-- ORGANIZATIONAL STRUCTURE
+-- =====================================================
+
+CREATE TABLE business_units (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    parent_unit_id UUID REFERENCES business_units(id),
+    level INTEGER DEFAULT 1,
+    unit_type VARCHAR(50), -- 'division', 'department', 'region', 'subsidiary'
+    head_user_id UUID REFERENCES users(id),
+    is_active BOOLEAN DEFAULT true,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- ENTERPRISE RISK REGISTER
+-- =====================================================
+
+CREATE TABLE risks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    risk_id VARCHAR(50) UNIQUE NOT NULL, -- e.g., "RISK-2025-0001"
+    
+    -- Basic Information
+    title VARCHAR(500) NOT NULL,
+    description TEXT NOT NULL,
+    risk_statement TEXT, -- "If [cause], then [event], resulting in [consequence]"
+    
+    -- Classification
+    category_id UUID REFERENCES risk_categories(id) NOT NULL,
+    sub_category_id UUID REFERENCES risk_categories(id),
+    risk_type VARCHAR(50), -- 'inherent', 'residual', 'emerging', 'opportunity'
+    
+    -- Organizational Context
+    business_unit_id UUID REFERENCES business_units(id),
+    geography VARCHAR(100),
+    process_area VARCHAR(200),
+    
+    -- Ownership
+    risk_owner_id UUID REFERENCES users(id) NOT NULL,
+    risk_delegate_id UUID REFERENCES users(id),
+    
+    -- Status & Lifecycle
+    status VARCHAR(50) DEFAULT 'identified', 
+    -- 'identified', 'assessed', 'mitigating', 'monitored', 'accepted', 'closed', 'retired'
+    lifecycle_stage VARCHAR(50) DEFAULT 'active',
+    -- 'emerging', 'active', 'declining', 'dormant', 'closed'
+    
+    -- Inherent Risk (before controls)
+    inherent_likelihood INTEGER, -- 1-5 scale
+    inherent_impact INTEGER, -- 1-5 scale
+    inherent_risk_score INTEGER GENERATED ALWAYS AS (inherent_likelihood * inherent_impact) STORED,
+    inherent_risk_rating VARCHAR(20), -- 'critical', 'high', 'medium', 'low', 'minimal'
+    
+    -- Residual Risk (after controls)
+    residual_likelihood INTEGER,
+    residual_impact INTEGER,
+    residual_risk_score INTEGER GENERATED ALWAYS AS (residual_likelihood * residual_impact) STORED,
+    residual_risk_rating VARCHAR(20),
+    
+    -- Target Risk (desired future state)
+    target_likelihood INTEGER,
+    target_impact INTEGER,
+    target_risk_score INTEGER GENERATED ALWAYS AS (target_likelihood * target_impact) STORED,
+    target_date DATE,
+    
+    -- Velocity & Proximity
+    risk_velocity VARCHAR(20), -- 'immediate', 'fast', 'moderate', 'slow'
+    risk_proximity VARCHAR(20), -- 'imminent', 'near_term', 'medium_term', 'long_term'
+    
+    -- Financial Quantification
+    potential_loss_min DECIMAL(20,2),
+    potential_loss_max DECIMAL(20,2),
+    potential_loss_expected DECIMAL(20,2),
+    currency VARCHAR(10) DEFAULT 'USD',
+    annualized_loss_expectancy DECIMAL(20,2),
+    
+    -- Qualitative Impacts
+    impact_financial TEXT,
+    impact_operational TEXT,
+    impact_regulatory TEXT,
+    impact_reputational TEXT,
+    impact_strategic TEXT,
+    
+    -- Causes & Consequences
+    root_causes JSONB DEFAULT '[]',
+    potential_consequences JSONB DEFAULT '[]',
+    trigger_events JSONB DEFAULT '[]',
+    
+    -- Related Items
+    related_risks JSONB DEFAULT '[]',
+    related_controls JSONB DEFAULT '[]',
+    related_kris JSONB DEFAULT '[]',
+    related_incidents JSONB DEFAULT '[]',
+    
+    -- Regulatory Context
+    applicable_regulations JSONB DEFAULT '[]',
+    compliance_requirements JSONB DEFAULT '[]',
+    
+    -- Response Strategy
+    risk_response VARCHAR(50), -- 'accept', 'mitigate', 'transfer', 'avoid'
+    response_rationale TEXT,
+    treatment_plan TEXT,
+    
+    -- Dates
+    identified_date DATE DEFAULT CURRENT_DATE,
+    last_assessed_date DATE,
+    next_review_date DATE,
+    
+    -- Approval
+    approved_by UUID REFERENCES users(id),
+    approved_at TIMESTAMPTZ,
+    approval_notes TEXT,
+    
+    -- Risk Appetite
+    risk_appetite_id UUID,
+    within_appetite BOOLEAN,
+    appetite_breach_notes TEXT,
+    
+    -- Audit Trail
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_by UUID REFERENCES users(id),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    version INTEGER DEFAULT 1,
+    
+    -- AI Analysis
+    ai_risk_score DECIMAL(5,2),
+    ai_analysis JSONB,
+    ai_recommendations JSONB,
+    
+    -- Metadata
+    tags JSONB DEFAULT '[]',
+    custom_fields JSONB DEFAULT '{}',
+    attachments JSONB DEFAULT '[]'
+);
+
+-- Risk history for audit trail
+CREATE TABLE risk_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    risk_id UUID REFERENCES risks(id) NOT NULL,
+    field_changed VARCHAR(100) NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    change_reason TEXT,
+    changed_by UUID REFERENCES users(id),
+    changed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- RISK ASSESSMENTS
+-- =====================================================
+
+CREATE TABLE risk_assessment_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    assessment_type VARCHAR(50), -- 'standard', 'detailed', 'rapid', 'scenario'
+    
+    -- Scoring Configuration
+    likelihood_scale JSONB NOT NULL, 
+    -- {"1": {"name": "Rare", "description": "< 1% chance"}, ...}
+    impact_scale JSONB NOT NULL,
+    -- {"1": {"name": "Minimal", "financial": "<10000"}, ...}
+    
+    risk_matrix JSONB NOT NULL,
+    -- {"1-1": "minimal", "1-2": "low", ..., "5-5": "critical"}
+    
+    assessment_criteria JSONB DEFAULT '[]',
+    requires_approval BOOLEAN DEFAULT true,
+    approval_threshold INTEGER,
+    escalation_threshold INTEGER,
+    
+    is_default BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE risk_assessments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    assessment_number VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Links
+    risk_id UUID REFERENCES risks(id) NOT NULL,
+    template_id UUID REFERENCES risk_assessment_templates(id),
+    
+    -- Assessment Type
+    assessment_type VARCHAR(50) NOT NULL, -- 'initial', 'periodic', 'triggered', 'annual'
+    trigger_reason TEXT,
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'draft',
+    -- 'draft', 'in_progress', 'pending_review', 'pending_approval', 'approved', 'rejected'
+    
+    -- Pre-Assessment (Inherent)
+    inherent_likelihood INTEGER NOT NULL,
+    inherent_likelihood_rationale TEXT,
+    inherent_impact INTEGER NOT NULL,
+    inherent_impact_rationale TEXT,
+    inherent_score INTEGER GENERATED ALWAYS AS (inherent_likelihood * inherent_impact) STORED,
+    inherent_rating VARCHAR(20),
+    
+    -- Control Effectiveness Assessment
+    control_effectiveness VARCHAR(20),
+    control_effectiveness_score INTEGER,
+    control_gaps TEXT,
+    
+    -- Post-Assessment (Residual)
+    residual_likelihood INTEGER NOT NULL,
+    residual_likelihood_rationale TEXT,
+    residual_impact INTEGER NOT NULL,
+    residual_impact_rationale TEXT,
+    residual_score INTEGER GENERATED ALWAYS AS (residual_likelihood * residual_impact) STORED,
+    residual_rating VARCHAR(20),
+    
+    -- Trend
+    trend VARCHAR(20), -- 'increasing', 'stable', 'decreasing'
+    trend_rationale TEXT,
+    
+    -- Impact Details
+    impact_financial JSONB,
+    impact_operational JSONB,
+    impact_regulatory JSONB,
+    impact_reputational JSONB,
+    impact_strategic JSONB,
+    
+    -- Velocity & Proximity
+    velocity VARCHAR(20),
+    velocity_rationale TEXT,
+    proximity VARCHAR(20),
+    proximity_rationale TEXT,
+    
+    -- Response Recommendation
+    recommended_response VARCHAR(50),
+    response_rationale TEXT,
+    recommended_actions JSONB DEFAULT '[]',
+    
+    -- Assessment Details
+    assessment_methodology TEXT,
+    data_sources JSONB DEFAULT '[]',
+    assumptions TEXT,
+    limitations TEXT,
+    
+    -- Workflow
+    assessor_id UUID REFERENCES users(id) NOT NULL,
+    reviewer_id UUID REFERENCES users(id),
+    approver_id UUID REFERENCES users(id),
+    
+    assessed_at TIMESTAMPTZ,
+    reviewed_at TIMESTAMPTZ,
+    review_notes TEXT,
+    approved_at TIMESTAMPTZ,
+    approval_notes TEXT,
+    
+    -- Scheduling
+    assessment_period_start DATE,
+    assessment_period_end DATE,
+    next_assessment_date DATE,
+    
+    -- AI Assistance
+    ai_assisted BOOLEAN DEFAULT false,
+    ai_suggestions JSONB,
+    ai_confidence DECIMAL(5,2),
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- RISK QUANTIFICATION
+-- =====================================================
+
+CREATE TABLE risk_scenarios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    scenario_number VARCHAR(50) UNIQUE NOT NULL,
+    risk_id UUID REFERENCES risks(id) NOT NULL,
+    
+    -- Scenario Details
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    scenario_type VARCHAR(50), -- 'base_case', 'best_case', 'worst_case', 'stress_test'
+    
+    -- Loss Distribution Parameters
+    distribution_type VARCHAR(50) DEFAULT 'lognormal',
+    -- 'normal', 'lognormal', 'triangular', 'pert', 'uniform', 'custom'
+    
+    -- For triangular/PERT distributions
+    loss_minimum DECIMAL(20,2),
+    loss_most_likely DECIMAL(20,2),
+    loss_maximum DECIMAL(20,2),
+    
+    -- For normal/lognormal distributions
+    loss_mean DECIMAL(20,2),
+    loss_std_dev DECIMAL(20,2),
+    
+    -- Frequency Parameters
+    frequency_type VARCHAR(50) DEFAULT 'poisson',
+    frequency_rate DECIMAL(10,4), -- Events per year
+    frequency_n INTEGER,
+    frequency_p DECIMAL(5,4),
+    
+    -- Correlation
+    correlated_scenarios JSONB DEFAULT '[]',
+    correlation_coefficient DECIMAL(5,4),
+    
+    -- Confidence & Assumptions
+    confidence_level DECIMAL(5,2),
+    data_quality VARCHAR(20),
+    assumptions JSONB DEFAULT '[]',
+    
+    -- Monte Carlo Results
+    simulation_runs INTEGER,
+    simulated_at TIMESTAMPTZ,
+    results_summary JSONB,
+    -- {
+    --   "mean": 150000,
+    --   "median": 120000,
+    --   "percentile_95": 300000,
+    --   "percentile_99": 400000,
+    --   "var_95": 300000,
+    --   "cvar_95": 350000
+    -- }
+    results_distribution JSONB,
+    
+    is_active BOOLEAN DEFAULT true,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Loss event data (historical for calibration)
+CREATE TABLE loss_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_number VARCHAR(50) UNIQUE NOT NULL,
+    
+    risk_id UUID REFERENCES risks(id),
+    category_id UUID REFERENCES risk_categories(id),
+    business_unit_id UUID REFERENCES business_units(id),
+    
+    -- Event Details
+    event_date DATE NOT NULL,
+    discovered_date DATE,
+    description TEXT NOT NULL,
+    root_cause TEXT,
+    
+    -- Loss Details
+    gross_loss DECIMAL(20,2) NOT NULL,
+    recovered_amount DECIMAL(20,2) DEFAULT 0,
+    net_loss DECIMAL(20,2) GENERATED ALWAYS AS (gross_loss - COALESCE(recovered_amount, 0)) STORED,
+    currency VARCHAR(10) DEFAULT 'USD',
+    
+    -- Loss Type Breakdown
+    loss_type VARCHAR(50),
+    loss_breakdown JSONB,
+    
+    -- Insurance
+    insurance_claim_amount DECIMAL(20,2),
+    insurance_recovery DECIMAL(20,2),
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'open',
+    
+    -- Related Items
+    related_incident_id UUID,
+    related_case_id UUID,
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Value at Risk calculations
+CREATE TABLE var_calculations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    calculation_name VARCHAR(200) NOT NULL,
+    
+    -- Scope
+    scope_type VARCHAR(50),
+    scope_ids JSONB DEFAULT '[]',
+    
+    -- Parameters
+    confidence_level DECIMAL(5,4) NOT NULL,
+    time_horizon INTEGER NOT NULL,
+    methodology VARCHAR(50),
+    
+    -- Results
+    var_amount DECIMAL(20,2),
+    cvar_amount DECIMAL(20,2),
+    calculation_date DATE,
+    
+    -- Details
+    scenarios_included JSONB DEFAULT '[]',
+    correlation_matrix JSONB,
+    assumptions TEXT,
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- KEY RISK INDICATORS (KRIs)
+-- =====================================================
+
+CREATE TABLE kri_definitions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kri_code VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Basic Info
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    
+    -- Classification
+    category_id UUID REFERENCES risk_categories(id),
+    kri_type VARCHAR(50), -- 'leading', 'lagging', 'current'
+    
+    -- Measurement
+    metric_type VARCHAR(50) NOT NULL, -- 'number', 'percentage', 'currency', 'ratio', 'count'
+    unit_of_measure VARCHAR(50),
+    measurement_frequency VARCHAR(50),
+    
+    -- Data Source
+    data_source_type VARCHAR(50), -- 'manual', 'api', 'database', 'calculated'
+    data_source_config JSONB,
+    calculation_formula TEXT,
+    
+    -- Thresholds
+    threshold_green_max DECIMAL(20,4),
+    threshold_yellow_max DECIMAL(20,4),
+    threshold_red_min DECIMAL(20,4),
+    
+    -- Trend Thresholds
+    trend_threshold_warning DECIMAL(10,4),
+    trend_threshold_alert DECIMAL(10,4),
+    
+    -- Ownership
+    owner_id UUID REFERENCES users(id),
+    business_unit_id UUID REFERENCES business_units(id),
+    
+    -- Linked Risks
+    linked_risk_ids JSONB DEFAULT '[]',
+    
+    -- Alerting
+    alert_enabled BOOLEAN DEFAULT true,
+    alert_recipients JSONB DEFAULT '[]',
+    escalation_rules JSONB,
+    
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE kri_measurements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kri_id UUID REFERENCES kri_definitions(id) NOT NULL,
+    
+    -- Measurement
+    measurement_date DATE NOT NULL,
+    measurement_period_start DATE,
+    measurement_period_end DATE,
+    
+    -- Value
+    value DECIMAL(20,4) NOT NULL,
+    previous_value DECIMAL(20,4),
+    change_amount DECIMAL(20,4) GENERATED ALWAYS AS (value - COALESCE(previous_value, value)) STORED,
+    change_percent DECIMAL(10,4),
+    
+    -- Status
+    status VARCHAR(20), -- 'green', 'yellow', 'red'
+    trend VARCHAR(20), -- 'improving', 'stable', 'worsening'
+    
+    -- Breach Information
+    is_breach BOOLEAN DEFAULT false,
+    breach_type VARCHAR(50),
+    breach_duration INTEGER,
+    
+    -- Context
+    notes TEXT,
+    data_source TEXT,
+    data_quality VARCHAR(20),
+    
+    -- Alert Generated
+    alert_generated BOOLEAN DEFAULT false,
+    alert_id UUID,
+    
+    recorded_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    UNIQUE(kri_id, measurement_date)
+);
+
+CREATE TABLE kri_alerts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kri_id UUID REFERENCES kri_definitions(id) NOT NULL,
+    measurement_id UUID REFERENCES kri_measurements(id),
+    
+    -- Alert Details
+    alert_type VARCHAR(50),
+    severity VARCHAR(20),
+    
+    -- Content
+    title VARCHAR(500) NOT NULL,
+    message TEXT NOT NULL,
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'open',
+    
+    -- Response
+    acknowledged_by UUID REFERENCES users(id),
+    acknowledged_at TIMESTAMPTZ,
+    resolved_by UUID REFERENCES users(id),
+    resolved_at TIMESTAMPTZ,
+    resolution_notes TEXT,
+    
+    -- Actions Taken
+    actions JSONB DEFAULT '[]',
+    
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- RISK APPETITE FRAMEWORK
+-- =====================================================
+
+CREATE TABLE risk_appetite_statements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    statement_code VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Scope
+    scope_type VARCHAR(50) NOT NULL, -- 'enterprise', 'category', 'business_unit'
+    category_id UUID REFERENCES risk_categories(id),
+    business_unit_id UUID REFERENCES business_units(id),
+    
+    -- Statement
+    statement_text TEXT NOT NULL,
+    risk_tolerance VARCHAR(50), -- 'averse', 'minimal', 'cautious', 'open', 'seeking'
+    
+    -- Quantitative Limits
+    max_single_loss DECIMAL(20,2),
+    max_annual_loss DECIMAL(20,2),
+    max_risk_score INTEGER,
+    var_limit DECIMAL(20,2),
+    var_confidence DECIMAL(5,4),
+    
+    -- Qualitative Boundaries
+    qualitative_limits JSONB,
+    
+    -- Thresholds for Escalation
+    escalation_thresholds JSONB,
+    
+    -- Approval
+    approved_by UUID REFERENCES users(id),
+    approved_at TIMESTAMPTZ,
+    board_approved BOOLEAN DEFAULT false,
+    board_approval_date DATE,
+    
+    -- Validity
+    effective_date DATE NOT NULL,
+    expiration_date DATE,
+    review_frequency VARCHAR(50),
+    next_review_date DATE,
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'draft',
+    version INTEGER DEFAULT 1,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE appetite_breaches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    appetite_id UUID REFERENCES risk_appetite_statements(id) NOT NULL,
+    risk_id UUID REFERENCES risks(id),
+    
+    -- Breach Details
+    breach_date DATE NOT NULL,
+    breach_type VARCHAR(50),
+    breach_description TEXT NOT NULL,
+    
+    -- Metrics at Breach
+    metric_name VARCHAR(200),
+    threshold_value DECIMAL(20,4),
+    actual_value DECIMAL(20,4),
+    breach_amount DECIMAL(20,4),
+    
+    -- Severity
+    severity VARCHAR(20),
+    
+    -- Response
+    status VARCHAR(50) DEFAULT 'open',
+    response_plan TEXT,
+    remediation_actions JSONB DEFAULT '[]',
+    remediation_deadline DATE,
+    
+    -- Escalation
+    escalated_to JSONB DEFAULT '[]',
+    escalation_date TIMESTAMPTZ,
+    
+    -- Resolution
+    resolved_at TIMESTAMPTZ,
+    resolution_notes TEXT,
+    residual_breach BOOLEAN DEFAULT false,
+    
+    -- Exception Approval
+    exception_approved BOOLEAN DEFAULT false,
+    exception_approved_by UUID REFERENCES users(id),
+    exception_approval_date TIMESTAMPTZ,
+    exception_expiration DATE,
+    exception_rationale TEXT,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- BOW-TIE ANALYSIS
+-- =====================================================
+
+CREATE TABLE bowtie_analyses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    analysis_number VARCHAR(50) UNIQUE NOT NULL,
+    risk_id UUID REFERENCES risks(id) NOT NULL,
+    
+    -- Basic Info
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    
+    -- The Hazard/Risk Event (Center)
+    hazard_description TEXT NOT NULL,
+    top_event TEXT NOT NULL,
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'draft',
+    
+    -- Canvas Data (JSON for visual editor)
+    canvas_data JSONB,
+    
+    -- Dates
+    analysis_date DATE,
+    last_reviewed DATE,
+    next_review DATE,
+    
+    -- Ownership
+    analyst_id UUID REFERENCES users(id),
+    reviewer_id UUID REFERENCES users(id),
+    approved_by UUID REFERENCES users(id),
+    approved_at TIMESTAMPTZ,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE bowtie_threats (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bowtie_id UUID REFERENCES bowtie_analyses(id) NOT NULL,
+    
+    -- Threat (Left Side - Causes)
+    threat_number INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    category VARCHAR(100),
+    likelihood VARCHAR(20),
+    
+    -- Position for visual display
+    position_x INTEGER,
+    position_y INTEGER,
+    
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE bowtie_consequences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bowtie_id UUID REFERENCES bowtie_analyses(id) NOT NULL,
+    
+    -- Consequence (Right Side - Effects)
+    consequence_number INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    impact_type VARCHAR(100),
+    severity VARCHAR(20),
+    
+    -- Quantification
+    potential_loss_min DECIMAL(20,2),
+    potential_loss_max DECIMAL(20,2),
+    
+    -- Position for visual display
+    position_x INTEGER,
+    position_y INTEGER,
+    
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE bowtie_barriers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bowtie_id UUID REFERENCES bowtie_analyses(id) NOT NULL,
+    
+    -- Barrier Type
+    barrier_type VARCHAR(50) NOT NULL, -- 'preventive', 'mitigating', 'recovery'
+    
+    -- Links
+    threat_id UUID REFERENCES bowtie_threats(id),
+    consequence_id UUID REFERENCES bowtie_consequences(id),
+    
+    -- Barrier Details
+    barrier_number INTEGER NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    barrier_category VARCHAR(100),
+    
+    -- Effectiveness
+    effectiveness VARCHAR(20),
+    effectiveness_score INTEGER,
+    confidence_level VARCHAR(20),
+    
+    -- Control Reference
+    control_id UUID,
+    is_implemented BOOLEAN DEFAULT true,
+    implementation_status VARCHAR(50),
+    
+    -- Degradation Factors
+    degradation_factors JSONB DEFAULT '[]',
+    escalation_factors JSONB DEFAULT '[]',
+    
+    -- Position for visual display
+    position_x INTEGER,
+    position_y INTEGER,
+    
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- BUSINESS CONTINUITY PLANNING
+-- =====================================================
+
+CREATE TABLE bcp_plans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_number VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Basic Info
+    name VARCHAR(500) NOT NULL,
+    description TEXT,
+    plan_type VARCHAR(50), -- 'enterprise', 'business_unit', 'it_dr', 'crisis_management', 'pandemic'
+    
+    -- Scope
+    business_unit_id UUID REFERENCES business_units(id),
+    scope_description TEXT,
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'draft',
+    
+    -- Objectives
+    rto_hours INTEGER, -- Recovery Time Objective
+    rpo_hours INTEGER, -- Recovery Point Objective
+    mtpd_hours INTEGER, -- Maximum Tolerable Period of Disruption
+    
+    -- Key Information
+    activation_criteria TEXT,
+    activation_authority JSONB DEFAULT '[]',
+    
+    -- Document Management
+    current_version VARCHAR(20),
+    version_history JSONB DEFAULT '[]',
+    document_path TEXT,
+    
+    -- Review & Testing
+    last_review_date DATE,
+    last_test_date DATE,
+    last_test_type VARCHAR(50),
+    last_test_result VARCHAR(50),
+    next_review_date DATE,
+    next_test_date DATE,
+    
+    -- Ownership
+    plan_owner_id UUID REFERENCES users(id),
+    plan_coordinator_id UUID REFERENCES users(id),
+    
+    -- Approval
+    approved_by UUID REFERENCES users(id),
+    approved_at TIMESTAMPTZ,
+    
+    -- Related Risks
+    linked_risk_ids JSONB DEFAULT '[]',
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Business Impact Analysis
+CREATE TABLE bcp_impact_analysis (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id UUID REFERENCES bcp_plans(id) NOT NULL,
+    
+    -- Process/Function Being Analyzed
+    process_name VARCHAR(200) NOT NULL,
+    process_description TEXT,
+    business_unit_id UUID REFERENCES business_units(id),
+    process_owner_id UUID REFERENCES users(id),
+    
+    -- Criticality
+    criticality_rating VARCHAR(20),
+    criticality_score INTEGER,
+    criticality_rationale TEXT,
+    
+    -- Impact Over Time
+    impact_1_hour DECIMAL(20,2),
+    impact_4_hours DECIMAL(20,2),
+    impact_8_hours DECIMAL(20,2),
+    impact_24_hours DECIMAL(20,2),
+    impact_48_hours DECIMAL(20,2),
+    impact_72_hours DECIMAL(20,2),
+    impact_1_week DECIMAL(20,2),
+    impact_2_weeks DECIMAL(20,2),
+    impact_1_month DECIMAL(20,2),
+    
+    -- Non-Financial Impacts
+    operational_impact TEXT,
+    regulatory_impact TEXT,
+    reputational_impact TEXT,
+    safety_impact TEXT,
+    legal_impact TEXT,
+    
+    -- Dependencies
+    upstream_dependencies JSONB DEFAULT '[]',
+    downstream_dependencies JSONB DEFAULT '[]',
+    third_party_dependencies JSONB DEFAULT '[]',
+    
+    -- Recovery Requirements
+    minimum_staff_required INTEGER,
+    key_personnel JSONB DEFAULT '[]',
+    minimum_systems_required JSONB DEFAULT '[]',
+    minimum_facilities_required JSONB DEFAULT '[]',
+    vital_records_required JSONB DEFAULT '[]',
+    
+    -- Recovery Objectives
+    rto_hours INTEGER,
+    rpo_hours INTEGER,
+    work_backlog_time INTEGER,
+    
+    -- Current vs Required
+    current_recovery_capability TEXT,
+    recovery_gaps JSONB DEFAULT '[]',
+    
+    analysis_date DATE,
+    analyst_id UUID REFERENCES users(id),
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Recovery Strategies
+CREATE TABLE bcp_recovery_strategies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id UUID REFERENCES bcp_plans(id) NOT NULL,
+    impact_analysis_id UUID REFERENCES bcp_impact_analysis(id),
+    
+    -- Strategy Details
+    strategy_number INTEGER NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    strategy_type VARCHAR(50),
+    
+    -- Applicability
+    applicable_scenarios JSONB DEFAULT '[]',
+    
+    -- Capability
+    recovery_time_achievable INTEGER,
+    capacity_percentage INTEGER,
+    
+    -- Cost
+    implementation_cost DECIMAL(20,2),
+    ongoing_cost_daily DECIMAL(20,2),
+    
+    -- Resources Required
+    personnel_required JSONB DEFAULT '[]',
+    technology_required JSONB DEFAULT '[]',
+    facilities_required JSONB DEFAULT '[]',
+    
+    -- Prerequisites
+    prerequisites JSONB DEFAULT '[]',
+    
+    -- Procedures
+    activation_procedure TEXT,
+    execution_steps JSONB DEFAULT '[]',
+    
+    is_primary BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Recovery Teams
+CREATE TABLE bcp_teams (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id UUID REFERENCES bcp_plans(id) NOT NULL,
+    
+    team_name VARCHAR(200) NOT NULL,
+    team_type VARCHAR(50),
+    description TEXT,
+    responsibilities JSONB DEFAULT '[]',
+    
+    -- Activation
+    activation_trigger TEXT,
+    escalation_path JSONB DEFAULT '[]',
+    
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE bcp_team_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    team_id UUID REFERENCES bcp_teams(id) NOT NULL,
+    user_id UUID REFERENCES users(id) NOT NULL,
+    
+    role VARCHAR(100) NOT NULL,
+    is_primary BOOLEAN DEFAULT true,
+    backup_for UUID REFERENCES bcp_team_members(id),
+    
+    -- Contact Information
+    emergency_phone VARCHAR(50),
+    emergency_email VARCHAR(255),
+    alternate_contact TEXT,
+    
+    -- Availability
+    availability_notes TEXT,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- BCP Exercises/Tests
+CREATE TABLE bcp_exercises (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id UUID REFERENCES bcp_plans(id) NOT NULL,
+    
+    exercise_number VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Exercise Details
+    name VARCHAR(500) NOT NULL,
+    description TEXT,
+    exercise_type VARCHAR(50) NOT NULL,
+    
+    -- Scenario
+    scenario_description TEXT,
+    scenario_assumptions JSONB DEFAULT '[]',
+    
+    -- Scheduling
+    scheduled_date TIMESTAMPTZ,
+    actual_start TIMESTAMPTZ,
+    actual_end TIMESTAMPTZ,
+    duration_planned_hours INTEGER,
+    duration_actual_hours INTEGER,
+    
+    -- Participation
+    participants JSONB DEFAULT '[]',
+    observers JSONB DEFAULT '[]',
+    facilitator_id UUID REFERENCES users(id),
+    
+    -- Results
+    status VARCHAR(50) DEFAULT 'planned',
+    overall_result VARCHAR(50),
+    
+    objectives_tested JSONB DEFAULT '[]',
+    objectives_met JSONB DEFAULT '[]',
+    objectives_not_met JSONB DEFAULT '[]',
+    
+    -- Findings
+    findings JSONB DEFAULT '[]',
+    strengths_identified JSONB DEFAULT '[]',
+    improvement_areas JSONB DEFAULT '[]',
+    
+    -- Action Items
+    action_items JSONB DEFAULT '[]',
+    
+    -- Documentation
+    exercise_script_path TEXT,
+    after_action_report_path TEXT,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- RISK AGGREGATION & REPORTING
+-- =====================================================
+
+CREATE TABLE risk_aggregation_views (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    view_type VARCHAR(50),
+    
+    -- Aggregation Scope
+    scope_type VARCHAR(50),
+    scope_config JSONB,
+    
+    -- Aggregation Method
+    aggregation_method VARCHAR(50),
+    weighting_config JSONB,
+    
+    -- Display Configuration
+    visualization_type VARCHAR(50),
+    visualization_config JSONB,
+    
+    -- Refresh
+    auto_refresh BOOLEAN DEFAULT false,
+    refresh_frequency VARCHAR(50),
+    last_refreshed TIMESTAMPTZ,
+    
+    -- Access
+    is_public BOOLEAN DEFAULT false,
+    shared_with JSONB DEFAULT '[]',
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE risk_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_number VARCHAR(50) UNIQUE NOT NULL,
+    
+    -- Report Details
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    report_type VARCHAR(50) NOT NULL,
+    
+    -- Template
+    template_id UUID,
+    template_config JSONB,
+    
+    -- Content Configuration
+    sections JSONB DEFAULT '[]',
+    
+    -- Filters
+    date_range_start DATE,
+    date_range_end DATE,
+    business_unit_filter JSONB DEFAULT '[]',
+    category_filter JSONB DEFAULT '[]',
+    
+    -- Generated Content
+    generated_at TIMESTAMPTZ,
+    content_data JSONB,
+    document_path TEXT,
+    
+    -- Distribution
+    distribution_list JSONB DEFAULT '[]',
+    distributed_at TIMESTAMPTZ,
+    distribution_method VARCHAR(50),
+    
+    -- Scheduling
+    is_scheduled BOOLEAN DEFAULT false,
+    schedule_frequency VARCHAR(50),
+    next_generation DATE,
+    
+    -- Status
+    status VARCHAR(50) DEFAULT 'draft',
+    
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- =====================================================
+-- INDEXES
+-- =====================================================
+
+CREATE INDEX idx_risks_category ON risks(category_id);
+CREATE INDEX idx_risks_business_unit ON risks(business_unit_id);
+CREATE INDEX idx_risks_owner ON risks(risk_owner_id);
+CREATE INDEX idx_risks_status ON risks(status);
+CREATE INDEX idx_risks_residual_score ON risks(residual_risk_score);
+CREATE INDEX idx_risks_next_review ON risks(next_review_date);
+
+CREATE INDEX idx_assessments_risk ON risk_assessments(risk_id);
+CREATE INDEX idx_assessments_status ON risk_assessments(status);
+
+CREATE INDEX idx_kri_measurements_kri ON kri_measurements(kri_id);
+CREATE INDEX idx_kri_measurements_date ON kri_measurements(measurement_date);
+CREATE INDEX idx_kri_measurements_status ON kri_measurements(status);
+
+CREATE INDEX idx_bcp_plans_business_unit ON bcp_plans(business_unit_id);
+CREATE INDEX idx_bcp_plans_status ON bcp_plans(status);
+
+CREATE INDEX idx_risks_search ON risks USING gin(to_tsvector('english', title || ' ' || COALESCE(description, '')));
+```
+
+---
+
+# 4. ENTERPRISE RISK REGISTER
+
+## 4.1 Risk Entry Form Fields
+
+| Section | Field | Type | Required | Description |
+|---------|-------|------|----------|-------------|
+| **Basic Information** | | | | |
+| | Risk ID | Auto-generated | Yes | e.g., "RISK-2025-0001" |
+| | Title | Text (500) | Yes | Concise risk name |
+| | Description | Rich Text | Yes | Detailed description |
+| | Risk Statement | Text | No | "If [cause], then [event], resulting in [consequence]" |
+| **Classification** | | | | |
+| | Category | Dropdown | Yes | From risk taxonomy |
+| | Sub-Category | Dropdown | No | Second-level category |
+| | Risk Type | Dropdown | Yes | Inherent/Residual/Emerging/Opportunity |
+| **Organizational Context** | | | | |
+| | Business Unit | Dropdown | Yes | From org hierarchy |
+| | Geography | Dropdown | No | Country/region |
+| | Process Area | Text | No | Business process affected |
+| **Ownership** | | | | |
+| | Risk Owner | User Select | Yes | Primary accountable person |
+| | Risk Delegate | User Select | No | Day-to-day manager |
+| **Inherent Risk** | | | | |
+| | Likelihood | 1-5 Scale | Yes | Before controls |
+| | Impact | 1-5 Scale | Yes | Before controls |
+| **Residual Risk** | | | | |
+| | Likelihood | 1-5 Scale | Yes | After controls |
+| | Impact | 1-5 Scale | Yes | After controls |
+| **Target Risk** | | | | |
+| | Target Likelihood | 1-5 Scale | No | Desired future state |
+| | Target Impact | 1-5 Scale | No | Desired future state |
+| **Velocity & Proximity** | | | | |
+| | Velocity | Dropdown | No | How fast impact would be felt |
+| | Proximity | Dropdown | No | When risk could materialize |
+| **Financial Quantification** | | | | |
+| | Potential Loss Min | Currency | No | Best case loss |
+| | Potential Loss Max | Currency | No | Worst case loss |
+| | Expected Loss | Currency | No | Most likely loss |
+| **Qualitative Impacts** | | | | |
+| | Financial Impact | Rich Text | No | Detailed financial impact |
+| | Operational Impact | Rich Text | No | Business operations effect |
+| | Regulatory Impact | Rich Text | No | Compliance implications |
+| | Reputational Impact | Rich Text | No | Brand/reputation effect |
+| **Causes & Consequences** | | | | |
+| | Root Causes | Multi-Text | No | What could cause this risk |
+| | Potential Consequences | Multi-Text | No | What could result |
+| | Trigger Events | Multi-Text | No | Specific triggering events |
+| **Risk Response** | | | | |
+| | Response Strategy | Dropdown | Yes | Accept/Mitigate/Transfer/Avoid |
+| | Treatment Plan | Rich Text | No | Detailed treatment approach |
+| **Related Items** | | | | |
+| | Related Risks | Multi-Select | No | Link to other risks |
+| | Related Controls | Multi-Select | No | Link to controls |
+| | Related KRIs | Multi-Select | No | Link to KRIs |
+| **Dates** | | | | |
+| | Identified Date | Date | Yes | When risk was identified |
+| | Next Review Date | Date | Yes | When to review again |
+
+## 4.2 Risk Register Views
+
+### 4.2.1 List View Default Columns
+
+- Risk ID
+- Title
+- Category
+- Business Unit
+- Owner
+- Inherent Score
+- Residual Score
+- Trend
+- Status
+- Next Review
+
+### 4.2.2 Heat Map (5x5 Matrix)
+
+```
+                    IMPACT
+           1    2    3    4    5
+         +----+----+----+----+----+
+       5 | 5  | 10 | 15 | 20 | 25 |  Almost Certain
+         +----+----+----+----+----+
+L      4 | 4  | 8  | 12 | 16 | 20 |  Likely
+I        +----+----+----+----+----+
+K      3 | 3  | 6  | 9  | 12 | 15 |  Possible
+E        +----+----+----+----+----+
+L      2 | 2  | 4  | 6  | 8  | 10 |  Unlikely
+I        +----+----+----+----+----+
+H      1 | 1  | 2  | 3  | 4  | 5  |  Rare
+O        +----+----+----+----+----+
+O        Minimal Minor Moderate Major Severe
+D
+```
+
+**Color Coding:**
+- 🔴 Critical (20-25): Red
+- 🟠 High (15-19): Orange  
+- 🟡 Medium (8-14): Yellow
+- 🟢 Low (4-7): Light Green
+- ⚪ Minimal (1-3): Green
+
+## 4.3 Risk Workflows
+
+### 4.3.1 Lifecycle States
+
+```
+IDENTIFIED → ASSESSED → MITIGATING → MONITORED → CLOSED
+                  ↓
+               ACCEPTED
+```
+
+### 4.3.2 Approval Requirements
+
+| Risk Score | Required Approval |
+|------------|-------------------|
+| Critical (20-25) | CRO + Board Committee |
+| High (15-19) | CRO |
+| Medium (8-14) | Risk Manager |
+| Low (1-7) | Risk Owner self-approve |
+
+---
+
+# 5. RISK ASSESSMENT WORKFLOWS
+
+## 5.1 Assessment Templates
+
+### 5.1.1 Likelihood Scale (Default)
+
+| Score | Rating | Description | Probability |
+|-------|--------|-------------|-------------|
+| 1 | Rare | Highly unlikely to occur | < 5% |
+| 2 | Unlikely | Not expected but possible | 5-20% |
+| 3 | Possible | May occur at some time | 20-50% |
+| 4 | Likely | Probably will occur | 50-80% |
+| 5 | Almost Certain | Expected to occur | > 80% |
+
+### 5.1.2 Impact Scale (Default)
+
+| Score | Rating | Financial | Operational | Regulatory | Reputational |
+|-------|--------|-----------|-------------|------------|--------------|
+| 1 | Minimal | < $10K | Negligible | Minor issue | No notice |
+| 2 | Minor | $10K-$100K | < 1 day | Inquiry | Local media |
+| 3 | Moderate | $100K-$1M | 1-5 days | Investigation | Industry notice |
+| 4 | Major | $1M-$10M | 5-30 days | Enforcement | National media |
+| 5 | Severe | > $10M | > 30 days | License loss | Global media |
+
+## 5.2 Assessment Process
+
+```
+1. INITIATE
+   ├── Select risk
+   ├── Choose template
+   └── Assign assessor
+
+2. ASSESS
+   ├── Score likelihood
+   ├── Score impact
+   ├── Assess control effectiveness
+   ├── Document rationale
+   └── Attach evidence
+
+3. REVIEW
+   ├── Reviewer validates
+   ├── Checks consistency
+   └── Requests changes if needed
+
+4. APPROVE
+   ├── Approver signs off
+   └── Risk register updated
+
+5. SCHEDULE NEXT
+   └── Set next assessment date
+```
+
+---
+
+# 6. RISK QUANTIFICATION
+
+## 6.1 Supported Distributions
+
+| Distribution | Parameters | Best For |
+|--------------|------------|----------|
+| Triangular | Min, Most Likely, Max | Quick estimates |
+| PERT | Min, Most Likely, Max | Reduced extremes |
+| Lognormal | Mean, Std Dev | Operational risk |
+| Normal | Mean, Std Dev | Market risk |
+
+## 6.2 Monte Carlo Simulation
+
+**Parameters:**
+- Iterations: 10,000 (default), 100,000 (detailed)
+- Frequency distribution: Poisson, Binomial, Fixed
+- Loss distribution: Per scenario config
+
+**Output Statistics:**
+- Mean (Expected Loss)
+- Median
+- Standard Deviation
+- Percentiles (5th, 25th, 50th, 75th, 90th, 95th, 99th)
+- VaR at 95% and 99%
+- Conditional VaR (Expected Shortfall)
+
+## 6.3 Value at Risk (VaR)
+
+**Methodologies:**
+- Parametric VaR
+- Historical VaR
+- Monte Carlo VaR
+
+**Portfolio VaR Formula:**
+```
+Portfolio VaR = √(Σ VaR_i² + 2 × Σ Σ ρ_ij × VaR_i × VaR_j)
+```
+
+---
+
+# 7. KEY RISK INDICATORS (KRIs)
+
+## 7.1 KRI Types
+
+| Type | Description | Examples |
+|------|-------------|----------|
+| Leading | Predict future risk | Employee turnover rate, System uptime % |
+| Lagging | Measure outcomes | Loss amounts, Incident counts |
+| Current | Real-time status | Open vulnerabilities, Pending complaints |
+
+## 7.2 KRI Configuration
+
+**Threshold Structure:**
+- 🟢 Green: ≤ X (Acceptable)
+- 🟡 Yellow: X to Y (Warning)
+- 🔴 Red: ≥ Y (Breach)
+
+**Data Sources:**
+- Manual Entry
+- API Integration (with endpoint config)
+- Database Query
+- Calculated (formula from other KRIs)
+
+## 7.3 Alert Management
+
+**Alert Lifecycle:**
+- Open → Acknowledged → Investigating → Resolved
+
+**Escalation Rules:**
+- Define per KRI
+- Auto-escalate after time threshold
+- Multi-level escalation
+
+---
+
+# 8. RISK APPETITE FRAMEWORK
+
+## 8.1 Appetite Statement Components
+
+1. **Qualitative Statement**: Natural language description
+2. **Risk Tolerance Level**: Averse, Minimal, Cautious, Open, Seeking
+3. **Quantitative Limits**:
+   - Maximum single loss
+   - Maximum annual loss
+   - Maximum risk score
+   - VaR limit
+4. **Qualitative Boundaries**: Zero-tolerance areas
+5. **Escalation Thresholds**: Warning vs. breach levels
+
+## 8.2 Cascading Structure
+
+```
+Enterprise Appetite
+├── Strategic Risk Appetite
+│   ├── BU1 Tolerance
+│   └── BU2 Tolerance
+├── Operational Risk Appetite
+├── Financial Risk Appetite
+├── Compliance Risk Appetite
+└── Technology Risk Appetite
+```
+
+## 8.3 Breach Management
+
+**Breach Response Workflow:**
+```
+DETECT → ANALYZE → RESPOND (Remediate or Accept) → RESOLVE
+```
+
+**Exception Approval Requirements:**
+- Time-limited
+- Documented rationale
+- Approval level based on severity
+
+---
+
+# 9. BOW-TIE ANALYSIS
+
+## 9.1 Components
+
+```
+    THREATS              TOP EVENT           CONSEQUENCES
+    (Causes)              (Risk)              (Impacts)
+
+   ┌─────────┐   ┌───┐       │       ┌───┐   ┌─────────────┐
+   │Threat 1 ├───┤P1 ├───────┼───────┤M1 ├───┤Consequence 1│
+   └─────────┘   └───┘       │       └───┘   └─────────────┘
+                             │
+   ┌─────────┐   ┌───┐       │       ┌───┐   ┌─────────────┐
+   │Threat 2 ├───┤P2 ├───────┼───────┤M2 ├───┤Consequence 2│
+   └─────────┘   └───┘       │       └───┘   └─────────────┘
+
+   P = Preventive Barrier    M = Mitigating Barrier
+```
+
+## 9.2 Barrier Properties
+
+| Property | Description |
+|----------|-------------|
+| Type | Preventive/Mitigating/Recovery |
+| Category | Hardware/Software/Human/Procedural |
+| Effectiveness | Highly Effective → Ineffective (0-100%) |
+| Confidence | High/Medium/Low |
+| Degradation Factors | What could weaken barrier |
+| Escalation Factors | What could cause failure |
+
+---
+
+# 10. BUSINESS CONTINUITY PLANNING
+
+## 10.1 Plan Hierarchy
+
+```
+Enterprise BCP Program
+├── Crisis Management Plan
+├── Business Unit BCPs
+│   ├── Finance BCP
+│   ├── Operations BCP
+│   └── IT DR Plan
+├── Site/Facility Plans
+└── Supporting Plans
+    ├── Pandemic Plan
+    └── Cyber Incident Plan
+```
+
+## 10.2 Business Impact Analysis (BIA)
+
+**Impact Assessment Timeline:**
+
+| Time Period | Financial Impact | Operational Impact | Regulatory Impact |
+|-------------|------------------|-------------------|-------------------|
+| 0-4 hours | $ | Description | Description |
+| 4-8 hours | $ | | |
+| 8-24 hours | $ | | |
+| 1-3 days | $ | | |
+| 3-7 days | $ | | |
+| 1-2 weeks | $ | | |
+| > 2 weeks | $ | | |
+
+**Criticality Ratings:**
+
+| Rating | RTO | Definition |
+|--------|-----|------------|
+| Critical | < 4 hours | Immediate impact |
+| Essential | 4-24 hours | Significant impact |
+| Necessary | 1-3 days | Important |
+| Desirable | 3-7 days | Minimal impact |
+
+## 10.3 Recovery Strategies
+
+| Strategy Type | Description |
+|---------------|-------------|
+| Work from Home | Remote work capability |
+| Alternate Site | Hot/Warm/Cold site |
+| Cloud Failover | Cloud-based recovery |
+| Manual Workaround | Paper-based processes |
+| Outsourcing | Third-party continuity |
+
+## 10.4 Exercise Types
+
+| Type | Complexity | Duration | Purpose |
+|------|------------|----------|---------|
+| Checklist Review | Low | 1-2 hours | Verify accuracy |
+| Tabletop | Low-Medium | 2-4 hours | Test decisions |
+| Walkthrough | Medium | 4-8 hours | Test procedures |
+| Functional | Medium-High | 1-2 days | Test capabilities |
+| Full-Scale | High | 2-5 days | Test everything |
+
+---
+
+# 11. RISK AGGREGATION & REPORTING
+
+## 11.1 Aggregation Methods
+
+| Method | Use Case |
+|--------|----------|
+| Simple Sum | Overall risk load |
+| Maximum | Peak exposure |
+| Weighted Average | Balanced view |
+| Correlation-Adjusted | Account for diversification |
+
+## 11.2 CRO Dashboard Elements
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  RISK PROFILE SUMMARY                                           │
+│  ┌──────────┬──────────┬──────────┬──────────┬──────────┐      │
+│  │ Critical │  High    │  Medium  │   Low    │  Total   │      │
+│  │    8     │    23    │    67    │   102    │   200    │      │
+│  └──────────┴──────────┴──────────┴──────────┴──────────┘      │
+│                                                                 │
+│  HEAT MAP               │  TOP 10 RISKS                        │
+│  [5x5 Matrix]           │  [Risk List with scores]             │
+│                                                                 │
+│  APPETITE UTILIZATION   │  KRI ALERTS                          │
+│  [Bar Chart by Category]│  [Red/Yellow counts]                 │
+│                                                                 │
+│  LOSS EXPOSURE          │  BCP STATUS                          │
+│  [VaR vs Appetite]      │  [Plan currency %]                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## 11.3 Standard Reports
+
+| Report | Content | Audience |
+|--------|---------|----------|
+| Risk Profile | Summary, heat map, top risks | CRO |
+| Board Report | High-level status, key issues | Board |
+| Appetite Status | Utilization, breaches | Risk Committee |
+| KRI Report | KRI status, trends, alerts | Risk Managers |
+| BCP Status | Plan currency, test results | BCP Team |
+
+---
+
+# 12. API ENDPOINTS
+
+```typescript
+// ==================== RISKS ====================
+GET    /api/erm/risks                         // List risks
+POST   /api/erm/risks                         // Create risk
+GET    /api/erm/risks/:id                     // Get risk
+PUT    /api/erm/risks/:id                     // Update risk
+DELETE /api/erm/risks/:id                     // Delete risk
+POST   /api/erm/risks/:id/submit-for-approval // Submit for approval
+POST   /api/erm/risks/:id/approve             // Approve risk
+POST   /api/erm/risks/:id/close               // Close risk
+
+// ==================== ASSESSMENTS ====================
+GET    /api/erm/risks/:id/assessments         // List assessments
+POST   /api/erm/risks/:id/assessments         // Create assessment
+GET    /api/erm/assessments/:id               // Get assessment
+PUT    /api/erm/assessments/:id               // Update assessment
+
+// ==================== SCENARIOS ====================
+GET    /api/erm/risks/:id/scenarios           // List scenarios
+POST   /api/erm/risks/:id/scenarios           // Create scenario
+POST   /api/erm/scenarios/:id/simulate        // Run simulation
+
+// ==================== KRIs ====================
+GET    /api/erm/kris                          // List KRIs
+POST   /api/erm/kris                          // Create KRI
+GET    /api/erm/kris/:id                      // Get KRI
+PUT    /api/erm/kris/:id                      // Update KRI
+POST   /api/erm/kris/:id/measurements         // Record measurement
+GET    /api/erm/kris/:id/measurements         // Get measurements
+GET    /api/erm/kri-alerts                    // List alerts
+PUT    /api/erm/kri-alerts/:id/acknowledge    // Acknowledge alert
+PUT    /api/erm/kri-alerts/:id/resolve        // Resolve alert
+
+// ==================== APPETITE ====================
+GET    /api/erm/appetite                      // List appetite statements
+POST   /api/erm/appetite                      // Create statement
+GET    /api/erm/appetite/:id                  // Get statement
+PUT    /api/erm/appetite/:id                  // Update statement
+GET    /api/erm/appetite-breaches             // List breaches
+POST   /api/erm/appetite-breaches/:id/remediate    // Remediate breach
+POST   /api/erm/appetite-breaches/:id/accept       // Accept exception
+
+// ==================== BOW-TIE ====================
+GET    /api/erm/bowtie                        // List analyses
+POST   /api/erm/bowtie                        // Create analysis
+GET    /api/erm/bowtie/:id                    // Get analysis
+PUT    /api/erm/bowtie/:id                    // Update analysis
+POST   /api/erm/bowtie/:id/threats            // Add threat
+POST   /api/erm/bowtie/:id/consequences       // Add consequence
+POST   /api/erm/bowtie/:id/barriers           // Add barrier
+
+// ==================== BCP ====================
+GET    /api/erm/bcp/plans                     // List plans
+POST   /api/erm/bcp/plans                     // Create plan
+GET    /api/erm/bcp/plans/:id                 // Get plan
+PUT    /api/erm/bcp/plans/:id                 // Update plan
+GET    /api/erm/bcp/plans/:id/bia             // Get BIA
+POST   /api/erm/bcp/plans/:id/bia             // Create BIA
+GET    /api/erm/bcp/plans/:id/strategies      // Get strategies
+GET    /api/erm/bcp/plans/:id/teams           // Get teams
+GET    /api/erm/bcp/exercises                 // List exercises
+POST   /api/erm/bcp/exercises                 // Create exercise
+
+// ==================== REPORTS ====================
+GET    /api/erm/reports                       // List reports
+POST   /api/erm/reports/generate              // Generate report
+GET    /api/erm/reports/:id/download          // Download report
+
+// ==================== DASHBOARDS ====================
+GET    /api/erm/dashboards/cro                // CRO dashboard
+GET    /api/erm/dashboards/board              // Board dashboard
+GET    /api/erm/dashboards/heat-map           // Heat map data
+GET    /api/erm/aggregations/risk-profile     // Risk profile
+GET    /api/erm/aggregations/var              // VaR data
+
+// ==================== TAXONOMY ====================
+GET    /api/erm/categories                    // List categories
+POST   /api/erm/categories                    // Create category
+GET    /api/erm/business-units                // List business units
+POST   /api/erm/business-units                // Create business unit
+```
+
+---
+
+# 13. UI COMPONENTS
+
+## 13.1 React Component Structure
+
+```
+client/src/features/erm/
+├── components/
+│   ├── risk-register/
+│   │   ├── RiskList.tsx
+│   │   ├── RiskCard.tsx
+│   │   ├── RiskForm.tsx
+│   │   ├── RiskDetail.tsx
+│   │   ├── RiskHeatMap.tsx
+│   │   └── RiskKanban.tsx
+│   ├── assessments/
+│   │   ├── AssessmentForm.tsx
+│   │   ├── AssessmentHistory.tsx
+│   │   └── LikelihoodImpactSelector.tsx
+│   ├── quantification/
+│   │   ├── ScenarioBuilder.tsx
+│   │   ├── DistributionChart.tsx
+│   │   ├── MonteCarloResults.tsx
+│   │   └── VaRDashboard.tsx
+│   ├── kri/
+│   │   ├── KRIList.tsx
+│   │   ├── KRIForm.tsx
+│   │   ├── KRIDashboard.tsx
+│   │   ├── KRITrendChart.tsx
+│   │   └── KRIAlertList.tsx
+│   ├── appetite/
+│   │   ├── AppetiteStatementForm.tsx
+│   │   ├── AppetiteDashboard.tsx
+│   │   └── BreachManagement.tsx
+│   ├── bowtie/
+│   │   ├── BowtieCanvas.tsx
+│   │   ├── BowtieElement.tsx
+│   │   └── BowtieToolbar.tsx
+│   ├── bcp/
+│   │   ├── BCPPlanList.tsx
+│   │   ├── BIAForm.tsx
+│   │   ├── TeamManagement.tsx
+│   │   └── ExerciseForm.tsx
+│   └── dashboards/
+│       ├── CRODashboard.tsx
+│       └── BoardDashboard.tsx
+├── hooks/
+│   ├── useRisks.ts
+│   ├── useKRIs.ts
+│   └── useBCP.ts
+├── api/
+│   └── ermApi.ts
+└── pages/
+    ├── RiskDashboard.tsx
+    ├── RiskRegister.tsx
+    ├── RiskQuantification.tsx
+    ├── KRIMonitoring.tsx
+    ├── RiskAppetite.tsx
+    ├── BowtieAnalysis.tsx
+    ├── BusinessContinuity.tsx
+    └── RiskReports.tsx
+```
+
+---
+
+# 14. IMPLEMENTATION ROADMAP
+
+## 14.1 Phase Overview
+
+| Phase | Duration | Focus |
+|-------|----------|-------|
+| Phase 1 | 4 weeks | Core Risk Register, Basic Assessment |
+| Phase 2 | 3 weeks | KRI Management |
+| Phase 3 | 3 weeks | Risk Appetite Framework |
+| Phase 4 | 4 weeks | Risk Quantification (Monte Carlo, VaR) |
+| Phase 5 | 3 weeks | Bow-Tie Analysis |
+| Phase 6 | 4 weeks | Business Continuity Planning |
+| Phase 7 | 3 weeks | Aggregation & Reporting |
+| Phase 8 | 2 weeks | Integrations & Polish |
+
+**Total: ~26 weeks (6-7 months)**
+
+## 14.2 Phase 1 Detail: Core Risk Register (Weeks 1-4)
+
+**Week 1-2:**
+- Database schema (risks, categories, business units)
+- API endpoints (CRUD operations)
+- Risk list view component
+- Risk form component
+
+**Week 3-4:**
+- Risk detail view
+- Heat map visualization
+- Basic workflows (status changes)
+- Bulk import functionality
+
+## 14.3 Phase 2 Detail: KRI Management (Weeks 5-7)
+
+**Week 5:**
+- KRI database schema
+- KRI definition form
+- Threshold configuration
+
+**Week 6:**
+- Measurement recording
+- Status calculation
+- Trend calculation
+
+**Week 7:**
+- KRI dashboard
+- Alert generation
+- Alert management UI
+
+---
+
+# APPENDIX A: DEFAULT RISK TAXONOMY
+
+```json
+{
+  "categories": [
+    {
+      "code": "STRATEGIC",
+      "name": "Strategic Risk",
+      "subcategories": [
+        {"code": "STRAT_MARKET", "name": "Market & Competition"},
+        {"code": "STRAT_MA", "name": "M&A Integration"},
+        {"code": "STRAT_INNOVATION", "name": "Innovation & Technology"}
+      ]
+    },
+    {
+      "code": "OPERATIONAL",
+      "name": "Operational Risk",
+      "subcategories": [
+        {"code": "OPS_PROCESS", "name": "Process Failure"},
+        {"code": "OPS_PEOPLE", "name": "People & Talent"},
+        {"code": "OPS_SYSTEMS", "name": "Systems & Technology"},
+        {"code": "OPS_FRAUD", "name": "Internal Fraud"},
+        {"code": "OPS_SUPPLY", "name": "Supply Chain"}
+      ]
+    },
+    {
+      "code": "FINANCIAL",
+      "name": "Financial Risk",
+      "subcategories": [
+        {"code": "FIN_CREDIT", "name": "Credit Risk"},
+        {"code": "FIN_LIQUIDITY", "name": "Liquidity Risk"},
+        {"code": "FIN_MARKET", "name": "Market Risk"},
+        {"code": "FIN_TAX", "name": "Tax Risk"}
+      ]
+    },
+    {
+      "code": "COMPLIANCE",
+      "name": "Compliance Risk",
+      "subcategories": [
+        {"code": "COMP_REG", "name": "Regulatory Compliance"},
+        {"code": "COMP_LEGAL", "name": "Legal & Contractual"},
+        {"code": "COMP_AML", "name": "AML/Sanctions"},
+        {"code": "COMP_PRIVACY", "name": "Privacy & Data Protection"}
+      ]
+    },
+    {
+      "code": "TECHNOLOGY",
+      "name": "Technology Risk",
+      "subcategories": [
+        {"code": "TECH_CYBER", "name": "Cybersecurity"},
+        {"code": "TECH_DATA", "name": "Data Management"},
+        {"code": "TECH_INFRA", "name": "Infrastructure"}
+      ]
+    },
+    {
+      "code": "THIRD_PARTY",
+      "name": "Third-Party Risk",
+      "subcategories": [
+        {"code": "TP_VENDOR", "name": "Vendor/Supplier"},
+        {"code": "TP_PARTNER", "name": "Business Partner"},
+        {"code": "TP_OUTSOURCE", "name": "Outsourcing"}
+      ]
+    },
+    {
+      "code": "ESG",
+      "name": "ESG Risk",
+      "subcategories": [
+        {"code": "ESG_ENV", "name": "Environmental"},
+        {"code": "ESG_SOCIAL", "name": "Social"},
+        {"code": "ESG_GOV", "name": "Governance"},
+        {"code": "ESG_CLIMATE", "name": "Climate Change"}
+      ]
+    }
+  ]
+}
+```
+
+---
+
+# APPENDIX B: SAMPLE KRI LIBRARY
+
+| Code | Name | Category | Type | Unit | Green | Yellow | Red |
+|------|------|----------|------|------|-------|--------|-----|
+| KRI-CYBER-001 | Unpatched Critical Vulnerabilities | Cybersecurity | Leading | Count | ≤10 | 11-25 | ≥26 |
+| KRI-CYBER-002 | Phishing Click Rate | Cybersecurity | Leading | % | ≤3% | 4-8% | ≥9% |
+| KRI-CYBER-003 | Mean Time to Patch | Cybersecurity | Current | Days | ≤7 | 8-14 | ≥15 |
+| KRI-FIN-001 | Days Sales Outstanding | Credit | Current | Days | ≤30 | 31-45 | ≥46 |
+| KRI-FIN-002 | Bad Debt Ratio | Credit | Lagging | % | ≤1% | 1-3% | ≥4% |
+| KRI-OPS-001 | Employee Turnover Rate | People | Lagging | % | ≤10% | 11-20% | ≥21% |
+| KRI-OPS-002 | System Availability | Systems | Current | % | ≥99.9% | 99-99.8% | <99% |
+| KRI-OPS-003 | Process Exceptions | Process | Leading | Count | ≤5 | 6-15 | ≥16 |
+| KRI-COMP-001 | Open Audit Findings | Compliance | Current | Count | ≤3 | 4-10 | ≥11 |
+| KRI-COMP-002 | Regulatory Complaints | Compliance | Lagging | Count | ≤2 | 3-5 | ≥6 |
+| KRI-TP-001 | Critical Vendor Incidents | Third-Party | Lagging | Count | 0 | 1-2 | ≥3 |
+| KRI-TP-002 | Vendor Assessment Overdue | Third-Party | Leading | Count | ≤5 | 6-15 | ≥16 |
+
+---
+
+# END OF SPECIFICATION
+
+This comprehensive ERM module specification provides everything needed to implement a competitive enterprise risk management solution within Sentinel Counsel. The modular design allows for phased implementation while maintaining integration with existing Sentinel functionality.

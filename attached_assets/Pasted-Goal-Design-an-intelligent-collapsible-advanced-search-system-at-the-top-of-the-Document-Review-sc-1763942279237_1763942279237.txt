@@ -1,0 +1,146 @@
+Goal:
+Design an intelligent, collapsible advanced-search system at the top of the Document Review screen. It must give investigators, attorneys, and compliance users the full power of e-discovery filtering—without overwhelming the UI.
+
+⸻
+
+UI/UX Requirements
+
+1. Collapsible Component
+	•	Default state: Collapsed (only a small “Advanced Search ▾” bar visible).
+	•	When expanded: exposes a structured set of search filters.
+	•	User can collapse it again to reclaim screen space.
+	•	Must remember last expanded/collapsed state per user (local storage or user settings).
+
+2. Core Search Bar
+	•	A single unified search bar visible at all times (Google-style).
+	•	Behaves like “smart search”: can search across all fields if user doesn’t specify filters.
+	•	Supports autocomplete for:
+	•	People
+	•	Entities
+	•	Projects / matters
+	•	Common tags
+	•	Document types
+
+⸻
+
+3. Advanced Search Filters (Collapsed Panel)
+
+Organize the filters into clean horizontal sections to avoid clutter.
+
+⸻
+
+A. Date & Time Filters
+
+Users must be able to choose:
+
+Email-specific date fields
+	•	Date sent
+	•	Date received
+	•	Time sent/received (optional)
+	•	Date range picker (from/to)
+
+Document-specific date fields
+	•	Date created
+	•	Date last modified
+	•	Date uploaded/ingested
+
+Special date logic
+	•	Quick pick options:
+	•	Today
+	•	Past 7 days
+	•	Past 30 days
+	•	This quarter
+	•	Custom range
+
+⸻
+
+B. People & Entity Filters
+
+Allow selecting one or many.
+
+Email filters:
+	•	From
+	•	To
+	•	CC
+	•	BCC
+	•	Participants (any involvement)
+	•	Exclude a person
+	•	Domain filters (e.g., @gmail.com)
+
+Document filters:
+	•	Author / creator
+	•	Last modified by
+	•	Mentioned in document (NER extraction)
+	•	Entity association
+(vendor, customer, employee, officer, compliance subject)
+
+⸻
+
+C. Communication Type & Metadata Filters
+
+Content choice
+
+Toggle:
+	•	Search full body + attachments + metadata
+	•	Search subject line only
+	•	Search attachment contents only
+	•	Search file name only
+
+Communication type
+	•	Email
+	•	Chat (Slack, Teams, WhatsApp, SMS ingest, etc.)
+	•	Document
+	•	PDF
+	•	Audio transcript
+	•	Image OCR
+
+⸻
+
+D. Keyword & Boolean Query Filters
+
+Support:
+	•	AND / OR / NOT
+	•	Exact match "quoted phrase"
+	•	Proximity search (e.g., bribe NEAR/5 payment)
+	•	Wildcards: invest*, jan?ary
+	•	Hashtags & tags
+	•	Auto-suggest for common search patterns (e.g., “show me all emails mentioning invoice problems”).
+
+⸻
+
+E. Attachment Filters
+	•	Has attachments (Yes/No)
+	•	Attachment types (PDF, DOCX, XLSX, images, audio)
+	•	Attachment size
+	•	Attachment keyword search
+
+⸻
+
+F. Document Classification Filters
+	•	Tags
+	•	Issues / themes
+	•	Custodian
+	•	Privilege flags
+	•	Sentiment score
+	•	Risk score
+	•	Communication frequency ranking
+	•	AI-generated labels (e.g., bribery risk, harassment risk, insider trading risk)
+
+⸻
+
+G. Review Workflow Filters
+	•	Review status (Unreviewed, In Progress, Reviewed)
+	•	Privilege status
+	•	Relevance score
+	•	Assigned reviewer
+	•	Batch sets
+	•	Production sets
+	•	Interview packets / case folders
+
+⸻
+
+4. Search Interaction Logic
+
+Smart Query Builder
+
+As the user clicks filters, the system generates a single unified query string behind the scenes:

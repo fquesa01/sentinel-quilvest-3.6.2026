@@ -1,0 +1,112 @@
+Extend the existing Sentinel Evidence Upload system to support ingestion of WhatsApp, iPhone SMS/iMessage, and Android SMS messages.
+
+1. Project structure additions
+   - Create `ingestion/chat_detector.py` for detecting chat formats.
+   - Create `ingestion/chat_parser.py` for parsing and normalizing chat messages.
+   - Update `models.py` with a `ChatMessageNormalized` model and related types.
+   - Update `main.py` to route non-email files to the chat ingestion pipeline and to expose a `GET /chats` endpoint returning parsed chat messages.
+
+2. Supported chat formats
+
+WhatsApp:
+- `.txt` chat exports (user-exported from WhatsApp)
+- `.json` and `.csv` exports (3rd-party or enterprise tools)
+- `.zip` archives containing a WhatsApp txt or JSON plus media files
+
+iPhone SMS / iMessage:
+- `.csv` exports
+- `.json` exports
+- `.html` transcript exports
+
+Android SMS:
+- `.xml` exports using the "SMS Backup & Restore" schema
+- `.csv` and `.json` exports
+- `.zip` archives containing these plus media files
+
+3. Detection logic (ingestion/chat_detector.py)
+Implement:
+- `detect_chat_type(path: str, content_type: str | None) -> str | None`
+  - Returns values like:
+    - "whatsapp_txt"
+    - "whatsapp_json"
+    - "whatsapp_csv"
+    - "whatsapp_zip"
+    - "sms_android_xml"
+    - "sms_ios_csv"
+    - "sms_ios_json"
+    - "sms_ios_html"
+    - "generic_chat_json"
+    - or None if not recognized as chat.
+  - Use both file extension and a small content sniff:
+    - WhatsApp txt: lines matching `^\d{1,2}/\d{1,2}/\d{2,4}, \d{1,2}:\d{2} (AM|PM) - .+:`
+    - SMS Backup & Restore XML: root `<smses>`
+    - JSON exports: presence of fields like `date`, `address`, `body` or `is_from_me`, etc.
+
+4. Normalized models (models.py)
+Add:
+- `class ChatParticipant(BaseModel):`
+    - `id: str`
+    - `display_name: str | None = None`
+    - `phone: str | None = None`
+- `class ChatMediaAttachment(BaseModel):`
+    - `file_name: str`
+    - `mime_type: str | None = None`
+    - `local_path: str | None = None`
+- `class ChatMessageNormalized(BaseModel):`
+    - `message_id: str`
+    - `source_type: str`  # e.g., "whatsapp", "sms_ios", "sms_android", "other_chat"
+    - `source_file_name: str`
+    - `conversation_id: str`
+    - `is_group: bool = False`
+    - `participants: list[ChatParticipant] = []`
+    - `sender_id: str | None = None`
+    - `sent_at: datetime | None = None`
+    - `text: str | None = None`
+    - `media: list[ChatMediaAttachment] = []`
+    - `direction: str = "unknown"`  # "inbound" | "outbound" | "unknown"
+    - `raw_metadata: dict[str, Any] = {}
+
+Also create an in-memory store (e.g., a global list) for `ChatMessageNormalized` just like email messages.
+
+5. Parsing layer (ingestion/chat_parser.py)
+Implement:
+- `parse_chat_file(path: str, chat_type: str) -> list[ChatMessageNormalized]`
+This should dispatch to specialized functions:
+- `parse_whatsapp_txt(...)`
+- `parse_whatsapp_json(...)`
+- `parse_whatsapp_csv(...)`
+- `parse_whatsapp_zip(...)`  # unzip, then call appropriate parser internally
+- `parse_sms_android_xml(...)`  # handle SMS Backup & Restore XML
+- `parse_sms_ios_csv(...)`
+- `parse_sms_ios_json(...)`
+- `parse_sms_ios_html(...)`
+- `parse_generic_chat_json(...)`
+
+Implement minimal, robust parsing:
+- For WhatsApp txt, parse each line into timestamp, sender display name, and text.
+- For XML, parse known attributes (`address`, `date`, `body`, `type`) and map them to the normalized model.
+- For JSON/CSV, map common fields: `date`, `from`/`address`, `text`/`body`, `attachment` paths, etc.
+- If a field is missing, leave the normalized field as None.
+- For now, media attachments should be represented by filenames if present in the export.
+
+6. FastAPI integration (main.py)
+- Extend the existing `/upload` endpoint:
+  - For each uploaded file, run both the email detector and the chat detector.
+  - If detected as chat, route to `parse_chat_file` and store results in a global `CHAT_MESSAGES` list.
+  - Include chat parsing results in the response:
+    - `chat_message_count` per file.
+- Add a new endpoint:
+  - `GET /chats`:
+    - Returns all `ChatMessageNormalized` items currently in memory.
+
+7. Frontend updates (static/index.html + app.js)
+- In the upload results area, show for each file:
+  - detected email type (if any)
+  - detected chat type (if any)
+  - `message_count` for emails
+  - `chat_message_count` for chats
+- Use the existing blue/gray enterprise theme for consistency.
+
+8. General
+- Add TODO comments where deeper parsing or more schemas could be added later.
+- Make sure unsupported or unrecognized chat formats fail gracefully with a clear status message.

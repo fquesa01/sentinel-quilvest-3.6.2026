@@ -1,0 +1,71 @@
+      res.json({ message: "Analysis started", status: 'processing' });
+    } catch (error: any) {
+      console.error("Error starting analysis:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Background research analysis function
+  async function runBackgroundResearchAnalysis(researchId: string, research: any, documents: any[]) {
+    const startTime = Date.now();
+    const enabledModules = (research.enabledModules || []) as string[];
+    const totalModules = enabledModules.length || 1;
+    let completedModules = 0;
+    
+    // Fetch SEC EDGAR data if it's a comprehensive research
+    let secEdgarSummary = '';
+    if (research.researchType === 'comprehensive' || research.researchType === 'full') {
+      try {
+        await db
+          .update(schema.backgroundResearch)
+          .set({ currentStep: 'Searching SEC EDGAR database...' })
+          .where(eq(schema.backgroundResearch.id, researchId));
+        
+        const secResult = await secEdgarApi.researchCompany(research.targetName);
+        secEdgarSummary = secEdgarApi.generateSummaryForAI(secResult);
+        
+        // Store SEC research results in findings
+        if (secResult.isPublicCompany) {
+          await db.insert(schema.researchFindings).values({
+            id: nanoid(),
+            researchId,
+            module: 'sec_edgar',
+            title: 'SEC EDGAR Company Information',
+            description: `Found SEC filings for ${secResult.companyInfo?.name || research.targetName}`,
+            severity: 'info',
+            isKeyFinding: true,
+            details: {
+              companyInfo: secResult.companyInfo,
+              financialSummary: secResult.financialSummary,
+              recentFilingsCount: secResult.recentFilings.length,
+              materialEventsCount: secResult.materialEvents.filter(e => e.requiresReview).length,
+            },
+          });
+        }
+      } catch (error) {
+        console.error('SEC EDGAR research failed:', error);
+      }
+    }
+    
+    // Combine all document text with SEC data
+    const allDocumentText = [
+      secEdgarSummary,
+      ...documents
+        .filter(d => d.extractedText)
+        .map(d => `=== ${d.fileName} ===\n${d.extractedText?.substring(0, 10000)}`)
+    ].filter(Boolean).join('\n\n');
+    
+    const updateProgress = async (step: string) => {
+      completedModules++;
+      const progress = Math.round((completedModules / totalModules) * 100);
+      await db
+        .update(schema.backgroundResearch)
+        .set({ progress, currentStep: step })
+        .where(eq(schema.backgroundResearch.id, researchId));
+    };
+    
+    const allFindings: any[] = [];
+    const allEntities: any[] = [];
+    
+    // Run each enabled module
+    for (const module of enabledModules) {

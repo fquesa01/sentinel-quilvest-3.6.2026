@@ -1,0 +1,395 @@
+// prompts.ts
+
+//
+// 1) BATCH COMMUNICATION INTELLIGENCE PROMPT
+//    Runs on each batch of up to 50 communications
+//
+
+export const batchAnalysisSystemPrompt = `
+You are a senior investigations, compliance, and e-discovery analyst.
+You analyze batches of communications (emails, messages, documents) and generate a structured communication intelligence report.
+
+Your job is to identify what matters:
+- Topics and themes
+- Projects and workstreams
+- Key events
+- Custodian behavior
+- Communication patterns
+- Risks and anomalies
+
+You MUST focus on substance, not boilerplate (e.g., disclaimers, footers, signatures).
+Be concise but thorough. Infer reasonable context where appropriate and label it as inferred.
+`;
+
+export const makeBatchAnalysisUserPrompt = (batchText: string) => `
+Analyze the following batch of up to 50 communications and produce a structured communication intelligence report.
+
+Return your answer using the following structure and headings:
+
+1. Batch Summary
+   - 2–4 bullet points describing what this batch is mostly about.
+
+2. Main Topics & Themes
+   - List 3–10 key topics.
+   - For each topic: short description, key people involved, and any associated projects.
+
+3. Subtopics / Workstreams
+   - Identify any specific projects, deals, workstreams, or initiatives.
+   - For each, describe: goal, status if evident (e.g., early, negotiating, closing, blocked), and the main people involved.
+
+4. Key Events (Timeline)
+   - List any event-like items in rough chronological order: meetings, deadlines, negotiations, escalations, decisions, deliverables.
+   - For each: approximate date, short description, and people involved.
+
+5. Custodian Intelligence
+   - For each person (sender or frequent participant in this batch) provide:
+     - Name (as appears or normalized)
+     - Role (explicit or inferred, label inferred)
+     - Primary topics they discuss
+     - Most frequent correspondents in this batch
+     - Tone / behavioral signals (e.g., urgent, frustrated, political, conciliatory, evasive, transactional)
+     - Any indicators of influence or decision-making power in this batch
+
+6. Communication Mapping
+   - Top Dyads (Person A <-> Person B) with approximate communication frequency (e.g., high/medium/low).
+   - Notable Clusters or Groups (e.g., a core team working on a project).
+   - Directional Patterns (e.g., Person X usually initiates; Person Y mostly responds).
+   - Frequency Observations (e.g., activity spikes around certain dates or topics).
+
+7. Risks / Issues / Anomalies
+   - List any concerns related to:
+     - Compliance or regulatory issues
+     - Contract or deal risk
+     - Financial exposure
+     - HR or employment issues
+     - Conflicts of interest
+     - Potential misconduct
+   - Include ambiguous language, unusual instructions, or conspicuous gaps (e.g., references to missing attachments or off-channel communications).
+
+8. Supporting Notes
+   - Any additional patterns, context, or unresolved questions that may be important at the case level.
+
+Now analyze this batch:
+
+${batchText}
+`;
+
+
+//
+// 2) MASTER REPORT SYNTHESIS PROMPT
+//    Runs after all batches + metadata are available
+//
+
+export const masterReportSystemPrompt = `
+You are a senior investigative counsel, forensic analyst, and corporate intelligence architect.
+You generate a complete, litigation-ready, board-suitable master report that synthesizes all document review findings, batch summaries, entity extraction, and available metadata.
+
+Your tone is expert, neutral, precise, and audit-ready.
+You must transform raw batch summaries, entities, and metadata into a structured intelligence report.
+
+The report must follow the requested sections and can add optional sections if useful.
+Where you infer facts, clearly label them as inferred.
+`;
+
+export const makeMasterReportUserPrompt = (params: {
+  companyName: string;
+  totalCommunications: number;
+  dateRange: string; // e.g. "Jan 1, 2022 – Mar 31, 2022"
+  batchCount: number;
+  topSenders: string; // preformatted list/text
+  topRecipients: string; // preformatted list/text
+  topDomains: string; // preformatted list/text
+  batchSummaries: string; // concatenated batch outputs
+  entitySummary?: string; // optional: pre-processed entity/relationship summary
+}) => `
+You have analyzed approximately ${params.totalCommunications} communications for "${params.companyName}"
+across ${params.batchCount} batches, covering the date range: ${params.dateRange}.
+
+High-level metadata:
+- Top senders: ${params.topSenders}
+- Top recipients: ${params.topRecipients}
+- Top email/communication domains: ${params.topDomains}
+
+Below are the batch-level summaries and, if provided, entity/relationship information.
+
+=== BATCH SUMMARIES ===
+${params.batchSummaries}
+
+=== ENTITY / RELATIONSHIP SUMMARY (if provided) ===
+${params.entitySummary ?? "None provided; infer from batch summaries where possible."}
+
+Using all of the above, generate a complete MASTER REPORT with the following sections and subtopics.
+Be explicit, structured, and cross-reference people, entities, and events where helpful.
+
+1. Executive Summary
+   - 3–4 paragraphs summarizing:
+     - What the communications reveal about the organization
+     - Major topics, themes, and conflicts
+     - Key events and decisions
+     - Identified risks and exposure
+     - Overall organizational health, tone, and culture
+
+2. Business Lines
+   - Identify all business lines or revenue streams discussed.
+   - For each:
+     - Brief description of the product/service or activity
+     - Key personnel associated with that line
+     - Major clients or counterparties tied to that line
+     - Dependencies (e.g., vendors, technology, data sources)
+     - Risks or issues impacting that business line (if any)
+
+3. Corporate History & Structure
+   - Summarize:
+     - Formation or background (as revealed in communications, or inferred)
+     - Ownership structure, affiliates, and subsidiaries (explicit or inferred)
+     - Departments or functional units that appear in the data
+   - Then describe:
+     - Formal governance and reporting lines (as visible from titles/relationships)
+     - Informal or shadow structures inferred from communication patterns
+     - Centers of influence (who actually drives decisions vs who holds title)
+
+4. Transactions
+   - Summarize transaction-related activity:
+     - Deals, contracts, negotiations, settlements, financing, or major commercial arrangements
+   - For each key transaction (or category of transactions):
+     - Counterparties
+     - Status (in progress, executed, terminated) if evident
+     - Key decision-makers and influencers
+     - Timing (approximate timeline)
+     - Risks, disputes, or blockers
+     - Any references to missing documents or off-channel communications
+
+5. Major Clients
+   - Identify major clients referred to in communications.
+   - For each:
+     - Industry/sector (if known or inferred)
+     - Nature of the relationship
+     - Key contacts
+     - Importance or revenue significance (explicit or inferred from tone and frequency)
+     - Issues, escalations, complaints, or churn risk
+     - Observed communication style and health of the relationship
+
+6. Partners / Vendors / Investors
+   - List key partners, vendors, and investors.
+   - For each:
+     - Role in the ecosystem
+     - Services or value they provide
+     - Key people associated with them
+     - Dependencies or criticality (e.g., single points of failure)
+     - Performance concerns, service issues, or disputes
+     - Potential conflicts of interest or alignment issues
+   - Provide, if possible, a ranked sense of:
+     - Criticality (high/medium/low)
+     - Risk level (high/medium/low)
+
+7. Technology Stack
+   - Identify all technology systems and tools mentioned or clearly implied:
+     - Applications, platforms, databases, cloud providers, security tools, CRMs, ERPs, ticketing systems, etc.
+   - Describe:
+     - How they are used operationally
+     - Any integration points or data flows visible from communications
+     - Issues with uptime, performance, data quality, or user adoption
+     - Data governance and privacy posture as reflected in communications
+     - Any references suggesting regulatory or security exposure (e.g., HIPAA, GDPR, SOC2, PCI)
+
+8. Personnel & Organization
+   - Build custodian profiles for key individuals (especially frequent senders/recipients and decision-makers).
+   - For each important person:
+     - Name and role (explicit or inferred, labeled as inferred)
+     - Areas of responsibility
+     - Main topics they focus on
+     - Their communication footprint and style (e.g., directive, conciliatory, chaotic, detail-oriented)
+     - Influence level (high/medium/low) and why
+     - Key collaborators, allies, or points of friction
+   - Identify:
+     - Silos, clusters, or internal factions
+     - Over-dependence on specific individuals (single points of failure)
+     - Indicators of cultural issues (e.g., blame-shifting, fear, secrecy, passive resistance)
+
+9. Litigation & Regulatory Facts
+   - Summarize any legal or regulatory matters mentioned:
+     - Active or threatened litigation
+     - Investigations
+     - Regulatory inquiries
+     - Contract disputes
+     - Employment/HR issues
+   - For each:
+     - Parties involved
+     - Nature of the issue
+     - Status if evident
+     - Potential exposure (qualitative, not quantitative unless explicit)
+   - Highlight:
+     - Early warning signs of future litigation or regulatory interest
+     - Any unreported or under-discussed issues that could be material
+
+10. Financials
+   - Extract and infer:
+     - References to revenue, pricing, margins
+     - Costs, budgets, expense issues
+     - Financing, capital constraints, or cash flow concerns
+     - Vendor cost or pricing negotiations
+   - Summarize financial health and pressure points as revealed in the communications.
+   - Create a short table or bullet list of all significant financial events or figures mentioned (do not fabricate amounts).
+
+11. Exhibits & Supporting Evidence
+   - Identify the most important communications or documents that support major findings.
+   - For each, briefly describe:
+     - What it evidences
+     - Key people involved
+     - Approximate date range
+   - Note any:
+     - Missing but implied documents
+     - References to attachments not present
+     - Off-channel or verbal communications hinted at
+
+12. Entity Involvement (Employees, Third Parties, Vendors)
+   - Summarize the involvement of:
+     - Internal employees
+     - Third parties
+     - Vendors and counterparties
+   - For each major entity or group:
+     - Role and relevance to the case
+     - Frequency and intensity of involvement
+     - Topics and projects they are associated with
+   - Include any notable relationship structures (e.g., hubs, bridges, isolated nodes).
+
+13. Appendix (Glossary & Source Index)
+   - Glossary:
+     - Define key terms, acronyms, and internal jargon used in the communications.
+   - Source Index:
+     - Provide a high-level mapping that shows which batches or document ID ranges support which major findings (you can reference batches and high-level descriptions rather than exact IDs if IDs are not provided).
+
+14. Media Coverage Analysis (if you have or are given live web search results)
+   - Summarize:
+     - Press coverage
+     - Public controversies
+     - Market perception
+   - Compare external media narratives to internal communications:
+     - Areas of alignment
+     - Areas of contradiction
+     - Topics heavily discussed internally but absent in media (and vice versa).
+
+15. External Litigation Research (if you have or are given live web search results)
+   - Identify:
+     - Known lawsuits
+     - Regulatory actions
+     - Class actions or industry-wide enforcement trends
+   - Summarize relevant cases and explain:
+     - How they may impact this entity
+     - How similar or dissimilar the fact patterns appear
+
+16. Behavioral Indicators & Cultural Assessment (Optional but recommended)
+   - Evaluate cultural indicators from the communications:
+     - Trust and transparency
+     - Escalation and conflict management
+     - Accountability vs blame-shifting
+     - Responsiveness and urgency
+   - Note any patterns that may increase risk (e.g., avoidance of email for sensitive issues).
+
+17. Operational Risks (Optional but recommended)
+   - Identify operational bottlenecks and fragilities:
+     - Process failures
+     - Dependency on key individuals
+     - Weak documentation or knowledge transfer
+     - Poor cross-functional coordination
+   - Summarize the most material operational risks and recommended focus areas.
+
+18. Crisis Signals (Optional)
+   - Identify any periods or clusters where:
+     - Urgency spikes dramatically
+     - Reputational concerns appear
+     - Regulators, clients, or the board are suddenly more active
+   - Describe the apparent causes and response patterns.
+
+19. Recommendations
+   - Provide concrete, prioritized recommendations across:
+     - Governance
+     - Compliance and risk management
+     - Operational process improvements
+     - Communication hygiene and cultural interventions
+     - Technology and data governance
+   - Make them practical and case-specific, based on the observed communications.
+
+Generate the full master report now, following the section ordering and structure above.
+`;
+
+
+//
+// 3) ENTITY + RELATIONSHIP EXTRACTION PROMPT
+//    Runs on a sample of communications or full set if feasible
+//
+
+export const entityExtractionSystemPrompt = `
+You are an expert in named entity recognition and relationship mapping.
+You extract structured information about people, organizations, locations, and relationships from communications.
+
+You must:
+- Deduplicate entities
+- Normalize names where possible
+- Capture roles and responsibilities (explicit or inferred, labeled as inferred)
+- Map relationships between people and organizations, including frequency and direction where possible
+`;
+
+export const makeEntityExtractionUserPrompt = (params: {
+  companyName: string;
+  sampleDescription: string; // e.g. "a representative sample of 500 communications"
+  docsText: string;
+}) => `
+Extract enriched entities and relationships from the following communications related to the case "${params.companyName}".
+This is ${params.sampleDescription}.
+
+Your output should use the following structure:
+
+1. People
+   - For each person:
+     - Normalized Name
+     - Variants or aliases (if any)
+     - Title or role (explicit or inferred, labeled as inferred)
+     - Organization affiliation (explicit or inferred)
+     - Main topics or projects they are associated with
+     - Communication frequency category (high/medium/low) based on this sample
+     - Primary counterparties (who they interact with most)
+     - Whether they appear to be:
+       - Decision-maker
+       - Coordinator / project manager
+       - Subject matter expert
+       - Front-line staff
+       - External party (client, vendor, regulator, advisor, etc.)
+
+2. Organizations
+   - For each organization:
+     - Name
+     - Type (e.g., operating company, vendor, client, regulator, law firm, bank, investor)
+     - Role in the communications
+     - Key people associated with it
+     - Any inferred geographic or jurisdictional tie (if evident)
+
+3. Locations
+   - Cities, countries, offices, or specific sites that appear material.
+   - For each, describe:
+     - How it relates to the business or matter (e.g., headquarters, operations site, client location).
+
+4. Relationships
+   - Person <-> Person:
+     - Pairs or clusters with high communication frequency or clear working relationships.
+     - Describe the nature of the relationship if inferable (e.g., manager-subordinate, peers on same project, cross-functional, external counsel-client).
+   - Person <-> Organization:
+     - Who appears to represent which entities.
+     - Any consultants, outside counsel, investors, or regulators tied to specific organizations.
+   - Organization <-> Organization:
+     - Partnerships, vendor relationships, client relationships, joint ventures, counterparties.
+
+5. Influence and Centrality (Inferred)
+   - Identify the most central people in the network:
+     - Who appears most frequently
+     - Who bridges multiple groups
+     - Who acts as an information or decision hub
+   - Provide a short narrative description of:
+     - The core inner circle
+     - Secondary circles or periphery
+     - Any notable isolates or outliers
+
+Now process the following communications:
+
+${params.docsText}
+`;

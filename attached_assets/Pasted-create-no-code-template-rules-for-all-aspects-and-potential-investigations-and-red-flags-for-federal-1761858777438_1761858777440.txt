@@ -1,0 +1,193 @@
+create no code template rules for all aspects and potential investigations and red flags for federal antitrust laws
+
+Federal Antitrust No-Code Template Rules Library (v1.0)
+meta:
+  framework: ["Sherman Act §§1–2", "Clayton Act §§3,7", "FTC Act §5", "HSR Act"]
+  version: 1.0
+  author: Compliance Engine
+  default_thresholds:
+    critical: 70
+    high: 50
+    medium: 30
+    low: 10
+________________________________________
+🧩 1. Price-Fixing & Bid-Rigging
+- code: PRICE_FIX_COMMS
+  category: Collusion
+  description: "Communications coordinating prices, discounts, surcharges, or bid terms."
+  trigger: "Email/chat with competitor domain + keywords ['price', 'increase', 'hold firm', 'match rates']"
+  examples: ["Let's align our Q2 price increases", "We’ll both keep margins at 10%"]
+  score: 70
+  investigation: "Preserve messages; notify antitrust counsel; compare historical pricing patterns."
+
+- code: BID_ROTATION
+  category: Procurement
+  description: "Competitors winning bids in repeating rotation pattern."
+  trigger: "≥3 bids alternating winners among ≤5 bidders over 12 months."
+  score: 75
+  investigation: "Analyze bid data; confirm independent pricing; escalate to legal."
+
+- code: IDENTICAL_BIDS
+  category: Procurement
+  description: "Two or more bidders submit identical bids with same errors or rounding."
+  trigger: "Exact match in bid amount, format, and timestamp ±5 min."
+  score: 65
+  investigation: "Check metadata & source IP; audit procurement integrity."
+________________________________________
+🗺️ 2. Market Allocation & Customer Division
+- code: TERRITORY_SPLIT
+  category: Market Division
+  description: "Agreements dividing markets, regions, or clients."
+  trigger: "Contracts or emails referencing 'your region', 'our customers', 'exclusive territory'."
+  score: 70
+  investigation: "Review contracts; confirm lawful franchise vs. collusion."
+
+- code: CUSTOMER_NON_SOLICIT
+  category: Market Division
+  description: "Competitors agree not to solicit or compete for each other’s customers."
+  trigger: "Language such as 'no-poach of clients' or 'respect territories'."
+  score: 55
+  investigation: "Compare customer lists; escalate to legal review."
+________________________________________
+🏢 3. Monopolization & Abuse of Dominance
+- code: BELOW_COST_PRICING
+  category: Dominance
+  description: "Sustained pricing below average variable cost with intent to exclude rivals."
+  trigger: "Gross margin <0% for ≥2 quarters + competitor exits."
+  score: 50
+  investigation: "Economic analysis; document cost justification."
+
+- code: EXCLUSIVE_DEAL
+  category: Dominance
+  description: "Contract grants exclusivity >1 year or rebates ≥15% for share loyalty."
+  trigger: "Exclusive terms in >25% of total sales volume."
+  score: 45
+  investigation: "Legal review; ensure efficiencies outweigh foreclosure."
+
+- code: TYING_ARRANGEMENT
+  category: Dominance
+  description: "Product A sold only if customer also buys Product B."
+  trigger: "Sales system enforces mandatory bundle; no standalone SKU."
+  score: 40
+  investigation: "Assess product integration rationale; consult counsel."
+________________________________________
+🤝 4. Mergers & Acquisitions (HSR / Clayton §7)
+- code: HSR_THRESHOLD_EXCEEDED
+  category: Mergers
+  description: "Transaction exceeds current HSR size-of-transaction or party thresholds."
+  trigger: "Deal ≥ $119.5 M (2025 threshold) and size-of-person test met."
+  score: 70
+  investigation: "Trigger HSR filing; pause closing until clearance."
+
+- code: COMPETITOR_MERGER
+  category: Mergers
+  description: "Acquisition of direct competitor or adjacent-market rival."
+  trigger: "≥30% overlap in NAICS codes or product substitutability."
+  score: 60
+  investigation: "Perform competitive-effects analysis; retain economists."
+
+- code: SERIAL_ROLLUP
+  category: Mergers
+  description: "Multiple small acquisitions (<HSR threshold) in same market within 2 yrs."
+  trigger: "≥3 targets cumulative >20% market share."
+  score: 55
+  investigation: "Aggregate filings; assess 'creeping acquisition' risk."
+________________________________________
+📈 5. Information Sharing & Trade Associations
+- code: FUTURE_PRICING_DISCLOSURE
+  category: Info Sharing
+  description: "Exchange of future pricing or capacity info among competitors."
+  trigger: "Meeting notes/emails with competitor + terms 'next quarter prices' or 'capacity plans'."
+  score: 55
+  investigation: "Confirm aggregate, historical, anonymized data only."
+
+- code: TRADE_MEETING_NO_MINUTES
+  category: Info Sharing
+  description: "Trade-association meeting without agenda or minutes."
+  trigger: "Attendance ≥ 2 competitors; missing formal record."
+  score: 35
+  investigation: "Request documentation; counsel review."
+
+- code: JOINT_VENTURE_COORDINATION
+  category: Collaboration
+  description: "JV governance overlaps with pricing, marketing, or territory allocation."
+  trigger: "JV agreement references 'pricing strategy' or 'market share'."
+  score: 50
+  investigation: "Ensure JV limited to pro-competitive integration."
+________________________________________
+🧰 6. Procurement & Supply Chain Collusion
+- code: COMMON_OWNER_BIDDERS
+  category: Procurement
+  description: "Competing bidders share ownership, address, or bank account."
+  trigger: "Shared EIN/address among bidders."
+  score: 65
+  investigation: "Identify collusion or sham bidders."
+
+- code: GROUP_BOYCOTT
+  category: Exclusionary Conduct
+  description: "Collective refusal by competitors to deal with a supplier/customer."
+  trigger: "≥2 competitors end contracts with same partner within 30 days."
+  score: 45
+  investigation: "Confirm independent business justification."
+________________________________________
+👩‍💼 7. Labor & Employment Antitrust
+- code: NO_POACH_EMPLOYERS
+  category: Labor
+  description: "Agreements between firms not to hire or solicit each other's employees."
+  trigger: "HR contract/email with 'no-hire', 'gentlemen’s agreement', 'mutual respect list'."
+  score: 60
+  investigation: "Preserve records; legal review; potential criminal exposure."
+
+- code: WAGE_FIX_COMMS
+  category: Labor
+  description: "Communications aligning wage or benefit levels with competitors."
+  trigger: "HR emails containing ['align salaries', 'benchmark pay'] + competitor domain."
+  score: 55
+  investigation: "Audit compensation changes; counsel escalation."
+________________________________________
+🧾 8. Accounting & Data Indicators
+- code: PARALLEL_PRICE_MOVES
+  category: Data Analytics
+  description: "Unexplained simultaneous price movements across competitors."
+  trigger: "≥2 competitors change identical prices ±5% within 10 days."
+  score: 45
+  investigation: "Review cost inputs, communications, external triggers."
+
+- code: COST_INPUT_JUSTIFICATION
+  category: Data Analytics
+  description: "Price increase without corresponding cost rise."
+  trigger: "Supplier cost index flat ±2% while sale price +10%."
+  score: 30
+  investigation: "Require documentation; cross-validate procurement data."
+________________________________________
+🧮 9. Workflow Automation & Escalation
+- code: AUTO_CASE_CREATE_ANTITRUST
+  description: "Automatically open investigation when ≥2 critical antitrust flags detected."
+  trigger: "Aggregate score ≥ 70 OR flags [PRICE_FIX_COMMS, BID_ROTATION, NO_POACH_EMPLOYERS]."
+  action: "Create 'Antitrust Investigation' case; assign legal owner; preserve evidence."
+
+- code: AUTO_ESCALATE_GC
+  description: "Immediate escalation to General Counsel for potential criminal exposure."
+  trigger: "Any combination PRICE_FIX_COMMS + BID_ROTATION OR NO_POACH_EMPLOYERS."
+  action: "Send legal alert + hold communications."
+
+- code: DOJ_REPORT_GENERATION
+  description: "Compile DOJ/FTC report when case substantiated."
+  trigger: "Case status = SUBSTANTIATED"
+  action: "Export audit ledger + evidence + remediation summary."
+________________________________________
+💬 10. Explain-This-Flag Prompt (LLM)
+prompt_template: |
+  You are an antitrust compliance analyst.
+  Explain why this behavior triggered a federal antitrust red flag.
+  Include:
+  1. Summary of facts and actors.
+  2. Relevant statute (Sherman §1, §2; Clayton §7; FTC §5).
+  3. Antitrust typology (price-fixing, bid-rigging, market allocation, monopolization, labor restraint).
+  4. Risk level and rationale.
+  5. Recommended next steps:
+     - Preserve communications and data
+     - Interview involved employees
+     - Perform economic impact assessment
+     - Escalate to antitrust counsel
+  Output concise, factual narrative.

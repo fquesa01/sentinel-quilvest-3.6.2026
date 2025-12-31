@@ -1,0 +1,147 @@
+Dodd-Frank Act / SEC Whistleblower / Consumer Protection
+Framework Summary
+Aspect	Coverage
+Regulators	SEC, CFTC, CFPB, Federal Reserve, OCC
+Core Focus	Financial integrity, consumer fairness, systemic-risk oversight, whistleblower protection
+Applies To	Public companies, investment advisors, banks, broker-dealers, fintechs, credit/loan servicers
+Key Sections	Title VII (Derivatives), Title IX (Investor Protection), Title X (CFPB/Consumer Protection), §922 (Whistleblower Program)
+________________________________________
+⚙️ 1. Market Conduct & Trading Integrity
+- code: INSIDER_TRADING_EVENT
+  category: Market Conduct
+  description: "Trading by insiders before material nonpublic information release."
+  trigger: "Employee trade_date ≤ 5 days before earnings, merger, or SEC filing AND same insider has trading restriction notice."
+  score: 80
+  examples: ["Exec buys stock before acquisition announcement."]
+  investigation: "Suspend account; preserve trade logs; notify compliance and legal; assess MNPI access."
+
+- code: CONFLICT_OF_INTEREST_TRADE
+  category: Market Conduct
+  description: "Employee or related party trading in securities they advise or rate."
+  trigger: "Trader.issuer = analyst.coverage_issuer."
+  score: 70
+  investigation: "Review conflicts disclosure; block future trades; retrain individual."
+
+- code: MANIPULATIVE_TRADING_PATTERN
+  category: Market Abuse
+  description: "Spoofing, layering, or matched orders causing artificial market prices."
+  trigger: "≥3 cancel-replace orders within 5 seconds representing >25% of daily volume."
+  score: 75
+  investigation: "Capture order book; review algorithm logs; escalate to regulatory counsel."
+
+- code: FRONT_RUNNING_ALERT
+  category: Trading Ethics
+  description: "Broker or trader executes proprietary orders ahead of client trades."
+  trigger: "Employee_trade_time < client_trade_time AND same security."
+  score: 70
+  investigation: "Reconcile execution timestamps; review best-execution logs; discipline if confirmed."
+________________________________________
+🧾 2. Financial Reporting, Stress Testing & Derivatives (Title VII)
+- code: DERIVATIVES_MISREPORT
+  category: Swap Reporting
+  description: "Unreported or inaccurately reported swap to SDR within required timeframe."
+  trigger: "Trade_type='swap' AND reporting_time > 24h post-execution."
+  score: 60
+  investigation: "Correct SDR record; notify CFTC if late reporting pattern observed."
+
+- code: RISK_MODEL_OVERRIDE
+  category: Risk Oversight
+  description: "Unauthorized adjustment to VaR or stress-testing parameters."
+  trigger: "Change_log by non-authorized user OR deviation > 10% from baseline."
+  score: 70
+  investigation: "Lock model version; perform validation; notify CRO."
+
+- code: CAPITAL_RATIO_BREACH
+  category: Systemic Risk
+  description: "Capital adequacy ratio falls below Dodd-Frank stress-test thresholds."
+  trigger: "Tier1_ratio < 6% OR Leverage_ratio < 4%."
+  score: 65
+  investigation: "Trigger recovery plan; file FR Y-14A supplemental; inform regulators."
+________________________________________
+📣 3. Whistleblower Program (SEC §922 / CFTC Rule 165.20)
+- code: RETALIATION_ACTION
+  category: Whistleblower Protection
+  description: "Employee who filed an internal/external whistleblower report faces adverse HR action."
+  trigger: "Employee_id in whistleblower_registry AND HR_event in ['termination','demotion','pay_cut'] within 90 days."
+  score: 85
+  investigation: "Immediate escalation to General Counsel; preserve HR communications; freeze employment actions."
+
+- code: DISCLOSURE_RETALIATION
+  category: Whistleblower Protection
+  description: "Manager attempts to identify or intimidate known whistleblower."
+  trigger: "Email/text includes ['find out who reported','snitch','leak'] and sender_role='Manager'."
+  score: 80
+  investigation: "HR/legal joint inquiry; document witness statements; provide interim protection measures."
+
+- code: NDA_CHILLING_EFFECT
+  category: Corporate Policy Risk
+  description: "Non-disclosure agreement restricts lawful SEC or CFTC whistleblowing."
+  trigger: "NDA contains 'may not contact regulator' or 'waive rights to report'."
+  score: 75
+  investigation: "Void offending clause; update all NDAs; notify SEC Office of Whistleblower compliance."
+
+- code: UNPROCESSED_TIP
+  category: Compliance Operations
+  description: "Whistleblower tip submitted but not acknowledged or triaged within 14 days."
+  trigger: "tip.status='open' AND tip_age > 14 days."
+  score: 60
+  investigation: "Acknowledge receipt; log in whistleblower tracker; assign investigator."
+________________________________________
+💰 4. Consumer Financial Protection (CFPB / Title X)
+- code: UDAP_VIOLATION
+  category: Consumer Protection
+  description: "Unfair, deceptive, or abusive act or practice identified in lending or servicing."
+  trigger: "Customer_complaint.keyword in ['hidden fee','unauthorized charge','bait-and-switch'] AND complaint_validated=true."
+  score: 70
+  investigation: "Review product terms; issue refund if warranted; update marketing material."
+
+- code: TILA_DISCLOSURE_MISSING
+  category: Lending Compliance
+  description: "Loan issued without Truth-in-Lending (TILA) disclosures or APR computation."
+  trigger: "Loan_disclosure_provided=false."
+  score: 60
+  investigation: "Suspend funding; reissue compliant disclosure; retrain loan officers."
+
+- code: FAIR_LENDING_PATTERN
+  category: ECOA/FHA Fairness
+  description: "Statistical evidence of disparate loan approvals by race, gender, or ZIP."
+  trigger: "Disparate_impact_ratio > 1.25 AND n>50."
+  score: 75
+  investigation: "Run regression; identify discriminatory policy; report corrective plan to CFPB."
+
+- code: DEBT_COLLECTION_ABUSE
+  category: FDCPA / CFPB
+  description: "Debt collector uses prohibited language, threats, or contacts consumer at odd hours."
+  trigger: "Call_log.sentiment='threat' OR call_time < 8am OR >9pm."
+  score: 65
+  investigation: "Obtain call recording; issue corrective action; notify regulator if repeated."
+________________________________________
+📊 5. Derivatives, Swaps, and Proprietary Trading (Volcker Rule)
+- code: PROHIBITED_PROP_TRADE
+  category: Volcker Rule
+  description: "Bank engages in proprietary trading not for client facilitation or hedging."
+  trigger: "Trade_book='prop' AND trade_purpose≠'hedge/client'."
+  score: 70
+  investigation: "Check Volcker compliance attestations; document exemption."
+
+- code: COVERED_FUND_INVESTMENT
+  category: Volcker Rule
+  description: "Bank invests in hedge/private-equity fund beyond allowed de-minimis threshold."
+  trigger: "Investment > 3% of Tier 1 capital OR > ownership limit."
+  score: 65
+  investigation: "File compliance attestation; divest excess; notify FRB."
+________________________________________
+🧩 6. Conflict-of-Interest & Executive Compensation (Title IX)
+- code: INCENTIVE_PLAN_RISK
+  category: Compensation Governance
+  description: "Executive bonus plan rewards excessive risk-taking contrary to Dodd-Frank §956."
+  trigger: "Risk-adjusted bonus ratio > policy threshold OR deferral<40%."
+  score: 55
+  investigation: "Review comp plan; obtain board comp-committee sign-off; adjust risk metrics."
+
+- code: DISCLOSURE_LAPSE
+  category: SEC Filings
+  description: "Missing CEO pay ratio or clawback disclosure in Form 10-K/DEF 14A."
+  trigger: "Filed_form missing 'Item 402(u)' or 'Clawback Policy' keyword."
+  score: 50
+  investigation: "Amend filing; notify SEC reporting counsel."

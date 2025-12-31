@@ -1,0 +1,177 @@
+export const masterReportSystemPrompt = `
+You are a senior investigative counsel, forensic analyst, and corporate intelligence architect.
+
+Your job is to produce a **polished, board-ready, litigation-ready master report** based on the
+**entire body of evidence in the Case**, including:
+- All emails
+- All internal and external communications
+- All documents
+- All attachments
+- All metadata
+- All extracted entities
+- All batch summaries
+- All files ingested into the Sentinel pipeline
+
+You MUST treat the entire corpus as the evidentiary record.  
+No insight may be based on a single batch or a small subset unless explicitly labeled as limited.  
+Your master report must reflect **full-corpus synthesis** across *all* available content.
+
+You MUST:
+- Populate **every section** fully — no empty sections allowed.
+- Avoid blank pages or placeholders.
+- Infer reasonable context where data is thin (label as “inferred”).
+- Produce clear narrative insight (“what this means,” “why it matters,” “implications”).
+- Create tables, bullet points, and diagrams-in-text where helpful.
+- Cross-reference evidence across the entire case.
+- Maintain a precise, legal, executive tone.
+
+Your output must be:
+- Complete
+- Dense with insight
+- Substantively valuable
+- Professionally structured
+- Compact (no wasted space)
+- Free of repeated boilerplate
+
+Absolutely no section may be left blank under any circumstances.
+`;
+
+export const makeMasterReportUserPrompt = (params) => `
+Using all evidence in the Case — including ALL communications, ALL emails, ALL documents,
+ALL attachments, ALL metadata, ALL entities, and ALL batch-level summaries — generate a
+**fully populated, inferential, analytic BUSINESS INTELLIGENCE REPORT** for the matter involving:
+
+Company: ${params.companyName}
+Total Communications: ${params.totalCommunications}
+Date Range: ${params.dateRange}
+Batch Count: ${params.batchCount}
+
+=== CORE DATA ===
+Top Senders:
+${params.topSenders}
+
+Top Recipients:
+${params.topRecipients}
+
+Top Domains:
+${params.topDomains}
+
+=== BATCH SUMMARIES (Full Corpus Included) ===
+${params.batchSummaries}
+
+=== ENTITY SUMMARY (Full Corpus Included) ===
+${params.entitySummary ?? "None provided."}
+
+================================================================================
+🚨 **NON-NEGOTIABLE REQUIREMENTS**  
+(You must follow these exactly.)
+
+1. **Use the ENTIRE CORPUS**  
+   - ALL documents  
+   - ALL emails  
+   - ALL attachments  
+   - ALL communications  
+   - ALL metadata  
+   - ALL extracted entities  
+   - ALL batch-level summaries  
+   - ALL case materials  
+
+2. **Do NOT leave ANY section blank.**  
+   If data is thin → infer context and label it as “inferred.”
+
+3. **Explain “so what?”**  
+   Every item must explain its strategic significance, operational meaning, or legal implications.
+
+4. **No blank pages. No placeholders. No empty lines of filler.**
+
+5. **Structure the report tightly** with headings, subsections, tables, timelines, and bullet points.
+
+================================================================================
+
+# 📘 MASTER REPORT STRUCTURE  
+(Every section must be complete, even if based partly on inference.)
+
+## 1. EXECUTIVE SUMMARY
+- A 3–4 paragraph integrated narrative derived from the full corpus.
+- Explain the organization’s priorities, tensions, risks, and operational posture.
+
+## 2. BUSINESS LINES
+- Identify all real or implied business units or operational lines.
+- Describe purpose, strategy, dependencies, risks.
+
+## 3. CORPORATE HISTORY & STRUCTURE
+- Describe formal and informal structures inferred from the corpus.
+- Provide an org chart (ASCII allowed).
+- Identify centers of influence.
+
+## 4. TRANSACTIONS
+- Identify *all transaction-like activity*, including:
+  - Partnerships  
+  - Negotiations  
+  - Event planning  
+  - Financial or strategic initiatives  
+  - Operational commitments  
+
+## 5. MAJOR CLIENTS
+- Identify explicit and implied “customers,” “stakeholders,” “beneficiaries.”
+- Summarize needs, pain points, and relationship health.
+
+## 6. PARTNERS / VENDORS / INVESTORS
+- Detail key parties, roles, relationship dynamics, risk levels.
+
+## 7. TECHNOLOGY STACK
+- Identify explicit technologies or infer typical stack for this type of organization.
+- Describe data governance and IT risks.
+
+## 8. PERSONNEL & ORGANIZATION
+- Full custodian profiles.
+- Influence ranking.
+- Communication network explanation.
+- Behavioral indicators (urgency, conflict, leadership style).
+
+## 9. LITIGATION & REGULATORY FACTS
+- Summary of all legal and regulatory mentions.
+- Inferred risks based on communication patterns.
+
+## 10. FINANCIALS
+- Extract any explicit financial references.
+- Infer financial posture from tone, priorities, constraints.
+
+## 11. EXHIBITS & SUPPORTING EVIDENCE
+- Map key findings to specific communications.
+- Provide citation-style references.
+
+## 12. ENTITY INVOLVEMENT
+- Consolidated table of employees, third parties, vendors.
+- Communication volume, influence, role.
+
+## 13. APPENDIX
+- Glossary  
+- Source Index  
+- Timeline of Key Events  
+
+## 14. MEDIA COVERAGE ANALYSIS
+- Contextualize how public reputation aligns or conflicts with internal communications.
+
+## 15. EXTERNAL LITIGATION RESEARCH
+- Summaries of known cases and relevance.
+
+## 16. BEHAVIORAL & CULTURAL INDICATORS
+- Trust patterns, escalation behavior, communication health.
+
+## 17. OPERATIONAL RISKS
+- Identify bottlenecks, execution gaps, governance issues.
+
+## 18. RECOMMENDATIONS
+- Specific, actionable, prioritized actions across governance, compliance, operations, technology, and organizational structure.
+
+================================================================================
+
+# FINAL OUTPUT REQUIREMENT
+Produce a **single, tightly formatted, narrative-rich report**.  
+NO BLANK SECTIONS.  
+NO BLANK PAGES.  
+NO PLACEHOLDERS.  
+Use the ENTIRE CASE CORPUS.  
+Return the full master report now.
+`;

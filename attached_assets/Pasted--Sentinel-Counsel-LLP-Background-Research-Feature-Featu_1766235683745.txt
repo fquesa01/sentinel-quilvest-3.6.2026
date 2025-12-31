@@ -1,0 +1,1848 @@
+# Sentinel Counsel LLP - Background Research Feature
+
+## Feature Overview
+
+The Background Research feature provides AI-powered preliminary due diligence analysis for business transactions. It combines document analysis with web research to give attorneys a comprehensive picture of a target company, highlighting risks, contradictions, and key findings before deep-dive due diligence begins.
+
+This is designed to be the **first thing an attorney runs** when starting work on a deal - a "quick intel briefing" that surfaces what matters most.
+
+---
+
+## USER FLOW
+
+### Step 1: Create Research Request
+User navigates to Background Research, clicks "New Research", and:
+1. Selects an existing Deal (or creates standalone research)
+2. Enters target company name and basic info
+3. Uploads documents (or selects from Data Room)
+4. Chooses which analysis modules to run
+5. Kicks off the research
+
+### Step 2: AI Processing
+System processes documents and runs web searches in parallel:
+- Document ingestion and text extraction
+- Entity extraction (people, companies, amounts, dates)
+- AI analysis across multiple dimensions
+- Web search for external context
+- Cross-reference and contradiction detection
+
+### Step 3: Review Results
+User receives a structured report with:
+- Executive summary
+- Detailed findings by category
+- Risk indicators with severity ratings
+- Cited sources (document page numbers, URLs)
+- Recommended follow-up questions
+
+---
+
+## DATABASE SCHEMA
+
+```typescript
+// Background Research Schema
+
+export const backgroundResearch = pgTable('background_research', {
+  id: serial('id').primaryKey(),
+  
+  // Linkage
+  dealId: integer('deal_id').references(() => deals.id),
+  caseId: integer('case_id').references(() => cases.id), // Can also be used for investigations
+  
+  // Target Information
+  targetName: varchar('target_name', { length: 255 }).notNull(),
+  targetWebsite: varchar('target_website', { length: 500 }),
+  targetIndustry: varchar('target_industry', { length: 100 }),
+  targetDescription: text('target_description'),
+  
+  // Research Configuration
+  researchType: varchar('research_type', { length: 50 }).default('full'), // 'full', 'quick', 'custom'
+  enabledModules: jsonb('enabled_modules'), // Array of module names to run
+  
+  // Status
+  status: varchar('status', { length: 50 }).default('draft'), // 'draft', 'processing', 'completed', 'failed'
+  progress: integer('progress').default(0), // 0-100
+  currentStep: varchar('current_step', { length: 100 }),
+  
+  // Results
+  executiveSummary: text('executive_summary'),
+  riskScore: integer('risk_score'), // 0-100, higher = more risk
+  riskLevel: varchar('risk_level', { length: 20 }), // 'low', 'medium', 'high', 'critical'
+  keyFindings: jsonb('key_findings'), // Top 5-10 most important findings
+  
+  // Metadata
+  documentCount: integer('document_count').default(0),
+  pageCount: integer('page_count').default(0),
+  processingTimeSeconds: integer('processing_time_seconds'),
+  
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+  completedAt: timestamp('completed_at'),
+});
+
+// Documents uploaded for this research
+export const researchDocuments = pgTable('research_documents', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  // Document info
+  fileName: varchar('file_name', { length: 500 }).notNull(),
+  fileType: varchar('file_type', { length: 50 }),
+  fileSize: bigint('file_size', { mode: 'number' }),
+  filePath: text('file_path'),
+  
+  // Classification
+  documentCategory: varchar('document_category', { length: 100 }), 
+  // 'financial_statement', 'contract', 'email', 'presentation', 'legal_filing', 'internal_memo', 'marketing', 'other'
+  documentDate: date('document_date'),
+  
+  // Processing
+  extractedText: text('extracted_text'),
+  pageCount: integer('page_count'),
+  processingStatus: varchar('processing_status', { length: 50 }),
+  
+  // AI Analysis
+  aiSummary: text('ai_summary'),
+  extractedEntities: jsonb('extracted_entities'), // People, companies, amounts, dates
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Individual findings from the research
+export const researchFindings = pgTable('research_findings', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  // Categorization
+  module: varchar('module', { length: 50 }).notNull(), 
+  // 'company_overview', 'competitors', 'key_people', 'financials', 'contracts', 'risks', 'contradictions', etc.
+  category: varchar('category', { length: 100 }),
+  subcategory: varchar('subcategory', { length: 100 }),
+  
+  // Finding details
+  title: varchar('title', { length: 255 }).notNull(),
+  description: text('description').notNull(),
+  details: jsonb('details'), // Structured data specific to finding type
+  
+  // Severity/Importance
+  severity: varchar('severity', { length: 20 }).default('info'), // 'info', 'low', 'medium', 'high', 'critical'
+  isKeyFinding: boolean('is_key_finding').default(false),
+  requiresFollowUp: boolean('requires_follow_up').default(false),
+  
+  // Source attribution
+  sourceType: varchar('source_type', { length: 50 }), // 'document', 'web_search', 'cross_reference'
+  sourceDocumentId: integer('source_document_id').references(() => researchDocuments.id),
+  sourceUrl: text('source_url'),
+  sourceExcerpt: text('source_excerpt'),
+  sourcePage: integer('source_page'),
+  
+  // For contradictions - link to conflicting finding
+  contradictsFindingId: integer('contradicts_finding_id'),
+  
+  // AI confidence
+  confidenceScore: real('confidence_score'),
+  
+  // User interaction
+  isVerified: boolean('is_verified').default(false),
+  verifiedBy: integer('verified_by').references(() => users.id),
+  userNotes: text('user_notes'),
+  isDismissed: boolean('is_dismissed').default(false),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Extracted entities (people, companies, etc.)
+export const researchEntities = pgTable('research_entities', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  entityType: varchar('entity_type', { length: 50 }).notNull(), // 'person', 'company', 'amount', 'date', 'location'
+  entityName: varchar('entity_name', { length: 255 }).notNull(),
+  normalizedName: varchar('normalized_name', { length: 255 }), // For deduplication
+  
+  // Additional info (varies by type)
+  title: varchar('title', { length: 255 }), // For people
+  role: varchar('role', { length: 100 }), // CEO, CFO, Director, Customer, Supplier, etc.
+  email: varchar('email', { length: 255 }),
+  linkedinUrl: varchar('linkedin_url', { length: 500 }),
+  
+  // For companies
+  relationship: varchar('relationship', { length: 100 }), // 'subsidiary', 'competitor', 'customer', 'supplier', 'partner'
+  website: varchar('website', { length: 500 }),
+  
+  // For amounts
+  amount: decimal('amount', { precision: 18, scale: 2 }),
+  currency: varchar('currency', { length: 10 }),
+  context: varchar('context', { length: 255 }), // 'revenue', 'contract_value', 'debt', etc.
+  
+  // Mention tracking
+  mentionCount: integer('mention_count').default(1),
+  firstMentionDocId: integer('first_mention_doc_id').references(() => researchDocuments.id),
+  
+  // Web research results
+  webResearchComplete: boolean('web_research_complete').default(false),
+  webResearchResults: jsonb('web_research_results'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Web search results
+export const researchWebSearches = pgTable('research_web_searches', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  
+  query: text('query').notNull(),
+  searchType: varchar('search_type', { length: 50 }), // 'company_info', 'news', 'litigation', 'regulatory', 'competitors'
+  
+  results: jsonb('results'), // Array of search results
+  resultCount: integer('result_count'),
+  
+  searchedAt: timestamp('searched_at').defaultNow(),
+});
+
+// Follow-up questions generated by AI
+export const researchFollowUpQuestions = pgTable('research_follow_up_questions', {
+  id: serial('id').primaryKey(),
+  researchId: integer('research_id').references(() => backgroundResearch.id).notNull(),
+  findingId: integer('finding_id').references(() => researchFindings.id),
+  
+  question: text('question').notNull(),
+  context: text('context'), // Why this question matters
+  priority: varchar('priority', { length: 20 }).default('medium'),
+  category: varchar('category', { length: 100 }),
+  
+  // Tracking
+  isAnswered: boolean('is_answered').default(false),
+  answer: text('answer'),
+  answeredBy: integer('answered_by').references(() => users.id),
+  answeredAt: timestamp('answered_at'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+```
+
+---
+
+## ANALYSIS MODULES
+
+Each module runs independently and can be enabled/disabled. Create a modular analysis system:
+
+```typescript
+// types/research-modules.ts
+
+export interface ResearchModule {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  requiresDocuments: boolean;
+  requiresWebSearch: boolean;
+  estimatedTimeMinutes: number;
+  prompts: {
+    documentAnalysis?: string;
+    webSearch?: string[];
+    synthesis?: string;
+  };
+}
+
+export const RESEARCH_MODULES: ResearchModule[] = [
+  {
+    id: 'company_overview',
+    name: 'Company Overview',
+    description: 'Business description, history, corporate structure, and operations summary',
+    icon: 'Building2',
+    requiresDocuments: true,
+    requiresWebSearch: true,
+    estimatedTimeMinutes: 2,
+  },
+  {
+    id: 'competitive_landscape',
+    name: 'Competitive Landscape',
+    description: 'Competitors, market position, competitive advantages and threats',
+    icon: 'Target',
+    requiresDocuments: true,
+    requiresWebSearch: true,
+    estimatedTimeMinutes: 3,
+  },
+  {
+    id: 'key_people',
+    name: 'Key People',
+    description: 'Officers, directors, key employees with background checks',
+    icon: 'Users',
+    requiresDocuments: true,
+    requiresWebSearch: true,
+    estimatedTimeMinutes: 4,
+  },
+  {
+    id: 'business_lines',
+    name: 'Lines of Business',
+    description: 'Products, services, revenue streams, and business segments',
+    icon: 'Layers',
+    requiresDocuments: true,
+    requiresWebSearch: true,
+    estimatedTimeMinutes: 2,
+  },
+  {
+    id: 'material_contracts',
+    name: 'Material Contracts',
+    description: 'Key customer, supplier, and partner agreements',
+    icon: 'FileText',
+    requiresDocuments: true,
+    requiresWebSearch: false,
+    estimatedTimeMinutes: 3,
+  },
+  {
+    id: 'financial_analysis',
+    name: 'Financial Analysis',
+    description: 'Revenue, profitability, cash flow, debt, and financial health indicators',
+    icon: 'TrendingUp',
+    requiresDocuments: true,
+    requiresWebSearch: false,
+    estimatedTimeMinutes: 3,
+  },
+  {
+    id: 'risk_indicators',
+    name: 'Risk Indicators',
+    description: 'Red flags, negative statements, concerning patterns in documents',
+    icon: 'AlertTriangle',
+    requiresDocuments: true,
+    requiresWebSearch: true,
+    estimatedTimeMinutes: 3,
+  },
+  {
+    id: 'contradictions',
+    name: 'Contradiction Detection',
+    description: 'Inconsistencies between documents, conflicting statements',
+    icon: 'GitCompare',
+    requiresDocuments: true,
+    requiresWebSearch: false,
+    estimatedTimeMinutes: 4,
+  },
+  {
+    id: 'litigation_regulatory',
+    name: 'Litigation & Regulatory',
+    description: 'Lawsuits, investigations, regulatory issues, compliance concerns',
+    icon: 'Scale',
+    requiresDocuments: true,
+    requiresWebSearch: true,
+    estimatedTimeMinutes: 3,
+  },
+  {
+    id: 'customer_concentration',
+    name: 'Customer Concentration',
+    description: 'Customer dependency analysis, revenue concentration risks',
+    icon: 'PieChart',
+    requiresDocuments: true,
+    requiresWebSearch: false,
+    estimatedTimeMinutes: 2,
+  },
+  {
+    id: 'ip_technology',
+    name: 'IP & Technology',
+    description: 'Patents, trademarks, trade secrets, key technology assets',
+    icon: 'Lightbulb',
+    requiresDocuments: true,
+    requiresWebSearch: true,
+    estimatedTimeMinutes: 2,
+  },
+  {
+    id: 'news_sentiment',
+    name: 'News & Media',
+    description: 'Recent press coverage, media sentiment, public perception',
+    icon: 'Newspaper',
+    requiresDocuments: false,
+    requiresWebSearch: true,
+    estimatedTimeMinutes: 2,
+  },
+];
+```
+
+---
+
+## AI PROMPTS FOR EACH MODULE
+
+### Module 1: Company Overview
+
+```typescript
+const COMPANY_OVERVIEW_PROMPT = `
+You are a senior M&A attorney conducting preliminary due diligence on a target company.
+
+Analyze the provided documents and create a comprehensive company overview including:
+
+1. **Business Description**
+   - What does the company do?
+   - Core products/services
+   - Value proposition
+   - Business model (B2B, B2C, SaaS, manufacturing, etc.)
+
+2. **Corporate History**
+   - Founding date and founders
+   - Key milestones and pivots
+   - Major acquisitions or divestitures
+   - Significant events
+
+3. **Corporate Structure**
+   - Parent company (if any)
+   - Subsidiaries and affiliates
+   - Ownership structure (if disclosed)
+   - Geographic presence
+
+4. **Operations Summary**
+   - Headquarters location
+   - Office/facility locations
+   - Employee count (if mentioned)
+   - Key operational metrics
+
+For each finding, cite the specific document and page number where you found the information.
+Flag any information that seems incomplete or requires verification.
+
+Format your response as structured JSON.
+`;
+```
+
+### Module 2: Competitive Landscape
+
+```typescript
+const COMPETITIVE_LANDSCAPE_PROMPT = `
+You are a senior M&A attorney analyzing the competitive position of a target company.
+
+Based on the documents provided and web search results, analyze:
+
+1. **Direct Competitors**
+   - List each competitor mentioned
+   - Their relative size/market position
+   - How they compete (price, features, geography, etc.)
+
+2. **Market Position**
+   - Target's estimated market share (if available)
+   - Position in market (leader, challenger, niche player)
+   - Trends affecting position
+
+3. **Competitive Advantages**
+   - What makes the target unique?
+   - Barriers to entry they benefit from
+   - Proprietary technology or relationships
+
+4. **Competitive Threats**
+   - Emerging competitors
+   - Disruptive technologies
+   - Market shifts that could affect position
+
+5. **Win/Loss Analysis** (if available in documents)
+   - Who do they win against and why?
+   - Who do they lose to and why?
+
+For each competitor mentioned, include what you found from web searches about their current status.
+`;
+```
+
+### Module 3: Key People
+
+```typescript
+const KEY_PEOPLE_PROMPT = `
+You are a senior M&A attorney identifying and researching key personnel at a target company.
+
+From the documents provided, identify:
+
+1. **Executive Officers**
+   - CEO, CFO, COO, CTO, General Counsel, etc.
+   - Their tenure and background (if mentioned)
+   - Any concerns or red flags
+
+2. **Board of Directors**
+   - Names and affiliations
+   - Independence status
+   - Any disclosed conflicts of interest
+
+3. **Key Employees**
+   - Critical technical or operational personnel
+   - Sales leaders with key customer relationships
+   - Anyone mentioned as essential to operations
+
+4. **Departed Executives**
+   - Recent departures (within 2 years)
+   - Circumstances of departure (if known)
+   - Any ongoing litigation or disputes
+
+For each person identified:
+- Note their title and role
+- Flag any negative information found (litigation, regulatory issues, controversies)
+- Note if they have non-compete or employment agreements mentioned
+- Identify any that appear to be "key person" risks
+
+Web search should include: LinkedIn profiles, news mentions, litigation searches, regulatory actions.
+`;
+```
+
+### Module 4: Financial Analysis
+
+```typescript
+const FINANCIAL_ANALYSIS_PROMPT = `
+You are a senior M&A attorney reviewing financial information for a target company.
+
+Analyze the financial documents to identify:
+
+1. **Revenue Analysis**
+   - Historical revenue figures (all years available)
+   - Revenue growth rates
+   - Revenue by segment/product line (if available)
+   - Recurring vs. non-recurring revenue
+
+2. **Profitability**
+   - Gross margin and trends
+   - Operating margin / EBITDA
+   - Net income
+   - Profitability by segment (if available)
+
+3. **Cash Flow**
+   - Operating cash flow vs. net income
+   - Capital expenditure requirements
+   - Free cash flow
+   - Cash burn rate (if negative)
+
+4. **Balance Sheet Concerns**
+   - Total debt and debt/equity ratio
+   - Working capital position
+   - Accounts receivable aging concerns
+   - Inventory issues
+   - Off-balance sheet items mentioned
+
+5. **Financial Red Flags**
+   - Revenue recognition concerns
+   - Related party transactions
+   - Unusual adjustments
+   - Auditor qualifications or concerns
+   - Going concern issues
+   - Material weaknesses in controls
+
+6. **Key Metrics Comparison**
+   - Create a table of all financial metrics found
+   - Note any inconsistencies between documents
+
+IMPORTANT: If you find conflicting numbers between documents (e.g., revenue in a presentation vs. financial statements), flag this as a HIGH severity finding.
+`;
+```
+
+### Module 5: Material Contracts
+
+```typescript
+const MATERIAL_CONTRACTS_PROMPT = `
+You are a senior M&A attorney reviewing material contracts for a target company.
+
+Identify and summarize:
+
+1. **Customer Contracts**
+   - Major customer agreements
+   - Contract values and terms
+   - Renewal provisions
+   - Change of control provisions
+   - Most favored nation clauses
+   - Termination rights
+
+2. **Supplier/Vendor Contracts**
+   - Key supplier agreements
+   - Exclusivity provisions
+   - Pricing terms and escalations
+   - Minimum commitments
+
+3. **Partnership/JV Agreements**
+   - Strategic partnerships
+   - Joint ventures
+   - Revenue sharing arrangements
+   - Non-compete provisions
+
+4. **Debt/Financing Agreements**
+   - Credit facilities
+   - Bond indentures
+   - Change of control provisions
+   - Financial covenants
+   - Events of default
+
+5. **Real Estate**
+   - Material leases
+   - Owned property
+   - Lease terms and renewal options
+
+6. **Employment Agreements**
+   - Executive employment agreements
+   - Non-compete provisions
+   - Change of control payments (golden parachutes)
+   - Severance obligations
+
+7. **IP/License Agreements**
+   - Inbound licenses (technology the company uses)
+   - Outbound licenses (technology the company licenses out)
+   - Restrictions on assignment
+
+For each contract, flag:
+- Change of control triggers
+- Consent requirements for assignment
+- Unusual or onerous terms
+- Upcoming renewals or expirations
+`;
+```
+
+### Module 6: Risk Indicators & Red Flags
+
+```typescript
+const RISK_INDICATORS_PROMPT = `
+You are a senior M&A attorney looking for red flags and risk indicators in due diligence documents.
+
+Carefully review all documents for:
+
+1. **Negative Statements**
+   - Admissions of problems or failures
+   - Concerns expressed by management
+   - "We need to address..." type statements
+   - Customer complaints mentioned
+   - Employee concerns raised
+
+2. **Financial Red Flags**
+   - Declining revenue or margins
+   - Increasing customer concentration
+   - Growing accounts receivable
+   - Inventory build-up
+   - Unusual related party transactions
+   - Aggressive revenue recognition
+
+3. **Operational Concerns**
+   - Key person dependencies
+   - Single points of failure
+   - Technology/infrastructure issues
+   - Quality control problems
+   - Supply chain vulnerabilities
+
+4. **Legal/Compliance Risks**
+   - Pending or threatened litigation
+   - Regulatory investigations
+   - Compliance gaps mentioned
+   - Environmental issues
+   - Data privacy concerns
+
+5. **Cultural/HR Red Flags**
+   - High turnover mentioned
+   - Management conflicts
+   - Union issues
+   - Discrimination claims
+   - Safety incidents
+
+6. **Communication Tone Analysis** (for emails/memos)
+   - Urgency or panic in communications
+   - Blame-shifting language
+   - Evasive responses
+   - Concerns being dismissed
+
+IMPORTANT: For emails and internal memos, pay special attention to:
+- What people say privately vs. publicly
+- Concerns raised but not addressed
+- Decisions made that seem questionable
+- Cover-up language ("don't put this in writing", "let's discuss offline")
+
+Rate each finding as: INFO, LOW, MEDIUM, HIGH, or CRITICAL severity.
+`;
+```
+
+### Module 7: Contradiction Detection
+
+```typescript
+const CONTRADICTION_DETECTION_PROMPT = `
+You are a senior M&A attorney cross-referencing documents to identify contradictions and inconsistencies.
+
+Compare information across all provided documents to find:
+
+1. **Numerical Inconsistencies**
+   - Revenue figures that don't match between documents
+   - Employee counts that differ
+   - Contract values stated differently
+   - Financial metrics that conflict
+
+2. **Factual Contradictions**
+   - Different founding dates
+   - Conflicting descriptions of products/services
+   - Inconsistent customer/supplier information
+   - Contradictory statements about relationships
+
+3. **Timeline Inconsistencies**
+   - Events dated differently
+   - Sequence of events that don't align
+   - Contracts with conflicting effective dates
+
+4. **Statement Contradictions**
+   - Management saying one thing in documents vs. another
+   - External communications vs. internal communications
+   - Marketing claims vs. actual capabilities
+   - Projections vs. actuals (if historical projections available)
+
+5. **Missing Information**
+   - Topics mentioned in one document but absent from others
+   - Incomplete explanations
+   - References to documents not provided
+
+For each contradiction found:
+- Quote the specific conflicting statements
+- Cite both source documents with page numbers
+- Rate the significance (minor discrepancy vs. material misrepresentation)
+- Suggest which version might be correct (if determinable)
+- Recommend follow-up questions to resolve
+
+This is CRITICAL for due diligence - contradictions often reveal problems.
+`;
+```
+
+### Module 8: Litigation & Regulatory
+
+```typescript
+const LITIGATION_REGULATORY_PROMPT = `
+You are a senior M&A attorney researching litigation and regulatory matters for a target company.
+
+From documents and web searches, identify:
+
+1. **Pending Litigation**
+   - Active lawsuits (plaintiff or defendant)
+   - Case names, courts, and status
+   - Alleged damages or exposure
+   - Nature of claims
+
+2. **Threatened Litigation**
+   - Demand letters received
+   - Disputes that may become litigation
+   - Customer/vendor disputes
+
+3. **Historical Litigation**
+   - Significant past cases
+   - Settlements and judgments
+   - Pattern of litigation
+
+4. **Regulatory Matters**
+   - Government investigations
+   - Subpoenas received
+   - Consent decrees or settlements
+   - Required regulatory approvals
+
+5. **Compliance Status**
+   - Industry-specific regulations
+   - Data privacy (GDPR, CCPA, etc.)
+   - Environmental permits
+   - Employment/labor compliance
+   - Financial services regulations (if applicable)
+
+6. **Intellectual Property Disputes**
+   - Patent litigation
+   - Trademark disputes
+   - Trade secret claims
+
+Web searches should include:
+- PACER/court record searches (note: summarize what you find)
+- SEC EDGAR (for public company filings)
+- State attorney general actions
+- Industry regulatory body actions
+- News about lawsuits or investigations
+
+For each matter, assess:
+- Likelihood of adverse outcome
+- Potential financial exposure
+- Reputational impact
+- Whether it could affect the transaction
+`;
+```
+
+---
+
+## UI COMPONENTS
+
+### 1. Create Research Page
+
+```tsx
+// pages/transactions/background-research/new.tsx
+
+export default function NewBackgroundResearch() {
+  const [step, setStep] = useState(1);
+  const [formData, setFormData] = useState({
+    dealId: null,
+    targetName: '',
+    targetWebsite: '',
+    targetIndustry: '',
+    targetDescription: '',
+    researchType: 'full',
+    enabledModules: RESEARCH_MODULES.map(m => m.id),
+    documents: [],
+  });
+
+  return (
+    <div className="container max-w-4xl py-8">
+      <div className="mb-8">
+        <h1 className="text-2xl font-semibold">New Background Research</h1>
+        <p className="text-muted-foreground">
+          AI-powered preliminary due diligence analysis
+        </p>
+      </div>
+
+      {/* Progress Steps */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          {['Target Info', 'Documents', 'Analysis Scope', 'Review & Run'].map((label, i) => (
+            <div key={label} className="flex items-center">
+              <div className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium",
+                step > i + 1 ? "bg-primary text-primary-foreground" :
+                step === i + 1 ? "bg-primary text-primary-foreground" :
+                "bg-muted text-muted-foreground"
+              )}>
+                {step > i + 1 ? <Check className="h-4 w-4" /> : i + 1}
+              </div>
+              <span className={cn(
+                "ml-2 text-sm",
+                step === i + 1 ? "font-medium" : "text-muted-foreground"
+              )}>
+                {label}
+              </span>
+              {i < 3 && <ChevronRight className="mx-4 h-4 w-4 text-muted-foreground" />}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Step 1: Target Information */}
+      {step === 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Target Company Information</CardTitle>
+            <CardDescription>
+              Enter basic information about the company you're researching
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Link to Deal (Optional) */}
+            <div className="space-y-2">
+              <Label>Link to Deal (Optional)</Label>
+              <Select 
+                value={formData.dealId?.toString()} 
+                onValueChange={(v) => setFormData({...formData, dealId: parseInt(v)})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a deal or leave blank for standalone research" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No deal - standalone research</SelectItem>
+                  {deals.map((deal) => (
+                    <SelectItem key={deal.id} value={deal.id.toString()}>
+                      {deal.name} ({deal.dealNumber})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Target Company Name *</Label>
+                <Input 
+                  value={formData.targetName}
+                  onChange={(e) => setFormData({...formData, targetName: e.target.value})}
+                  placeholder="Acme Corporation"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Website</Label>
+                <Input 
+                  value={formData.targetWebsite}
+                  onChange={(e) => setFormData({...formData, targetWebsite: e.target.value})}
+                  placeholder="https://acme.com"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Industry</Label>
+              <Select 
+                value={formData.targetIndustry}
+                onValueChange={(v) => setFormData({...formData, targetIndustry: v})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select industry" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="technology">Technology</SelectItem>
+                  <SelectItem value="healthcare">Healthcare</SelectItem>
+                  <SelectItem value="financial_services">Financial Services</SelectItem>
+                  <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                  <SelectItem value="retail">Retail / Consumer</SelectItem>
+                  <SelectItem value="energy">Energy</SelectItem>
+                  <SelectItem value="real_estate">Real Estate</SelectItem>
+                  <SelectItem value="media">Media / Entertainment</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Brief Description (Optional)</Label>
+              <Textarea 
+                value={formData.targetDescription}
+                onChange={(e) => setFormData({...formData, targetDescription: e.target.value})}
+                placeholder="What you know about this company..."
+                rows={3}
+              />
+            </div>
+          </CardContent>
+          <CardFooter className="justify-end">
+            <Button onClick={() => setStep(2)}>
+              Continue
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {/* Step 2: Document Upload */}
+      {step === 2 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Documents</CardTitle>
+            <CardDescription>
+              Upload documents for analysis. The more documents you provide, the better the analysis.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Document Categories Info */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <h4 className="font-medium text-sm mb-2">Recommended Documents</h4>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li>• Financial statements (annual/quarterly)</li>
+                  <li>• Management presentations / CIM</li>
+                  <li>• Customer/supplier contracts</li>
+                  <li>• Organization charts</li>
+                  <li>• Product documentation</li>
+                </ul>
+              </div>
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <h4 className="font-medium text-sm mb-2">High-Value Sources</h4>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li>• Internal emails and memos</li>
+                  <li>• Board meeting minutes</li>
+                  <li>• Litigation files</li>
+                  <li>• HR/employee documents</li>
+                  <li>• Prior due diligence reports</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Upload Zone */}
+            <div 
+              className={cn(
+                "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
+                isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25"
+              )}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            >
+              <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
+              <p className="text-sm font-medium mb-1">
+                Drag & drop files here, or click to browse
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">
+                Supports PDF, DOCX, XLSX, PPTX, EML, MSG, TXT (max 50MB per file)
+              </p>
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                Choose Files
+              </Button>
+              <input 
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+                accept=".pdf,.docx,.xlsx,.pptx,.eml,.msg,.txt,.csv"
+              />
+            </div>
+
+            {/* Or Import from Data Room */}
+            {formData.dealId && (
+              <div className="text-center">
+                <span className="text-sm text-muted-foreground">or</span>
+                <Button 
+                  variant="link" 
+                  onClick={() => setShowDataRoomPicker(true)}
+                >
+                  Import from Data Room
+                </Button>
+              </div>
+            )}
+
+            {/* Uploaded Files List */}
+            {formData.documents.length > 0 && (
+              <div className="space-y-2">
+                <Label>Uploaded Documents ({formData.documents.length})</Label>
+                <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+                  {formData.documents.map((doc, index) => (
+                    <div key={index} className="flex items-center justify-between p-3">
+                      <div className="flex items-center gap-3">
+                        <FileIcon fileName={doc.name} />
+                        <div>
+                          <p className="text-sm font-medium">{doc.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatFileSize(doc.size)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select defaultValue="auto">
+                          <SelectTrigger className="w-[140px] h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">Auto-detect</SelectItem>
+                            <SelectItem value="financial_statement">Financial Statement</SelectItem>
+                            <SelectItem value="contract">Contract</SelectItem>
+                            <SelectItem value="email">Email</SelectItem>
+                            <SelectItem value="presentation">Presentation</SelectItem>
+                            <SelectItem value="legal_filing">Legal Filing</SelectItem>
+                            <SelectItem value="internal_memo">Internal Memo</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8"
+                          onClick={() => removeDocument(index)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+          <CardFooter className="justify-between">
+            <Button variant="outline" onClick={() => setStep(1)}>
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Back
+            </Button>
+            <Button onClick={() => setStep(3)}>
+              Continue
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {/* Step 3: Analysis Scope */}
+      {step === 3 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Analysis Scope</CardTitle>
+            <CardDescription>
+              Choose which analysis modules to run
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Quick Presets */}
+            <div className="space-y-2">
+              <Label>Research Type</Label>
+              <div className="grid grid-cols-3 gap-3">
+                <Button
+                  variant={formData.researchType === 'quick' ? 'default' : 'outline'}
+                  className="h-auto py-3 flex-col"
+                  onClick={() => {
+                    setFormData({
+                      ...formData, 
+                      researchType: 'quick',
+                      enabledModules: ['company_overview', 'key_people', 'risk_indicators', 'news_sentiment']
+                    });
+                  }}
+                >
+                  <Zap className="h-5 w-5 mb-1" />
+                  <span className="font-medium">Quick Scan</span>
+                  <span className="text-xs text-muted-foreground">~5 min</span>
+                </Button>
+                <Button
+                  variant={formData.researchType === 'full' ? 'default' : 'outline'}
+                  className="h-auto py-3 flex-col"
+                  onClick={() => {
+                    setFormData({
+                      ...formData, 
+                      researchType: 'full',
+                      enabledModules: RESEARCH_MODULES.map(m => m.id)
+                    });
+                  }}
+                >
+                  <Search className="h-5 w-5 mb-1" />
+                  <span className="font-medium">Full Analysis</span>
+                  <span className="text-xs text-muted-foreground">~20 min</span>
+                </Button>
+                <Button
+                  variant={formData.researchType === 'custom' ? 'default' : 'outline'}
+                  className="h-auto py-3 flex-col"
+                  onClick={() => setFormData({...formData, researchType: 'custom'})}
+                >
+                  <Settings className="h-5 w-5 mb-1" />
+                  <span className="font-medium">Custom</span>
+                  <span className="text-xs text-muted-foreground">Select modules</span>
+                </Button>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Module Selection */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Analysis Modules</Label>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setFormData({...formData, enabledModules: RESEARCH_MODULES.map(m => m.id)})}
+                  >
+                    Select All
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setFormData({...formData, enabledModules: []})}
+                  >
+                    Clear All
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                {RESEARCH_MODULES.map((module) => {
+                  const Icon = Icons[module.icon];
+                  const isEnabled = formData.enabledModules.includes(module.id);
+                  
+                  return (
+                    <div
+                      key={module.id}
+                      className={cn(
+                        "flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors",
+                        isEnabled ? "border-primary bg-primary/5" : "hover:bg-accent/50"
+                      )}
+                      onClick={() => {
+                        const newModules = isEnabled
+                          ? formData.enabledModules.filter(m => m !== module.id)
+                          : [...formData.enabledModules, module.id];
+                        setFormData({...formData, enabledModules: newModules, researchType: 'custom'});
+                      }}
+                    >
+                      <Checkbox checked={isEnabled} />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium text-sm">{module.name}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {module.description}
+                        </p>
+                        <div className="flex gap-2 mt-2">
+                          {module.requiresDocuments && (
+                            <Badge variant="outline" className="text-xs">
+                              <FileText className="h-3 w-3 mr-1" />
+                              Docs
+                            </Badge>
+                          )}
+                          {module.requiresWebSearch && (
+                            <Badge variant="outline" className="text-xs">
+                              <Globe className="h-3 w-3 mr-1" />
+                              Web
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="text-xs">
+                            ~{module.estimatedTimeMinutes} min
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Estimated Time */}
+            <div className="bg-muted/50 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Estimated Analysis Time</p>
+                  <p className="text-sm text-muted-foreground">
+                    {formData.enabledModules.length} modules selected
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-semibold">
+                    ~{RESEARCH_MODULES
+                      .filter(m => formData.enabledModules.includes(m.id))
+                      .reduce((sum, m) => sum + m.estimatedTimeMinutes, 0)} min
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Processing {formData.documents.length} documents
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="justify-between">
+            <Button variant="outline" onClick={() => setStep(2)}>
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Back
+            </Button>
+            <Button onClick={() => setStep(4)}>
+              Continue
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {/* Step 4: Review & Run */}
+      {step === 4 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Review & Start Research</CardTitle>
+            <CardDescription>
+              Confirm your settings and start the analysis
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Summary */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Target Company</Label>
+                  <p className="font-medium">{formData.targetName}</p>
+                </div>
+                {formData.targetWebsite && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Website</Label>
+                    <p className="text-sm">{formData.targetWebsite}</p>
+                  </div>
+                )}
+                {formData.targetIndustry && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Industry</Label>
+                    <p className="text-sm capitalize">{formData.targetIndustry.replace('_', ' ')}</p>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Documents</Label>
+                  <p className="font-medium">{formData.documents.length} files</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Analysis Modules</Label>
+                  <p className="font-medium">{formData.enabledModules.length} selected</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Estimated Time</Label>
+                  <p className="font-medium">
+                    ~{RESEARCH_MODULES
+                      .filter(m => formData.enabledModules.includes(m.id))
+                      .reduce((sum, m) => sum + m.estimatedTimeMinutes, 0)} minutes
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Selected Modules */}
+            <div>
+              <Label className="text-muted-foreground text-xs mb-2 block">Selected Modules</Label>
+              <div className="flex flex-wrap gap-2">
+                {RESEARCH_MODULES
+                  .filter(m => formData.enabledModules.includes(m.id))
+                  .map(module => {
+                    const Icon = Icons[module.icon];
+                    return (
+                      <Badge key={module.id} variant="secondary">
+                        <Icon className="h-3 w-3 mr-1" />
+                        {module.name}
+                      </Badge>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* Notification Preference */}
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div>
+                <p className="font-medium text-sm">Email me when complete</p>
+                <p className="text-xs text-muted-foreground">
+                  Get notified when the research is ready
+                </p>
+              </div>
+              <Switch defaultChecked />
+            </div>
+          </CardContent>
+          <CardFooter className="justify-between">
+            <Button variant="outline" onClick={() => setStep(3)}>
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Back
+            </Button>
+            <Button onClick={handleStartResearch} size="lg">
+              <Play className="mr-2 h-4 w-4" />
+              Start Research
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+    </div>
+  );
+}
+```
+
+### 2. Research Results Page
+
+```tsx
+// pages/transactions/background-research/[id].tsx
+
+export default function BackgroundResearchResults({ research }: Props) {
+  const [activeModule, setActiveModule] = useState('overview');
+  const [showFilters, setShowFilters] = useState(false);
+  const [severityFilter, setSeverityFilter] = useState<string[]>([]);
+  
+  return (
+    <div className="flex h-[calc(100vh-64px)]">
+      {/* Left Sidebar - Navigation */}
+      <div className="w-64 border-r bg-muted/30 p-4 overflow-y-auto">
+        <div className="mb-6">
+          <h2 className="font-semibold text-lg">{research.targetName}</h2>
+          <p className="text-sm text-muted-foreground">
+            Research completed {formatDistanceToNow(research.completedAt, { addSuffix: true })}
+          </p>
+        </div>
+
+        {/* Risk Score */}
+        <div className="mb-6 p-3 bg-background rounded-lg border">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">Risk Score</span>
+            <Badge variant={getRiskVariant(research.riskLevel)}>
+              {research.riskLevel}
+            </Badge>
+          </div>
+          <div className="relative h-2 bg-muted rounded-full overflow-hidden">
+            <div 
+              className={cn(
+                "absolute left-0 top-0 h-full rounded-full",
+                research.riskScore > 70 ? "bg-red-500" :
+                research.riskScore > 40 ? "bg-amber-500" : "bg-green-500"
+              )}
+              style={{ width: `${research.riskScore}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground mt-1 text-right">
+            {research.riskScore}/100
+          </p>
+        </div>
+
+        {/* Navigation */}
+        <nav className="space-y-1">
+          <Button
+            variant={activeModule === 'overview' ? 'secondary' : 'ghost'}
+            className="w-full justify-start"
+            onClick={() => setActiveModule('overview')}
+          >
+            <LayoutDashboard className="h-4 w-4 mr-2" />
+            Executive Summary
+          </Button>
+          
+          <Separator className="my-2" />
+          
+          {RESEARCH_MODULES
+            .filter(m => research.enabledModules.includes(m.id))
+            .map(module => {
+              const Icon = Icons[module.icon];
+              const findings = research.findings.filter(f => f.module === module.id);
+              const criticalCount = findings.filter(f => f.severity === 'critical' || f.severity === 'high').length;
+              
+              return (
+                <Button
+                  key={module.id}
+                  variant={activeModule === module.id ? 'secondary' : 'ghost'}
+                  className="w-full justify-between"
+                  onClick={() => setActiveModule(module.id)}
+                >
+                  <span className="flex items-center">
+                    <Icon className="h-4 w-4 mr-2" />
+                    {module.name}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {criticalCount > 0 && (
+                      <Badge variant="destructive" className="h-5 px-1.5">
+                        {criticalCount}
+                      </Badge>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {findings.length}
+                    </span>
+                  </div>
+                </Button>
+              );
+            })}
+          
+          <Separator className="my-2" />
+          
+          <Button
+            variant={activeModule === 'questions' ? 'secondary' : 'ghost'}
+            className="w-full justify-start"
+            onClick={() => setActiveModule('questions')}
+          >
+            <HelpCircle className="h-4 w-4 mr-2" />
+            Follow-up Questions
+            <Badge variant="outline" className="ml-auto">
+              {research.followUpQuestions.length}
+            </Badge>
+          </Button>
+          
+          <Button
+            variant={activeModule === 'entities' ? 'secondary' : 'ghost'}
+            className="w-full justify-start"
+            onClick={() => setActiveModule('entities')}
+          >
+            <Users className="h-4 w-4 mr-2" />
+            Extracted Entities
+          </Button>
+        </nav>
+
+        {/* Export Options */}
+        <div className="mt-6 pt-4 border-t">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="w-full">
+                <Download className="h-4 w-4 mr-2" />
+                Export Report
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => exportReport('pdf')}>
+                <FileText className="h-4 w-4 mr-2" />
+                Export as PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportReport('docx')}>
+                <FileText className="h-4 w-4 mr-2" />
+                Export as Word
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportReport('pptx')}>
+                <Presentation className="h-4 w-4 mr-2" />
+                Export as PowerPoint
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 bg-background border-b px-6 py-4 z-10">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold">
+                {activeModule === 'overview' ? 'Executive Summary' : 
+                 RESEARCH_MODULES.find(m => m.id === activeModule)?.name || 'Results'}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {research.documentCount} documents analyzed • {research.pageCount} pages
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                <Filter className="h-4 w-4 mr-2" />
+                Filter
+              </Button>
+              <Button variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Re-run Analysis
+              </Button>
+            </div>
+          </div>
+
+          {/* Filters */}
+          {showFilters && (
+            <div className="flex gap-2 mt-4">
+              <Select>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Severity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Severities</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="info">Info</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  <SelectItem value="document">Documents</SelectItem>
+                  <SelectItem value="web">Web Search</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="ghost" size="sm">Clear Filters</Button>
+            </div>
+          )}
+        </div>
+
+        {/* Content Area */}
+        <div className="p-6">
+          {activeModule === 'overview' && (
+            <ExecutiveSummaryView research={research} />
+          )}
+          
+          {activeModule === 'questions' && (
+            <FollowUpQuestionsView questions={research.followUpQuestions} />
+          )}
+          
+          {activeModule === 'entities' && (
+            <EntitiesView entities={research.entities} />
+          )}
+          
+          {RESEARCH_MODULES.find(m => m.id === activeModule) && (
+            <ModuleFindingsView 
+              module={activeModule}
+              findings={research.findings.filter(f => f.module === activeModule)}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Right Sidebar - Document Viewer (when viewing finding with source) */}
+      {selectedFinding?.sourceDocumentId && (
+        <div className="w-96 border-l bg-muted/30">
+          <DocumentPreviewPanel 
+            documentId={selectedFinding.sourceDocumentId}
+            highlightText={selectedFinding.sourceExcerpt}
+            page={selectedFinding.sourcePage}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### 3. Executive Summary Component
+
+```tsx
+// components/research/ExecutiveSummaryView.tsx
+
+export function ExecutiveSummaryView({ research }: Props) {
+  return (
+    <div className="space-y-6">
+      {/* AI-Generated Summary */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            AI Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="prose prose-sm max-w-none">
+            {research.executiveSummary}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Key Findings */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Key Findings</CardTitle>
+          <CardDescription>
+            Most important discoveries from the analysis
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {research.keyFindings.map((finding, index) => (
+              <div 
+                key={finding.id}
+                className={cn(
+                  "p-4 rounded-lg border-l-4",
+                  finding.severity === 'critical' && "border-l-red-500 bg-red-50 dark:bg-red-950/20",
+                  finding.severity === 'high' && "border-l-orange-500 bg-orange-50 dark:bg-orange-950/20",
+                  finding.severity === 'medium' && "border-l-amber-500 bg-amber-50 dark:bg-amber-950/20",
+                  finding.severity === 'low' && "border-l-blue-500 bg-blue-50 dark:bg-blue-950/20",
+                  finding.severity === 'info' && "border-l-gray-500 bg-gray-50 dark:bg-gray-950/20",
+                )}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant={getSeverityVariant(finding.severity)}>
+                        {finding.severity}
+                      </Badge>
+                      <Badge variant="outline">{finding.module}</Badge>
+                    </div>
+                    <h4 className="font-medium">{finding.title}</h4>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {finding.description}
+                    </p>
+                    {finding.sourceExcerpt && (
+                      <blockquote className="mt-2 pl-3 border-l-2 border-muted-foreground/30 text-sm italic text-muted-foreground">
+                        "{finding.sourceExcerpt}"
+                      </blockquote>
+                    )}
+                  </div>
+                  <Button variant="ghost" size="sm">
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </div>
+                {finding.sourceDocumentId && (
+                  <div className="mt-2 pt-2 border-t">
+                    <Button variant="link" size="sm" className="h-auto p-0 text-xs">
+                      <FileText className="h-3 w-3 mr-1" />
+                      View Source: {finding.sourceName} (p. {finding.sourcePage})
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {research.findings.filter(f => f.severity === 'critical' || f.severity === 'high').length}
+                </p>
+                <p className="text-xs text-muted-foreground">Critical/High Risks</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+                <GitCompare className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {research.findings.filter(f => f.module === 'contradictions').length}
+                </p>
+                <p className="text-xs text-muted-foreground">Contradictions</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <Users className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {research.entities.filter(e => e.entityType === 'person').length}
+                </p>
+                <p className="text-xs text-muted-foreground">Key People</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                <HelpCircle className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">
+                  {research.followUpQuestions.length}
+                </p>
+                <p className="text-xs text-muted-foreground">Follow-up Questions</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Findings by Category Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Findings by Category</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FindingsByCategoryChart findings={research.findings} />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+### 4. Contradiction Finding Display
+
+```tsx
+// components/research/ContradictionCard.tsx
+
+export function ContradictionCard({ finding }: { finding: ResearchFinding }) {
+  const contradiction = finding.details as ContradictionDetails;
+  
+  return (
+    <Card className="border-l-4 border-l-amber-500">
+      <CardContent className="pt-6">
+        <div className="flex items-start gap-4">
+          <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+            <GitCompare className="h-5 w-5 text-amber-600" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                Contradiction
+              </Badge>
+              <Badge variant={getSeverityVariant(finding.severity)}>
+                {finding.severity}
+              </Badge>
+            </div>
+            
+            <h4 className="font-medium mb-3">{finding.title}</h4>
+            
+            {/* Side-by-side comparison */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs font-medium">{contradiction.source1.documentName}</span>
+                </div>
+                <blockquote className="text-sm border-l-2 border-muted-foreground/30 pl-3">
+                  "{contradiction.source1.excerpt}"
+                </blockquote>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Page {contradiction.source1.page}
+                </p>
+              </div>
+              
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs font-medium">{contradiction.source2.documentName}</span>
+                </div>
+                <blockquote className="text-sm border-l-2 border-muted-foreground/30 pl-3">
+                  "{contradiction.source2.excerpt}"
+                </blockquote>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Page {contradiction.source2.page}
+                </p>
+              </div>
+            </div>
+            
+            {/* AI Analysis */}
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="h-4 w-4 text-blue-600" />
+                <span className="text-xs font-medium text-blue-700">AI Analysis</span>
+              </div>
+              <p className="text-sm">{finding.description}</p>
+            </div>
+            
+            {/* Recommended Follow-up */}
+            {finding.requiresFollowUp && (
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Recommended:</span>
+                <span>{contradiction.recommendedQuestion}</span>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Actions */}
+        <div className="flex items-center gap-2 mt-4 pt-4 border-t">
+          <Button variant="outline" size="sm">
+            <FileText className="h-4 w-4 mr-2" />
+            View Documents
+          </Button>
+          <Button variant="outline" size="sm">
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Add to Q&A
+          </Button>
+          {!finding.isVerified && (
+            <Button variant="outline" size="sm" className="ml-auto">
+              <Check className="h-4 w-4 mr-2" />
+              Mark Verified
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+---
+
+## API ENDPOINTS
+
+```typescript
+// routes/background-research.ts
+
+// Research CRUD
+POST   /api/background-research                      // Create new research
+GET    /api/background-research                      // List all research
+GET    /api/background-research/:id                  // Get research details
+DELETE /api/background-research/:id                  // Delete research
+
+// Document Management
+POST   /api/background-research/:id/documents        // Upload documents
+GET    /api/background-research/:id/documents        // List documents
+DELETE /api/background-research/:id/documents/:docId // Remove document
+
+// Analysis Control
+POST   /api/background-research/:id/start            // Start analysis
+GET    /api/background-research/:id/status           // Get progress
+POST   /api/background-research/:id/cancel           // Cancel analysis
+POST   /api/background-research/:id/rerun            // Re-run analysis
+
+// Results
+GET    /api/background-research/:id/findings         // Get all findings
+GET    /api/background-research/:id/findings/:findingId  // Get finding detail
+PATCH  /api/background-research/:id/findings/:findingId  // Update finding (verify, dismiss, add notes)
+
+// Entities
+GET    /api/background-research/:id/entities         // Get extracted entities
+
+// Follow-up Questions
+GET    /api/background-research/:id/questions        // Get follow-up questions
+PATCH  /api/background-research/:id/questions/:qId   // Update question (answer, mark complete)
+
+// Export
+GET    /api/background-research/:id/export/pdf       // Export as PDF
+GET    /api/background-research/:id/export/docx      // Export as Word
+GET    /api/background-research/:id/export/pptx      // Export as PowerPoint
+```
+
+---
+
+## IMPLEMENTATION PRIORITY
+
+1. **Phase 1**: Database schema and basic CRUD
+2. **Phase 2**: Document upload and text extraction
+3. **Phase 3**: Company Overview module (simplest AI analysis)
+4. **Phase 4**: Risk Indicators module (high value)
+5. **Phase 5**: Contradiction Detection module (differentiator)
+6. **Phase 6**: Remaining analysis modules
+7. **Phase 7**: Web search integration
+8. **Phase 8**: Export functionality
+9. **Phase 9**: UI polish and refinements
+
+Start with Phase 1 and proceed incrementally. Each phase should be testable before moving to the next.

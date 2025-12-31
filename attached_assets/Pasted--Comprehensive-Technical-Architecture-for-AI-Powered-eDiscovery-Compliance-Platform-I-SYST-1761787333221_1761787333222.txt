@@ -1,0 +1,2371 @@
+# Comprehensive Technical Architecture for AI-Powered eDiscovery & Compliance Platform
+
+## I. SYSTEM ARCHITECTURE OVERVIEW
+
+### High-Level Architecture Pattern
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     PRESENTATION LAYER                       │
+│  Web UI | Mobile Apps | API Gateway | Desktop Client        │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    APPLICATION LAYER                         │
+│  Microservices | Event Bus | Workflow Engine | Cache        │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                      DATA LAYER                              │
+│  RDBMS | Document Store | Vector DB | Object Storage        │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                  INFRASTRUCTURE LAYER                        │
+│  Kubernetes | Load Balancers | CDN | Monitoring             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Architectural Principles
+- **Microservices Architecture**: Independently deployable, scalable services
+- **Event-Driven Design**: Asynchronous processing for heavy operations
+- **API-First**: All functionality accessible via RESTful/GraphQL APIs
+- **Cloud-Native**: Container-based, horizontally scalable
+- **Zero-Trust Security**: Authentication/authorization at every layer
+- **Polyglot Persistence**: Right database for each use case
+
+---
+
+## II. PRESENTATION LAYER
+
+### Frontend Stack
+
+#### Web Application
+**Technology Stack:**
+- **Framework**: React 18+ with TypeScript
+- **State Management**: Redux Toolkit + RTK Query for API caching
+- **UI Components**: Material-UI or Ant Design for enterprise consistency
+- **Data Virtualization**: React-window for handling large document lists
+- **PDF Rendering**: PDF.js or PSPDFKit for document viewing
+- **Rich Text Editor**: Quill or ProseMirror for annotations
+- **Data Visualization**: D3.js, Recharts, Plotly.js
+- **WebSockets**: Socket.io for real-time updates
+
+**Architecture Pattern:**
+```typescript
+// Micro-frontend architecture for modularity
+src/
+├── apps/
+│   ├── document-review/        // Core review interface
+│   ├── analytics-dashboard/    // Reporting & visualization
+│   ├── admin-console/          // System administration
+│   └── compliance-monitoring/  // Real-time monitoring UI
+├── shared/
+│   ├── components/             // Reusable UI components
+│   ├── hooks/                  // Custom React hooks
+│   ├── services/               // API client services
+│   └── utils/                  // Helper functions
+└── packages/
+    ├── design-system/          // Component library
+    └── api-client/             // Generated API client
+```
+
+**Performance Optimizations:**
+- Code splitting with React.lazy() and Suspense
+- Service Workers for offline capability
+- IndexedDB for client-side document caching
+- Progressive Web App (PWA) for mobile
+- WebAssembly modules for computationally intensive operations (OCR preview, image processing)
+
+#### Desktop Application
+**Technology Stack:**
+- **Framework**: Electron for cross-platform desktop app
+- **Benefits**: 
+  - Native file system access for local PST processing
+  - Better performance for large document rendering
+  - Offline review capability
+  - Integration with native OS features (print, file associations)
+
+#### Mobile Applications
+**Technology Stack:**
+- **iOS**: SwiftUI for native performance
+- **Android**: Kotlin with Jetpack Compose
+- **Alternative**: React Native for code sharing (if cross-platform priority)
+- **Focus**: Read-only review, approvals, alerts (not full feature parity)
+
+### API Gateway Layer
+
+**Technology**: Kong, AWS API Gateway, or Azure API Management
+
+**Key Functions:**
+- Request routing to appropriate microservices
+- Rate limiting and throttling
+- API key/JWT validation
+- Request/response transformation
+- CORS handling
+- API versioning (v1, v2)
+- Request logging and analytics
+- Circuit breaker patterns
+
+**Implementation Example:**
+```yaml
+# Kong Gateway Configuration
+routes:
+  - name: document-search
+    paths: [/api/v1/search]
+    service: search-service
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          policy: local
+      - name: jwt
+      - name: correlation-id
+  
+  - name: document-review
+    paths: [/api/v1/documents]
+    service: document-service
+    plugins:
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 100
+```
+
+---
+
+## III. APPLICATION LAYER (MICROSERVICES)
+
+### Core Microservices Architecture
+
+#### 1. **Authentication & Authorization Service**
+**Technology**: 
+- Node.js with Passport.js or Spring Boot with Spring Security
+- OAuth 2.0 / OpenID Connect
+- SAML 2.0 for enterprise SSO
+
+**Database**: PostgreSQL for user/permission data
+
+**Key Features:**
+- JWT token generation and validation
+- Multi-factor authentication (TOTP, SMS, biometric)
+- Role-based access control (RBAC)
+- Attribute-based access control (ABAC) for document-level permissions
+- Session management with Redis
+- Password policies and rotation
+- Audit logging of all authentication events
+
+**Schema Design:**
+```sql
+-- Core tables
+users (id, email, password_hash, mfa_enabled, status)
+roles (id, name, description)
+permissions (id, resource, action, conditions)
+user_roles (user_id, role_id, scope)
+user_sessions (session_id, user_id, expires_at, metadata)
+
+-- Document-level permissions
+document_permissions (document_id, user_id, role_id, permission_level)
+```
+
+#### 2. **Data Ingestion Service**
+**Technology**: 
+- Apache Kafka or RabbitMQ for message queuing
+- Apache NiFi for data flow orchestration
+- Python (FastAPI) for file processing microservices
+
+**Components:**
+
+**a) Collection Agents:**
+- Lightweight agents installed on endpoints (Go/Rust for performance)
+- Monitor file systems, email clients, browsers
+- Encrypt and stream data to collection service
+- Handle intermittent connectivity (local queue)
+
+**b) API Connectors:**
+```python
+# Example connector architecture
+class BaseConnector(ABC):
+    @abstractmethod
+    async def authenticate(self) -> bool:
+        pass
+    
+    @abstractmethod
+    async def fetch_data(self, since: datetime) -> AsyncIterator[Document]:
+        pass
+    
+    @abstractmethod
+    async def get_metadata(self, document_id: str) -> Dict:
+        pass
+
+class SlackConnector(BaseConnector):
+    def __init__(self, api_token: str, workspace_id: str):
+        self.client = AsyncWebClient(token=api_token)
+    
+    async def fetch_data(self, since: datetime):
+        async for message in self._fetch_messages(since):
+            yield self._transform_to_document(message)
+
+# Connectors for: Gmail, O365, Slack, Teams, Box, Dropbox, etc.
+```
+
+**c) File Processing Pipeline:**
+```
+Raw File → Format Detection → Extraction → Metadata Enrichment → Indexing
+    ↓           ↓                ↓              ↓                    ↓
+Queue 1    Queue 2          Queue 3        Queue 4            Queue 5
+```
+
+**Processing Workers** (containerized, horizontally scalable):
+- **Format Detection**: Apache Tika for file type identification
+- **Text Extraction**: 
+  - Tika for office documents
+  - Tesseract OCR for images/scanned PDFs
+  - Apache PDFBox for native PDFs
+  - PST extractor (libpff) for Outlook files
+- **Metadata Extraction**: ExifTool, file system metadata
+- **Deduplication**: MD5/SHA-256 hashing
+- **Email Threading**: Custom algorithm based on In-Reply-To headers
+
+**Technology Stack:**
+- **Processing**: Python with Celery for distributed task queue
+- **Storage**: MinIO/S3 for original files
+- **Coordination**: Temporal.io or Apache Airflow for workflow orchestration
+
+#### 3. **Document Processing Service**
+**Technology**: Python (FastAPI), Go for performance-critical paths
+
+**Components:**
+
+**a) OCR Service:**
+```python
+# Scalable OCR processing
+from tesseract import PyTessBaseAPI
+from pdf2image import convert_from_path
+import asyncio
+
+class OCRProcessor:
+    def __init__(self, languages=['eng', 'spa', 'fra']):
+        self.api = PyTessBaseAPI(lang='+'.join(languages))
+    
+    async def process_document(self, file_path: str) -> Dict:
+        if file_path.endswith('.pdf'):
+            images = convert_from_path(file_path, dpi=300)
+        else:
+            images = [Image.open(file_path)]
+        
+        tasks = [self._ocr_image(img) for img in images]
+        results = await asyncio.gather(*tasks)
+        
+        return {
+            'text': '\n\n'.join(results),
+            'confidence': self._calculate_confidence(results),
+            'language': self._detect_language(results)
+        }
+```
+
+**b) De-duplication Service:**
+- Hash-based exact matching (MD5/SHA-256)
+- Near-duplicate detection using simhash or MinHash LSH
+- Email thread de-duplication
+- Store hash → document_id mapping in Redis for fast lookup
+
+**c) Conversion Service:**
+- Convert to standardized formats for review (PDF, TIFF)
+- Image optimization and thumbnail generation
+- Video frame extraction and transcription
+- Audio transcription using Whisper or Google Speech-to-Text
+
+#### 4. **Search & Indexing Service**
+**Technology**: Elasticsearch or OpenSearch cluster
+
+**Index Architecture:**
+
+```json
+// Document index mapping
+{
+  "mappings": {
+    "properties": {
+      "document_id": { "type": "keyword" },
+      "matter_id": { "type": "keyword" },
+      "custodian": { "type": "keyword" },
+      "file_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "file_type": { "type": "keyword" },
+      "file_size": { "type": "long" },
+      "created_date": { "type": "date" },
+      "modified_date": { "type": "date" },
+      "author": { "type": "keyword" },
+      
+      // Email-specific fields
+      "email_from": { "type": "keyword" },
+      "email_to": { "type": "keyword" },
+      "email_cc": { "type": "keyword" },
+      "email_subject": { "type": "text", "analyzer": "english" },
+      "email_thread_id": { "type": "keyword" },
+      
+      // Content
+      "content": { 
+        "type": "text", 
+        "analyzer": "english",
+        "fields": {
+          "exact": { "type": "text", "analyzer": "keyword" }
+        }
+      },
+      "ocr_text": { "type": "text", "analyzer": "english" },
+      
+      // Extracted metadata
+      "extracted_entities": {
+        "type": "nested",
+        "properties": {
+          "type": { "type": "keyword" },
+          "value": { "type": "keyword" },
+          "confidence": { "type": "float" }
+        }
+      },
+      
+      // Review codes
+      "relevance": { "type": "keyword" },
+      "privilege": { "type": "keyword" },
+      "issues": { "type": "keyword" },
+      "tags": { "type": "keyword" },
+      
+      // AI scores
+      "relevance_score": { "type": "float" },
+      "sentiment_score": { "type": "float" },
+      "risk_score": { "type": "float" },
+      
+      // Embeddings for semantic search
+      "embedding_vector": {
+        "type": "dense_vector",
+        "dims": 768,
+        "index": true,
+        "similarity": "cosine"
+      }
+    }
+  }
+}
+```
+
+**Search Strategies:**
+
+**a) Full-Text Search:**
+```python
+# Complex boolean query with proximity
+query = {
+  "bool": {
+    "must": [
+      {
+        "match_phrase": {
+          "content": {
+            "query": "merger acquisition",
+            "slop": 5  # Words within 5 positions
+          }
+        }
+      },
+      {
+        "range": {
+          "created_date": {
+            "gte": "2024-01-01",
+            "lte": "2024-12-31"
+          }
+        }
+      }
+    ],
+    "should": [
+      { "term": { "custodian": "john.doe@company.com" } }
+    ],
+    "filter": [
+      { "term": { "matter_id": "matter-123" } }
+    ]
+  }
+}
+```
+
+**b) Semantic Search:**
+```python
+# Vector similarity search
+query = {
+  "script_score": {
+    "query": { "match_all": {} },
+    "script": {
+      "source": "cosineSimilarity(params.query_vector, 'embedding_vector') + 1.0",
+      "params": {
+        "query_vector": get_embedding("Find documents about insider trading")
+      }
+    }
+  }
+}
+```
+
+**c) Hybrid Search:**
+Combine keyword and semantic search with rank fusion (RRF)
+
+**Indexing Pipeline:**
+```
+Document → Text Extraction → Token Analysis → Embedding Generation → Index Update
+                 ↓                                      ↓
+         Entity Extraction                    Vector Database (Pinecone/Weaviate)
+```
+
+**Performance Optimizations:**
+- Index sharding by matter_id for isolation
+- Replica shards for read scalability
+- Index lifecycle management (hot/warm/cold tiers)
+- Async refresh for bulk indexing
+- Field data circuit breakers
+
+#### 5. **AI/ML Service**
+**Technology**: Python with PyTorch/TensorFlow, GPU-accelerated
+
+**Components:**
+
+**a) Model Serving Infrastructure:**
+```python
+# Using Ray Serve for distributed ML serving
+from ray import serve
+import torch
+
+@serve.deployment(num_replicas=4, ray_actor_options={"num_gpus": 0.5})
+class RelevanceClassifier:
+    def __init__(self):
+        self.model = torch.load('models/relevance_model.pt')
+        self.model.eval()
+    
+    async def __call__(self, request):
+        text = await request.json()
+        with torch.no_grad():
+            prediction = self.model(text)
+        return {"score": float(prediction), "relevant": prediction > 0.5}
+
+# Deploy multiple models
+serve.run(RelevanceClassifier.bind(), name="relevance")
+serve.run(SentimentAnalyzer.bind(), name="sentiment")
+serve.run(EntityExtractor.bind(), name="ner")
+```
+
+**b) Technology-Assisted Review (TAR):**
+
+**TAR 1.0 (Traditional Predictive Coding):**
+```python
+from sklearn.linear_model import LogisticRegression
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+class TAR1Pipeline:
+    def __init__(self):
+        self.vectorizer = TfidfVectorizer(max_features=10000)
+        self.model = LogisticRegression()
+        self.training_set = []
+    
+    def add_training_example(self, document: str, label: bool):
+        self.training_set.append((document, label))
+    
+    def train(self):
+        texts, labels = zip(*self.training_set)
+        X = self.vectorizer.fit_transform(texts)
+        self.model.fit(X, labels)
+    
+    def predict_batch(self, documents: List[str]) -> List[float]:
+        X = self.vectorizer.transform(documents)
+        return self.model.predict_proba(X)[:, 1]  # Probability of relevant
+```
+
+**TAR 2.0 (Continuous Active Learning):**
+```python
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch
+
+class TAR2Pipeline:
+    def __init__(self, model_name='bert-base-uncased'):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            model_name, num_labels=2
+        )
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(self.device)
+    
+    def continuous_train(self, document: str, label: int):
+        # Update model with each new labeled document
+        inputs = self.tokenizer(document, return_tensors='pt', truncation=True, 
+                                max_length=512, padding=True)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        outputs = self.model(**inputs, labels=torch.tensor([label]).to(self.device))
+        loss = outputs.loss
+        loss.backward()
+        # Optimizer step (managed externally)
+        
+    def rank_for_review(self, documents: List[str]) -> List[Tuple[int, float]]:
+        # Use uncertainty sampling to select next documents for review
+        predictions = self.predict_batch(documents)
+        # Return documents closest to decision boundary
+        uncertainties = [abs(0.5 - p) for p in predictions]
+        ranked = sorted(enumerate(uncertainties), key=lambda x: x[1])
+        return ranked[:100]  # Top 100 most uncertain
+```
+
+**c) Named Entity Recognition:**
+```python
+# Using spaCy with custom entities
+import spacy
+from spacy.training import Example
+
+class CustomNER:
+    def __init__(self):
+        self.nlp = spacy.load('en_core_web_trf')  # Transformer-based
+        # Add custom entity types
+        self.add_custom_entities(['TRANSACTION_ID', 'INTERNAL_PROJECT', 
+                                  'COMPETITOR', 'CONFIDENTIAL_DESIGNATION'])
+    
+    def extract_entities(self, text: str) -> List[Dict]:
+        doc = self.nlp(text)
+        entities = []
+        for ent in doc.ents:
+            entities.append({
+                'text': ent.text,
+                'type': ent.label_,
+                'start': ent.start_char,
+                'end': ent.end_char,
+                'confidence': self._calculate_confidence(ent)
+            })
+        return entities
+    
+    def train_on_annotations(self, examples: List[Tuple[str, Dict]]):
+        # Incremental training on annotated examples
+        optimizer = self.nlp.resume_training()
+        for text, annotations in examples:
+            doc = self.nlp.make_doc(text)
+            example = Example.from_dict(doc, annotations)
+            self.nlp.update([example], sgd=optimizer)
+```
+
+**d) Sentiment & Emotion Analysis:**
+```python
+from transformers import pipeline
+
+class SentimentAnalyzer:
+    def __init__(self):
+        # Multi-label emotion classifier
+        self.emotion_classifier = pipeline(
+            "text-classification",
+            model="j-hartmann/emotion-english-distilroberta-base",
+            top_k=None
+        )
+        
+        # Sentiment with intensity
+        self.sentiment_classifier = pipeline(
+            "sentiment-analysis",
+            model="cardiffnlp/twitter-roberta-base-sentiment-latest"
+        )
+    
+    def analyze(self, text: str) -> Dict:
+        emotions = self.emotion_classifier(text)[0]
+        sentiment = self.sentiment_classifier(text)[0]
+        
+        return {
+            'sentiment': {
+                'label': sentiment['label'],
+                'score': sentiment['score']
+            },
+            'emotions': {
+                e['label']: e['score'] for e in emotions
+            },
+            'urgency_score': self._detect_urgency(text),
+            'formality_score': self._assess_formality(text)
+        }
+    
+    def _detect_urgency(self, text: str) -> float:
+        # Custom logic for urgency detection
+        urgency_keywords = ['urgent', 'asap', 'immediately', 'critical', 
+                           'emergency', 'deadline']
+        # TF-IDF or neural approach
+        pass
+```
+
+**e) Compliance Rule Engine:**
+```python
+class ComplianceRuleEngine:
+    def __init__(self):
+        self.rules = self._load_rules()
+        self.ml_models = self._load_ml_detectors()
+    
+    def evaluate(self, document: Dict) -> List[Violation]:
+        violations = []
+        
+        # Pattern-based rules (fast)
+        for rule in self.rules:
+            if rule.matches(document):
+                violations.append(Violation(
+                    rule_id=rule.id,
+                    severity=rule.severity,
+                    confidence=1.0,
+                    type='rule_based'
+                ))
+        
+        # ML-based detection (slower, more nuanced)
+        for detector in self.ml_models:
+            result = detector.predict(document)
+            if result['violation_probability'] > 0.7:
+                violations.append(Violation(
+                    rule_id=detector.rule_id,
+                    severity=detector.severity,
+                    confidence=result['violation_probability'],
+                    type='ml_based',
+                    explanation=result.get('explanation')
+                ))
+        
+        return self._deduplicate_violations(violations)
+    
+    def _load_rules(self):
+        # Load from database
+        # Example: FCPA rule for payments to foreign officials
+        return [
+            BooleanRule(
+                id='FCPA-001',
+                pattern='(payment|money|cash) AND (government|official|minister) AND (foreign|overseas)',
+                severity='HIGH',
+                description='Potential FCPA violation - payment to foreign official'
+            ),
+            # ... hundreds more rules
+        ]
+```
+
+**Model Training Infrastructure:**
+```python
+# MLOps pipeline using MLflow
+import mlflow
+from mlflow.tracking import MlflowClient
+
+class ModelTrainer:
+    def __init__(self, experiment_name: str):
+        mlflow.set_experiment(experiment_name)
+        self.client = MlflowClient()
+    
+    def train_and_register(self, training_data, model_params):
+        with mlflow.start_run():
+            # Log parameters
+            mlflow.log_params(model_params)
+            
+            # Train model
+            model = self._train_model(training_data, model_params)
+            
+            # Evaluate
+            metrics = self._evaluate_model(model, validation_data)
+            mlflow.log_metrics(metrics)
+            
+            # Log model
+            mlflow.pytorch.log_model(model, "model")
+            
+            # Register if meets threshold
+            if metrics['f1_score'] > 0.85:
+                model_uri = f"runs:/{mlflow.active_run().info.run_id}/model"
+                mlflow.register_model(model_uri, "RelevanceClassifier")
+```
+
+**Model Deployment:**
+- A/B testing framework for model comparison
+- Shadow mode deployment (run new model alongside production)
+- Gradual rollout with monitoring
+- Rollback capability
+- Model versioning and lineage tracking
+
+#### 6. **Analytics & Reporting Service**
+**Technology**: 
+- Python (FastAPI) for API
+- Apache Spark for large-scale data processing
+- Pandas for in-memory analytics
+
+**Components:**
+
+**a) Real-Time Analytics:**
+```python
+# Using Apache Flink for stream processing
+from pyflink.datastream import StreamExecutionEnvironment
+from pyflink.table import StreamTableEnvironment
+
+env = StreamExecutionEnvironment.get_execution_environment()
+table_env = StreamTableEnvironment.create(env)
+
+# Define source (Kafka topic with document events)
+table_env.execute_sql("""
+    CREATE TABLE document_events (
+        document_id STRING,
+        matter_id STRING,
+        event_type STRING,
+        user_id STRING,
+        timestamp TIMESTAMP(3),
+        metadata MAP<STRING, STRING>
+    ) WITH (
+        'connector' = 'kafka',
+        'topic' = 'document-events',
+        'properties.bootstrap.servers' = 'kafka:9092',
+        'format' = 'json'
+    )
+""")
+
+# Real-time aggregation
+table_env.execute_sql("""
+    CREATE TABLE review_rate_by_user AS
+    SELECT 
+        user_id,
+        COUNT(*) as documents_reviewed,
+        TUMBLE_END(timestamp, INTERVAL '1' HOUR) as window_end
+    FROM document_events
+    WHERE event_type = 'REVIEW_COMPLETE'
+    GROUP BY user_id, TUMBLE(timestamp, INTERVAL '1' HOUR)
+""")
+```
+
+**b) OLAP Cube for Multi-Dimensional Analysis:**
+```python
+# Using ClickHouse for OLAP queries
+CREATE TABLE document_analytics (
+    matter_id String,
+    custodian String,
+    department String,
+    document_type String,
+    date Date,
+    review_status String,
+    relevance String,
+    privilege String,
+    file_size UInt64,
+    review_time_seconds UInt32
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(date)
+ORDER BY (matter_id, date, custodian);
+
+-- Fast aggregation queries
+SELECT 
+    custodian,
+    COUNT(*) as total_docs,
+    SUM(file_size) as total_size,
+    AVG(review_time_seconds) as avg_review_time,
+    countIf(relevance = 'Relevant') as relevant_docs
+FROM document_analytics
+WHERE matter_id = 'M-12345'
+  AND date >= '2024-01-01'
+GROUP BY custodian
+ORDER BY total_docs DESC;
+```
+
+**c) Report Generation:**
+```python
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+
+class ReportGenerator:
+    def generate_production_report(self, matter_id: str, production_id: str):
+        data = self._fetch_production_data(matter_id, production_id)
+        
+        pdf = SimpleDocTemplate(f"production_report_{production_id}.pdf", 
+                                pagesize=letter)
+        elements = []
+        
+        # Header
+        elements.append(Paragraph(f"Production Report: {production_id}", 
+                                  self.styles['Title']))
+        
+        # Summary statistics table
+        summary_data = [
+            ['Metric', 'Value'],
+            ['Total Documents', data['total_docs']],
+            ['Date Range', f"{data['start_date']} - {data['end_date']}"],
+            ['Total Pages', data['total_pages']],
+            ['Privileged Documents', data['privileged_count']]
+        ]
+        
+        table = Table(summary_data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        elements.append(table)
+        
+        pdf.build(elements)
+```
+
+#### 7. **Workflow & Orchestration Service**
+**Technology**: Temporal.io or Apache Airflow
+
+**Workflow Examples:**
+
+**a) Document Processing Workflow:**
+```python
+# Temporal workflow definition
+from temporalio import workflow, activity
+from datetime import timedelta
+
+@workflow.defn
+class DocumentIngestionWorkflow:
+    @workflow.run
+    async def run(self, file_path: str, matter_id: str) -> str:
+        # Step 1: Upload to object storage
+        object_key = await workflow.execute_activity(
+            upload_to_s3,
+            args=[file_path],
+            start_to_close_timeout=timedelta(minutes=10)
+        )
+        
+        # Step 2: Extract text
+        extracted_text = await workflow.execute_activity(
+            extract_text,
+            args=[object_key],
+            start_to_close_timeout=timedelta(minutes=30)
+        )
+        
+        # Step 3: Run OCR if needed
+        if extracted_text.needs_ocr:
+            ocr_text = await workflow.execute_activity(
+                perform_ocr,
+                args=[object_key],
+                start_to_close_timeout=timedelta(hours=2)
+            )
+            extracted_text.content += ocr_text
+        
+        # Step 4: Extract entities
+        entities = await workflow.execute_activity(
+            extract_entities,
+            args=[extracted_text.content],
+            start_to_close_timeout=timedelta(minutes=5)
+        )
+        
+        # Step 5: Generate embeddings
+        embeddings = await workflow.execute_activity(
+            generate_embeddings,
+            args=[extracted_text.content],
+            start_to_close_timeout=timedelta(minutes=5)
+        )
+        
+        # Step 6: Index in Elasticsearch
+        doc_id = await workflow.execute_activity(
+            index_document,
+            args=[{
+                'matter_id': matter_id,
+                'object_key': object_key,
+                'content': extracted_text.content,
+                'entities': entities,
+                'embeddings': embeddings
+            }],
+            start_to_close_timeout=timedelta(minutes=5)
+        )
+        
+        # Step 7: Run compliance rules
+        await workflow.execute_activity(
+            run_compliance_check,
+            args=[doc_id],
+            start_to_close_timeout=timedelta(minutes=10)
+        )
+        
+        return doc_id
+```
+
+**b) Legal Hold Workflow:**
+```python
+@workflow.defn
+class LegalHoldWorkflow:
+    @workflow.run
+    async def run(self, custodians: List[str], matter_id: str):
+        # Send hold notices
+        for custodian in custodians:
+            await workflow.execute_activity(
+                send_hold_notice,
+                args=[custodian, matter_id],
+                start_to_close_timeout=timedelta(minutes=5)
+            )
+        
+        # Wait for acknowledgments (with timeout)
+        acknowledgments = await workflow.wait_condition(
+            lambda: self.all_acknowledged(),
+            timeout=timedelta(days=7)
+        )
+        
+        if not acknowledgments:
+            # Escalate to manager
+            await workflow.execute_activity(
+                escalate_hold_notice,
+                args=[custodians],
+                start_to_close_timeout=timedelta(minutes=5)
+            )
+        
+        # Schedule follow-up reminders
+        await workflow.timer(duration=timedelta(days=30))
+        await workflow.execute_activity(
+            send_hold_reminder,
+            args=[custodians, matter_id]
+        )
+```
+
+#### 8. **Notification Service**
+**Technology**: 
+- Node.js with Bull queue for job processing
+- WebSockets (Socket.io) for real-time push
+- Email: SendGrid or AWS SES
+- SMS: Twilio
+- Push notifications: Firebase Cloud Messaging
+
+**Architecture:**
+```javascript
+// Notification router
+class NotificationService {
+  async sendNotification(notification) {
+    const { userId, type, priority, content } = notification;
+    
+    // Get user preferences
+    const preferences = await this.getUserPreferences(userId);
+    
+    // Route based on priority and preferences
+    const channels = this.determineChannels(priority, preferences);
+    
+    await Promise.all(channels.map(channel => {
+      switch(channel) {
+        case 'email':
+          return this.sendEmail(userId, content);
+        case 'sms':
+          return this.sendSMS(userId, content);
+        case 'push':
+          return this.sendPushNotification(userId, content);
+        case 'websocket':
+          return this.sendWebSocketNotification(userId, content);
+      }
+    }));
+    
+    // Log notification
+    await this.logNotification(notification, channels);
+  }
+  
+  determineChannels(priority, preferences) {
+    if (priority === 'CRITICAL') {
+      return ['email', 'sms', 'push', 'websocket'];
+    } else if (priority === 'HIGH') {
+      return preferences.highPriorityChannels || ['email', 'websocket'];
+    } else {
+      return preferences.defaultChannels || ['websocket'];
+    }
+  }
+}
+```
+
+#### 9. **Compliance Monitoring Service**
+**Technology**: 
+- Go for high-performance real-time processing
+- Apache Kafka for event streaming
+
+**Real-Time Processing Pipeline:**
+```go
+// Kafka consumer for real-time email monitoring
+package main
+
+import (
+    "github.com/confluentinc/confluent-kafka-go/kafka"
+    "context"
+)
+
+type EmailMonitor struct {
+    consumer      *kafka.Consumer
+    ruleEngine    *RuleEngine
+    alertService  *AlertService
+}
+
+func (m *EmailMonitor) Start(ctx context.Context) {
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        default:
+            msg, err := m.consumer.ReadMessage(100 * time.Millisecond)
+            if err != nil {
+                continue
+            }
+            
+            // Parse email
+            email := ParseEmail(msg.Value)
+            
+            // Evaluate rules in parallel
+            violations := m.ruleEngine.EvaluateAll(email)
+            
+            if len(violations) > 0 {
+                // Determine if should block
+                shouldBlock := m.shouldBlockEmail(violations)
+                
+                if shouldBlock {
+                    // Prevent email from sending
+                    m.blockEmail(email.ID)
+                }
+                
+                // Create alerts
+                for _, violation := range violations {
+                    m.alertService.CreateAlert(Alert{
+                        DocumentID: email.ID,
+                        Violation:  violation,
+                        Timestamp:  time.Now(),
+                        Blocked:    shouldBlock,
+                    })
+                }
+            }
+            
+            // Commit offset
+            m.consumer.CommitMessage(msg)
+        }
+    }
+}
+
+func (m *EmailMonitor) shouldBlockEmail(violations []Violation) bool {
+    for _, v := range violations {
+        if v.Severity == "CRITICAL" && v.Confidence > 0.9 {
+            return true
+        }
+    }
+    return false
+}
+```
+
+**Rule Engine Implementation:**
+```go
+type Rule struct {
+    ID          string
+    Name        string
+    Description string
+    Severity    string
+    Pattern     CompiledPattern
+    MLModel     *MLModel
+}
+
+type RuleEngine struct {
+    rules      []Rule
+    mlService  *MLService
+}
+
+func (re *RuleEngine) EvaluateAll(doc Document) []Violation {
+    violations := make([]Violation, 0)
+    
+    // Evaluate pattern-based rules (fast path)
+    for _, rule := range re.rules {
+        if rule.Pattern != nil {
+            if matches := rule.Pattern.Match(doc.Content); matches {
+                violations = append(violations, Violation{
+                    RuleID:     rule.ID,
+                    Severity:   rule.Severity,
+                    Confidence: 1.0,
+                    Type:       "pattern",
+                })
+            }
+        }
+    }
+    
+    // Evaluate ML-based rules (slower, more accurate)
+    for _, rule := range re.rules {
+        if rule.MLModel != nil {
+            prediction := re.mlService.Predict(rule.MLModel, doc)
+            if prediction.Probability > rule.Threshold {
+                violations = append(violations, Violation{
+                    RuleID:      rule.ID,
+                    Severity:    rule.Severity,
+                    Confidence:  prediction.Probability,
+                    Type:        "ml",
+                    Explanation: prediction.Explanation,
+                })
+            }
+        }
+    }
+    
+    return violations
+}
+```
+
+---
+
+## IV. DATA LAYER
+
+### Database Architecture
+
+#### 1. **PostgreSQL (Primary Relational Database)**
+**Use Cases:**
+- User accounts, roles, permissions
+- Matter metadata, custodian information
+- Review codes, tags, annotations
+- Workflow state, task assignments
+- Audit logs
+
+**Schema Design Highlights:**
+```sql
+-- Multi-tenant isolation
+CREATE SCHEMA tenant_1;
+CREATE SCHEMA tenant_2;
+
+-- Partitioned tables for scale
+CREATE TABLE audit_log (
+    id BIGSERIAL,
+    tenant_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    resource_type VARCHAR(50),
+    resource_id VARCHAR(255),
+    timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+    metadata JSONB
+) PARTITION BY RANGE (timestamp);
+
+CREATE TABLE audit_log_2024_q1 PARTITION OF audit_log
+    FOR VALUES FROM ('2024-01-01') TO ('2024-04-01');
+
+CREATE TABLE audit_log_2024_q2 PARTITION OF audit_log
+    FOR VALUES FROM ('2024-04-01') TO ('2024-07-01');
+
+-- Optimized indexes
+CREATE INDEX idx_audit_log_user_timestamp 
+    ON audit_log(user_id, timestamp DESC);
+CREATE INDEX idx_audit_log_resource 
+    ON audit_log(resource_type, resource_id);
+CREATE INDEX idx_audit_log_metadata 
+    ON audit_log USING GIN(metadata);
+
+-- Document metadata (references to actual documents in object storage)
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    matter_id UUID NOT NULL REFERENCES matters(id),
+    custodian_id INTEGER REFERENCES custodians(id),
+    file_name VARCHAR(1000) NOT NULL,
+    file_type VARCHAR(50),
+    file_size BIGINT,
+    object_key VARCHAR(1000) NOT NULL, -- S3 key
+    md5_hash VARCHAR(32) NOT NULL,
+    sha256_hash VARCHAR(64) NOT NULL,
+    created_date TIMESTAMP,
+    modified_date TIMESTAMP,
+    ingested_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    
+    -- Email-specific
+    email_from VARCHAR(255),
+    email_to TEXT[],
+    email_cc TEXT[],
+    email_subject TEXT,
+    email_thread_id VARCHAR(255),
+    
+    -- Review state
+    review_status VARCHAR(50) DEFAULT 'NOT_REVIEWED',
+    assigned_to INTEGER REFERENCES users(id),
+    reviewed_by INTEGER REFERENCES users(id),
+    reviewed_at TIMESTAMP,
+    
+    -- Coding
+    relevance VARCHAR(50),
+    privilege VARCHAR(50),
+    confidentiality VARCHAR(50),
+    issues TEXT[],
+    tags TEXT[],
+    
+    -- AI scores
+    relevance_score FLOAT,
+    sentiment_score FLOAT,
+    risk_score FLOAT,
+    
+    -- Full-text search (for SQL-based search)
+    content_tsvector tsvector GENERATED ALWAYS AS 
+        (to_tsvector('english', COALESCE(file_name, '') || ' ' || COALESCE(email_subject, ''))) STORED
+);
+
+-- Indexes for common queries
+CREATE INDEX idx_documents_matter ON documents(matter_id);
+CREATE INDEX idx_documents_custodian ON documents(custodian_id);
+CREATE INDEX idx_documents_hash ON documents(md5_hash, sha256_hash);
+CREATE INDEX idx_documents_review_status ON documents(matter_id, review_status);
+CREATE INDEX idx_documents_assigned ON documents(assigned_to) WHERE assigned_to IS NOT NULL;
+CREATE INDEX idx_documents_fts ON documents USING GIN(content_tsvector);
+```
+
+**High Availability:**
+- PostgreSQL replication (streaming replication)
+- Patroni for automatic failover
+- PgBouncer for connection pooling
+- Read replicas for analytics queries
+
+#### 2. **MongoDB (Document Store)**
+**Use Cases:**
+- Extracted document content (text, OCR output)
+- Unstructured metadata
+- Annotations with complex nested structures
+- Entity extraction results
+- Communication threads with nested replies
+
+**Example Schema:**
+```javascript
+// Documents collection
+{
+  _id: ObjectId("..."),
+  document_id: "uuid",
+  matter_id: "uuid",
+  
+  // Content
+  extracted_text: "Full document text...",
+  ocr_text: "OCR output...",
+  pages: [
+    {
+      page_number: 1,
+      text: "Page 1 text...",
+      ocr_confidence: 0.95,
+      image_url: "s3://..."
+    }
+  ],
+  
+  // Entities
+  entities: [
+    {
+      text: "John Smith",
+      type: "PERSON",
+      start: 45,
+      end: 55,
+      confidence: 0.98,
+      metadata: {
+        role: "CEO",
+        company: "Acme Corp"
+      }
+    }
+  ],
+  
+  // Annotations
+  annotations: [
+    {
+      user_id: 123,
+      timestamp: ISODate("2024-10-29T12:00:00Z"),
+      type: "highlight",
+      start: 100,
+      end: 150,
+      color: "#ffff00",
+      note: "Key evidence"
+    }
+  ],
+  
+  // Analysis results
+  sentiment: {
+    overall: "negative",
+    score: -0.65,
+    emotions: {
+      anger: 0.7,
+      fear: 0.3
+    }
+  },
+  
+  // Email thread structure
+  thread: {
+    root_id: "uuid",
+    parent_id: "uuid",
+    children_ids: ["uuid1", "uuid2"],
+    depth: 2
+  }
+}
+
+// Indexes
+db.documents.createIndex({ "document_id": 1 }, { unique: true })
+db.documents.createIndex({ "matter_id": 1, "document_id": 1 })
+db.documents.createIndex({ "entities.type": 1, "entities.text": 1 })
+db.documents.createIndex({ "extracted_text": "text" }) // Full-text search
+```
+
+#### 3. **Vector Database (Pinecone, Weaviate, or Milvus)**
+**Use Cases:**
+- Semantic search via embeddings
+- Document similarity
+- Conceptual clustering
+- TAR 2.0 continuous learning
+
+**Architecture:**
+```python
+# Using Pinecone
+import pinecone
+
+pinecone.init(api_key="...", environment="us-west1-gcp")
+
+# Create index for embeddings
+index = pinecone.Index("document-embeddings")
+
+# Index structure
+# Namespace: matter_id for isolation
+# Vectors: 768-dimensional (BERT) or 1536 (OpenAI)
+# Metadata: document_id, relevance, tags for filtering
+
+# Insert embeddings
+index.upsert(
+    vectors=[
+        {
+            "id": "doc-123",
+            "values": embedding_vector,  # 768-dim array
+            "metadata": {
+                "document_id": "uuid",
+                "matter_id": "matter-uuid",
+                "custodian": "john.doe@company.com",
+                "file_type": "email",
+                "relevance": "relevant",
+                "tags": ["contract", "merger"]
+            }
+        }
+    ],
+    namespace="matter-uuid"
+)
+
+# Semantic search with metadata filtering
+results = index.query(
+    vector=query_embedding,
+    top_k=10,
+    namespace="matter-uuid",
+    filter={
+        "custodian": {"$eq": "john.doe@company.com"},
+        "file_type": {"$in": ["email", "pdf"]}
+    },
+    include_metadata=True
+)
+```
+
+**Alternative: Elasticsearch with Dense Vectors:**
+```json
+// Hybrid approach: Elasticsearch for both keyword and vector search
+{
+  "query": {
+    "script_score": {
+      "query": {
+        "bool": {
+          "must": [
+            { "match": { "content": "merger acquisition" } }
+          ],
+          "filter": [
+            { "term": { "matter_id": "matter-123" } },
+            { "range": { "created_date": { "gte": "2024-01-01" } } }
+          ]
+        }
+      },
+      "script": {
+        "source": "cosineSimilarity(params.query_vector, 'embedding_vector') + 1.0",
+        "params": {
+          "query_vector": [0.1, 0.2, ...]
+        }
+      }
+    }
+  }
+}
+```
+
+#### 4. **Redis (Caching & Session Store)**
+**Use Cases:**
+- Session management
+- API response caching
+- Real-time leaderboards (review rates)
+- Pub/sub for real-time notifications
+- Rate limiting
+- Deduplication tracking (hashes)
+
+**Implementation:**
+```python
+import redis
+from redis.cluster import RedisCluster
+
+# Redis Cluster for horizontal scaling
+redis_client = RedisCluster(
+    host='redis-cluster',
+    port=6379,
+    decode_responses=True
+)
+
+# Session management
+def store_session(session_id: str, user_data: dict, ttl: int = 3600):
+    redis_client.setex(
+        f"session:{session_id}",
+        ttl,
+        json.dumps(user_data)
+    )
+
+# API response caching
+def cached_search(search_params: dict):
+    cache_key = f"search:{hash(json.dumps(search_params))}"
+    
+    # Try cache first
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
+    
+    # Execute search
+    results = perform_search(search_params)
+    
+    # Cache for 5 minutes
+    redis_client.setex(cache_key, 300, json.dumps(results))
+    
+    return results
+
+# Rate limiting
+def check_rate_limit(user_id: str, limit: int = 100, window: int = 3600):
+    key = f"rate_limit:{user_id}:{int(time.time() // window)}"
+    current = redis_client.incr(key)
+    if current == 1:
+        redis_client.expire(key, window)
+    return current <= limit
+
+# Real-time leaderboard (review rates)
+def update_review_count(user_id: str):
+    redis_client.zincrby("review_leaderboard", 1, user_id)
+
+def get_top_reviewers(limit: int = 10):
+    return redis_client.zrevrange("review_leaderboard", 0, limit-1, withscores=True)
+
+# Pub/sub for real-time notifications
+pubsub = redis_client.pubsub()
+pubsub.subscribe('notifications')
+
+for message in pubsub.listen():
+    if message['type'] == 'message':
+        handle_notification(message['data'])
+```
+
+#### 5. **Time-Series Database (InfluxDB or TimescaleDB)**
+**Use Cases:**
+- Performance metrics
+- User activity tracking
+- System monitoring
+- Review rate trending
+- Compliance metric tracking over time
+
+**Schema Example (TimescaleDB):**
+```sql
+-- Hypertable for time-series data
+CREATE TABLE metrics (
+    time TIMESTAMPTZ NOT NULL,
+    metric_name VARCHAR(100) NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    tags JSONB,
+    metadata JSONB
+);
+
+-- Convert to hypertable (TimescaleDB)
+SELECT create_hypertable('metrics', 'time');
+
+-- Create indexes
+CREATE INDEX idx_metrics_name_time ON metrics(metric_name, time DESC);
+CREATE INDEX idx_metrics_tags ON metrics USING GIN(tags);
+
+-- Insert review rate metrics
+INSERT INTO metrics (time, metric_name, value, tags)
+VALUES 
+    (NOW(), 'review_rate', 45.2, '{"user_id": 123, "matter_id": "M-456"}'),
+    (NOW(), 'api_latency', 125.5, '{"endpoint": "/api/search", "method": "POST"}');
+
+-- Query with aggregation
+SELECT 
+    time_bucket('1 hour', time) AS hour,
+    metric_name,
+    AVG(value) as avg_value,
+    MAX(value) as max_value
+FROM metrics
+WHERE metric_name = 'review_rate'
+  AND time > NOW() - INTERVAL '24 hours'
+GROUP BY hour, metric_name
+ORDER BY hour DESC;
+
+-- Continuous aggregates for common queries
+CREATE MATERIALIZED VIEW hourly_review_rates
+WITH (timescaledb.continuous) AS
+SELECT 
+    time_bucket('1 hour', time) AS hour,
+    tags->>'user_id' as user_id,
+    AVG(value) as avg_rate,
+    SUM(value) as total_reviewed
+FROM metrics
+WHERE metric_name = 'review_rate'
+GROUP BY hour, user_id;
+```
+
+#### 6. **Object Storage (S3 or MinIO)**
+**Use Cases:**
+- Original document files (native format)
+- Processed images (TIFF, PDF)
+- Production sets
+- Backups
+- Large attachments
+
+**Bucket Structure:**
+```
+bucket: ediscovery-documents
+├── matters/
+│   ├── {matter_id}/
+│   │   ├── originals/
+│   │   │   ├── {custodian_id}/
+│   │   │   │   └── {document_id}.{ext}
+│   │   ├── processed/
+│   │   │   ├── tiff/
+│   │   │   │   └── {document_id}_{page}.tif
+│   │   │   └── pdf/
+│   │   │       └── {document_id}.pdf
+│   │   ├── productions/
+│   │   │   └── {production_id}/
+│   │   │       └── {bates_range}.pdf
+│   │   └── exports/
+│   │       └── {export_id}.zip
+```
+
+**S3 Configuration:**
+```python
+import boto3
+from botocore.config import Config
+
+# S3 client with optimizations
+s3_client = boto3.client(
+    's3',
+    config=Config(
+        max_pool_connections=50,  # Handle concurrent uploads
+        retries={'max_attempts': 3}
+    )
+)
+
+# Lifecycle policies for cost optimization
+lifecycle_policy = {
+    'Rules': [
+        {
+            'Id': 'Move old productions to Glacier',
+            'Status': 'Enabled',
+            'Prefix': 'matters/',
+            'Transitions': [
+                {
+                    'Days': 90,
+                    'StorageClass': 'STANDARD_IA'  # Infrequent Access
+                },
+                {
+                    'Days': 365,
+                    'StorageClass': 'GLACIER'
+                }
+            ]
+        }
+    ]
+}
+
+s3_client.put_bucket_lifecycle_configuration(
+    Bucket='ediscovery-documents',
+    LifecycleConfiguration=lifecycle_policy
+)
+
+# Presigned URLs for secure temporary access
+def generate_download_url(document_id: str, expiration: int = 3600):
+    object_key = get_object_key(document_id)
+    url = s3_client.generate_presigned_url(
+        'get_object',
+        Params={'Bucket': 'ediscovery-documents', 'Key': object_key},
+        ExpiresIn=expiration
+    )
+    return url
+
+# Multipart upload for large files
+def upload_large_file(file_path: str, object_key: str):
+    config = boto3.s3.transfer.TransferConfig(
+        multipart_threshold=1024 * 25,  # 25MB
+        max_concurrency=10,
+        multipart_chunksize=1024 * 25,
+        use_threads=True
+    )
+    
+    s3_client.upload_file(
+        file_path,
+        'ediscovery-documents',
+        object_key,
+        Config=config
+    )
+```
+
+---
+
+## V. INFRASTRUCTURE LAYER
+
+### Container Orchestration (Kubernetes)
+
+**Cluster Architecture:**
+```yaml
+# Namespace isolation per environment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ediscovery-prod
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ediscovery-staging
+```
+
+**Microservice Deployment Example:**
+```yaml
+# Document processing service deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: document-processor
+  namespace: ediscovery-prod
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: document-processor
+  template:
+    metadata:
+      labels:
+        app: document-processor
+    spec:
+      # Anti-affinity to spread across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - document-processor
+              topologyKey: kubernetes.io/hostname
+      
+      containers:
+      - name: processor
+        image: ediscovery/document-processor:v1.2.3
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: connection-string
+        - name: S3_BUCKET
+          value: "ediscovery-documents"
+        
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: document-processor-hpa
+  namespace: ediscovery-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: document-processor
+  minReplicas: 5
+  maxReplicas: 50
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: document-processor
+  namespace: ediscovery-prod
+spec:
+  selector:
+    app: document-processor
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
+```
+
+**GPU Node Pool for ML Workloads:**
+```yaml
+# Node pool for GPU workloads (GKE example)
+apiVersion: v1
+kind: NodePool
+metadata:
+  name: gpu-nodes
+spec:
+  machineType: n1-standard-8
+  accelerators:
+  - type: nvidia-tesla-t4
+    count: 1
+  autoscaling:
+    minNodeCount: 0
+    maxNodeCount: 10
+  labels:
+    workload: ml-inference
+---
+# ML service deployment targeting GPU nodes
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-inference
+spec:
+  replicas: 3
+  template:
+    spec:
+      nodeSelector:
+        workload: ml-inference
+      containers:
+      - name: ml-model
+        image: ediscovery/ml-inference:v2.0.0
+        resources:
+          limits:
+            nvidia.com/gpu: 1  # Request 1 GPU
+```
+
+### Message Queue (Kafka)
+
+**Cluster Setup:**
+```yaml
+# Kafka topics for event streaming
+topics:
+  - name: document-ingestion
+    partitions: 12
+    replication-factor: 3
+    config:
+      retention.ms: 604800000  # 7 days
+      compression.type: lz4
+  
+  - name: document-processed
+    partitions: 12
+    replication-factor: 3
+  
+  - name: compliance-alerts
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 2592000000  # 30 days
+  
+  - name: audit-log
+    partitions: 24
+    replication-factor: 3
+    config:
+      retention.ms: 31536000000  # 1 year
+```
+
+**Producer Configuration:**
+```python
+from confluent_kafka import Producer
+
+config = {
+    'bootstrap.servers': 'kafka-1:9092,kafka-2:9092,kafka-3:9092',
+    'compression.type': 'lz4',
+    'linger.ms': 10,  # Batch messages for 10ms
+    'batch.size': 32768,  # 32KB batches
+    'acks': 'all',  # Wait for all replicas
+    'idempotence': True,  # Exactly-once semantics
+}
+
+producer = Producer(config)
+
+def publish_document_event(document_id: str, event_type: str, metadata: dict):
+    event = {
+        'document_id': document_id,
+        'event_type': event_type,
+        'timestamp': datetime.utcnow().isoformat(),
+        'metadata': metadata
+    }
+    
+    producer.produce(
+        'document-processed',
+        key=document_id.encode(),
+        value=json.dumps(event).encode(),
+        callback=delivery_report
+    )
+    producer.poll(0)  # Trigger callbacks
+
+def delivery_report(err, msg):
+    if err:
+        logger.error(f"Delivery failed: {err}")
+    else:
+        logger.info(f"Message delivered to {msg.topic()} [{msg.partition()}]")
+```
+
+### Load Balancing & Traffic Management
+
+**NGINX Ingress Controller:**
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ediscovery-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"  # 100 req/sec per IP
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"  # Max upload size
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - ediscovery.company.com
+    secretName: ediscovery-tls
+  rules:
+  - host: ediscovery.company.com
+    http:
+      paths:
+      - path: /api/v1/documents
+        pathType: Prefix
+        backend:
+          service:
+            name: document-service
+            port:
+              number: 80
+      - path: /api/v1/search
+        pathType: Prefix
+        backend:
+          service:
+            name: search-service
+            port:
+              number: 80
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+```
+
+**CloudFlare CDN Configuration:**
+```javascript
+// Cache static assets at edge
+const cdnConfig = {
+  caching: {
+    rules: [
+      {
+        match: '*.js',
+        ttl: 86400,  // 24 hours
+        browser_ttl: 3600
+      },
+      {
+        match: '*.css',
+        ttl: 86400,
+        browser_ttl: 3600
+      },
+      {
+        match: '/api/documents/*/thumbnail',
+        ttl: 3600,  // Cache thumbnails
+        browser_ttl: 600
+      }
+    ]
+  },
+  security: {
+    waf: 'enabled',
+    ddos_protection: 'enabled',
+    rate_limiting: {
+      '/api/*': {
+        threshold: 1000,  // requests per minute
+        period: 60
+      }
+    }
+  }
+};
+```
+
+### Monitoring & Observability
+
+**Prometheus + Grafana Stack:**
+
+```yaml
+# ServiceMonitor for automatic scraping
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: document-processor-metrics
+spec:
+  selector:
+    matchLabels:
+      app: document-processor
+  endpoints:
+  - port: metrics
+    interval: 30s
+```
+
+**Custom Metrics:**
+```python
+from prometheus_client import Counter, Histogram, Gauge
+
+# Define metrics
+documents_processed = Counter(
+    'documents_processed_total',
+    'Total documents processed',
+    ['matter_id', 'file_type']
+)
+
+processing_duration = Histogram(
+    'document_processing_duration_seconds',
+    'Time spent processing documents',
+    ['processing_stage']
+)
+
+active_reviews = Gauge(
+    'active_reviews',
+    'Number of documents currently being reviewed',
+    ['matter_id']
+)
+
+# Instrument code
+@processing_duration.labels('extraction').time()
+def extract_text(document):
+    # ... extraction logic
+    documents_processed.labels(document.matter_id, document.file_type).inc()
+```
+
+**Distributed Tracing (Jaeger/OpenTelemetry):**
+```python
+from opentelemetry import trace
+from opentelemetry.exporter.jaeger import JaegerExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Setup tracing
+tracer_provider = TracerProvider()
+jaeger_exporter = JaegerExporter(
+    agent_host_name="jaeger",
+    agent_port=6831,
+)
+tracer_provider.add_span_processor(BatchSpanProcessor(jaeger_exporter))
+trace.set_tracer_provider(tracer_provider)
+
+tracer = trace.get_tracer(__name__)
+
+# Instrument functions
+@tracer.start_as_current_span("process_document")
+def process_document(document_id: str):
+    with tracer.start_as_current_span("fetch_document"):
+        document = fetch_from_s3(document_id)
+    
+    with tracer.start_as_current_span("extract_text"):
+        text = extract_text(document)
+    
+    with tracer.start_as_current_span("run_ml_models"):
+        entities = extract_entities(text)
+        sentiment = analyze_sentiment(text)
+    
+    with tracer.start_as_current_span("index_document"):
+        index_in_elasticsearch(document_id, text, entities, sentiment)
+```
+
+**Logging (ELK Stack):**
+```python
+import logging
+from pythonjsonlogger import jsonlogger
+
+# Structured logging
+logger = logging.getLogger()
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter()
+logHandler.setFormatter(formatter)
+logger.addHandler(logHandler)
+logger.setLevel(logging.INFO)
+
+# Log with context
+logger.info("Document processed", extra={
+    'document_id': document_id,
+    'matter_id': matter_id,
+    'processing_time_ms': duration,
+    'file_type': file_type,
+    'entities_found': len(entities)
+})
+```
+
+**Logstash Pipeline:**
+```ruby
+input {
+  kafka {
+    bootstrap_servers => "kafka:9092"
+    topics => ["application-logs"]
+    codec => json
+  }
+}
+
+filter {
+  # Parse JSON logs
+  json {
+    source => "message"
+  }
+  
+  # Add metadata
+  mutate {
+    add_field => { "environment" => "production" }
+  }
+  
+  # Detect errors
+  if [level] == "ERROR" or [level] == "CRITICAL" {
+    mutate {
+      add_tag => [ "alert" ]
+    }
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["elasticsearch:9200"]
+    index => "logs-%{+YYYY.MM.dd}"
+  }
+  
+  # Send alerts to Slack
+  if "alert" in [tags] {
+    http {
+      url => "https://hooks.slack.com/services/..."
+      http_method => "post"
+      format => "json"
+    }
+  }
+}
+```
+
+### Security Infrastructure
+
+**Network Policies:**
+```yaml
+# Restrict traffic between services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: document-service-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: document-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: elasticsearch
+    ports:
+    - protocol: TCP
+      port: 9200
+```
+
+**Secrets Management (HashiCorp Vault):**
+```python
+import hvac
+
+# Vault client
+client = hvac.Client(url='https://vault:8200')
+client.auth.kubernetes.login(
+    role='ediscovery-app',
+    jwt=open('/var/run/secrets/kubernetes.io/serviceaccount/token').read()
+)
+
+# Retrieve secrets
+db_credentials = client.secrets.kv.v2.read_secret_version(
+    path='database/credentials'
+)
+
+# Use credentials
+database_url = db_credentials['data']['data']['connection_string']
+```
+
+**Encryption:**
+```python
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+
+# Encrypt sensitive data at application level
+class EncryptionService:
+    def __init__(self, master_key: bytes):
+        kdf = PBKDF2(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b'static_salt',  # Should be per-tenant
+            iterations=100000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(master_key))
+        self.cipher = Fernet(key)
+    
+    def encrypt(self, data: str) -> str:
+        return self.cipher.encrypt(data.encode()).decode()
+    
+    def decrypt(self, encrypted_data: str) -> str:
+        return self.cipher.decrypt(encrypted_data.encode()).decode()
+
+# Use for PII, sensitive documents
+encryption_service = EncryptionService(os.getenv('MASTER_KEY'))
+encrypted_ssn = encryption_service.encrypt(user.ssn)
+```
+
+---
+
+## VI. DEPLOYMENT & CI/CD
+
+### CI/CD Pipeline (GitLab CI or GitHub Actions)
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_REGISTRY: registry.company.com
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
+# Run unit tests
+test:
+  stage: test
+  image: python:3.11
+  script:
+    - pip install -r requirements.txt
+    - pytest tests/ --cov=app --cov-report=xml
+    - pylint app/
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+# Build Docker images
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $DOCKER_REGISTRY
+    - docker build -t $DOCKER_REGISTRY/document-service:$IMAGE_TAG .
+    - docker push $DOCKER_REGISTRY/document-service:$IMAGE_TAG
+    - docker tag $DOCKER_REGISTRY/document-service:$IMAGE_TAG $DOCKER_REGISTRY/document-service:latest
+    - docker push $DOCKER_REGISTRY/document-service:latest
+  only:
+    - main
+
+# Deploy to staging
+deploy_staging:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context staging
+    - kubectl set image deployment/document-service document-service=$DOCKER_REGISTRY/document-service:$IMAGE_TAG -n ediscovery-staging
+    - kubectl rollout status deployment/document-service -n ediscovery-staging
+  environment:
+    name: staging
+    url: https://staging.ediscovery.company.com
+  only:
+    - main
+
+# Deploy to production (manual)
+deploy_production:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context production
+    - kubectl set image deployment/document-service document-service=$DOCKER_REGISTRY/document-service:$IMAGE_TAG -n ediscovery-prod
+    - kubectl rollout status deployment/document-service -n ediscovery-prod
+  environment:
+    name: production
+    url: https://ediscovery.company.com
+  when: manual
+  only:
+    - main
+```
+
+### Blue-Green Deployment:
+```bash
+# Deploy to "green" environment
+kubectl apply -f k8s/deployment-green.yaml
+
+# Wait for health checks
+kubectl wait --for=condition=available --timeout=300s deployment/document-service-green
+
+# Switch traffic
+kubectl patch service document-service -p '{"spec":{"selector":{"version":"green"}}}'
+
+# Monitor for issues
+sleep 300
+
+# If successful, delete blue
+kubectl delete deployment document-service-blue
+
+# If issues, rollback
+# kubectl patch service document-service -p '{"spec":{"selector":{"version":"blue"}}}'
+```
+
+---
+
+## VII. DISASTER RECOVERY & BUSINESS CONTINUITY
+
+### Backup Strategy
+
+**Database Backups:**
+```bash
+# PostgreSQL continuous archiving
+# postgresql.conf
+archive_mode = on
+archive_command = 'aws s3 cp %p s3://ediscovery-backups/wal/%f'
+
+# Full backup daily
+pg_basebackup -D /backup -Ft -z -P -h postgres-primary
+
+# Upload to S3
+aws s3 sync /backup s3://ediscovery-backups/pg-base/$(date +%Y%m%d)/
+```
+
+**Elasticsearch Snapshots:**
+```python
+from elasticsearch import Elasticsearch
+
+es = Elasticsearch(['elasticsearch:9200'])
+
+# Create snapshot repository
+es.snapshot.create_repository(
+    repository='s3_backup',
+    body={
+        'type': 's3',
+        'settings': {
+            'bucket': 'ediscovery-es-backups',
+            'region': 'us-east-1',
+            'compress': True
+        }
+    }
+)
+
+# Take snapshot
+es.snapshot.create(
+    repository='s3_backup',
+    snapshot='snapshot_' + datetime.now().strftime('%Y%m%d'),
+    body={'indices': '*', 'ignore_unavailable': True}
+)
+
+# Schedule daily via cron
+```
+
+**S3 Cross-Region Replication:**
+```json
+{
+  "Role": "arn:aws:iam::...:role/s3-replication",
+  "Rules": [
+    {
+      "Status": "Enabled",
+      "Priority": 1,
+      "Filter": {},
+      "Destination": {
+        "Bucket": "arn:aws:s3:::ediscovery-documents-dr",
+        "ReplicationTime": {
+          "Status": "Enabled",
+          "Time": {
+            "Minutes": 15
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+### High Availability
+
+**Multi-Region Active-Active:**
+```
+Primary Region (us-east-1)          DR Region (us-west-2)
+├── Kubernetes Cluster              ├── Kubernetes Cluster
+├── PostgreSQL (Primary)            ├── PostgreSQL (Replica)
+├── Elasticsearch Cluster           ├── Elasticsearch Cluster
+├── Redis Cluster                   ├── Redis Cluster
+└── S3 Bucket (Replication)        └── S3 Bucket (Replica)
+
+Route53 Health Checks → Failover routing
+```
+
+**Automated Failover:**
+```python
+# Health check monitor
+class FailoverManager:
+    def __init__(self):
+        self.primary_healthy = True
+        self.route53 = boto3.client('route53')
+    
+    async def monitor_health(self):
+        while True:
+            primary_status = await self.check_region_health('us-east-1')
+            
+            if not primary_status and self.primary_healthy:
+                # Primary failed, initiate failover
+                logger.critical("Primary region unhealthy, failing over")
+                await self.failover_to_dr()
+                self.primary_healthy = False
+            
+            elif primary_status and not self.primary_healthy:
+                # Primary recovered
+                logger.info("Primary region recovered")
+                self.primary_healthy = True
+            
+            await asyncio.sleep(30)
+    
+    async def failover_to_dr(self):
+        # Update Route53 to point to DR region
+        self.route53.change_resource_record_sets(
+            HostedZoneId='Z123456',
+            ChangeBatch={
+                'Changes': [{
+                    'Action': 'UPSERT',
+                    'ResourceRecordSet': {
+                        'Name': 'ediscovery.company.com',
+                        'Type': 'A',
+                        'AliasTarget': {
+                            'HostedZoneId': 'Z789012',  # DR region
+                            'DNSName': 'dr-lb.us-west-2.elb.amazonaws.com',
+                            'EvaluateTargetHealth': True
+                        }
+                    }
+                }]
+            }
+        )
+        
+        # Promote DR PostgreSQL replica to primary
+        await self.promote_database_replica()
+        
+        # Send alerts
+        await self.send_alert("CRITICAL: Failover to DR region complete")
+```
+
+---
+
+This technical architecture provides a robust, scalable foundation for the eDiscovery and compliance platform. The system is designed for:
+
+1. **Scalability**: Horizontal scaling at every layer
+2. **Performance**: Optimized data structures, caching, async processing
+3. **Reliability**: High availability, automated failover, comprehensive monitoring
+4. **Security**: Defense in depth, encryption everywhere, zero-trust
+5. **Compliance**: Complete audit trails, data retention, legal hold capabilities
+
+Would you like me to elaborate on any specific component or discuss implementation priorities?

@@ -1,0 +1,212 @@
+create no code template rules for all aspects and potential investigations and red flags for the Foreign corrupt practices act
+
+Each rule includes:
+•	Category (e.g., payments, gifts, vendors)
+•	Trigger logic (natural language, ready for low-code translation)
+•	Example indicator
+•	Auto-score range
+•	Investigation workflow (what your software should automatically create)
+________________________________________
+🧩 1. Payments & Financial Transactions
+rules:
+  - code: FAST_PAY
+    category: Payments
+    description: "Invoice paid earlier than contractual terms, suggesting undue influence or favoritism."
+    trigger: "Payment date is >50% earlier than vendor payment terms or >30 days faster than historical average."
+    examples: ["Invoice paid in 2 days when terms are Net 60"]
+    score: 25
+    investigation: "Flag for 'unusual payment speed' review. Auto-create case for Accounts Payable audit."
+
+  - code: ROUND_DOLLAR
+    category: Payments
+    description: "Round-dollar or threshold-hugging amounts may indicate split invoicing or structuring."
+    trigger: "Amount divisible by 100 or just below approval limit."
+    examples: ["$9,950 where approval limit = $10,000"]
+    score: 20
+    investigation: "Check for invoice splitting or approval circumvention."
+
+  - code: DUPLICATE_PAYMENT
+    category: Payments
+    description: "Duplicate invoices or payments to same vendor within short interval."
+    trigger: "Same vendor, same amount, same invoice number within 7 days."
+    score: 40
+    investigation: "Review for duplicate payment fraud or kickbacks."
+
+  - code: OFFSHORE_PAYMENT
+    category: Payments
+    description: "Payments routed through offshore or sanctioned jurisdictions."
+    trigger: "Beneficiary bank located in high-risk/offshore jurisdiction list."
+    examples: ["Wire to Cayman Islands, Cyprus, or Seychelles"]
+    score: 50
+    investigation: "Verify beneficial owner and business justification."
+________________________________________
+🎁 2. Gifts, Travel, and Entertainment
+  - code: EXCESSIVE_GIFT
+    category: Gifts & Hospitality
+    description: "Gift or hospitality exceeds company or local monetary limits."
+    trigger: "Gift value > policy limit or exceeds threshold after cumulative tracking per recipient."
+    examples: ["Luxury watch for government official"]
+    score: 35
+    investigation: "Request documentation and approval justification."
+
+  - code: GOV_OFFICIAL_HOSPITALITY
+    category: Gifts & Hospitality
+    description: "Entertainment or hospitality provided to government officials."
+    trigger: "Recipient occupation or employer = government or state-owned enterprise."
+    examples: ["Paid vacation or event tickets for regulator"]
+    score: 45
+    investigation: "Confirm pre-approval and legitimate business purpose."
+
+  - code: REPEATED_MEALS
+    category: Gifts & Hospitality
+    description: "Multiple hospitality events for same official within short period."
+    trigger: "Same host and recipient within 30 days, cumulative spend > threshold."
+    score: 25
+    investigation: "Identify patterns of influence or grooming behavior."
+________________________________________
+🧾 3. Third-Party Vendors & Consultants
+  - code: PEP_VENDOR
+    category: Third Party
+    description: "Vendor or owner identified as Politically Exposed Person (PEP)."
+    trigger: "PEP database match ≥ 0.9 confidence."
+    score: 50
+    investigation: "Perform enhanced due diligence (EDD). Require ownership declaration."
+
+  - code: NEW_VENDOR_HIGH_SPEND
+    category: Third Party
+    description: "High spend with newly created vendor within 30 days."
+    trigger: "Vendor age <30 days AND spend >$50,000."
+    score: 25
+    investigation: "Confirm onboarding checks and beneficial ownership."
+
+  - code: SHELL_VENDOR
+    category: Third Party
+    description: "Vendor lacks physical address, website, or verified business registration."
+    trigger: "Missing registration number or identical address with employee."
+    score: 45
+    investigation: "Verify legitimacy and cross-check contact info with staff directory."
+
+  - code: INTERMEDIARY_CHAIN
+    category: Third Party
+    description: "Vendor payments routed through multiple intermediaries or subcontractors."
+    trigger: "Vendor has sub-vendor or payment intermediaries in high-risk countries."
+    score: 35
+    investigation: "Trace ultimate recipient and evaluate necessity of intermediaries."
+________________________________________
+⚙️ 4. Contracts, Licenses, and Permits
+  - code: LICENSE_FEE_SPIKE
+    category: Regulatory Interaction
+    description: "Unexplained spike in permit or license fees near contract award dates."
+    trigger: "License fee increased >200% vs prior year near tender activity."
+    score: 30
+    investigation: "Validate regulatory justification."
+
+  - code: DONATION_FOR_LICENSE
+    category: Regulatory Interaction
+    description: "Charitable donation linked to license or government approval."
+    trigger: "Donation recipient tied to approving ministry or official."
+    score: 45
+    investigation: "Confirm separation of donation and licensing decision."
+________________________________________
+🧍 5. Employee & Internal Relationships
+  - code: EMP_VENDOR_MATCH
+    category: Conflict of Interest
+    description: "Employee shares address, phone, or bank details with vendor."
+    trigger: "Any match of employee and vendor contact info."
+    score: 50
+    investigation: "Investigate possible self-dealing or shell vendor."
+
+  - code: SELF_APPROVAL
+    category: Approvals
+    description: "Requestor and approver are same person or in mutual approval loop."
+    trigger: "Same employee ID in both requester and approver fields."
+    score: 35
+    investigation: "Force dual-control approval and audit historical activity."
+
+  - code: MANAGERIAL_OVERRIDE
+    category: Approvals
+    description: "Manager repeatedly overrides compliance rejections."
+    trigger: "Same manager overrode >3 rejected requests in 60 days."
+    score: 25
+    investigation: "Assess training and potential bias in approvals."
+________________________________________
+🌍 6. Country, Sanctions, and Political Risk
+  - code: SANCTIONED_COUNTRY
+    category: Jurisdiction
+    description: "Transaction involves sanctioned or embargoed country."
+    trigger: "Country on OFAC/EU/UN sanctions list."
+    score: 70
+    investigation: "Immediately escalate to compliance and freeze payment."
+
+  - code: HIGH_RISK_JURISDICTION
+    category: Jurisdiction
+    description: "Business activity in high-corruption index country."
+    trigger: "Country rank ≥ 70 on Transparency International CPI."
+    score: 40
+    investigation: "Apply enhanced due diligence (EDD)."
+
+  - code: CROSS_BORDER_PAYMENT
+    category: Jurisdiction
+    description: "Cross-border payment without explicit justification."
+    trigger: "Beneficiary country ≠ contracting entity country."
+    score: 20
+    investigation: "Confirm service location and currency rationale."
+________________________________________
+🧬 7. Data Behavior & Communication
+  - code: KEYWORD_RISK_EMAIL
+    category: Communications
+    description: "Suspicious keywords detected in internal or external communications."
+    trigger: "Email/text includes keywords ['gift', 'facilitation', 'commission', 'expedite fee'] and recipient is external."
+    score: 30
+    investigation: "Flag for eDiscovery review."
+
+  - code: DOCUMENT_DELETION
+    category: Behavior
+    description: "User deletes or edits key financial documents during investigation."
+    trigger: "Deletion within 72h of case assignment or audit notice."
+    score: 60
+    investigation: "Escalate to legal hold and IT forensic review."
+________________________________________
+🧮 8. Accounting Irregularities
+  - code: MISC_EXPENSES_SPIKE
+    category: Accounting
+    description: "Unusual increase in 'Miscellaneous' or 'Other' expense categories."
+    trigger: ">200% increase vs monthly average."
+    score: 30
+    investigation: "Review GL postings for vague descriptions."
+
+  - code: FAKE_INVOICE_METADATA
+    category: Accounting
+    description: "Invoice metadata modified immediately before payment."
+    trigger: "File modified <1 hour before payment date."
+    score: 40
+    investigation: "Review digital signature and audit trail."
+________________________________________
+🧠 9. Investigations & Case Management Automation
+  - code: AUTO_CASE_CREATION
+    description: "Automatically open an FCPA investigation when score ≥ threshold or multiple red flags."
+    trigger: "Aggregate risk score ≥ 70 or ≥3 distinct red flags."
+    action: "Create case with category 'Potential Corruption' and auto-assign investigator."
+
+  - code: AUTO_ESCALATION
+    description: "Escalate case if any sanction/PEP involvement or government official."
+    trigger: "Any flag code in [SANCTIONED_COUNTRY, GOV_OFFICIAL_HOSPITALITY, PEP_VENDOR]."
+    action: "Auto-state change to ESCALATED and notify compliance officer."
+
+  - code: DOJ_CASEPACK_EXPORT
+    description: "Generate regulator-ready report."
+    trigger: "Case closed and substantiated FCPA risk."
+    action: "Assemble full audit log, evidence, CAPA summary, and attestation."
+________________________________________
+💡 10. “Explain This Flag” Template (LLM Prompt)
+prompt_template: |
+  You are a compliance analyst. Explain why this transaction triggered an FCPA red flag.
+  Include:
+  1. Summary of facts.
+  2. Violated FCPA risk category (payment, gift, third-party, etc.).
+  3. Corruption typology (kickback, facilitation, conflict, donation-for-influence).
+  4. Recommended next steps:
+     - Verify approvals or documentation
+     - Obtain ownership evidence
+     - Suspend further payments
+  Be concise and factual.

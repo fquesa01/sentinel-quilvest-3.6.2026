@@ -1,0 +1,589 @@
+# Ambient Intelligence Focus Issues - Implementation Spec
+
+## Overview
+
+Enhance the Ambient Intelligence feature to allow users to define specific "Focus Issues" that direct the AI's attention during meetings. Instead of surfacing all related documents, the system prioritizes and organizes results around the user's strategic objectives - particularly valuable during depositions where attorneys need to develop or contradict specific factual points.
+
+## Core Concept
+
+**Current behavior:** Every 20 seconds, extract keywords from transcript → run boolean search across case RAG → surface all matching documents
+
+**Enhanced behavior:** Every 20 seconds, extract keywords from transcript → for each active Focus Issue, run targeted boolean search with issue context → tag and score results by issue relevance → highlight contradictions and supporting evidence
+
+## User Interface
+
+### Focus Mode Toggle
+
+```
+┌─────────────────────────────────────────────────────┐
+│ ┌─────────────────┐ ┌─────────────────────────────┐ │
+│ │ 🔍 All Topics   │ │ 🎯 Focus Issues (3)    ✓   │ │
+│ └─────────────────┘ └─────────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
+```
+
+- **All Topics:** Original behavior - surface anything relevant to conversation
+- **Focus Issues:** Only surface documents relevant to defined issues
+
+### Focus Issues Setup Panel
+
+Accessible via Settings gear icon in AI panel header:
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Focus Issues                    Click to toggle     │
+├─────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────┐ │
+│ │ [✓] When did Miller first learn about the      │ │
+│ │     missing PPE equipment?                  🗑️ │ │
+│ └─────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────┐ │
+│ │ [✓] Who authorized work to proceed without     │ │
+│ │     safety equipment?                       🗑️ │ │
+│ └─────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────┐ │
+│ │ [ ] Prior incidents or complaints about PPE    │ │
+│ │     availability                            🗑️ │ │
+│ └─────────────────────────────────────────────────┘ │
+│                                                     │
+│ ┌───────────────────────────────────┐ ┌───┐        │
+│ │ Add a focus issue...              │ │ + │        │
+│ └───────────────────────────────────┘ └───┘        │
+│                                                     │
+│ ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐ │
+│   💡 Suggest issues from case documents           │
+│ └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘ │
+└─────────────────────────────────────────────────────┘
+```
+
+### Results Display - Grouped by Issue
+
+```
+┌─────────────────────────────────────────────────────┐
+│ ▼ 🎯 Miller Knowledge              ⚠️ 2 contradictions │
+├─────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────┐ │
+│ │ 📧 Email: Torres → Miller, 3/15 7:42 AM         │ │
+│ │ "The PPE cabinet was completely empty..."       │ │
+│ │                                                 │ │
+│ │ ⚠️ CONTRADICTS                                  │ │
+│ │ → Miller testified email was received at 9:15   │ │
+│ └─────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────┐ │
+│ │ 📄 Miller Deposition, p. 23-24                  │ │
+│ │ "I didn't receive any communication..."         │ │
+│ │                                                 │ │
+│ │ ⚠️ CONTRADICTS                                  │ │
+│ │ → Conflicts with 7:42 AM email timestamp        │ │
+│ └─────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────┤
+│ ▶ 🎯 Work Authorization                        [2] │
+├─────────────────────────────────────────────────────┤
+│ ▶ 🎯 Prior Incidents                    ⚡ pattern [6] │
+└─────────────────────────────────────────────────────┘
+```
+
+## Relevance Classification
+
+Each surfaced document should be tagged with one of:
+
+| Tag | Icon | Color | Meaning |
+|-----|------|-------|---------|
+| CONTRADICTS | ⚠️ AlertTriangle | Red | Document conflicts with what was just said |
+| SUPPORTS | ✓ CheckCircle | Green | Document corroborates what was just said |
+| PATTERN | ⚡ Zap | Amber | Document shows recurring pattern/similar incidents |
+| IMPEACHES | 🔄 RefreshCw | Red | Prior statement by same speaker that differs |
+| RELATED | 📄 FileText | Gray | Generally relevant but no clear support/contradiction |
+
+### Contradiction Detection Logic
+
+When processing transcript chunks, the AI should:
+
+1. **Extract claims** - Identify factual assertions (times, dates, actions, knowledge)
+2. **Compare to documents** - For each claim, check if case documents contain conflicting information
+3. **Flag contradictions** - When document contradicts claim, tag with specific explanation
+
+Example:
+```
+Transcript: "I sent him an email right away, probably around 7:40"
+Document: Email timestamp shows 7:42 AM
+Miller's testimony: "I received the email around 9:15 AM"
+
+→ Flag Miller testimony as CONTRADICTS with note: 
+  "Miller claims email received at 9:15 AM, but email timestamp is 7:42 AM"
+```
+
+## Data Model
+
+### FocusIssue
+
+```typescript
+interface FocusIssue {
+  id: string;
+  meetingId: string;
+  caseId: string;
+  
+  // User-defined issue
+  title: string;           // Full description
+  shortName?: string;      // Abbreviated for UI (auto-generated if not provided)
+  
+  // State
+  active: boolean;         // Whether to include in current search
+  createdAt: Date;
+  
+  // Optional: Pre-defined search terms to boost
+  keywords?: string[];
+  
+  // Optional: Specific documents to always check against
+  pinnedDocumentIds?: string[];
+}
+```
+
+### AmbientSuggestion (enhanced)
+
+```typescript
+interface AmbientSuggestion {
+  id: string;
+  meetingId: string;
+  documentId: string;
+  
+  // Document info
+  documentType: 'email' | 'document' | 'transcript' | 'message' | 'sms';
+  title: string;
+  date: Date;
+  preview: string;         // Relevant excerpt
+  
+  // Issue linkage
+  focusIssueId?: string;   // Which issue this relates to (null if "All Topics" mode)
+  
+  // Relevance classification
+  relevance: 'contradicts' | 'supports' | 'pattern' | 'impeaches' | 'related';
+  relevanceNote: string;   // Explanation of why (shown to user)
+  confidence: 'high' | 'medium' | 'low';
+  
+  // Source tracking
+  triggeredByTranscript: string;  // The transcript chunk that triggered this
+  timestamp: Date;
+  
+  // User interaction
+  dismissed: boolean;
+  starred: boolean;
+}
+```
+
+### Meeting Focus Configuration
+
+```typescript
+interface MeetingFocusConfig {
+  meetingId: string;
+  mode: 'all' | 'focused';
+  issues: FocusIssue[];
+  
+  // Persist user preferences
+  expandedIssueIds: string[];  // Which issues are expanded in UI
+}
+```
+
+## Search Algorithm Enhancement
+
+### Current Algorithm (simplified)
+
+```
+every 20 seconds:
+  transcript_chunk = get_last_20_seconds_of_transcript()
+  keywords = extract_keywords(transcript_chunk)
+  boolean_query = build_boolean_query(keywords)
+  results = search_case_rag(case_id, boolean_query)
+  display(results)
+```
+
+### Enhanced Algorithm
+
+```
+every 20 seconds:
+  transcript_chunk = get_last_20_seconds_of_transcript()
+  claims = extract_claims(transcript_chunk)  // New: identify factual assertions
+  keywords = extract_keywords(transcript_chunk)
+  
+  if mode == 'focused':
+    for each active_issue in focus_issues:
+      # Combine issue context with transcript keywords
+      issue_query = build_focused_query(
+        keywords=keywords,
+        issue_title=active_issue.title,
+        issue_keywords=active_issue.keywords
+      )
+      
+      results = search_case_rag(case_id, issue_query)
+      
+      for each result in results:
+        # Classify relevance to the claim
+        relevance = classify_relevance(
+          document=result,
+          claims=claims,
+          issue=active_issue
+        )
+        
+        result.focusIssueId = active_issue.id
+        result.relevance = relevance.type
+        result.relevanceNote = relevance.explanation
+        
+      display_grouped_by_issue(results)
+  
+  else:  # 'all' mode
+    boolean_query = build_boolean_query(keywords)
+    results = search_case_rag(case_id, boolean_query)
+    
+    # Still classify relevance even in all mode
+    for each result in results:
+      relevance = classify_relevance(result, claims)
+      result.relevance = relevance.type
+      
+    display_flat_list(results)
+```
+
+### Focused Query Building
+
+```typescript
+function buildFocusedQuery(
+  transcriptKeywords: string[],
+  issueTitle: string,
+  issueKeywords?: string[]
+): BooleanQuery {
+  // Extract key concepts from issue title
+  const issueConcepts = extractConcepts(issueTitle);
+  
+  // Combine: (transcript_keywords) AND (issue_concepts OR issue_keywords)
+  return {
+    must: transcriptKeywords,
+    should: [...issueConcepts, ...(issueKeywords || [])],
+    boost: {
+      // Boost documents that match issue keywords
+      issueKeywords: 2.0,
+      // Boost recent documents
+      recency: 1.5
+    }
+  };
+}
+```
+
+### Relevance Classification
+
+```typescript
+async function classifyRelevance(
+  document: Document,
+  claims: Claim[],
+  issue?: FocusIssue
+): Promise<RelevanceResult> {
+  // Use LLM to classify
+  const prompt = `
+    Given this document excerpt:
+    "${document.preview}"
+    
+    And these claims from the current testimony:
+    ${claims.map(c => `- ${c.text}`).join('\n')}
+    
+    ${issue ? `Focus issue: ${issue.title}` : ''}
+    
+    Classify the relationship:
+    1. Does the document CONTRADICT any claim? If so, explain specifically.
+    2. Does the document SUPPORT any claim? If so, explain specifically.
+    3. Does the document show a PATTERN of similar incidents?
+    4. Is this a prior statement by the same speaker that differs (IMPEACHES)?
+    5. Or is it just generally RELATED?
+    
+    Return JSON: { type, explanation }
+  `;
+  
+  return await llm.classify(prompt);
+}
+```
+
+## Pre-Population Sources
+
+Focus Issues can be pre-populated from:
+
+### 1. Manual Entry (Primary)
+User types issue directly into input field
+
+### 2. Case Documents (AI-Suggested)
+Button: "Suggest issues from case documents"
+
+```typescript
+async function suggestIssuesFromCase(caseId: string): Promise<string[]> {
+  // Pull key documents: case summary, deposition outlines, issue lists
+  const keyDocs = await getKeyDocuments(caseId, [
+    'case_summary',
+    'deposition_outline', 
+    'issues_list',
+    'case_theory'
+  ]);
+  
+  const prompt = `
+    Based on these case documents, suggest 3-5 key factual issues 
+    that would be important to focus on during a deposition:
+    
+    ${keyDocs.map(d => d.content).join('\n\n')}
+    
+    Format as a JSON array of strings.
+  `;
+  
+  return await llm.suggest(prompt);
+}
+```
+
+### 3. Deposition Outline Import
+If user uploads a deposition outline, extract topics:
+
+```typescript
+async function extractIssuesFromOutline(outlineDoc: Document): Promise<string[]> {
+  const prompt = `
+    Extract the main factual issues/topics from this deposition outline:
+    
+    ${outlineDoc.content}
+    
+    Return as JSON array of concise issue statements.
+  `;
+  
+  return await llm.extract(prompt);
+}
+```
+
+### 4. Template Issues by Case Type
+Pre-defined issues for common case types:
+
+```typescript
+const TEMPLATE_ISSUES = {
+  'employment_discrimination': [
+    'Timeline of adverse employment actions',
+    'Comparator employee treatment',
+    'Knowledge of protected characteristic',
+    'Legitimate business justification claims'
+  ],
+  'personal_injury': [
+    'Prior notice of dangerous condition',
+    'Safety protocol compliance',
+    'Prior similar incidents',
+    'Damages and medical treatment'
+  ],
+  'contract_dispute': [
+    'Formation and meeting of minds',
+    'Performance obligations',
+    'Breach allegations and timeline',
+    'Damages calculation'
+  ]
+};
+```
+
+## UI Components
+
+### FocusModeToggle
+
+```tsx
+const FocusModeToggle = ({ mode, activeCount, onChange }) => (
+  <div className="flex items-center gap-1 p-0.5 bg-slate-700/50 rounded-lg">
+    <button
+      onClick={() => onChange('all')}
+      className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+        mode === 'all' 
+          ? 'bg-slate-600 text-white' 
+          : 'text-slate-400 hover:text-slate-200'
+      }`}
+    >
+      <Search className="w-3.5 h-3.5" />
+      All Topics
+    </button>
+    <button
+      onClick={() => onChange('focused')}
+      className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+        mode === 'focused' 
+          ? 'bg-blue-500 text-white' 
+          : 'text-slate-400 hover:text-slate-200'
+      }`}
+    >
+      <Target className="w-3.5 h-3.5" />
+      Focus Issues ({activeCount})
+    </button>
+  </div>
+);
+```
+
+### IssueResultGroup
+
+```tsx
+const IssueResultGroup = ({ issue, suggestions, expanded, onToggle }) => {
+  const contradictions = suggestions.filter(s => s.relevance === 'contradicts');
+  const hasContradictions = contradictions.length > 0;
+  
+  return (
+    <div className={`rounded-lg border overflow-hidden ${
+      hasContradictions ? 'border-red-500/30' : 'border-slate-700/50'
+    }`}>
+      <button
+        onClick={onToggle}
+        className={`w-full px-3 py-2 flex items-center gap-2 text-left ${
+          hasContradictions ? 'bg-red-500/10' : 'bg-slate-800/50'
+        } hover:bg-slate-800`}
+      >
+        {expanded ? <ChevronDown /> : <ChevronRight />}
+        <Target className={hasContradictions ? 'text-red-400' : 'text-blue-400'} />
+        <span className="flex-1 text-xs font-medium text-slate-200 truncate">
+          {issue.shortName}
+        </span>
+        {hasContradictions && (
+          <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 text-[10px] rounded">
+            {contradictions.length} contradictions
+          </span>
+        )}
+        <span className="px-1.5 py-0.5 bg-slate-700 text-slate-400 text-[10px] rounded">
+          {suggestions.length}
+        </span>
+      </button>
+      
+      {expanded && (
+        <div className="border-t border-slate-700/30 p-2 space-y-2">
+          {suggestions.map(suggestion => (
+            <SuggestionCard key={suggestion.id} suggestion={suggestion} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+### RelevanceIndicator
+
+```tsx
+const RelevanceIndicator = ({ type }) => {
+  const config = {
+    contradicts: { icon: AlertTriangle, label: 'CONTRADICTS', color: 'red' },
+    supports: { icon: CheckCircle, label: 'SUPPORTS', color: 'green' },
+    pattern: { icon: Zap, label: 'PATTERN', color: 'amber' },
+    impeaches: { icon: RefreshCw, label: 'IMPEACHES', color: 'red' },
+    related: { icon: FileText, label: 'RELATED', color: 'slate' }
+  };
+  
+  const { icon: Icon, label, color } = config[type];
+  
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-${color}-500/20 text-${color}-400`}>
+      <Icon className="w-3 h-3" />
+      {label}
+    </span>
+  );
+};
+```
+
+## API Endpoints
+
+### Focus Issues CRUD
+
+```
+POST   /api/meetings/:meetingId/focus-issues
+GET    /api/meetings/:meetingId/focus-issues
+PUT    /api/meetings/:meetingId/focus-issues/:issueId
+DELETE /api/meetings/:meetingId/focus-issues/:issueId
+```
+
+### AI Suggestions
+
+```
+POST /api/meetings/:meetingId/focus-issues/suggest
+  → Suggests issues from case documents
+
+POST /api/meetings/:meetingId/ambient/search
+  → Triggers manual ambient search (normally automatic)
+  Body: { mode: 'all' | 'focused', transcriptChunk: string }
+```
+
+### Meeting Focus Config
+
+```
+GET  /api/meetings/:meetingId/focus-config
+PUT  /api/meetings/:meetingId/focus-config
+  Body: { mode: 'all' | 'focused', expandedIssueIds: string[] }
+```
+
+## Real-Time Updates
+
+When a new ambient result is found:
+
+```typescript
+// Server-side
+socket.emit('ambient:suggestion', {
+  meetingId,
+  suggestion: {
+    id,
+    documentId,
+    title,
+    preview,
+    focusIssueId,
+    relevance,
+    relevanceNote,
+    confidence
+  }
+});
+
+// Client-side
+socket.on('ambient:suggestion', (data) => {
+  if (data.relevance === 'contradicts') {
+    // Play subtle alert sound
+    playNotificationSound('contradiction');
+    // Flash the issue group header
+    highlightIssue(data.focusIssueId);
+  }
+  addSuggestion(data.suggestion);
+});
+```
+
+## Non-Legal Use Cases
+
+### Sales Meeting Focus Issues
+
+```
+- Budget concerns and ROI questions
+- Competitor comparisons  
+- Implementation timeline concerns
+- Security and compliance requirements
+```
+
+Emma surfaces: case studies, ROI calculators, competitive battle cards, implementation guides
+
+### Board Meeting Focus Issues
+
+```
+- Q3 financial performance vs projections
+- Key risk factors
+- Strategic initiative updates
+- Governance compliance items
+```
+
+Emma surfaces: financial reports, risk register entries, project status docs, compliance checklists
+
+### Due Diligence Focus Issues
+
+```
+- Material contracts and obligations
+- Pending litigation exposure
+- IP ownership and assignments
+- Employee/contractor classification
+```
+
+Emma surfaces: contract summaries, litigation files, IP assignments, employment agreements
+
+## Implementation Priority
+
+1. **Phase 1:** Focus Issues CRUD + basic UI toggle
+2. **Phase 2:** Grouped results display by issue
+3. **Phase 3:** Relevance classification (contradicts/supports/pattern)
+4. **Phase 4:** Contradiction highlighting and alerts
+5. **Phase 5:** AI-suggested issues from case documents
+6. **Phase 6:** Template issues by case type
+
+## Success Metrics
+
+- **Relevance rate:** % of surfaced documents user interacts with (star/open)
+- **Contradiction detection accuracy:** Manual review of flagged contradictions
+- **Time to impeachment:** How quickly contradicting documents are surfaced after relevant testimony
+- **User engagement:** Focus mode adoption rate, issues created per meeting

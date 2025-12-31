@@ -1,0 +1,97 @@
+I want to create a home page for users. Here are my current thoughts which should be on that homepage. I'm calling the homepage My Queue.  Within the my queue section should be a communications hub where other members of the team using the application can communicate with this user. There should also be a bookmark option. When the user is reviewing documents he or she should have the ability to bookmark the document that they're on for purposes of picking up where they left off or as a location for them to highlight a document or interview so that they can easily access it. This should be similar to a hyperlink in a PDF document or a bookmark in a web browser
+
+A.	My Queue (Priority Tasks Stream)
+Shows everything assigned or relevant to the user, sorted by urgency and importance:
+•	Documents requiring review
+•	Communications requiring reply
+•	Flags/alerts (deadlines, anomalies, compliance triggers)
+•	Draft summaries or AI-generated memos awaiting approval
+•	Tasks delegated to others but awaiting your sign-off
+Sorting: Importance, deadline, entity, matter.
+AI Assist: “Summarize Last 10 Items,” “Show Only Urgent,” “Cluster by Topic.”
+
+
+B. Communications Hub (Internal Chat + Matter Threads)
+A Slack-meets-Foundry internal channel embedded directly into the investigation workflow:
+•	1:1 and group chat
+•	Threaded channels per matter, per entity, per issue
+•	@Tagging documents, paragraphs, timestamps in audio/video
+•	AI “auto-brief” of long threads
+•	Secure file drop for each matter
+Smart layer:
+AI surfaces patterns in conversations (“3 messages this morning flagged urgent about Vendor X”).
+
+C. Bookmark Manager
+Critical for investigations. Similar to:
+•	Browser bookmarks
+•	PDF annotation bookmarks
+•	VS Code breakpoints
+User can bookmark:
+•	Entire document
+•	Page/section
+•	Specific paragraph or quote
+•	A point in time inside audio/video
+•	A chat message
+•	A cluster or topic
+Each bookmark displays:
+Preview > Why it matters > Quick actions: “Add to Report,” “Share in Chat,” “Tag Entity.”
+
+D. “Continue Where You Left Off” Tile
+A single button:
+•	Last document
+•	Last conversation
+•	Last event in timeline
+•	Last search
+This alone cuts review time dramatically.
+
+E. AI Smart Digest (Daily or On-Demand)
+A tile that gives the user a 30-second snapshot of everything that changed since their last login:
+•	New documents
+•	New messages
+•	Anomalies
+•	Emerging patterns
+•	Issues gaining traction
+•	Issues cooling off
+
+F. Alerts & Insights Panel (Top Right)
+System-generated:
+•	Unusual communication spikes
+•	Potential compliance flags
+•	Naming patterns (“5 emails refer to ‘late payment’ from Vendor A”)
+•	New people entering a conversation about a sensitive issue
+•	Potential missing documents
+
+G. Saved Searches / Saved Filters
+Users often repeat searches:
+•	“Show me all docs with ‘kickback’ sent by internal counsel”
+•	“All drafts from Vendor B last 30 days”
+•	“Anything mentioning ‘urgent’ or ‘problem’ in the subject line”
+One click to run them again.
+
+H. Matter & Entity Quick-Switch
+A slim column on the left with:
+•	My Matters
+•	My Entities
+•	Recently accessed
+•	Starred
+Think of it as Finder/Figma sidebar for investigations.
+I. Tasks Panel
+Tasks that:
+•	You assigned
+•	Others assigned to you
+•	AI generated (e.g., “Draft summary of these 4 docs”)
+Each task links to the associated:
+•	Docs
+•	People
+•	Entities
+•	Communications
+•	Timeline events
+
+J. AI “Attention Radar”
+A radar chart that shows:
+•	What the internal investigation team is currently spending time on
+•	Gaps (e.g., no one has reviewed Vendor C in 10 days)
+Helps leaders allocate review time.
+
+
+

@@ -1,0 +1,363 @@
+Below is a **complete, production-ready UX design** for the *“Connect New Source”* panel for Sentinel.
+It matches your existing enterprise aesthetic (dark, clean, compliance-first) and works perfectly with your connector schema (`connector_configurations`, `ingestion_jobs`, `communications`, `custodians`, etc.).
+
+I give you:
+
+1. **UX goals & principles**
+2. **Page placement & interaction model**
+3. **Full UI layout**
+4. **Screens (wireframe-level detail)**
+5. **Field definitions**
+6. **Copywriting (all text/buttons/tooltips)**
+7. **Next-action workflows** (what happens after connect)
+8. **Replit prompt block** to auto-generate the UI
+
+---
+
+# 1️⃣ UX GOALS
+
+* No technical language
+* Drop-in integrations (Slack / Dropbox / M365 / Box / Clio) in **3 steps**
+* Automatically help the user map:
+
+  * Which **case** the data belongs to
+  * Which **custodians** the data belongs to
+  * Which **folders/channels/mailboxes** to pull from
+* Clear compliance messaging
+* Reusable for **any future source**
+
+---
+
+# 2️⃣ WHERE THE UI LIVES
+
+**Case Page → Evidence → “Connected Data Sources” panel**
+
+Your case page will have a top nav:
+
+```
+Overview | Timeline | Evidence | Interviews | Tasks | Reports | Settings
+```
+
+Inside **Evidence → Data Sources**, the user sees:
+
+* Connected sources
+* Add new source
+* Sync status
+* Errors
+* Volume ingested
+
+---
+
+# 3️⃣ OVERALL FLOW (3 STEPS)
+
+### Step 1 — Choose Source
+
+Slack / Dropbox / M365 / Google / Box / Clio / Custom S3…
+
+### Step 2 — Authorize
+
+OAuth popup → User signs in → Sentinel stores encrypted token.
+
+### Step 3 — Configure
+
+* Map to Case
+* Map to Custodians
+* Pick folders/channels/mailboxes
+* Define sync frequency
+* Confirm ingestion
+
+### Finished
+
+User sees success screen + can trigger first sync immediately.
+
+---
+
+# 4️⃣ THE ACTUAL UI
+
+## A. Main Panel — “Connected Data Sources”
+
+**Card style layout:**
+
+**Header**:
+**Connected Data Sources**
+`[+] Add Source` button (accent blue)
+
+Below, a grid of existing connections:
+
+**Cards (example Slack):**
+
+```
+Slack – Legal Team Workspace
+Status: ✓ Connected (last synced 3 min ago)
+Monitored Channels: #legal, #investigations, #compliance
+Mapped Custodians: 3 custodians
+Documents Ingested: 12,483
+[Sync Now] [Settings] [Disconnect]
+```
+
+---
+
+# 5️⃣ STEP-BY-STEP UI FLOW
+
+## STEP 1 — Provider Selection Modal
+
+**Title:**
+**Connect New Source**
+
+**Subtitle:**
+“Select a system to begin ingestion.”
+
+**Grid of providers (card buttons):**
+
+* Slack
+* Microsoft 365 (Email)
+* Google Workspace (Gmail / Drive)
+* Dropbox
+* Box
+* Clio (Legal Docs & Communications)
+* Teams
+* Zoom Chat
+* WhatsApp (via uploaded exports or API)
+* Custom S3 / Azure Blob
+
+**Each provider card shows:**
+
+* Logo
+* Title
+* Subtitle (“Chats”, “Emails”, “File Storage”, “Case Management Files”)
+
+---
+
+## STEP 2 — OAuth Authentication Page
+
+**Title:**
+**Authenticate Slack**
+
+**Body Copy:**
+“To begin collecting data from Slack, Sentinel requires permission to access the selected channels. Credentials are encrypted and stored in accordance with ISO 27001 and SOC 2 guidelines.”
+
+**Button:**
+**Connect Slack** (triggers OAuth)
+
+**After successful OAuth:**
+You return to Sentinel and auto-advance to step 3.
+
+---
+
+## STEP 3 — Configure Ingestion Settings
+
+### **3A. Case Mapping**
+
+```
+Where should Sentinel store the data?
+[Dropdown: All Cases]
+→ Pre-filled with the Case Page the user is on
+```
+
+For global connectors (e.g., company-wide Slack), you allow:
+
+* “Associate by Custodian” (recommended)
+* “Associate all to this Case”
+* “Allow per-channel mappings”
+
+---
+
+### **3B. Custodian Mapping**
+
+**Title:**
+**Map Custodians**
+
+**Subtitle:**
+“Help Sentinel match emails, chats, or documents to the correct employees or entities.”
+
+**Table:**
+
+| Detected Email/User ID                                        | Suggested Custodian    | Case Role | Action |
+| ------------------------------------------------------------- | ---------------------- | --------- | ------ |
+| [james@company.com](mailto:james@company.com)                 | James Carter           | employee  | Change |
+| [a.smith@company.com](mailto:a.smith@company.com)             | Amanda Smith           | employee  | Change |
+| [ext-consultant@vendor.com](mailto:ext-consultant@vendor.com) | <Create New Custodian> | vendor    | Create |
+
+**Button:**
+**Auto-Match Custodians** (uses your `custodians` + `employees` table)
+
+---
+
+### **3C. Scope Selection (Channels / Folders / Mailboxes)**
+
+Depending on provider:
+
+#### Slack:
+
+* Select channels to ingest
+* `[ ] All channels`
+* `[x] #legal`
+* `[x] #investigations`
+* `[ ] #random`
+
+#### Dropbox:
+
+* Select folders
+* `[ ] /Legal`
+* `[x] /Investigations/Case-2143`
+* `[ ] /Finance`
+
+#### M365:
+
+* “Select custodians’ mailboxes to ingest”
+* `[x] james@company.com`
+* `[x] amanda.smith@company.com`
+
+#### Clio:
+
+* “Select matters / document folders:”
+
+  * `[x] Matter 3412 – SEC Inquiry`
+  * `[x] Evidence Uploads`
+  * `[ ] Billing Docs`
+
+---
+
+### **3D. Ingestion Frequency**
+
+**Title:**
+**Sync Schedule**
+
+Options:
+
+* **Every 5 minutes**
+* Every 15 minutes
+* Hourly
+* Daily at 2am
+* Manual-only
+
+---
+
+### **3E. Confirmation Screen**
+
+**Title:**
+**Review & Connect**
+
+Checklist:
+
+* Provider → Slack
+* Channels → #legal, #investigations
+* Custodians mapped → 3
+* Sync Frequency → Every 5 minutes
+* Case → SEC Case #2143
+
+**Button (Primary):**
+**Finish & Start First Sync**
+
+**Button (Secondary):**
+Cancel / Back
+
+---
+
+# 6️⃣ ALL COPY YOU NEED (BUTTONS + TOOLTIP TEXT)
+
+**Provider Grid:**
+
+* “Choose a system to integrate with Sentinel.”
+* “Your credentials are always encrypted. You can revoke access anytime.”
+
+**Custodian Mapping:**
+
+* “Sentinel auto-detected these user identities from Slack/M365/Dropbox.”
+* Tooltip: “Custodians ensure documents are associated with the correct person during review.”
+
+**Scope Selection:**
+
+* Tooltip: “Choose exactly which channels, mailboxes, or folders Sentinel will monitor.”
+
+**Sync Frequency:**
+
+* “Higher frequency increases real-time monitoring but uses more API calls.”
+
+**Finish Screen:**
+
+* “Data ingestion will begin immediately.”
+* “You can monitor progress in the Evidence → Data Sources panel.”
+
+---
+
+# 7️⃣ POST-CONNECT WORKFLOW
+
+1. **Connector appears in “Connected Data Sources” panel**
+
+   * Shows “Pending First Sync”
+2. Immediately call:
+   `POST /api/connectors/:id/sync`
+3. Show ingestion job progress:
+
+   * “Ingesting messages…”
+   * “Processing files…”
+   * “Normalizing metadata…”
+4. Show results:
+
+   * “12,483 documents imported”
+   * “3 possible privilege issues flagged”
+   * “5 duplicate files suppressed”
+5. Add dynamic toast:
+
+   * “Slack was successfully connected to Case #2143. First sync completed.”
+
+---
+
+# 8️⃣ COMPLETE REPLIT PROMPT (copy/paste into Vibe Coding)
+
+```
+Create a new React/Next.js UI component set called 
+“Connect New Source” inside /app/cases/[caseId]/sources/.
+
+It must implement:
+
+1. A main panel showing connected sources:
+   - Query from /api/cases/[caseId]/sources
+   - Cards: Slack, Dropbox, M365, Box, Clio
+   - Buttons: Sync Now, Settings, Disconnect, Add Source
+
+2. Add Source modal with 3 steps:
+   STEP 1 — Provider selection grid 
+     Providers: Slack, Microsoft 365, Google, Dropbox, Box, Clio, Teams, Zoom Chat, WhatsApp, Custom S3.
+     Each provider card triggers STEP 2.
+
+   STEP 2 — OAuth authentication page
+     Button: “Connect <Provider>”
+     On success, auto-advance to STEP 3.
+
+   STEP 3 — Configuration:
+     - Case mapping dropdown (pre-filled with caseId)
+     - Custodian mapping table:
+       Detected user -> suggested custodian from /api/custodians/resolve
+     - Scope selection:
+       For Slack: list channels
+       For Dropbox: list folders
+       For Google: list mailboxes/folders
+       For Box: list folders
+     - Sync frequency dropdown
+     - Final review page with summary
+
+3. On Finish:
+   - POST /api/connectors to create connectorConfiguration row
+   - Immediately POST /api/connectors/:id/sync
+   - Redirect to updated Connected Sources panel
+
+Follow Sentinel’s dark theme:
+  BG #050816, panels #111827, borders #1f2937, accent #6366f1.
+
+Make all copy consistent with legal/compliance tone:
+  secure, privileged, encrypted, auditable.
+
+```
+
+---
+
+If you want, I’ll also generate:
+
+* A **Figma-style mockup**
+* A **React component library** for each step
+* The **API endpoints** (`GET /sources`, `POST /sources`, `POST /sources/:id/sync`)
+* An **auto-detection service** that pre-maps Slack/M365 identities to custodians based on email matching.
+
+Just tell me what you want next.

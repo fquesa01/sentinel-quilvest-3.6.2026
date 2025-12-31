@@ -1,0 +1,477 @@
+You are an expert full-stack engineer working in the Sentinel Counsel LLP investigations platform.
+
+Your task:
+Design and implement a Case Timeline system that automatically builds a chronology from case documents, alerts, and interviews, and lets attorneys curate and export that chronology.
+
+This lives inside the existing /cases/:caseId page under the “Timeline & Tasks” tab.
+
+1. Data Model
+1.1 TimelineEvent
+
+Create a new data model/table:
+
+id
+
+case_id
+
+event_date (date or datetime; can be approximate)
+
+event_type (e.g., email_thread, chat_thread, payment, meeting, interview_extract, alert, manual)
+
+title (short label, e.g., “Approval of payment to Apex Trading”)
+
+summary (2–6 sentence narrative)
+
+participants (array of person names/ids)
+
+entities (array of entity names/ids – companies, vendors, departments)
+
+law_tags (array: ["FCPA", "Books & Records", "Antitrust"])
+
+risk_tags (array for issue themes: ["bribe_risk", "revenue_recognition", "off_channel"])
+
+source_document_ids (array of document IDs: emails, PDFs, chat messages, etc.)
+
+source_interview_ids (array of interview IDs, if any)
+
+source_alert_ids (array of alert IDs, if any)
+
+importance_score (float 0–1)
+
+confidence_score (float 0–1)
+
+is_key_event (boolean; user can pin)
+
+is_hidden (boolean; user can hide AI-generated events)
+
+created_by (user id or "system")
+
+created_at
+
+updated_at
+
+1.2 Supporting metadata (reuse or create as needed)
+
+Assume existing models for:
+
+Case
+
+DocumentSet
+
+Document (with fields: id, case_id, source_type, subject, body_text, sent_at, participants, tags, rule_hits)
+
+Interview (with transcript & timeline_events if already extracted)
+
+Alert (with violation type, time, rule id)
+
+If needed, add lightweight fields so we can filter docs:
+
+Document.source_type (email, chat, pdf, xlsx, audio, etc.)
+
+Document.is_hot / is_important
+
+Document.thread_id (for grouping emails/chats into conversation clusters)
+
+2. Timeline Extraction Pipeline (Backend)
+
+Goal: automatically create TimelineEvent records from large document sets, without flooding the timeline.
+
+Create a backend service or job: generateTimelineForCase(caseId, options).
+
+2.1 Inputs
+
+caseId
+
+Options:
+
+regenerate (bool) – whether to recompute from scratch or just append new events
+
+case_type (FCPA, SOX, Antitrust, HR, etc.) – read from case metadata
+
+max_events (e.g., 300)
+
+2.2 Step 1 – Pre-filter candidate documents
+
+Before calling AI, narrow the universe:
+
+Load case and determine case_type.
+
+Load:
+
+doc keywords and phrases for that case type (from existing rule packs / risk terms)
+
+high-risk roles (CFO, regional manager, etc.) if available
+
+From all case Documents, select candidate docs where:
+
+document has any rule_hits OR
+
+is_hot / is_important true OR
+
+text matches any case-type risk keywords (simple search) OR
+
+participants include high-risk roles or entities.
+
+2.3 Step 2 – Group into conversation clusters
+
+For email/chat sources:
+
+Group docs by thread_id (or by subject + overlapping participants + close timestamps if thread_id not present).
+
+Each cluster = a “conversation” candidate.
+
+For non-thread docs (PDFs, spreadsheets, etc.):
+
+Treat each as its own cluster or group by date and subject similarity when appropriate.
+
+2.4 Step 3 – Include non-doc sources
+
+Add extra clusters built from:
+
+Alerts (Alert objects for this case)
+
+Interview-derived events (if transcripts already produce event candidates)
+
+System actions (e.g., legal hold issuance, collection jobs) if available
+
+Each cluster should contain:
+
+Combined text snippets
+
+Metadata (dates, participants, entities, rule hits, tags)
+
+Source IDs
+
+2.5 Step 4 – LLM event extraction per cluster
+
+For each cluster, send a prompt to the existing GPT integration, including:
+
+Case type and description
+
+Cluster text (truncated as needed)
+
+Cluster metadata (dates, participants, tags, rule hits)
+
+Ask the model to:
+
+Identify 0–N distinct events a lawyer would put on a chronology for this case.
+
+For each event, return JSON with:
+
+event_date (approx allowed; pick earliest relevant time)
+
+title
+
+summary
+
+participants
+
+entities
+
+law_tags
+
+risk_tags
+
+source_document_ids
+
+importance_score (0–1)
+
+confidence_score (0–1)
+
+Validate JSON, normalize fields (dates, names).
+
+2.6 Step 5 – Scoring, dedupe, and persistence
+
+For each proposed event:
+
+Compute a final importance_score combining:
+
+AI’s importance_score
+
+Whether any source docs are is_hot / is_important
+
+Whether any source docs triggered high-severity alerts
+
+Whether the event references high-risk laws/tags
+
+De-duplicate:
+
+If another TimelineEvent in this case exists with:
+
+similar title and event_date within X days AND
+
+high overlap in source_document_ids,
+
+then either merge or skip the new one.
+
+Persist new TimelineEvent records:
+
+If regenerate=false, only create for clusters that don’t overlap existing events.
+
+If regenerate=true, you may:
+
+delete non-manual, non-is_key_event events and recreate,
+
+but never delete manual events or events marked is_key_event.
+
+Limit to max_events per case by keeping the highest importance_score events when trimming.
+
+3. Timeline Tab UI (Frontend)
+
+This lives under /cases/:caseId → “Timeline & Tasks” → Timeline section.
+
+3.1 Layout
+
+Main card titled “Timeline”
+
+Timeline presented as a spreadsheet-like table where each row = one TimelineEvent.
+
+Columns:
+
+Date – event_date
+
+Type – event_type (icon + label, e.g., email, chat, interview, manual, alert)
+
+Title – short event title
+
+Participants – people (show top 2–3 + “+N more”)
+
+Entities – companies/departments (top 2–3)
+
+Tags – chips from law_tags / risk_tags
+
+Notes – user editable text (summary of attorney’s narrative)
+
+Importance – icon or bar derived from importance_score
+
+Behavior:
+
+Default sort: oldest first (ascending by date).
+
+User can click column header to reverse order.
+
+Row is collapsed by default.
+
+3.2 Row expansion
+
+When a row is clicked, expand a detail panel below it:
+
+Display:
+
+Full summary
+
+Full Notes textarea (editable)
+
+List of Sources:
+
+For each document: type icon, title/subject, date, mini snippet.
+
+For each interview: interviewee name, date.
+
+For each alert: type, severity.
+
+Buttons inside expanded panel:
+
+Open in Document Review
+
+Opens the document viewer filtered to source_document_ids for this event, with all tagging functionality.
+
+View Conversation
+
+For email/chat events: show the underlying thread in a panel.
+
+Mark as Key Event / Unmark Key Event
+
+Hide Event (soft hide; sets is_hidden=true)
+
+3.3 Filters and density controls
+
+Above the table, add:
+
+Date range filter
+
+Event type filter (email/chat/interview/alert/manual/etc.)
+
+Tags filter (law_tags & risk_tags)
+
+Participant filter (searchable dropdown)
+
+Toggle: Show hidden events (default off)
+
+Density slider or dropdown:
+
+“Key milestones only” → show events with is_key_event=true OR importance_score >= 0.8
+
+“Normal” → importance_score >= 0.5
+
+“Detailed” → importance_score >= 0.2
+
+Make sure backend query accepts these filters and returns only matching TimelineEvent records.
+
+4. Manual Timeline Editing
+4.1 Add manual event
+
+Add a button at top right of the Timeline card: + Add Event.
+
+Form fields:
+
+Date/time (required)
+
+Title (required)
+
+Summary (optional)
+
+Participants (type-ahead linking to Parties & Custodians; allow free text)
+
+Entities (optional)
+
+Law tags / Risk tags (multi-select from existing lists)
+
+Attach documents (multi-select from case documents)
+
+Attach interviews (multi-select)
+
+Mark as Key Event (checkbox)
+
+On save:
+
+Create a TimelineEvent with created_by = current_user, event_type = "manual", importance_score default (e.g., 0.7), is_key_event = user choice.
+
+4.2 Edit / delete
+
+For any event:
+
+If created_by = "system" and not is_key_event, allow:
+
+Edit title, summary, tags, notes, participants, entities.
+
+Hide event (is_hidden=true) instead of hard delete.
+
+If created_by is a user, allow full edit and optional hard delete (or soft delete depending on how you want to do it).
+
+Make sure that hidden events can be resurfaced via “show hidden events” + “unhide.”
+
+4.3 Upload directly to timeline
+
+Support drag-and-drop of files into the Timeline card:
+
+When files are dropped:
+
+Create Document records for the case.
+
+Open a modal “Create Timeline Event” pre-populated with:
+
+Attached document IDs
+
+Today’s date as default
+
+After confirmation, create a TimelineEvent with event_type = "manual".
+
+5. Timeline Export
+
+Add an “Export Timeline” button on the Timeline card.
+
+5.1 Export options dialog
+
+Options:
+
+Format: Word (.docx) or PDF
+
+Detail level:
+
+Key events only
+
+All visible events (respecting filters & density)
+
+Include:
+
+Tags & laws (on/off)
+
+Source document IDs (on/off)
+
+Notes (on/off)
+
+AI confidence/importance (default off)
+
+5.2 Export content structure
+
+For Word/PDF, generate:
+
+Header: Case number, title, violation type, date of export
+
+Chronology table:
+
+Columns: Date, Title, Participants, Entities, Tags/Laws, Notes
+
+Rows: Each exported TimelineEvent in chronological order
+
+Optionally add an appendix listing:
+
+Key sources for each event (doc IDs, interview IDs), if user enabled that option.
+
+Create a backend endpoint that:
+
+Accepts caseId + export options.
+
+Pulls the filtered TimelineEvent data.
+
+Uses GPT or a templating engine to generate a clean chronology document.
+
+Returns a downloadable file URL.
+
+6. Integration & Controls
+6.1 Case page integration
+
+On /cases/:caseId, Timeline & Tasks tab should:
+
+Load events from TimelineEvent model.
+
+Show “No timeline events yet” state with:
+
+Generate timeline button → calls generateTimelineForCase job.
+
+After events exist, show timeline table.
+
+6.2 Regenerate timeline
+
+Add secondary button: Regenerate Timeline.
+
+Behavior:
+
+Calls backend generateTimelineForCase(caseId, { regenerate: true }).
+
+Backend must:
+
+Never delete manual events.
+
+Never delete events with is_key_event=true.
+
+Rebuild system-generated events based on updated documents.
+
+Show progress indicator and toast when complete.
+
+7. Implementation Style
+
+Use existing UI components (cards, tables, modals, badges) to match Sentinel design.
+
+Keep business logic separated:
+
+TimelineService for backend extraction and CRUD
+
+TimelineAPI for frontend data access
+
+TimelineTab (React or equivalent) for UI
+
+Provide clear TODO markers where real email/LLM/document APIs are not yet wired.
+
+Prioritize:
+
+TimelineEvent model + CRUD + manual editing.
+
+Timeline Tab UI with filters, expansion, and document review links.
+
+Basic extraction pipeline using a small subset of documents.
+
+Export functionality.
+
+Then iterate to add smarter pre-filtering, clustering, and scoring using the platform’s existing AI integrations.

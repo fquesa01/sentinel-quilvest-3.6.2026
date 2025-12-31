@@ -1,0 +1,461 @@
+# corp_summary_service.py  (revised sections)
+# Quick start:
+#   pip install fastapi uvicorn pydantic python-multipart docx2txt PyPDF2 python-pptx pandas openpyxl requests
+#   export OPENAI_API_KEY=sk-...
+#   python corp_summary_service.py
+
+import os, io, json, hashlib, datetime, base64
+from typing import List
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from starlette.middleware.cors import CORSMiddleware
+from pathlib import Path
+import mimetypes
+
+# Optional extractors
+try:
+    import docx2txt
+except Exception:
+    docx2txt = None
+try:
+    import PyPDF2
+except Exception:
+    PyPDF2 = None
+try:
+    import pptx
+except Exception:
+    pptx = None
+try:
+    import pandas as pd
+except Exception:
+    pd = None
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_KEY")
+OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o")  # JSON-capable
+
+# ---------- PROMPT (reduced to your 11 sections) ----------
+SYSTEM_PROMPT = """
+You are an investigative business summarizer. Given enterprise documents (emails, contracts, slide decks,
+spreadsheets, PDFs, TXT/MD files), produce ONE canonical business summary JSON object that follows the schema below.
+Rules:
+- Cite evidence for every factual assertion with a source id and minimal supporting snippet or location.
+- If a field is not present in the corpus, set it to null or empty arrays and explain briefly in `notes` where applicable.
+- Add a confidence score (0.0–1.0) to any asserted evidence blocks using: direct match (+0.5), multi-source corroboration (+0.3),
+  numeric/official doc (+0.2). Cap at 1.0.
+- Redact PII/PHI or privileged content; include `redaction_reason` if redacted.
+- Output JSON that validates against the schema.
+"""
+
+USER_TEMPLATE = """
+Create a business summary for the company: {company_name}. Use only the provided documents.
+For each document include an entry in meta.sources with id, type, and a short snippet.
+
+Target sections (only these):
+1) Executive Summary (one_paragraph, top_metrics:{revenue_estimate, clients_count, geography}, top_risks[3-5]).
+2) Business Lines (one object per line with name, description, data_sources, workflow_summary, estimated_value_per_case, evidence[*]).
+3) Corporate History & Structure (timeline entries with date, event, source; entities; org_chart).
+4) Transactions (timeline with date, parties[], summary, documents[]).
+5) Major Clients / Assignors (name, contract_summary, source).
+6) Partners / Vendors / Investors (name, role, documents).
+7) Algorithms & Technical Overview (architecture_summary; third_party_audits).
+8) Litigation & Regulatory Facts (active_cases, regulatory_contacts).
+9) Financials.
+10) Exhibits & Supporting Evidence (charts, timelines, sample code).
+11) Appendix (glossary, raw_source_index).
+
+Documents:
+{documents_rendered}
+
+Output: Valid JSON only that conforms to the schema. Do not include markdown.
+"""
+
+# ---------- SCHEMA (aligned to your reduced sections) ----------
+BUSINESS_SUMMARY_SCHEMA = {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BusinessSummary",
+  "type": "object",
+  "required": [
+    "meta",
+    "executive_summary",
+    "business_lines",
+    "corporate_history",
+    "transactions",
+    "clients",
+    "partners",
+    "algorithms",
+    "litigation_and_risk",
+    "financials",
+    "exhibits",
+    "appendix"
+  ],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["company_name","report_date","sources","overall_confidence"],
+      "properties": {
+        "company_name": {"type":"string"},
+        "report_date": {"type":"string"},
+        "sources": {
+          "type":"array",
+          "items": {
+            "type":"object",
+            "required":["id","type","snippet"],
+            "properties":{
+              "id":{"type":"string"},
+              "type":{"type":"string","enum":["email","contract","slide","sheet","pdf","doc","txt","other"]},
+              "snippet":{"type":"string"},
+              "redaction_reason":{"type":["string","null"]}
+            }
+          }
+        },
+        "overall_confidence": {"type":"number","minimum":0,"maximum":1}
+      }
+    },
+
+    "executive_summary": {
+      "type":"object",
+      "required":["one_paragraph","top_metrics","top_risks"],
+      "properties":{
+        "one_paragraph":{"type":"string"},
+        "top_metrics":{
+          "type":"object",
+          "properties":{
+            "revenue_estimate":{"type":["string","null"]},
+            "clients_count":{"type":["integer","null"]},
+            "geography":{"type":["string","null"]}
+          },
+          "additionalProperties": True
+        },
+        "top_risks":{"type":"array","items":{"type":"string"}}
+      }
+    },
+
+    "business_lines": {
+      "type":"array",
+      "items":{
+        "type":"object",
+        "required":[
+          "name","description","data_sources","workflow_summary",
+          "estimated_value_per_case","evidence"
+        ],
+        "properties":{
+          "name":{"type":"string"},
+          "description":{"type":"string"},
+          "data_sources":{"type":"array","items":{"type":"string"}},
+          "workflow_summary":{"type":"string"},
+          "estimated_value_per_case":{"type":["number","string","null"]},
+          "evidence":{
+            "type":"array",
+            "items":{
+              "type":"object",
+              "properties":{"source":{"type":"string"},"lines":{"type":["string","null"]},"confidence":{"type":"number"}},
+              "required":["source","confidence"]
+            }
+          }
+        }
+      }
+    },
+
+    "corporate_history": {
+      "type":"object",
+      "required":["timeline","entities","org_chart"],
+      "properties":{
+        "timeline":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{
+              "date":{"type":"string"},
+              "event":{"type":"string"},
+              "source":{"type":["string","array","null"]},
+              "date_certainty":{"type":["string","null"],"enum":["day","month","year",None]}
+            },
+            "required":["date","event"]
+          }
+        },
+        "entities":{"type":"array","items":{"type":"string"}},
+        "org_chart":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{"name":{"type":"string"},"role":{"type":"string"},"source":{"type":["string","null"]}},
+            "required":["name","role"]
+          }
+        }
+      }
+    },
+
+    "transactions":{
+      "type":"object",
+      "required":["timeline"],
+      "properties":{
+        "timeline":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{
+              "date":{"type":"string"},
+              "parties":{"type":"array","items":{"type":"string"}},
+              "summary":{"type":"string"},
+              "documents":{"type":"array","items":{"type":"string"}}
+            },
+            "required":["date","parties","summary"]
+          }
+        }
+      }
+    },
+
+    "clients":{
+      "type":"array",
+      "items":{
+        "type":"object",
+        "properties":{
+          "name":{"type":"string"},
+          "contract_summary":{"type":"string"},
+          "source":{"type":["string","null"]}
+        },
+        "required":["name"]
+      }
+    },
+
+    "partners":{
+      "type":"array",
+      "items":{
+        "type":"object",
+        "properties":{
+          "name":{"type":"string"},
+          "role":{"type":"string"},
+          "documents":{"type":"array","items":{"type":"string"}}
+        },
+        "required":["name","role"]
+      }
+    },
+
+    "algorithms":{
+      "type":"object",
+      "required":["architecture_summary","third_party_audits"],
+      "properties":{
+        "architecture_summary":{"type":"string"},
+        "third_party_audits":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{"auditor":{"type":"string"},"report_id":{"type":["string","null"]},"summary":{"type":"string"}},
+            "required":["auditor","summary"]
+          }
+        }
+      }
+    },
+
+    "litigation_and_risk":{
+      "type":"object",
+      "required":["active_cases","regulatory_contacts"],
+      "properties":{
+        "active_cases":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{
+              "case_name":{"type":"string"},
+              "court":{"type":["string","null"]},
+              "status":{"type":["string","null"]},
+              "source":{"type":["string","null"]},
+              "confidence":{"type":["number","null"]}
+            },
+            "required":["case_name"]
+          }
+        },
+        "regulatory_contacts":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{"agency":{"type":"string"},"notes":{"type":"string"},"source":{"type":["string","null"]}},
+            "required":["agency","notes"]
+          }
+        }
+      }
+    },
+
+    "financials":{
+      "type":"object",
+      "properties":{
+        "summary":{"type":["string","null"]}
+      }
+    },
+
+    "exhibits":{
+      "type":"array",
+      "items":{
+        "type":"object",
+        "properties":{
+          "type":{"type":"string"},
+          "title":{"type":"string"},
+          "source":{"type":["string","null"]},
+          "page":{"type":["integer","null"]}
+        },
+        "required":["type","title"]
+      }
+    },
+
+    "appendix":{
+      "type":"object",
+      "properties":{
+        "glossary":{"type":"array","items":{"type":"string"}},
+        "raw_source_index":{"type":"array","items":{"type":"string"}}
+      },
+      "required":["glossary","raw_source_index"]
+    }
+  }
+}
+
+# ---------- FastAPI service ----------
+app = FastAPI(title="Corp Business Summary Pipeline")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+def _file_id(name: str, data: bytes) -> str:
+    h = hashlib.sha256(data).hexdigest()[:16]
+    return f"{Path(name).name}:{h}"
+
+def extract_text_from_pdf(data: bytes) -> str:
+    if PyPDF2 is None:
+        return "[PDF extractor not available: install PyPDF2]"
+    try:
+        reader = PyPDF2.PdfReader(io.BytesIO(data))
+        return "\n".join([(p.extract_text() or "") for p in reader.pages]).strip()
+    except Exception as e:
+        return f"[PDF parse error: {e}]"
+
+def extract_text_from_docx(data: bytes) -> str:
+    if docx2txt is None:
+        return "[DOCX extractor not available: install docx2txt]"
+    try:
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=True) as tmp:
+            tmp.write(data); tmp.flush()
+            return (docx2txt.process(tmp.name) or "").strip()
+    except Exception as e:
+        return f"[DOCX parse error: {e}]"
+
+def extract_text_from_pptx(data: bytes) -> str:
+    if pptx is None:
+        return "[PPTX extractor not available: install python-pptx]"
+    try:
+        prs = pptx.Presentation(io.BytesIO(data))
+        chunks = []
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    chunks.append(shape.text)
+        return "\n".join(chunks).strip()
+    except Exception as e:
+        return f"[PPTX parse error: {e}]"
+
+def extract_text_from_xlsx(data: bytes) -> str:
+    if pd is None:
+        return "[XLSX extractor not available: install pandas, openpyxl]"
+    try:
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=True) as tmp:
+            tmp.write(data); tmp.flush()
+            xl = pd.ExcelFile(tmp.name)
+            texts = []
+            for sheet in xl.sheet_names[:5]:
+                try:
+                    df = xl.parse(sheet).fillna("")
+                    small = df.head(50)
+                    texts.append(f"# Sheet: {sheet}\n{small.to_csv(index=False)}")
+                except Exception:
+                    pass
+            return "\n".join(texts).strip()
+    except Exception as e:
+        return f"[XLSX parse error: {e}]"
+
+def guess_type(filename: str, default="other") -> str:
+    mt, _ = mimetypes.guess_type(filename)
+    if mt:
+        if "pdf" in mt: return "pdf"
+        if "msword" in mt or "officedocument.wordprocessingml" in mt: return "doc"
+        if "presentation" in mt: return "slide"
+        if "spreadsheet" in mt: return "sheet"
+        if mt.startswith("text/"): return "txt"
+    ext = Path(filename).suffix.lower()
+    return {".pdf":"pdf",".docx":"doc",".doc":"doc",".pptx":"slide",".ppt":"slide",".xlsx":"sheet",".csv":"sheet",".txt":"txt",".md":"txt"}.get(ext, default)
+
+class DocIn(BaseModel):
+    id: str
+    filename: str
+    type: str
+    text: str
+
+class SummarizeIn(BaseModel):
+    company_name: str
+    documents: List[DocIn]
+
+@app.get("/health")
+def health():
+    return {"ok": True, "time": datetime.datetime.utcnow().isoformat()}
+
+@app.post("/extract")
+async def extract(files: List[UploadFile] = File(...)):
+    out = []
+    for f in files:
+        data = await f.read()
+        fid = _file_id(f.filename, data)
+        ftype = guess_type(f.filename)
+        if ftype == "pdf":
+            text = extract_text_from_pdf(data)
+        elif ftype == "doc":
+            text = extract_text_from_docx(data)
+        elif ftype == "slide":
+            text = extract_text_from_pptx(data)
+        elif ftype == "sheet":
+            text = extract_text_from_xlsx(data)
+        else:
+            try:
+                text = data.decode("utf-8", errors="replace")
+            except Exception:
+                text = base64.b64encode(data).decode("utf-8")
+                text = f"[binary:{len(data)} bytes base64]\n{text[:4000]}"
+        snippet = (text[:400] + "…") if len(text) > 400 else text
+        out.append({"id": fid, "filename": f.filename, "type": ftype, "char_count": len(text), "snippet": snippet, "text": text})
+    return {"documents": out}
+
+def _render_documents_for_prompt(docs: List[DocIn]) -> str:
+    blocks = []
+    for d in docs:
+        snippet = d.text[:2000]
+        blocks.append(f"[{d.id}] ({d.type}) {d.filename}\n---\n{snippet}\n")
+    return "\n\n".join(blocks)
+
+@app.post("/summarize")
+def summarize(payload: SummarizeIn):
+    documents_rendered = _render_documents_for_prompt(payload.documents)
+    user_prompt = USER_TEMPLATE.format(company_name=payload.company_name, documents_rendered=documents_rendered)
+
+    body = {
+        "model": OPENAI_MODEL,
+        "messages": [{"role":"system","content": SYSTEM_PROMPT},{"role":"user","content": user_prompt}],
+        "response_format": {"type": "json_object"}
+    }
+    try:
+        import requests
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}","Content-Type": "application/json"},
+            json=body, timeout=120
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        result = json.loads(content)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e), "debug_prompt_preview": user_prompt[:3000]})
+
+    if "meta" in result and not result["meta"].get("report_date"):
+        result["meta"]["report_date"] = datetime.date.today().isoformat()
+    return result
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))

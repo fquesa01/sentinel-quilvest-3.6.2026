@@ -1,0 +1,175 @@
+Tech stack:
+
+Backend: Python + FastAPI
+
+Frontend: simple HTML/JS upload page served by FastAPI
+
+Storage: in-memory list for now, but architect as if it will later be Postgres/S3.
+
+Core Requirements
+
+Create project structure
+
+main.py – FastAPI app, routes, static file serving
+
+models.py – Pydantic models
+
+ingestion/file_detector.py – detect file type by extension + MIME
+
+ingestion/email_parser.py – normalize emails
+
+static/index.html – simple upload UI
+
+static/app.js – handles upload + status display
+
+Supported formats
+
+Primary email formats (must fully parse):
+
+.pst
+
+.ost (treat same as PST, via same handler)
+
+.msg
+
+.eml
+
+.mbox
+
+.olm
+
+Secondary / forensic formats (stub handlers but wire them up):
+
+MIME / RFC822 variants: .mime, .mail, .mbx
+
+.mht, .mhtml
+
+.json / .ndjson (Google Vault-style email exports)
+
+.ics (calendar invites)
+
+.vcf (vCards)
+
+.edb, .nsf → do not parse directly; instead create placeholder functions like convert_edb_to_eml() and convert_nsf_to_eml() that return NotImplementedError but are clearly wired into the pipeline.
+
+Detection layer
+
+In file_detector.py, implement detect_file_type(path: str, content_type: str | None) -> str that returns a normalized type, e.g.:
+
+"pst", "ost", "msg", "eml", "mbox", "olm", "mime", "mht", "vault_json", "ics", "vcf", "edb", "nsf", "unknown".
+
+Use both file extension and MIME (if available).
+
+Normalization model
+
+In models.py create:
+
+EmailAddress { name: str | None, address: str }
+
+EmailMessageNormalized with fields:
+
+id: str
+
+source_file_name: str
+
+source_format: str
+
+subject: str | None
+
+from_: EmailAddress | None
+
+to: list[EmailAddress]
+
+cc: list[EmailAddress]
+
+bcc: list[EmailAddress]
+
+sent_at: datetime | None
+
+received_at: datetime | None
+
+body_text: str | None
+
+body_html: str | None
+
+attachments: list[str] (just names for now)
+
+folder_path: str | None
+
+thread_id: str | None
+
+All parsers must output a list of EmailMessageNormalized.
+
+Parsing layer
+
+In email_parser.py, implement a main function:
+
+parse_file(path: str, detected_type: str) -> list[EmailMessageNormalized]
+
+Inside, dispatch to format-specific functions:
+
+parse_pst, parse_ost, parse_msg, parse_eml, parse_mbox, parse_olm, parse_mime_like, parse_mht, parse_vault_json, parse_ics, parse_vcf.
+
+For actual parsing, use well-known Python libraries where available (e.g., mailbox for mbox, email for eml/mime). If a library isn’t available, implement a clear TODO and return an empty list, but keep the function wired.
+
+FastAPI endpoints
+
+POST /upload:
+
+Accept multiple files.
+
+For each file:
+
+Save to a temp folder.
+
+Detect file type.
+
+Parse into normalized EmailMessageNormalized objects.
+
+Return JSON:
+
+{
+  "files": [
+    {
+      "file_name": "...",
+      "detected_type": "...",
+      "message_count": 123,
+      "status": "parsed" | "not_supported" | "error",
+      "error": null or "..."
+    }
+  ],
+  "total_messages": 123
+}
+
+
+GET /messages:
+
+Return a simple list of all normalized messages stored in memory for this run.
+
+Frontend (static/index.html + app.js)
+
+Simple blue/gray enterprise styling.
+
+Elements:
+
+File input (multiple).
+
+“Upload” button.
+
+Status area that shows:
+
+each filename
+
+detected type
+
+message count
+
+status (parsed/error)
+
+Use fetch API to call POST /upload and render results without page reload.
+
+General
+
+Add clear comments and TODOs for any unimplemented external parsers (e.g. PST/OLM/EDB/NSF).
+
+Make sure the app runs with python main.py and exposes FastAPI on a default port in Replit.

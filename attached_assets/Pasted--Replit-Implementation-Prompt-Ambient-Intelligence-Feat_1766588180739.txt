@@ -1,0 +1,1017 @@
+# Replit Implementation Prompt: Ambient Intelligence Feature
+
+Copy and paste everything below this line into Replit:
+
+---
+
+## Feature Request: Ambient Intelligence - Live Conversation Recording with AI Document Surfacing
+
+I need you to build a new feature called "Ambient Intelligence" for our legal case management application. This feature allows users to live-record conversations while AI automatically identifies and surfaces relevant case documents based on what's being discussed.
+
+### Overview
+
+When a user starts an Ambient Intelligence session linked to a case, the app will:
+1. Record audio from their microphone
+2. Transcribe speech in real-time with speaker diarization (labeling who said what)
+3. Analyze the transcript every 10-15 seconds to detect references to documents, emails, people, dates, or topics
+4. Query our existing case RAG system to find matching documents
+5. Display AI suggestion cards prompting the user to view relevant documents
+6. Allow split-screen viewing of documents while transcription continues
+7. Save the complete session record to the case when finished
+
+---
+
+### Part 1: Navigation & Entry Point
+
+**Add a new sidebar navigation item:**
+
+Location: In the left sidebar, add "Ambient Intelligence" below "My Queue" and above the "INVESTIGATIONS" section.
+
+```tsx
+// Add to your sidebar navigation component
+{
+  name: 'Ambient Intelligence',
+  href: '/ambient-intelligence',
+  icon: MicrophoneIcon, // Use a microphone icon with a pulse/wave indicator
+}
+```
+
+Add a subtle CSS pulse animation to the icon to make it feel "alive":
+
+```css
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.ambient-nav-icon {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+```
+
+---
+
+### Part 2: Database Schema
+
+Create these new tables:
+
+```sql
+-- Sessions table
+CREATE TABLE ambient_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
+  title VARCHAR(255),
+  session_type VARCHAR(50), -- 'interview', 'client_call', 'strategy_meeting', 'witness', 'other'
+  status VARCHAR(20) DEFAULT 'active', -- 'active', 'paused', 'completed', 'processing'
+  started_at TIMESTAMP DEFAULT NOW(),
+  ended_at TIMESTAMP,
+  duration_seconds INTEGER,
+  participant_names TEXT[],
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Transcript segments
+CREATE TABLE ambient_transcripts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES ambient_sessions(id) ON DELETE CASCADE,
+  timestamp_ms INTEGER NOT NULL, -- Milliseconds from session start
+  speaker_label VARCHAR(100),
+  speaker_id INTEGER, -- Speaker number from diarization
+  content TEXT NOT NULL,
+  confidence FLOAT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- AI suggestions generated during session
+CREATE TABLE ambient_suggestions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES ambient_sessions(id) ON DELETE CASCADE,
+  suggestion_type VARCHAR(50) NOT NULL, -- 'document', 'email', 'person', 'date', 'topic', 'discrepancy', 'verification'
+  trigger_quote TEXT,
+  explanation TEXT,
+  user_prompt TEXT, -- The question shown to the user
+  search_query TEXT,
+  document_ids UUID[],
+  confidence VARCHAR(20), -- 'high', 'medium', 'low'
+  status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'viewed', 'dismissed', 'stale'
+  user_action VARCHAR(50),
+  timestamp_ms INTEGER,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Post-session summaries
+CREATE TABLE ambient_session_summaries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES ambient_sessions(id) ON DELETE CASCADE,
+  summary_text TEXT,
+  key_moments JSONB, -- [{timestamp_ms, description, type}]
+  documents_referenced JSONB, -- [{doc_id, title, status}]
+  generated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX idx_ambient_sessions_case ON ambient_sessions(case_id);
+CREATE INDEX idx_ambient_transcripts_session ON ambient_transcripts(session_id);
+CREATE INDEX idx_ambient_suggestions_session ON ambient_suggestions(session_id);
+```
+
+---
+
+### Part 3: Session Setup Page
+
+Create a new page at `/ambient-intelligence` that shows a setup form before starting a session.
+
+**Setup Form Fields:**
+1. **Link to Case** (Required) - Searchable dropdown of user's cases
+2. **Session Type** - Radio buttons: Interview/Deposition, Client Call, Internal Strategy Meeting, Witness Conversation, Other
+3. **Session Title** (Optional) - Text input with placeholder "e.g., Interview with Coach Williams - Jan 15"
+4. **Expected Participants** (Optional) - Dynamic list where user can add names
+5. **Consent Checkbox** (Required) - "I confirm all parties consent to recording"
+
+**UI Layout:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│  🎙️ Start Ambient Intelligence Session                      │
+│                                                             │
+│  Link to Case *                                             │
+│  [Searchable dropdown with recent cases]                    │
+│                                                             │
+│  Session Type                                               │
+│  ○ Interview / Deposition                                   │
+│  ○ Client Call                                              │
+│  ○ Internal Strategy Meeting                                │
+│  ○ Witness Conversation                                     │
+│  ○ Other                                                    │
+│                                                             │
+│  Session Title (Optional)                                   │
+│  [Text input]                                               │
+│                                                             │
+│  Expected Participants                                      │
+│  [+ Add participant]                                        │
+│  • You (auto-added)                                         │
+│                                                             │
+│  ⚠️ Recording Consent                                       │
+│  ☐ I confirm all parties consent to being recorded          │
+│                                                             │
+│  [Cancel]                          [🎙️ Start Session]       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+When "Start Session" is clicked:
+1. Request microphone permission if not granted
+2. Create a new session record in the database
+3. Navigate to `/ambient-intelligence/session/[sessionId]`
+
+---
+
+### Part 4: Live Session Page
+
+Create the main live session interface at `/ambient-intelligence/session/[sessionId]`.
+
+**Layout Structure:**
+
+The page has three possible states that the user can toggle between:
+
+**State A: Full Transcript View (Default)**
+- Full-width transcript panel
+- AI suggestions panel at bottom (collapsible)
+
+**State B: Split View**
+- Left half: Transcript (scrollable, auto-scrolls to bottom)
+- Right half: Document viewer
+- AI suggestions collapsed to single line at bottom
+
+**State C: Full Document View**
+- Document takes full width
+- Small banner at top: "📝 Transcript running in background [Return to Transcript]"
+
+**Header Bar (always visible):**
+```tsx
+<div className="session-header">
+  <div className="case-info">
+    <span className="case-name">{caseName}</span>
+    <span className="session-title">{sessionTitle}</span>
+  </div>
+  <div className="recording-status">
+    <span className="recording-dot pulse" /> {/* Red pulsing dot */}
+    <span>Recording</span>
+    <span className="timer">{formatTime(elapsedSeconds)}</span>
+  </div>
+  <div className="controls">
+    <button onClick={togglePause}>
+      {isPaused ? '▶️ Resume' : '⏸️ Pause'}
+    </button>
+    <button onClick={endSession} className="end-button">
+      ⏹️ End Session
+    </button>
+  </div>
+</div>
+```
+
+**Transcript Panel:**
+```tsx
+<div className="transcript-panel">
+  <div className="transcript-header">
+    <h3>Live Transcript</h3>
+    <button onClick={toggleExpand}>🔲 Expand</button>
+  </div>
+  <div className="transcript-list" ref={transcriptRef}>
+    {transcriptSegments.map(segment => (
+      <div key={segment.id} className="transcript-entry">
+        <span className="timestamp">{formatTimestamp(segment.timestamp_ms)}</span>
+        <span className="speaker">{segment.speaker_label}</span>
+        <p className="content">{segment.content}</p>
+      </div>
+    ))}
+  </div>
+  <div className="auto-scroll-toggle">
+    <label>
+      <input type="checkbox" checked={autoScroll} onChange={toggleAutoScroll} />
+      Auto-scroll to latest
+    </label>
+  </div>
+</div>
+```
+
+**AI Suggestions Panel:**
+```tsx
+<div className="suggestions-panel">
+  <div className="suggestions-header">
+    <span>💡 AI Suggestions</span>
+    <button onClick={toggleHide}>{isHidden ? 'Show' : 'Hide'}</button>
+  </div>
+  <div className="suggestions-list">
+    {suggestions.slice(0, 3).map(suggestion => (
+      <SuggestionCard 
+        key={suggestion.id}
+        suggestion={suggestion}
+        onView={() => handleViewDocuments(suggestion)}
+        onDismiss={() => handleDismiss(suggestion.id)}
+        onAskEmma={() => handleAskEmma(suggestion)}
+      />
+    ))}
+  </div>
+  {suggestions.length > 3 && (
+    <button className="show-more">
+      +{suggestions.length - 3} more suggestions
+    </button>
+  )}
+</div>
+```
+
+**Suggestion Card Component:**
+```tsx
+interface Suggestion {
+  id: string;
+  suggestion_type: 'document' | 'email' | 'person' | 'date' | 'topic' | 'discrepancy' | 'verification';
+  trigger_quote: string;
+  explanation: string;
+  user_prompt: string;
+  document_ids: string[];
+  confidence: 'high' | 'medium' | 'low';
+  status: 'pending' | 'viewed' | 'dismissed' | 'stale';
+  timestamp_ms: number;
+}
+
+const SuggestionCard = ({ suggestion, onView, onDismiss, onAskEmma }) => {
+  const icons = {
+    document: '📄',
+    email: '📧',
+    person: '👤',
+    date: '📅',
+    topic: '📋',
+    discrepancy: '⚠️',
+    verification: '✓'
+  };
+
+  return (
+    <div className={`suggestion-card ${suggestion.status}`}>
+      <div className="suggestion-header">
+        <span className="icon">{icons[suggestion.suggestion_type]}</span>
+        <span className="type">{suggestion.suggestion_type.toUpperCase()}</span>
+        <span className="timestamp">{formatTimestamp(suggestion.timestamp_ms)}</span>
+        {suggestion.status === 'pending' && <span className="new-badge">NEW</span>}
+      </div>
+      <p className="trigger-quote">"{suggestion.trigger_quote}"</p>
+      <p className="explanation">{suggestion.explanation}</p>
+      <div className="actions">
+        <button onClick={onView} className="primary">📄 View Documents</button>
+        <button onClick={onAskEmma}>💬 Ask Emma</button>
+        <button onClick={onDismiss} className="dismiss">✕</button>
+      </div>
+    </div>
+  );
+};
+```
+
+**Document Panel (for split view):**
+```tsx
+<div className="document-panel">
+  <div className="document-header">
+    <span className="document-title">{currentDocument.title}</span>
+    <button onClick={expandDocument}>🔲 Expand</button>
+    <button onClick={closeDocument}>✕ Close</button>
+  </div>
+  <div className="document-viewer">
+    {/* Render document content - email, PDF, etc. */}
+    <DocumentViewer document={currentDocument} highlightTerms={highlightTerms} />
+  </div>
+  <div className="document-actions">
+    <button>🔖 Bookmark</button>
+    <button>📋 Copy</button>
+    <button>🔗 Open in Case</button>
+    <button>💬 Ask AI</button>
+  </div>
+</div>
+```
+
+---
+
+### Part 5: Transcription Service
+
+Create a new service file `services/transcription-service.ts` that handles real-time audio transcription.
+
+**Option A: Using Deepgram (Recommended for speed)**
+```typescript
+import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk';
+
+interface TranscriptSegment {
+  timestamp_ms: number;
+  speaker_id: number;
+  speaker_label: string;
+  content: string;
+  confidence: number;
+  is_final: boolean;
+}
+
+export class TranscriptionService {
+  private deepgram: any;
+  private connection: any;
+  private onTranscript: (segment: TranscriptSegment) => void;
+  private startTime: number;
+
+  constructor(apiKey: string) {
+    this.deepgram = createClient(apiKey);
+  }
+
+  async start(onTranscript: (segment: TranscriptSegment) => void): Promise<void> {
+    this.onTranscript = onTranscript;
+    this.startTime = Date.now();
+
+    this.connection = this.deepgram.listen.live({
+      model: 'nova-2',
+      language: 'en',
+      smart_format: true,
+      diarize: true, // Enable speaker identification
+      punctuate: true,
+      interim_results: true,
+    });
+
+    this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+      const transcript = data.channel.alternatives[0];
+      if (transcript.transcript) {
+        const segment: TranscriptSegment = {
+          timestamp_ms: Date.now() - this.startTime,
+          speaker_id: transcript.words?.[0]?.speaker || 0,
+          speaker_label: `Speaker ${transcript.words?.[0]?.speaker || 1}`,
+          content: transcript.transcript,
+          confidence: transcript.confidence,
+          is_final: data.is_final,
+        };
+        this.onTranscript(segment);
+      }
+    });
+
+    this.connection.on(LiveTranscriptionEvents.Error, (error: any) => {
+      console.error('Transcription error:', error);
+    });
+  }
+
+  sendAudio(audioData: ArrayBuffer): void {
+    if (this.connection) {
+      this.connection.send(audioData);
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (this.connection) {
+      this.connection.finish();
+    }
+  }
+
+  pause(): void {
+    // Deepgram handles gaps in audio naturally
+  }
+
+  resume(): void {
+    // Continue sending audio
+  }
+}
+```
+
+**Browser Audio Capture Hook:**
+```typescript
+// hooks/useAudioCapture.ts
+import { useEffect, useRef, useState } from 'react';
+
+export function useAudioCapture(onAudioData: (data: ArrayBuffer) => void) {
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const startCapture = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        } 
+      });
+      streamRef.current = stream;
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus',
+      });
+
+      mediaRecorder.ondataavailable = async (event) => {
+        if (event.data.size > 0) {
+          const arrayBuffer = await event.data.arrayBuffer();
+          onAudioData(arrayBuffer);
+        }
+      };
+
+      mediaRecorder.start(250); // Send audio chunks every 250ms
+      mediaRecorderRef.current = mediaRecorder;
+      setIsCapturing(true);
+    } catch (err) {
+      setError('Microphone access denied');
+      console.error('Audio capture error:', err);
+    }
+  };
+
+  const stopCapture = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    setIsCapturing(false);
+  };
+
+  return { isCapturing, error, startCapture, stopCapture };
+}
+```
+
+---
+
+### Part 6: Reference Detection Service
+
+Create `services/reference-detection-service.ts` that analyzes transcript chunks to find document references.
+
+```typescript
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+interface DetectedReference {
+  type: 'document' | 'email' | 'person' | 'date' | 'topic' | 'assertion';
+  trigger_quote: string;
+  search_query: string;
+  explanation: string;
+  user_prompt: string;
+  confidence: 'high' | 'medium' | 'low';
+  timestamp: string;
+}
+
+export class ReferenceDetectionService {
+  private genAI: GoogleGenerativeAI;
+  private model: any;
+
+  constructor(apiKey: string) {
+    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  }
+
+  async detectReferences(
+    transcriptChunk: string,
+    previousContext: string,
+    caseContext: { name: string; description: string }
+  ): Promise<DetectedReference[]> {
+    const prompt = `
+You are analyzing a live conversation transcript for a legal case management system.
+The conversation is related to the following case: ${caseContext.name}
+Case context: ${caseContext.description}
+
+Analyze the following transcript segment and identify references that could be matched
+to documents, emails, or data in our case management system.
+
+TRANSCRIPT SEGMENT:
+${transcriptChunk}
+
+PREVIOUS CONTEXT (last 30 seconds):
+${previousContext}
+
+Identify any of the following:
+1. DOCUMENT REFERENCES: Mentions of specific documents, reports, forms, contracts
+2. EMAIL REFERENCES: Mentions of emails, correspondence, messages sent/received
+3. PERSON REFERENCES: Names of people who may have sent or received communications in the case
+4. DATE REFERENCES: Specific dates or time periods that could filter document searches
+5. TOPIC CLUSTERS: Sustained discussion of a topic that may have related documents
+6. FACTUAL ASSERTIONS: Statements presented as facts that could be verified against documents
+
+For each reference found, respond with a JSON array. Each item should have:
+{
+  "type": "document|email|person|date|topic|assertion",
+  "trigger_quote": "exact quote from transcript that triggered this",
+  "search_query": "optimized search query for our document RAG system",
+  "explanation": "1-2 sentence explanation of what was found",
+  "user_prompt": "natural question to ask the user, e.g. 'You mentioned an email about expense policies. Would you like me to find it?'",
+  "confidence": "high|medium|low",
+  "timestamp": "timestamp from the transcript"
+}
+
+Rules:
+- Only return high and medium confidence references to avoid noise
+- If no significant references found, return an empty array []
+- Focus on actionable references that can be searched in a document system
+- The user_prompt should be conversational and helpful, not robotic
+- Return ONLY valid JSON, no markdown or explanation
+
+JSON Response:`;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = result.response.text();
+      
+      // Parse JSON from response
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return [];
+    } catch (error) {
+      console.error('Reference detection error:', error);
+      return [];
+    }
+  }
+}
+```
+
+---
+
+### Part 7: Integration with Existing Case RAG
+
+When a reference is detected, query the existing case document RAG system. Use the existing `file-search-service.ts` patterns:
+
+```typescript
+// In your session page or a new ambient-intelligence-service.ts
+
+import { FileSearchService } from './file-search-service';
+import { ReferenceDetectionService } from './reference-detection-service';
+
+export class AmbientIntelligenceService {
+  private fileSearchService: FileSearchService;
+  private referenceDetector: ReferenceDetectionService;
+  private transcriptBuffer: string[] = [];
+  private analysisInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    this.fileSearchService = new FileSearchService();
+    this.referenceDetector = new ReferenceDetectionService(process.env.GEMINI_API_KEY!);
+  }
+
+  // Add new transcript segment to buffer
+  addTranscript(segment: { content: string; timestamp_ms: number }) {
+    this.transcriptBuffer.push(`[${this.formatTime(segment.timestamp_ms)}] ${segment.content}`);
+    
+    // Keep only last 60 seconds worth of transcript (rough estimate)
+    if (this.transcriptBuffer.length > 20) {
+      this.transcriptBuffer.shift();
+    }
+  }
+
+  // Start periodic analysis
+  startAnalysis(caseId: string, caseContext: { name: string; description: string }, onSuggestion: (suggestion: any) => void) {
+    this.analysisInterval = setInterval(async () => {
+      if (this.transcriptBuffer.length < 3) return; // Need some content to analyze
+
+      const recentTranscript = this.transcriptBuffer.slice(-5).join('\n');
+      const previousContext = this.transcriptBuffer.slice(-10, -5).join('\n');
+
+      const references = await this.referenceDetector.detectReferences(
+        recentTranscript,
+        previousContext,
+        caseContext
+      );
+
+      for (const ref of references) {
+        if (ref.confidence === 'low') continue;
+
+        // Search case documents using existing RAG
+        const searchResults = await this.fileSearchService.searchCaseDocuments(
+          caseId,
+          ref.search_query,
+          { maxResults: 5 }
+        );
+
+        if (searchResults.length > 0) {
+          onSuggestion({
+            ...ref,
+            document_ids: searchResults.map(r => r.id),
+            documents: searchResults,
+          });
+        }
+      }
+    }, 12000); // Analyze every 12 seconds
+  }
+
+  stopAnalysis() {
+    if (this.analysisInterval) {
+      clearInterval(this.analysisInterval);
+    }
+  }
+
+  private formatTime(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    return `${hours.toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+  }
+}
+```
+
+---
+
+### Part 8: Session State Management
+
+Use React state or your preferred state management for the live session:
+
+```typescript
+// hooks/useAmbientSession.ts
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { TranscriptionService } from '@/services/transcription-service';
+import { AmbientIntelligenceService } from '@/services/ambient-intelligence-service';
+
+interface TranscriptSegment {
+  id: string;
+  timestamp_ms: number;
+  speaker_label: string;
+  content: string;
+}
+
+interface Suggestion {
+  id: string;
+  suggestion_type: string;
+  trigger_quote: string;
+  explanation: string;
+  user_prompt: string;
+  documents: any[];
+  status: 'pending' | 'viewed' | 'dismissed';
+  timestamp_ms: number;
+}
+
+export function useAmbientSession(sessionId: string, caseId: string, caseContext: { name: string; description: string }) {
+  const [status, setStatus] = useState<'idle' | 'active' | 'paused' | 'ended'>('idle');
+  const [transcripts, setTranscripts] = useState<TranscriptSegment[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [currentDocument, setCurrentDocument] = useState<any | null>(null);
+  const [viewMode, setViewMode] = useState<'transcript' | 'split' | 'document'>('transcript');
+
+  const transcriptionService = useRef<TranscriptionService | null>(null);
+  const ambientService = useRef<AmbientIntelligenceService | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startSession = useCallback(async () => {
+    transcriptionService.current = new TranscriptionService(process.env.NEXT_PUBLIC_DEEPGRAM_KEY!);
+    ambientService.current = new AmbientIntelligenceService();
+
+    // Handle new transcript segments
+    await transcriptionService.current.start((segment) => {
+      if (segment.is_final) {
+        const newSegment = {
+          id: crypto.randomUUID(),
+          timestamp_ms: segment.timestamp_ms,
+          speaker_label: segment.speaker_label,
+          content: segment.content,
+        };
+        setTranscripts(prev => [...prev, newSegment]);
+        ambientService.current?.addTranscript(segment);
+        
+        // Save to database
+        saveTranscriptSegment(sessionId, newSegment);
+      }
+    });
+
+    // Handle new suggestions
+    ambientService.current.startAnalysis(caseId, caseContext, (suggestion) => {
+      const newSuggestion = {
+        ...suggestion,
+        id: crypto.randomUUID(),
+        status: 'pending' as const,
+        timestamp_ms: Date.now(),
+      };
+      setSuggestions(prev => [newSuggestion, ...prev]);
+      
+      // Save to database
+      saveSuggestion(sessionId, newSuggestion);
+    });
+
+    // Start timer
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
+
+    setStatus('active');
+  }, [sessionId, caseId, caseContext]);
+
+  const pauseSession = useCallback(() => {
+    transcriptionService.current?.pause();
+    if (timerRef.current) clearInterval(timerRef.current);
+    setStatus('paused');
+  }, []);
+
+  const resumeSession = useCallback(() => {
+    transcriptionService.current?.resume();
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
+    setStatus('active');
+  }, []);
+
+  const endSession = useCallback(async () => {
+    transcriptionService.current?.stop();
+    ambientService.current?.stopAnalysis();
+    if (timerRef.current) clearInterval(timerRef.current);
+    
+    // Update session record in database
+    await updateSessionStatus(sessionId, 'completed', elapsedSeconds);
+    
+    // Trigger post-processing (summary generation)
+    await triggerPostProcessing(sessionId);
+    
+    setStatus('ended');
+  }, [sessionId, elapsedSeconds]);
+
+  const viewDocument = useCallback((document: any) => {
+    setCurrentDocument(document);
+    setViewMode('split');
+  }, []);
+
+  const expandDocument = useCallback(() => {
+    setViewMode('document');
+  }, []);
+
+  const closeDocument = useCallback(() => {
+    setCurrentDocument(null);
+    setViewMode('transcript');
+  }, []);
+
+  const returnToTranscript = useCallback(() => {
+    setViewMode('split');
+  }, []);
+
+  const dismissSuggestion = useCallback((suggestionId: string) => {
+    setSuggestions(prev => 
+      prev.map(s => s.id === suggestionId ? { ...s, status: 'dismissed' as const } : s)
+    );
+    updateSuggestionStatus(sessionId, suggestionId, 'dismissed');
+  }, [sessionId]);
+
+  const markSuggestionViewed = useCallback((suggestionId: string) => {
+    setSuggestions(prev => 
+      prev.map(s => s.id === suggestionId ? { ...s, status: 'viewed' as const } : s)
+    );
+    updateSuggestionStatus(sessionId, suggestionId, 'viewed');
+  }, [sessionId]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      transcriptionService.current?.stop();
+      ambientService.current?.stopAnalysis();
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  return {
+    status,
+    transcripts,
+    suggestions: suggestions.filter(s => s.status !== 'dismissed'),
+    elapsedSeconds,
+    currentDocument,
+    viewMode,
+    startSession,
+    pauseSession,
+    resumeSession,
+    endSession,
+    viewDocument,
+    expandDocument,
+    closeDocument,
+    returnToTranscript,
+    dismissSuggestion,
+    markSuggestionViewed,
+  };
+}
+```
+
+---
+
+### Part 9: API Routes
+
+Create these API endpoints:
+
+```typescript
+// POST /api/ambient/sessions - Create new session
+// GET /api/ambient/sessions/[id] - Get session details
+// PATCH /api/ambient/sessions/[id] - Update session (status, end time)
+// POST /api/ambient/sessions/[id]/transcripts - Add transcript segment
+// GET /api/ambient/sessions/[id]/transcripts - Get all transcripts
+// POST /api/ambient/sessions/[id]/suggestions - Add suggestion
+// PATCH /api/ambient/sessions/[id]/suggestions/[suggestionId] - Update suggestion status
+// POST /api/ambient/sessions/[id]/process - Trigger post-processing
+// GET /api/ambient/sessions/[id]/summary - Get generated summary
+```
+
+---
+
+### Part 10: Post-Session Summary Generation
+
+After session ends, generate a summary using Gemini:
+
+```typescript
+async function generateSessionSummary(sessionId: string): Promise<void> {
+  // Fetch all transcripts
+  const transcripts = await getSessionTranscripts(sessionId);
+  const suggestions = await getSessionSuggestions(sessionId);
+  
+  const fullTranscript = transcripts
+    .map(t => `[${t.speaker_label}]: ${t.content}`)
+    .join('\n');
+
+  const prompt = `
+Analyze this conversation transcript from a legal case management session and provide:
+
+1. A concise summary (2-3 paragraphs) of what was discussed
+2. Key moments that should be tagged for review (with timestamps if available)
+3. List of all documents/evidence that were referenced or viewed
+
+TRANSCRIPT:
+${fullTranscript}
+
+DOCUMENTS VIEWED DURING SESSION:
+${suggestions.filter(s => s.status === 'viewed').map(s => s.explanation).join('\n')}
+
+Respond in JSON format:
+{
+  "summary": "...",
+  "key_moments": [
+    {"description": "...", "type": "reference|assertion|discrepancy|decision"}
+  ],
+  "documents_referenced": [
+    {"title": "...", "status": "viewed|mentioned"}
+  ]
+}`;
+
+  const result = await model.generateContent(prompt);
+  const summary = JSON.parse(result.response.text());
+  
+  await saveSessionSummary(sessionId, summary);
+}
+```
+
+---
+
+### Part 11: Styling
+
+Use the existing dark theme. Key additions:
+
+```css
+/* Recording indicator pulse */
+.recording-dot {
+  width: 12px;
+  height: 12px;
+  background: #ef4444;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.recording-dot.pulse {
+  animation: recording-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes recording-pulse {
+  0%, 100% { 
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  50% { 
+    opacity: 0.8;
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+/* Suggestion card */
+.suggestion-card {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: all 0.2s ease;
+}
+
+.suggestion-card.pending {
+  border-color: #10b981;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+}
+
+.suggestion-card .new-badge {
+  background: #10b981;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Split view */
+.split-view {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  height: calc(100vh - 200px);
+}
+
+.split-view .transcript-panel,
+.split-view .document-panel {
+  overflow-y: auto;
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* Transcript entry */
+.transcript-entry {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #333;
+}
+
+.transcript-entry .timestamp {
+  color: #666;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.transcript-entry .speaker {
+  color: #10b981;
+  font-weight: 600;
+  margin-left: 12px;
+}
+
+.transcript-entry .content {
+  margin-top: 4px;
+  color: #e0e0e0;
+  line-height: 1.6;
+}
+```
+
+---
+
+### Environment Variables Needed
+
+Add these to your `.env`:
+
+```
+DEEPGRAM_API_KEY=your_deepgram_api_key
+GEMINI_API_KEY=your_existing_gemini_key
+```
+
+---
+
+### Summary of Files to Create/Modify
+
+**New Files:**
+1. `pages/ambient-intelligence/index.tsx` - Setup page
+2. `pages/ambient-intelligence/session/[id].tsx` - Live session page
+3. `services/transcription-service.ts` - Audio transcription
+4. `services/reference-detection-service.ts` - AI analysis
+5. `services/ambient-intelligence-service.ts` - Orchestration
+6. `hooks/useAmbientSession.ts` - Session state management
+7. `hooks/useAudioCapture.ts` - Browser audio capture
+8. `components/ambient/SuggestionCard.tsx`
+9. `components/ambient/TranscriptPanel.tsx`
+10. `components/ambient/DocumentPanel.tsx`
+11. `components/ambient/SessionHeader.tsx`
+
+**Modify:**
+1. Sidebar navigation component - Add Ambient Intelligence link
+2. Database schema - Run migrations for new tables
+
+---
+
+Start with Part 1 (navigation) and Part 2 (database), then work through each part sequentially. Let me know when you're ready to proceed or if you have questions about any section.

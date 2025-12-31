@@ -1,0 +1,530 @@
+import React, { useState } from 'react';
+import { 
+  Sparkles, X, Plus, Target, AlertTriangle, CheckCircle, 
+  FileText, Mail, MessageSquare, Phone, ChevronDown, ChevronRight,
+  Settings, Lightbulb, Zap, Eye, EyeOff, GripVertical, Trash2,
+  Edit3, Check, Search, Filter, Volume2, Video, Mic, Monitor,
+  Users, Clock, ArrowRight
+} from 'lucide-react';
+
+// Mock data
+const mockIssues = [
+  {
+    id: 1,
+    title: "When did Miller first learn about the missing PPE?",
+    shortName: "Miller Knowledge",
+    active: true,
+    resultsCount: 4
+  },
+  {
+    id: 2,
+    title: "Who authorized work to proceed without safety equipment?",
+    shortName: "Work Authorization",
+    active: true,
+    resultsCount: 2
+  },
+  {
+    id: 3,
+    title: "Prior incidents or complaints about PPE availability",
+    shortName: "Prior Incidents",
+    active: true,
+    resultsCount: 6
+  }
+];
+
+const mockSuggestions = [
+  {
+    id: 1,
+    issueId: 1,
+    type: 'email',
+    title: 'Email: Torres → Miller',
+    date: '3/15/2024 7:42 AM',
+    preview: '"The PPE cabinet was completely empty when I arrived at 7:30"',
+    relevance: 'contradicts',
+    relevanceNote: 'Miller testified email was received at 9:15 AM',
+    confidence: 'high'
+  },
+  {
+    id: 2,
+    issueId: 1,
+    type: 'transcript',
+    title: 'Miller Deposition, p. 23-24',
+    date: '11/15/2024',
+    preview: '"I didn\'t receive any communication about equipment issues until mid-morning"',
+    relevance: 'contradicts',
+    relevanceNote: 'Conflicts with 7:42 AM email timestamp',
+    confidence: 'high'
+  },
+  {
+    id: 3,
+    issueId: 2,
+    type: 'document',
+    title: 'Safety Protocol Override Form',
+    date: '3/15/2024',
+    preview: 'Signed by James Miller authorizing "temporary work continuation"',
+    relevance: 'supports',
+    relevanceNote: 'Direct evidence of authorization',
+    confidence: 'high'
+  },
+  {
+    id: 4,
+    issueId: 3,
+    type: 'document',
+    title: 'Incident Report #2024-0089',
+    date: '1/22/2024',
+    preview: 'PPE shortage reported by Jennifer Walsh, same cabinet location',
+    relevance: 'pattern',
+    relevanceNote: '3rd similar incident in 6 months',
+    confidence: 'medium'
+  },
+  {
+    id: 5,
+    issueId: 3,
+    type: 'message',
+    title: 'WhatsApp: Walsh → Torres',
+    date: '1/23/2024',
+    preview: '"This is the second time this month the cabinet was empty"',
+    relevance: 'pattern',
+    relevanceNote: 'Shows ongoing awareness of issue',
+    confidence: 'medium'
+  },
+  {
+    id: 6,
+    issueId: 1,
+    type: 'email',
+    title: 'Email: Miller → HR Director',
+    date: '3/15/2024 11:30 AM',
+    preview: '"I was notified of the equipment issue early this morning"',
+    relevance: 'supports',
+    relevanceNote: 'Miller admits early notification',
+    confidence: 'high'
+  }
+];
+
+const mockTranscript = [
+  { speaker: 'Attorney Chen', time: '00:12:45', text: 'Mr. Torres, what time did you notify your supervisor about the missing equipment?' },
+  { speaker: 'Michael Torres', time: '00:12:52', text: 'I sent him an email right away, probably around 7:40 or 7:45 in the morning.' },
+  { speaker: 'Attorney Chen', time: '00:13:05', text: 'And that supervisor was James Miller?' },
+  { speaker: 'Michael Torres', time: '00:13:08', text: 'Yes, that\'s correct.' },
+];
+
+const RelevanceIndicator = ({ type }) => {
+  const config = {
+    contradicts: { 
+      icon: AlertTriangle, 
+      label: 'CONTRADICTS', 
+      bg: 'bg-red-500/20', 
+      text: 'text-red-400',
+      border: 'border-red-500/30'
+    },
+    supports: { 
+      icon: CheckCircle, 
+      label: 'SUPPORTS', 
+      bg: 'bg-green-500/20', 
+      text: 'text-green-400',
+      border: 'border-green-500/30'
+    },
+    pattern: { 
+      icon: Zap, 
+      label: 'PATTERN', 
+      bg: 'bg-amber-500/20', 
+      text: 'text-amber-400',
+      border: 'border-amber-500/30'
+    },
+    related: { 
+      icon: FileText, 
+      label: 'RELATED', 
+      bg: 'bg-slate-500/20', 
+      text: 'text-slate-400',
+      border: 'border-slate-500/30'
+    }
+  };
+  
+  const { icon: Icon, label, bg, text } = config[type] || config.related;
+  
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${bg} ${text}`}>
+      <Icon className="w-3 h-3" />
+      {label}
+    </span>
+  );
+};
+
+const TypeIcon = ({ type }) => {
+  const icons = {
+    email: Mail,
+    document: FileText,
+    transcript: MessageSquare,
+    message: Phone,
+  };
+  const Icon = icons[type] || FileText;
+  return <Icon className="w-4 h-4 text-slate-400" />;
+};
+
+export default function AmbientIntelligenceMockup() {
+  const [issues, setIssues] = useState(mockIssues);
+  const [focusMode, setFocusMode] = useState('focused'); // 'all' | 'focused'
+  const [showSetup, setShowSetup] = useState(false);
+  const [expandedIssues, setExpandedIssues] = useState([1, 2, 3]);
+  const [newIssue, setNewIssue] = useState('');
+  const [editingIssue, setEditingIssue] = useState(null);
+
+  const toggleIssueExpand = (id) => {
+    setExpandedIssues(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleIssueActive = (id) => {
+    setIssues(prev => prev.map(issue => 
+      issue.id === id ? { ...issue, active: !issue.active } : issue
+    ));
+  };
+
+  const addIssue = () => {
+    if (!newIssue.trim()) return;
+    const newId = Math.max(...issues.map(i => i.id)) + 1;
+    setIssues(prev => [...prev, {
+      id: newId,
+      title: newIssue,
+      shortName: newIssue.slice(0, 20) + '...',
+      active: true,
+      resultsCount: 0
+    }]);
+    setNewIssue('');
+    setExpandedIssues(prev => [...prev, newId]);
+  };
+
+  const removeIssue = (id) => {
+    setIssues(prev => prev.filter(i => i.id !== id));
+  };
+
+  const getSuggestionsForIssue = (issueId) => {
+    return mockSuggestions.filter(s => s.issueId === issueId);
+  };
+
+  const activeIssues = issues.filter(i => i.active);
+
+  return (
+    <div className="h-screen bg-slate-900 flex overflow-hidden">
+      {/* Left Panel - Video/Transcript Area (simplified for mockup) */}
+      <div className="flex-1 flex flex-col border-r border-slate-700/50">
+        {/* Top Bar */}
+        <div className="h-11 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-3 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+            <span className="text-white font-medium text-sm">Torres Deposition - Safety PPE v. HOBAO</span>
+            <span className="text-slate-500 text-xs">00:13:08</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] rounded-full font-medium flex items-center gap-1">
+              <Target className="w-3 h-3" />
+              Focus Mode: {activeIssues.length} Issues
+            </span>
+          </div>
+        </div>
+
+        {/* Participant Bar */}
+        <div className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 border-b border-slate-700/50">
+          <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">On Call:</span>
+          {['Frank Quesada (You)', 'Sarah Chen', 'Michael Torres', 'Court Reporter'].map((name, i) => (
+            <div 
+              key={i}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                i === 2 ? 'bg-blue-500/30 text-blue-300 ring-1 ring-blue-400' : 'bg-slate-700/60 text-slate-300'
+              }`}
+            >
+              {i === 2 && (
+                <span className="flex gap-0.5 items-end h-3">
+                  <span className="w-0.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                  <span className="w-0.5 h-2.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '75ms' }} />
+                  <span className="w-0.5 h-1.5 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+                </span>
+              )}
+              <span>{name}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Transcript */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex items-center gap-2 mb-4">
+            <MessageSquare className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-medium text-slate-300">Live Transcript</span>
+          </div>
+          {mockTranscript.map((line, i) => (
+            <div key={i}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-medium text-blue-400">{line.speaker}</span>
+                <span className="text-xs text-slate-600">{line.time}</span>
+              </div>
+              <p className="text-sm text-slate-200 leading-relaxed">{line.text}</p>
+            </div>
+          ))}
+          
+          {/* Live indicator */}
+          <div className="flex items-center gap-2 pt-4 border-t border-slate-700/30">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            <span className="text-xs text-slate-500">Listening for relevant topics...</span>
+          </div>
+        </div>
+
+        {/* Control Bar */}
+        <div className="h-12 bg-slate-800 border-t border-slate-700 flex items-center justify-center gap-2 shrink-0">
+          <button className="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-full text-white"><Mic className="w-4 h-4" /></button>
+          <button className="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-full text-white"><Video className="w-4 h-4" /></button>
+          <button className="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-full text-white"><Monitor className="w-4 h-4" /></button>
+          <button className="p-2.5 bg-blue-500 hover:bg-blue-600 rounded-full text-white"><Sparkles className="w-4 h-4" /></button>
+          <button className="p-2.5 bg-red-500 hover:bg-red-600 rounded-full text-white"><Phone className="w-4 h-4 rotate-[135deg]" /></button>
+        </div>
+      </div>
+
+      {/* Right Panel - Ambient Intelligence */}
+      <div className="w-[420px] flex flex-col bg-slate-850">
+        {/* AI Header */}
+        <div className="h-11 px-3 flex items-center justify-between border-b border-slate-700 bg-slate-800 shrink-0">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span className="text-sm font-medium text-slate-200">Ambient Intelligence</span>
+          </div>
+          <button 
+            onClick={() => setShowSetup(!showSetup)}
+            className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Focus Mode Toggle */}
+        <div className="px-3 py-2 border-b border-slate-700/50 bg-slate-800/50">
+          <div className="flex items-center gap-1 p-0.5 bg-slate-700/50 rounded-lg">
+            <button
+              onClick={() => setFocusMode('all')}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                focusMode === 'all' 
+                  ? 'bg-slate-600 text-white' 
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Search className="w-3.5 h-3.5" />
+              All Topics
+            </button>
+            <button
+              onClick={() => setFocusMode('focused')}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                focusMode === 'focused' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Target className="w-3.5 h-3.5" />
+              Focus Issues ({activeIssues.length})
+            </button>
+          </div>
+        </div>
+
+        {/* Setup Panel (collapsible) */}
+        {showSetup && (
+          <div className="border-b border-slate-700/50 bg-slate-800/30">
+            <div className="p-3 border-b border-slate-700/30">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-slate-300">Focus Issues</span>
+                <span className="text-[10px] text-slate-500">Click to toggle active</span>
+              </div>
+              
+              {/* Issue List */}
+              <div className="space-y-2 mb-3">
+                {issues.map(issue => (
+                  <div 
+                    key={issue.id}
+                    className={`group p-2 rounded-lg border transition-all ${
+                      issue.active 
+                        ? 'bg-blue-500/10 border-blue-500/30' 
+                        : 'bg-slate-800/50 border-slate-700/30 opacity-60'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <button
+                        onClick={() => toggleIssueActive(issue.id)}
+                        className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                          issue.active 
+                            ? 'bg-blue-500 border-blue-500 text-white' 
+                            : 'border-slate-600'
+                        }`}
+                      >
+                        {issue.active && <Check className="w-3 h-3" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-200 leading-snug">{issue.title}</p>
+                      </div>
+                      <button 
+                        onClick={() => removeIssue(issue.id)}
+                        className="p-1 opacity-0 group-hover:opacity-100 hover:bg-slate-700 rounded text-slate-500 hover:text-red-400 transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add New Issue */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newIssue}
+                  onChange={(e) => setNewIssue(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addIssue()}
+                  placeholder="Add a focus issue..."
+                  className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  onClick={addIssue}
+                  disabled={!newIssue.trim()}
+                  className="px-3 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg text-xs font-medium text-white transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* AI Suggest Issues */}
+              <button className="w-full mt-3 px-3 py-2 border border-dashed border-slate-600 hover:border-blue-500/50 rounded-lg text-xs text-slate-400 hover:text-blue-400 flex items-center justify-center gap-2 transition-colors">
+                <Lightbulb className="w-3.5 h-3.5" />
+                Suggest issues from case documents
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Results Area */}
+        <div className="flex-1 overflow-y-auto">
+          {focusMode === 'focused' ? (
+            /* Grouped by Issue */
+            <div className="p-2 space-y-2">
+              {activeIssues.map(issue => {
+                const suggestions = getSuggestionsForIssue(issue.id);
+                const isExpanded = expandedIssues.includes(issue.id);
+                const hasContradictions = suggestions.some(s => s.relevance === 'contradicts');
+                
+                return (
+                  <div key={issue.id} className="rounded-lg border border-slate-700/50 overflow-hidden">
+                    {/* Issue Header */}
+                    <button
+                      onClick={() => toggleIssueExpand(issue.id)}
+                      className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors ${
+                        hasContradictions ? 'bg-red-500/10' : 'bg-slate-800/50'
+                      } hover:bg-slate-800`}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                      )}
+                      <Target className={`w-4 h-4 shrink-0 ${hasContradictions ? 'text-red-400' : 'text-blue-400'}`} />
+                      <span className="flex-1 text-xs font-medium text-slate-200 truncate">
+                        {issue.shortName || issue.title}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {hasContradictions && (
+                          <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 text-[10px] rounded font-medium">
+                            {suggestions.filter(s => s.relevance === 'contradicts').length} contradictions
+                          </span>
+                        )}
+                        <span className="px-1.5 py-0.5 bg-slate-700 text-slate-400 text-[10px] rounded">
+                          {suggestions.length}
+                        </span>
+                      </div>
+                    </button>
+                    
+                    {/* Issue Results */}
+                    {isExpanded && (
+                      <div className="border-t border-slate-700/30">
+                        {suggestions.length > 0 ? (
+                          <div className="p-2 space-y-2">
+                            {suggestions.map(suggestion => (
+                              <div 
+                                key={suggestion.id}
+                                className={`p-2.5 rounded-lg border cursor-pointer transition-all hover:border-blue-500/50 ${
+                                  suggestion.relevance === 'contradicts' 
+                                    ? 'bg-red-500/5 border-red-500/20' 
+                                    : 'bg-slate-800/30 border-slate-700/30'
+                                }`}
+                              >
+                                <div className="flex items-start gap-2 mb-1.5">
+                                  <TypeIcon type={suggestion.type} />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                      <span className="text-xs font-medium text-slate-200">{suggestion.title}</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-500">{suggestion.date}</span>
+                                  </div>
+                                  <RelevanceIndicator type={suggestion.relevance} />
+                                </div>
+                                <p className="text-xs text-slate-300 mb-2 pl-6">{suggestion.preview}</p>
+                                <div className="pl-6 flex items-start gap-1.5">
+                                  <ArrowRight className="w-3 h-3 text-slate-500 mt-0.5 shrink-0" />
+                                  <span className={`text-[10px] ${
+                                    suggestion.relevance === 'contradicts' ? 'text-red-400' : 
+                                    suggestion.relevance === 'supports' ? 'text-green-400' : 'text-amber-400'
+                                  }`}>
+                                    {suggestion.relevanceNote}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-4 text-center text-xs text-slate-500">
+                            No relevant documents found yet
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* All Topics - Flat List */
+            <div className="p-2 space-y-2">
+              <div className="px-2 py-1 text-[10px] text-slate-500">
+                Showing all matches from conversation
+              </div>
+              {mockSuggestions.map(suggestion => (
+                <div 
+                  key={suggestion.id}
+                  className={`p-2.5 rounded-lg border cursor-pointer transition-all hover:border-blue-500/50 ${
+                    suggestion.relevance === 'contradicts' 
+                      ? 'bg-red-500/5 border-red-500/20' 
+                      : 'bg-slate-800/30 border-slate-700/30'
+                  }`}
+                >
+                  <div className="flex items-start gap-2 mb-1.5">
+                    <TypeIcon type={suggestion.type} />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-medium text-slate-200">{suggestion.title}</span>
+                      <div className="text-[10px] text-slate-500">{suggestion.date}</div>
+                    </div>
+                    <RelevanceIndicator type={suggestion.relevance} />
+                  </div>
+                  <p className="text-xs text-slate-300 pl-6">{suggestion.preview}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Live Status Footer */}
+        <div className="px-3 py-2 border-t border-slate-700/50 bg-slate-800/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-[10px] text-slate-400">Analyzing: "7:40 or 7:45 in the morning"</span>
+            </div>
+            <span className="text-[10px] text-slate-500">Last search: 3s ago</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

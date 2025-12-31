@@ -1,0 +1,307 @@
+PROMPT TO PASTE INTO REPLIT / VIBE CODING
+You are an expert full-stack engineer working on the Sentinel Counsel LLP investigations platform.
+Your task:
+Implement a Case Timeline UI under /cases/:caseId → “Timeline & Tasks” that:
+•	Is black & white by default
+•	Uses only three colors (red, yellow, green) to highlight risk/importance
+•	Renders TimelineEvent records for the case
+•	Supports expansion, editing, filtering
+•	Supports export to Word, PDF, and Excel/CSV
+Use the existing stack and styling conventions (assume React + Tailwind-like utility classes unless the codebase uses something different).
+________________________________________
+1. Extend the TimelineEvent Model for Risk Coloring
+Update the TimelineEvent model to support explicit risk-coded coloring:
+Add fields:
+•	risk_level: enum/string
+o	"critical" (maps to red)
+o	"medium" (maps to yellow)
+o	"cleared" (maps to green)
+o	"neutral" (maps to grey/none)
+•	risk_reason: string (short explanation, e.g., “High-risk FCPA language detected”)
+Prefer to set risk_level in the timeline extraction pipeline using importance score + law_tags + alerts, but the UI must allow overriding it manually.
+Example record:
+{
+  "id": "evt_123",
+  "case_id": "case_1",
+  "event_date": "2025-01-15T10:30:00Z",
+  "event_type": "alert",
+  "title": "High-risk payment language detected",
+  "summary": "System rule detected potentially off-books payment language.",
+  "participants": ["James Peterson", "Sarah Chen"],
+  "entities": ["Apex Trading"],
+  "law_tags": ["FCPA", "Books & Records"],
+  "risk_tags": ["bribe_risk"],
+  "source_document_ids": ["doc_45", "doc_46"],
+  "importance_score": 0.93,
+  "confidence_score": 0.88,
+  "risk_level": "critical",
+  "risk_reason": "Rule FCPA_Payment_07 triggered with high severity.",
+  "is_key_event": true,
+  "is_hidden": false,
+  "created_by": "system",
+  "created_at": "...",
+  "updated_at": "..."
+}
+________________________________________
+2. Risk Level → Color Mapping
+Define a mapping function in the UI layer:
+type RiskLevel = "critical" | "medium" | "cleared" | "neutral";
+
+function getRiskColor(riskLevel: RiskLevel) {
+  switch (riskLevel) {
+    case "critical":
+      return { barClass: "bg-red-600", label: "Critical" };      // RED
+    case "medium":
+      return { barClass: "bg-yellow-400", label: "Medium Risk" }; // YELLOW
+    case "cleared":
+      return { barClass: "bg-green-500", label: "Cleared" };      // GREEN
+    default:
+      return { barClass: "bg-gray-400", label: "Neutral" };       // Gray bar or neutral
+  }
+}
+All other text and background UI remain grayscale (white, black, gray) so the risk colors stand out.
+________________________________________
+3. Timeline Component Structure
+Create a main component for the tab:
+•	CaseTimelineTab
+o	Fetches TimelineEvent[] for caseId
+o	Renders filters + density controls
+o	Renders a TimelineEventRow for each event
+o	Provides export controls (Word/PDF/Excel/CSV)
+3.1 Layout
+Use a B&W base style:
+•	Page background: neutral (white/gray)
+•	Card background: bg-gray-50 / bg-white
+•	Text: text-black / text-gray-800
+•	Borders: border-gray-200
+Structure:
+<CaseTimelineTab>
+  <header> // Title + "Generate Timeline" + Export dropdown
+  <FiltersBar> // date range, event type, tag filters, density
+  <div className="mt-4 border rounded-md divide-y divide-gray-200">
+    {events.map(event => (
+      <TimelineEventRow key={event.id} event={event} />
+    ))}
+  </div>
+</CaseTimelineTab>
+________________________________________
+4. TimelineEventRow (Row + Expanded Panel)
+Each event row:
+•	Left: Vertical color bar (3–4px wide) indicating risk level
+•	Main row: B&W info, collapsed by default
+•	Expanded panel below for details
+4.1 Collapsed Row Design (B&W + color bar)
+Visual:
+•	Color bar <div className="w-1 h-full {riskColor.barClass}"></div>
+•	Main row content:
+o	Date
+o	Type (monochrome icon + text)
+o	Title
+o	Short summary snippet (muted gray)
+o	Right side: risk label text + caret icon for expand/collapse
+Example JSX:
+function TimelineEventRow({ event }: { event: TimelineEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const riskColor = getRiskColor(event.risk_level);
+
+  return (
+    <div className="flex">
+      {/* Color bar */}
+      <div className={`w-1 ${riskColor.barClass}`} />
+
+      {/* Main content */}
+      <div className="flex-1">
+        <button
+          className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-gray-50"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <div className="flex items-center gap-4 text-sm">
+            <div className="w-28 text-gray-700">
+              {formatDate(event.event_date)}
+            </div>
+            <div className="w-24 text-xs uppercase tracking-wide text-gray-500">
+              {formatEventType(event.event_type)}
+            </div>
+            <div className="flex flex-col">
+              <div className="font-medium text-gray-900">
+                {event.title}
+              </div>
+              <div className="text-xs text-gray-500 truncate">
+                {shortSummarySnippet(event.summary)}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-gray-600 italic">
+              {riskColor.label}
+            </span>
+            <ChevronDownIcon
+              className={`h-4 w-4 text-gray-500 transform transition-transform ${
+                expanded ? "rotate-180" : ""
+              }`}
+            />
+          </div>
+        </button>
+
+        {expanded && (
+          <TimelineEventDetails event={event} />
+        )}
+      </div>
+    </div>
+  );
+}
+4.2 Expanded Details Panel
+TimelineEventDetails should show (all in B&W):
+•	Full summary
+•	Optional emphasized phrase with bold (no extra color)
+•	risk_reason in small italic text
+•	Participants list
+•	Entities list
+•	Law tags / Risk tags as gray-outline pills
+•	Sources:
+o	Documents (type icon, title, date, snippet)
+o	Interviews
+o	Alerts
+•	Notes textarea (user editable)
+•	Buttons:
+o	Open in Document Review (filters viewer to source_document_ids)
+o	View Conversation (for email/chat)
+o	Mark as Key Event / Unmark Key Event
+o	Risk Level dropdown (Critical/Medium/Cleared/Neutral)
+o	Hide Event
+All buttons and icons stay monochrome; only the left bar carries color.
+________________________________________
+5. Filters & Density Controls
+Add a FiltersBar above the timeline:
+•	Date range picker
+•	Event type select
+•	Law/Risk tag select
+•	Participant select
+•	Toggle for “Show hidden events”
+•	Density dropdown:
+o	“Key milestones only” → is_key_event || importance_score >= 0.8
+o	“Normal” → importance_score >= 0.5
+o	“Detailed” → importance_score >= 0.2
+The filters themselves stay grayscale.
+________________________________________
+6. Risk Level Editing (Manual Overrides)
+Inside TimelineEventDetails:
+•	Add a small Risk Level dropdown:
+o	Options: Critical, Medium, Cleared, Neutral
+o	Changing this calls an API to update risk_level and risk_reason.
+o	Row re-renders with updated color bar and label.
+Dropdown UI remains grayscale; within the dropdown, you may include small colored dots next to each option, but limit color usage to that and the bar.
+________________________________________
+7. Color Behavior Rules
+Implement these rules:
+1.	Base UI is strictly grayscale:
+o	Backgrounds, text, borders, icons: shades of gray/black/white.
+2.	Risk colors allowed only:
+o	Vertical bar on each row (red/yellow/green/gray)
+o	Tiny dot beside risk labels or within risk dropdown options (optional)
+3.	Semantics:
+o	critical → red bar, label “Critical”
+o	medium → yellow bar, label “Medium Risk”
+o	cleared → green bar, label “Cleared”
+o	neutral → gray bar, label “Neutral”
+4.	Accessibility:
+o	Always pair colors with text labels.
+o	Maintain high contrast for text.
+________________________________________
+8. Export Functionality (Word, PDF, Excel/Spreadsheet)
+Add an Export control to the header of CaseTimelineTab.
+8.1 Export UI
+In the header, include:
+•	Button or dropdown: Export Timeline
+•	When clicked, show a small modal or dropdown with options:
+o	Format:
+	Word (.docx)
+	PDF
+	Excel (.xlsx)
+	CSV (.csv)
+o	Detail level:
+	Key events only
+	All visible events (respecting filters & density)
+o	Include toggles:
+	Tags & laws (on/off)
+	Source IDs (on/off)
+	Notes (on/off)
+	AI confidence/importance (default off)
+All controls B&W.
+8.2 Backend export endpoints
+Implement one backend endpoint, e.g.:
+•	POST /cases/:caseId/timeline/export
+Request body:
+{
+  "format": "docx | pdf | xlsx | csv",
+  "detail_level": "key_only | visible",
+  "include_tags": true,
+  "include_sources": true,
+  "include_notes": true,
+  "include_ai_metrics": false,
+  "filters": {
+    "date_from": "...",
+    "date_to": "...",
+    "event_types": [...],
+    "tags": [...],
+    "participants": [...]
+  }
+}
+Server logic:
+1.	Fetch filtered TimelineEvents for the case using the same filters/density as UI.
+2.	Build a normalized data structure:
+[
+  {
+    "Date": "2025-01-15",
+    "Type": "Alert",
+    "Title": "High-risk payment language detected",
+    "Participants": "James Peterson; Sarah Chen",
+    "Entities": "Apex Trading",
+    "Tags": "FCPA; Books & Records",
+    "RiskLevel": "Critical",
+    "RiskReason": "Rule FCPA_Payment_07 triggered...",
+    "Notes": "Attorney notes here",
+    "SourceIds": "doc_45, doc_46"
+  },
+  ...
+]
+3.	For Word/PDF:
+o	Use a simple table layout with columns:
+	Date, Type, Title, Participants, Entities, Tags, Risk, Notes
+o	Apply grayscale styling (borders, text).
+o	Add subtle risk indication:
+	colored bar or colored dot in a “Risk” column (if allowed by your document generator).
+4.	For Excel (.xlsx):
+o	Generate a proper workbook with:
+	Header row
+	One row per event
+	RiskLevel as a string, with no color formatting required (user can add conditional formatting later).
+5.	For CSV:
+o	Output plain CSV using the same normalized fields.
+Endpoint returns:
+{
+  "downloadUrl": "https://.../exports/case_123_timeline_2025-01-15.xlsx"
+}
+UI then triggers a file download.
+________________________________________
+9. Integration with Case Page
+On /cases/:caseId:
+•	In the “Timeline & Tasks” tab:
+o	If no events:
+	Show an empty state: “No timeline events yet” + Generate Timeline button.
+o	If events exist:
+	Render CaseTimelineTab with:
+	Header (Timeline, Generate Timeline, Export Timeline)
+	Filters
+	Events table
+Generate Timeline should call the existing backend timeline extraction pipeline and refresh the list when done, preserving manual and key events.
+________________________________________
+10. Implementation Notes
+•	Keep business logic modular:
+o	TimelineService (backend extraction + CRUD)
+o	TimelineExportService (backend export for docx/pdf/xlsx/csv)
+o	TimelineAPI (frontend data hooks)
+o	CaseTimelineTab, TimelineEventRow, TimelineEventDetails (UI)
+•	On the frontend, reuse existing button, dropdown, card, and table components so the feature visually matches the rest of Sentinel.
+•	Favor clear naming and comments so future developers can extend risk logic or add new export formats easily.
+This spec should fully define the B&W + red/yellow/green timeline UI with Word/PDF/Excel/CSV export for implementation in this Replit project.

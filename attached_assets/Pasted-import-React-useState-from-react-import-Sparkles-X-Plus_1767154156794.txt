@@ -1,0 +1,720 @@
+import React, { useState } from 'react';
+import { 
+  Sparkles, X, Plus, Target, AlertTriangle, CheckCircle, 
+  FileText, Mail, MessageSquare, Phone, ChevronDown, ChevronRight,
+  Upload, FileUp, Trash2, Edit3, Check, Eye, Scale, Shield,
+  AlertCircle, ThumbsUp, ThumbsDown, Loader2, ArrowRight,
+  File, Briefcase, Users, Clock, Mic, Video, RefreshCw,
+  ChevronUp, GripVertical, Zap, Search, Filter, Settings
+} from 'lucide-react';
+
+// Mock extracted allegations from a complaint
+const mockExtractedAllegations = [
+  {
+    id: 1,
+    paragraph: "¶ 12",
+    text: "On March 15, 2024, Defendant HOBAO Industries knew or should have known that the PPE storage cabinet at the Main Street facility was empty and failed to take corrective action.",
+    type: "negligence",
+    keywords: ["March 15", "PPE", "storage cabinet", "empty", "knew", "corrective action"],
+    active: true
+  },
+  {
+    id: 2,
+    paragraph: "¶ 15",
+    text: "Defendant's supervisor, James Miller, was informed of the safety equipment shortage at approximately 7:45 AM but authorized work to continue without proper safety equipment.",
+    type: "negligence",
+    keywords: ["James Miller", "7:45 AM", "authorized", "continue", "safety equipment"],
+    active: true
+  },
+  {
+    id: 3,
+    paragraph: "¶ 18",
+    text: "Prior to the incident, Defendant had received multiple complaints regarding PPE availability at the facility, including documented incidents on January 22, 2024 and February 8, 2024.",
+    type: "notice",
+    keywords: ["prior", "complaints", "PPE availability", "January 22", "February 8"],
+    active: true
+  },
+  {
+    id: 4,
+    paragraph: "¶ 23",
+    text: "As a direct and proximate result of Defendant's negligence, Plaintiff suffered severe injuries requiring hospitalization and ongoing medical treatment.",
+    type: "damages",
+    keywords: ["injuries", "hospitalization", "medical treatment"],
+    active: true
+  },
+  {
+    id: 5,
+    paragraph: "¶ 27",
+    text: "Defendant's Safety Protocol Manual v3.2 required all PPE equipment to be inspected and restocked at the beginning of each shift.",
+    type: "standard_of_care",
+    keywords: ["Safety Protocol", "inspected", "restocked", "each shift"],
+    active: true
+  }
+];
+
+const mockLiveResults = [
+  {
+    id: 1,
+    allegationId: 2,
+    type: 'transcript',
+    source: 'Torres Testimony (Live)',
+    time: '00:12:52',
+    text: '"I sent him an email right away, probably around 7:40 or 7:45 in the morning."',
+    position: 'supports',
+    explanation: 'Confirms Miller was notified at ~7:45 AM as alleged in ¶ 15'
+  },
+  {
+    id: 2,
+    allegationId: 2,
+    type: 'document',
+    source: 'Email: Torres → Miller',
+    time: '7:42 AM, 3/15/2024',
+    text: '"The PPE cabinet was completely empty when I arrived at 7:30"',
+    position: 'supports',
+    explanation: 'Documentary evidence of early morning notification'
+  },
+  {
+    id: 3,
+    allegationId: 3,
+    type: 'document',
+    source: 'Incident Report #2024-0089',
+    time: '1/22/2024',
+    text: 'PPE shortage reported by Jennifer Walsh, same cabinet location',
+    position: 'supports',
+    explanation: 'Confirms prior incident on January 22 as alleged in ¶ 18'
+  },
+  {
+    id: 4,
+    allegationId: 1,
+    type: 'document',
+    source: 'Miller Deposition, p. 31',
+    time: '11/15/2024',
+    text: '"The cabinet issue was a surprise to everyone that morning"',
+    position: 'hurts',
+    explanation: 'Miller claims no prior knowledge - contradicts ¶ 12 allegation of knowledge'
+  },
+  {
+    id: 5,
+    allegationId: 5,
+    type: 'document',
+    source: 'Safety Protocol Manual v3.2, §4.2',
+    time: 'Effective 1/1/2024',
+    text: '"PPE stations shall be inspected at shift start by designated safety officer"',
+    position: 'supports',
+    explanation: 'Confirms protocol requirement alleged in ¶ 27'
+  }
+];
+
+// Position indicator component
+const PositionBadge = ({ position }) => {
+  if (position === 'supports') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+        <ThumbsUp className="w-3 h-3" />
+        SUPPORTS YOUR POSITION
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+      <ThumbsDown className="w-3 h-3" />
+      HURTS YOUR POSITION
+    </span>
+  );
+};
+
+// Type badge for allegations
+const AllegationTypeBadge = ({ type }) => {
+  const config = {
+    negligence: { label: 'Negligence', color: 'blue' },
+    notice: { label: 'Notice', color: 'amber' },
+    damages: { label: 'Damages', color: 'purple' },
+    standard_of_care: { label: 'Standard of Care', color: 'cyan' },
+    causation: { label: 'Causation', color: 'pink' }
+  };
+  const { label, color } = config[type] || { label: type, color: 'slate' };
+  
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium bg-${color}-500/20 text-${color}-400`}>
+      {label}
+    </span>
+  );
+};
+
+export default function FocusIssuesFromPleading() {
+  const [step, setStep] = useState('setup'); // 'setup' | 'review' | 'live'
+  const [uploadMethod, setUploadMethod] = useState('upload'); // 'upload' | 'paste'
+  const [pastedText, setPastedText] = useState('');
+  const [selectedSide, setSelectedSide] = useState('plaintiff');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [allegations, setAllegations] = useState([]);
+  const [expandedAllegations, setExpandedAllegations] = useState([]);
+  const [liveResults, setLiveResults] = useState(mockLiveResults);
+
+  const simulateExtraction = () => {
+    setIsExtracting(true);
+    setTimeout(() => {
+      setAllegations(mockExtractedAllegations);
+      setExpandedAllegations(mockExtractedAllegations.map(a => a.id));
+      setIsExtracting(false);
+      setStep('review');
+    }, 2000);
+  };
+
+  const toggleAllegation = (id) => {
+    setAllegations(prev => prev.map(a => 
+      a.id === id ? { ...a, active: !a.active } : a
+    ));
+  };
+
+  const toggleExpand = (id) => {
+    setExpandedAllegations(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const getResultsForAllegation = (allegationId) => {
+    return liveResults.filter(r => r.allegationId === allegationId);
+  };
+
+  const activeAllegations = allegations.filter(a => a.active);
+  const supportsCount = liveResults.filter(r => r.position === 'supports').length;
+  const hurtsCount = liveResults.filter(r => r.position === 'hurts').length;
+
+  // STEP 1: Setup - Upload or Paste Pleading
+  if (step === 'setup') {
+    return (
+      <div className="min-h-screen bg-slate-900 p-6">
+        <div className="max-w-3xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 mb-4">
+              <Target className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-white mb-2">Configure Focus Issues</h1>
+            <p className="text-slate-400">
+              Upload a pleading to automatically extract key allegations for monitoring
+            </p>
+          </div>
+
+          {/* Side Selection */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Which side are you representing?
+            </label>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSelectedSide('plaintiff')}
+                className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+                  selectedSide === 'plaintiff'
+                    ? 'border-blue-500 bg-blue-500/10'
+                    : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    selectedSide === 'plaintiff' ? 'bg-blue-500' : 'bg-slate-700'
+                  }`}>
+                    <Scale className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="text-left">
+                    <div className={`font-medium ${selectedSide === 'plaintiff' ? 'text-white' : 'text-slate-300'}`}>
+                      Plaintiff
+                    </div>
+                    <div className="text-xs text-slate-500">Proving allegations</div>
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => setSelectedSide('defendant')}
+                className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+                  selectedSide === 'defendant'
+                    ? 'border-blue-500 bg-blue-500/10'
+                    : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    selectedSide === 'defendant' ? 'bg-blue-500' : 'bg-slate-700'
+                  }`}>
+                    <Shield className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="text-left">
+                    <div className={`font-medium ${selectedSide === 'defendant' ? 'text-white' : 'text-slate-300'}`}>
+                      Defendant
+                    </div>
+                    <div className="text-xs text-slate-500">Defending against allegations</div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Upload Method Toggle */}
+          <div className="mb-4">
+            <div className="flex items-center gap-1 p-1 bg-slate-800 rounded-lg w-fit">
+              <button
+                onClick={() => setUploadMethod('upload')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  uploadMethod === 'upload'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <FileUp className="w-4 h-4 inline mr-2" />
+                Upload Document
+              </button>
+              <button
+                onClick={() => setUploadMethod('paste')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  uploadMethod === 'paste'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <FileText className="w-4 h-4 inline mr-2" />
+                Paste Text
+              </button>
+            </div>
+          </div>
+
+          {/* Upload Area */}
+          {uploadMethod === 'upload' ? (
+            <div className="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center bg-slate-800/30 hover:border-slate-600 hover:bg-slate-800/50 transition-all cursor-pointer mb-6">
+              <Upload className="w-12 h-12 text-slate-500 mx-auto mb-4" />
+              <p className="text-slate-300 font-medium mb-1">
+                Drop your pleading here or click to browse
+              </p>
+              <p className="text-sm text-slate-500 mb-4">
+                Supports PDF, Word (.docx), or text files
+              </p>
+              <div className="flex flex-wrap justify-center gap-2 text-xs text-slate-600">
+                <span className="px-2 py-1 bg-slate-800 rounded">Complaint</span>
+                <span className="px-2 py-1 bg-slate-800 rounded">Answer</span>
+                <span className="px-2 py-1 bg-slate-800 rounded">Motion to Dismiss</span>
+                <span className="px-2 py-1 bg-slate-800 rounded">Summary Judgment Brief</span>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-6">
+              <textarea
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder="Paste the text of your complaint, motion, or other pleading here...
+
+Example:
+¶ 12. On March 15, 2024, Defendant HOBAO Industries knew or should have known that the PPE storage cabinet at the Main Street facility was empty...
+
+¶ 15. Defendant's supervisor, James Miller, was informed of the safety equipment shortage at approximately 7:45 AM..."
+                className="w-full h-64 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none"
+              />
+            </div>
+          )}
+
+          {/* Document Type Selector */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Document Type
+            </label>
+            <select className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="complaint">Complaint</option>
+              <option value="answer">Answer / Affirmative Defenses</option>
+              <option value="motion_dismiss">Motion to Dismiss</option>
+              <option value="motion_summary">Motion for Summary Judgment</option>
+              <option value="opposition">Opposition Brief</option>
+              <option value="other">Other Pleading</option>
+            </select>
+          </div>
+
+          {/* Extract Button */}
+          <button
+            onClick={simulateExtraction}
+            disabled={isExtracting}
+            className="w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:from-slate-600 disabled:to-slate-700 rounded-xl text-white font-medium transition-all flex items-center justify-center gap-2"
+          >
+            {isExtracting ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Extracting Allegations...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-5 h-5" />
+                Extract Key Allegations
+              </>
+            )}
+          </button>
+
+          {/* Or Manual Entry */}
+          <div className="mt-6 pt-6 border-t border-slate-800">
+            <button 
+              onClick={() => { setAllegations([]); setStep('review'); }}
+              className="w-full py-3 border border-slate-700 hover:border-slate-600 rounded-xl text-slate-400 hover:text-white text-sm transition-colors"
+            >
+              Or enter focus issues manually
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // STEP 2: Review Extracted Allegations
+  if (step === 'review') {
+    return (
+      <div className="min-h-screen bg-slate-900 p-6">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-xl font-bold text-white mb-1">Review Extracted Allegations</h1>
+              <p className="text-sm text-slate-400">
+                {allegations.length} allegations extracted • {activeAllegations.length} active
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setStep('setup')}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={() => setStep('live')}
+                className="px-6 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg text-white text-sm font-medium transition-colors"
+              >
+                Start Session →
+              </button>
+            </div>
+          </div>
+
+          {/* Side Indicator */}
+          <div className="flex items-center gap-2 mb-6 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+            <Scale className="w-4 h-4 text-blue-400" />
+            <span className="text-sm text-slate-300">
+              Representing: <span className="font-medium text-white capitalize">{selectedSide}</span>
+            </span>
+            <span className="text-slate-600 mx-2">•</span>
+            <span className="text-sm text-slate-400">
+              {selectedSide === 'plaintiff' 
+                ? 'Looking for evidence that supports or undermines these allegations'
+                : 'Looking for evidence that defends against or concedes these allegations'}
+            </span>
+          </div>
+
+          {/* Allegations List */}
+          <div className="space-y-3 mb-6">
+            {allegations.map((allegation, index) => (
+              <div 
+                key={allegation.id}
+                className={`rounded-xl border transition-all ${
+                  allegation.active 
+                    ? 'bg-slate-800/50 border-slate-700' 
+                    : 'bg-slate-800/20 border-slate-800 opacity-60'
+                }`}
+              >
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    {/* Checkbox */}
+                    <button
+                      onClick={() => toggleAllegation(allegation.id)}
+                      className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        allegation.active 
+                          ? 'bg-blue-500 border-blue-500 text-white' 
+                          : 'border-slate-600 hover:border-slate-500'
+                      }`}
+                    >
+                      {allegation.active && <Check className="w-3 h-3" />}
+                    </button>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-mono text-slate-500">{allegation.paragraph}</span>
+                        <AllegationTypeBadge type={allegation.type} />
+                      </div>
+                      <p className="text-sm text-slate-200 leading-relaxed mb-3">
+                        {allegation.text}
+                      </p>
+                      
+                      {/* Extracted Keywords */}
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Keywords:</span>
+                        {allegation.keywords.map((keyword, i) => (
+                          <span 
+                            key={i}
+                            className="px-2 py-0.5 bg-slate-700/50 rounded text-[11px] text-slate-400"
+                          >
+                            {keyword}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1">
+                      <button className="p-1.5 hover:bg-slate-700 rounded text-slate-500 hover:text-white">
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button className="p-1.5 hover:bg-slate-700 rounded text-slate-500 hover:text-red-400">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add Manual Issue */}
+          <button className="w-full py-3 border border-dashed border-slate-700 hover:border-slate-600 rounded-xl text-slate-400 hover:text-white text-sm transition-colors flex items-center justify-center gap-2">
+            <Plus className="w-4 h-4" />
+            Add Custom Focus Issue
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // STEP 3: Live Session View
+  return (
+    <div className="h-screen bg-slate-900 flex flex-col overflow-hidden">
+      {/* Top Bar */}
+      <div className="h-12 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+          <span className="text-white font-medium">Torres Deposition</span>
+          <span className="text-slate-500 text-sm">00:14:32</span>
+          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] rounded-full font-medium flex items-center gap-1">
+            <Scale className="w-3 h-3" />
+            Plaintiff Focus
+          </span>
+        </div>
+        <div className="flex items-center gap-4">
+          {/* Position Summary */}
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1 text-green-400">
+              <ThumbsUp className="w-3.5 h-3.5" />
+              {supportsCount} supports
+            </span>
+            <span className="flex items-center gap-1 text-red-400">
+              <ThumbsDown className="w-3.5 h-3.5" />
+              {hurtsCount} hurts
+            </span>
+          </div>
+          <button className="p-1.5 hover:bg-slate-700 rounded text-slate-400">
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left: Transcript */}
+        <div className="flex-1 flex flex-col border-r border-slate-700/50">
+          {/* Participant Bar */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 border-b border-slate-700/50">
+            <span className="text-[10px] text-slate-500 uppercase tracking-wide">On Call:</span>
+            {['Frank Quesada (You)', 'Sarah Chen', 'Michael Torres'].map((name, i) => (
+              <span 
+                key={i}
+                className={`px-2.5 py-1 rounded-full text-xs ${
+                  i === 2 ? 'bg-blue-500/30 text-blue-300' : 'bg-slate-700/60 text-slate-300'
+                }`}
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+
+          {/* Transcript Content */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <MessageSquare className="w-4 h-4 text-blue-400" />
+              <span className="text-sm font-medium text-slate-300">Live Transcript</span>
+            </div>
+            
+            {/* Highlighted testimony */}
+            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-medium text-blue-400">Michael Torres</span>
+                <span className="text-xs text-slate-600">00:12:52</span>
+                <PositionBadge position="supports" />
+              </div>
+              <p className="text-sm text-slate-200">
+                "I sent him an email right away, probably around <span className="bg-green-500/30 px-1 rounded">7:40 or 7:45</span> in the morning."
+              </p>
+              <div className="mt-2 text-xs text-green-400 flex items-center gap-1">
+                <ArrowRight className="w-3 h-3" />
+                Supports ¶ 15: Miller notified at ~7:45 AM
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-medium text-blue-400">Attorney Chen</span>
+                <span className="text-xs text-slate-600">00:13:05</span>
+              </div>
+              <p className="text-sm text-slate-200">"And that supervisor was James Miller?"</p>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-medium text-blue-400">Michael Torres</span>
+                <span className="text-xs text-slate-600">00:13:08</span>
+              </div>
+              <p className="text-sm text-slate-200">"Yes, that's correct."</p>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-medium text-blue-400">Attorney Chen</span>
+                <span className="text-xs text-slate-600">00:13:45</span>
+              </div>
+              <p className="text-sm text-slate-200">"Had you ever seen the PPE cabinet empty before that day?"</p>
+            </div>
+
+            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-medium text-blue-400">Michael Torres</span>
+                <span className="text-xs text-slate-600">00:14:02</span>
+                <PositionBadge position="supports" />
+              </div>
+              <p className="text-sm text-slate-200">
+                "Yes, at least <span className="bg-green-500/30 px-1 rounded">twice before</span>. Once in <span className="bg-green-500/30 px-1 rounded">late January</span> and again in <span className="bg-green-500/30 px-1 rounded">early February</span>."
+              </p>
+              <div className="mt-2 text-xs text-green-400 flex items-center gap-1">
+                <ArrowRight className="w-3 h-3" />
+                Supports ¶ 18: Prior incidents on January 22 and February 8
+              </div>
+            </div>
+
+            {/* Live indicator */}
+            <div className="flex items-center gap-2 pt-4 border-t border-slate-700/30">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-xs text-slate-500">Analyzing testimony against 5 active allegations...</span>
+            </div>
+          </div>
+
+          {/* Control Bar */}
+          <div className="h-12 bg-slate-800 border-t border-slate-700 flex items-center justify-center gap-2 shrink-0">
+            <button className="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-full text-white"><Mic className="w-4 h-4" /></button>
+            <button className="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-full text-white"><Video className="w-4 h-4" /></button>
+            <button className="p-2.5 bg-blue-500 hover:bg-blue-600 rounded-full text-white"><Sparkles className="w-4 h-4" /></button>
+            <button className="p-2.5 bg-red-500 hover:bg-red-600 rounded-full text-white"><Phone className="w-4 h-4 rotate-[135deg]" /></button>
+          </div>
+        </div>
+
+        {/* Right: Focus Issues + Results */}
+        <div className="w-[440px] flex flex-col bg-slate-850">
+          {/* Header */}
+          <div className="h-11 px-3 flex items-center justify-between border-b border-slate-700 bg-slate-800 shrink-0">
+            <div className="flex items-center gap-2">
+              <Target className="w-4 h-4 text-amber-400" />
+              <span className="text-sm font-medium text-slate-200">Focus Issues</span>
+              <span className="px-1.5 py-0.5 bg-slate-700 rounded text-[10px] text-slate-400">
+                {activeAllegations.length} active
+              </span>
+            </div>
+          </div>
+
+          {/* Results grouped by allegation */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            {activeAllegations.map(allegation => {
+              const results = getResultsForAllegation(allegation.id);
+              const isExpanded = expandedAllegations.includes(allegation.id);
+              const supports = results.filter(r => r.position === 'supports').length;
+              const hurts = results.filter(r => r.position === 'hurts').length;
+              
+              return (
+                <div key={allegation.id} className="rounded-lg border border-slate-700/50 overflow-hidden">
+                  {/* Allegation Header */}
+                  <button
+                    onClick={() => toggleExpand(allegation.id)}
+                    className="w-full px-3 py-2 flex items-center gap-2 text-left bg-slate-800/50 hover:bg-slate-800 transition-colors"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    )}
+                    <span className="text-[10px] font-mono text-slate-500">{allegation.paragraph}</span>
+                    <span className="flex-1 text-xs font-medium text-slate-200 truncate">
+                      {allegation.text.slice(0, 50)}...
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {supports > 0 && (
+                        <span className="flex items-center gap-0.5 text-[10px] text-green-400">
+                          <ThumbsUp className="w-3 h-3" />{supports}
+                        </span>
+                      )}
+                      {hurts > 0 && (
+                        <span className="flex items-center gap-0.5 text-[10px] text-red-400">
+                          <ThumbsDown className="w-3 h-3" />{hurts}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  
+                  {/* Results */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-700/30 p-2 space-y-2">
+                      {results.length > 0 ? (
+                        results.map(result => (
+                          <div 
+                            key={result.id}
+                            className={`p-2.5 rounded-lg border cursor-pointer transition-all hover:border-blue-500/50 ${
+                              result.position === 'hurts' 
+                                ? 'bg-red-500/5 border-red-500/20' 
+                                : 'bg-green-500/5 border-green-500/20'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <span className="text-xs font-medium text-slate-200">{result.source}</span>
+                                </div>
+                                <span className="text-[10px] text-slate-500">{result.time}</span>
+                              </div>
+                              <PositionBadge position={result.position} />
+                            </div>
+                            <p className="text-xs text-slate-300 mb-2">{result.text}</p>
+                            <div className="flex items-start gap-1.5">
+                              <ArrowRight className={`w-3 h-3 mt-0.5 shrink-0 ${
+                                result.position === 'hurts' ? 'text-red-400' : 'text-green-400'
+                              }`} />
+                              <span className={`text-[10px] ${
+                                result.position === 'hurts' ? 'text-red-400' : 'text-green-400'
+                              }`}>
+                                {result.explanation}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="py-4 text-center text-xs text-slate-500">
+                          No evidence found yet for this allegation
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer Status */}
+          <div className="px-3 py-2 border-t border-slate-700/50 bg-slate-800/50">
+            <div className="flex items-center justify-between text-[10px]">
+              <div className="flex items-center gap-2 text-slate-400">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span>Monitoring {activeAllegations.length} allegations</span>
+              </div>
+              <span className="text-slate-500">Last analysis: 2s ago</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

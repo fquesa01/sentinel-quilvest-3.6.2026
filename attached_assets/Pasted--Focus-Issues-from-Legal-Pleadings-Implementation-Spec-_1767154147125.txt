@@ -1,0 +1,711 @@
+# Focus Issues from Legal Pleadings - Implementation Spec
+
+## Overview
+
+Allow users to upload legal pleadings (complaints, motions, answers) to automatically extract key factual allegations that become Focus Issues for Ambient Intelligence monitoring. During meetings, the AI compares live testimony against these allegations and flags evidence that either **supports** or **hurts** the user's position.
+
+## User Flow
+
+### Step 1: Configure Session (Integrated into existing setup)
+
+Add a "Focus Issues" section to the Configure Audio Session / Configure Video Conference form:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Configure Video Conference                                   │
+│ Set up your video meeting with ambient intelligence          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│ Session Name                    Session Type                 │
+│ ┌─────────────────────────┐    ┌─────────────────────────┐  │
+│ │ Torres Deposition       │    │ Deposition          ▼   │  │
+│ └─────────────────────────┘    └─────────────────────────┘  │
+│                                                              │
+│ Link to Case                                                 │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ CASE-2025-0051: Safety PPE v. HOBAO                  ▼ │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│ 🎯 Focus Issues (Optional)                                  │
+│                                                              │
+│ ┌───────────────────┐ ┌───────────────────┐                 │
+│ │ ⚖️ Plaintiff      │ │ 🛡️ Defendant      │                 │
+│ │    ✓ Selected     │ │                   │                 │
+│ └───────────────────┘ └───────────────────┘                 │
+│                                                              │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │                                                         │ │
+│ │   📄 Drop pleading here or click to browse              │ │
+│ │                                                         │ │
+│ │   Complaint, Answer, Motion, Brief                      │ │
+│ │                                                         │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                              │
+│ Or: [ Paste text ] [ Enter manually ] [ Skip ]              │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│                              [ Start Video Conference → ]    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Step 2: Extract & Review Allegations
+
+After upload, AI extracts factual allegations:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Review Extracted Allegations                                 │
+│ 5 allegations extracted from Complaint • 5 active           │
+├─────────────────────────────────────────────────────────────┤
+│ ⚖️ Representing: Plaintiff                                   │
+│ Looking for evidence that supports or undermines allegations │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│ [✓] ¶ 12  Negligence                                        │
+│     On March 15, 2024, Defendant HOBAO Industries knew      │
+│     or should have known that the PPE storage cabinet...    │
+│     Keywords: March 15, PPE, storage cabinet, knew          │
+│                                                   [✏️] [🗑️] │
+│                                                              │
+│ [✓] ¶ 15  Negligence                                        │
+│     Defendant's supervisor, James Miller, was informed      │
+│     of the safety equipment shortage at approximately       │
+│     7:45 AM but authorized work to continue...              │
+│     Keywords: James Miller, 7:45 AM, authorized, continue   │
+│                                                   [✏️] [🗑️] │
+│                                                              │
+│ [✓] ¶ 18  Notice                                            │
+│     Prior to the incident, Defendant had received           │
+│     multiple complaints regarding PPE availability...       │
+│     Keywords: prior, complaints, January 22, February 8     │
+│                                                   [✏️] [🗑️] │
+│                                                              │
+│ [ + Add Custom Focus Issue ]                                │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│                    [ ← Back ]  [ Start Session → ]          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Step 3: Live Session Monitoring
+
+During the meeting, results are tagged as SUPPORTS or HURTS:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 🎯 Focus Issues                              5 active       │
+├─────────────────────────────────────────────────────────────┤
+│ Summary:  👍 4 supports  👎 1 hurts                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│ ▼ ¶ 15  Miller notified at 7:45 AM         👍 2            │
+│ ├────────────────────────────────────────────────────────── │
+│ │ 📝 Torres Testimony (Live)          00:12:52              │
+│ │ "I sent him an email right away, probably around          │
+│ │ 7:40 or 7:45 in the morning."                             │
+│ │                                                           │
+│ │ 👍 SUPPORTS YOUR POSITION                                 │
+│ │ → Confirms Miller was notified at ~7:45 AM as alleged     │
+│ ├────────────────────────────────────────────────────────── │
+│ │ 📧 Email: Torres → Miller              3/15/24 7:42 AM    │
+│ │ "The PPE cabinet was completely empty when I arrived"     │
+│ │                                                           │
+│ │ 👍 SUPPORTS YOUR POSITION                                 │
+│ │ → Documentary evidence of early morning notification      │
+│ └────────────────────────────────────────────────────────── │
+│                                                              │
+│ ▼ ¶ 12  Defendant knew about empty cabinet  👍 0  👎 1     │
+│ ├────────────────────────────────────────────────────────── │
+│ │ 📄 Miller Deposition, p. 31           11/15/2024          │
+│ │ "The cabinet issue was a surprise to everyone"            │
+│ │                                                           │
+│ │ 👎 HURTS YOUR POSITION                                    │
+│ │ → Miller claims no prior knowledge - contradicts          │
+│ │   allegation that defendant "knew or should have known"   │
+│ └────────────────────────────────────────────────────────── │
+│                                                              │
+│ ▶ ¶ 18  Prior incidents                     👍 2            │
+│ ▶ ¶ 23  Causation and damages               👍 0  👎 0     │
+│ ▶ ¶ 27  Safety protocol requirements        👍 1            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Position Classification Logic
+
+### For Plaintiff (proving allegations):
+
+| Evidence Type | Classification | Meaning |
+|---------------|----------------|---------|
+| Confirms allegation | 👍 SUPPORTS | Helps prove the case |
+| Contradicts allegation | 👎 HURTS | Undermines the case |
+| Shows pattern/notice | 👍 SUPPORTS | Strengthens the case |
+| Defendant denial | 👎 HURTS | Creates issue of fact |
+
+### For Defendant (defending against allegations):
+
+| Evidence Type | Classification | Meaning |
+|---------------|----------------|---------|
+| Contradicts allegation | 👍 SUPPORTS | Helps defense |
+| Confirms allegation | 👎 HURTS | Undermines defense |
+| Shows no pattern | 👍 SUPPORTS | Weakens plaintiff's case |
+| Admission by client | 👎 HURTS | Damaging to defense |
+
+### Classification Prompt
+
+```typescript
+async function classifyEvidence(
+  document: Document,
+  allegation: Allegation,
+  side: 'plaintiff' | 'defendant',
+  liveStatement?: string
+): Promise<PositionClassification> {
+  const prompt = `
+    You are analyzing evidence in a legal proceeding.
+    
+    ALLEGATION (${allegation.paragraph}):
+    "${allegation.text}"
+    
+    EVIDENCE:
+    Source: ${document.source}
+    Content: "${document.content}"
+    ${liveStatement ? `\nLIVE TESTIMONY just given: "${liveStatement}"` : ''}
+    
+    USER REPRESENTS: ${side.toUpperCase()}
+    
+    Analyze whether this evidence SUPPORTS or HURTS the ${side}'s position 
+    regarding this specific allegation.
+    
+    Consider:
+    - Does it confirm or contradict the factual claims in the allegation?
+    - Does it strengthen or weaken the legal argument?
+    - Would this be good or bad news for the ${side}?
+    
+    Return JSON:
+    {
+      "position": "supports" | "hurts",
+      "confidence": "high" | "medium" | "low",
+      "explanation": "One sentence explaining why this supports/hurts the position"
+    }
+  `;
+  
+  return await llm.classify(prompt);
+}
+```
+
+## Data Model
+
+### Allegation (Focus Issue from Pleading)
+
+```typescript
+interface Allegation {
+  id: string;
+  sessionId: string;
+  caseId: string;
+  
+  // Source document
+  sourceDocument?: {
+    type: 'complaint' | 'answer' | 'motion' | 'brief' | 'other';
+    filename?: string;
+    uploadedAt: Date;
+  };
+  
+  // Extracted content
+  paragraph: string;           // "¶ 12" or "Count I"
+  text: string;                // Full allegation text
+  type: 'negligence' | 'notice' | 'damages' | 'causation' | 'breach' | 'other';
+  keywords: string[];          // Extracted keywords for searching
+  
+  // User configuration
+  active: boolean;
+  customNote?: string;         // User's annotation
+  
+  // Timestamps
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+### Session Focus Configuration
+
+```typescript
+interface SessionFocusConfig {
+  sessionId: string;
+  
+  // Which side user represents
+  side: 'plaintiff' | 'defendant';
+  
+  // Source pleading
+  pleadingDocument?: {
+    type: string;
+    filename: string;
+    text: string;
+    uploadedAt: Date;
+  };
+  
+  // Extracted allegations
+  allegations: Allegation[];
+  
+  // UI state
+  expandedAllegationIds: string[];
+}
+```
+
+### Evidence Result
+
+```typescript
+interface EvidenceResult {
+  id: string;
+  sessionId: string;
+  allegationId: string;
+  
+  // Source
+  sourceType: 'transcript' | 'email' | 'document' | 'message';
+  sourceId: string;            // Document ID in case RAG
+  sourceTitle: string;
+  sourceDate: string;
+  excerpt: string;             // Relevant text excerpt
+  
+  // Classification
+  position: 'supports' | 'hurts';
+  confidence: 'high' | 'medium' | 'low';
+  explanation: string;
+  
+  // What triggered this result
+  triggerTranscript?: string;  // The live statement that surfaced this
+  
+  // User interaction
+  dismissed: boolean;
+  starred: boolean;
+  
+  // Timestamps
+  surfacedAt: Date;
+}
+```
+
+## Extraction Algorithm
+
+### Step 1: Parse Pleading Structure
+
+```typescript
+async function parsePleading(text: string, type: string): Promise<ParsedPleading> {
+  // Identify paragraph markers: ¶, numbered paragraphs, "COUNT I", etc.
+  const paragraphPattern = /(?:¶\s*\d+|^\d+\.|^[A-Z]+\s+[IVX]+)/gm;
+  
+  // Split into sections
+  const sections = splitBySections(text, paragraphPattern);
+  
+  return {
+    type,
+    sections,
+    rawText: text
+  };
+}
+```
+
+### Step 2: Extract Factual Allegations
+
+```typescript
+async function extractAllegations(
+  parsedPleading: ParsedPleading
+): Promise<Allegation[]> {
+  const prompt = `
+    Analyze this ${parsedPleading.type} and extract the KEY FACTUAL ALLEGATIONS 
+    that would need to be proven or defended at trial.
+    
+    Focus on:
+    - Specific facts alleged (dates, times, actions, knowledge)
+    - Who did what and when
+    - What the defendant knew or should have known
+    - Causation claims
+    - Damages claims
+    
+    DO NOT extract:
+    - Boilerplate jurisdictional allegations
+    - Incorporation by reference paragraphs
+    - Prayer for relief
+    - Legal conclusions without factual basis
+    
+    Document:
+    ${parsedPleading.rawText}
+    
+    Return JSON array:
+    [
+      {
+        "paragraph": "¶ 12",
+        "text": "Full text of the allegation",
+        "type": "negligence|notice|damages|causation|breach|other",
+        "keywords": ["key", "terms", "to", "search"]
+      }
+    ]
+  `;
+  
+  const extracted = await llm.extract(prompt);
+  
+  return extracted.map(a => ({
+    id: generateId(),
+    ...a,
+    active: true,
+    createdAt: new Date()
+  }));
+}
+```
+
+### Step 3: Generate Search Queries
+
+```typescript
+function generateSearchQueries(allegation: Allegation): SearchQuery[] {
+  // Create boolean search variations
+  const queries: SearchQuery[] = [];
+  
+  // Exact keyword combinations
+  queries.push({
+    type: 'keywords',
+    query: allegation.keywords.join(' AND ')
+  });
+  
+  // Date-focused search
+  const dates = extractDates(allegation.text);
+  if (dates.length > 0) {
+    queries.push({
+      type: 'temporal',
+      query: dates.map(d => `date:${d}`).join(' OR ')
+    });
+  }
+  
+  // Person-focused search
+  const persons = extractPersonNames(allegation.text);
+  if (persons.length > 0) {
+    queries.push({
+      type: 'person',
+      query: persons.map(p => `from:${p} OR to:${p} OR mentions:${p}`).join(' OR ')
+    });
+  }
+  
+  // Semantic search using full allegation text
+  queries.push({
+    type: 'semantic',
+    query: allegation.text
+  });
+  
+  return queries;
+}
+```
+
+## Real-Time Monitoring
+
+### Modified Ambient Intelligence Loop
+
+```typescript
+async function ambientMonitoringLoop(session: Session) {
+  const config = await getSessionFocusConfig(session.id);
+  
+  setInterval(async () => {
+    // Get latest transcript chunk
+    const transcriptChunk = await getLatestTranscript(session.id, 20); // 20 seconds
+    
+    if (!transcriptChunk || transcriptChunk.length === 0) return;
+    
+    // Extract claims from live testimony
+    const claims = await extractClaims(transcriptChunk);
+    
+    // For each active allegation, search for relevant evidence
+    for (const allegation of config.allegations.filter(a => a.active)) {
+      // Generate search query combining allegation keywords + transcript
+      const query = buildFocusedQuery(allegation, claims);
+      
+      // Search case RAG
+      const results = await searchCaseRag(session.caseId, query);
+      
+      // Classify each result
+      for (const result of results) {
+        const classification = await classifyEvidence(
+          result,
+          allegation,
+          config.side,
+          transcriptChunk
+        );
+        
+        // Store and emit result
+        const evidenceResult: EvidenceResult = {
+          id: generateId(),
+          sessionId: session.id,
+          allegationId: allegation.id,
+          sourceType: result.type,
+          sourceId: result.id,
+          sourceTitle: result.title,
+          sourceDate: result.date,
+          excerpt: result.excerpt,
+          position: classification.position,
+          confidence: classification.confidence,
+          explanation: classification.explanation,
+          triggerTranscript: transcriptChunk,
+          surfacedAt: new Date()
+        };
+        
+        await saveEvidenceResult(evidenceResult);
+        
+        // Emit to client
+        socket.emit('evidence:found', evidenceResult);
+        
+        // Special alert for "hurts" with high confidence
+        if (classification.position === 'hurts' && classification.confidence === 'high') {
+          socket.emit('evidence:alert', {
+            type: 'hurts_position',
+            evidenceResult
+          });
+        }
+      }
+    }
+  }, 20000); // Every 20 seconds
+}
+```
+
+## UI Components
+
+### Side Selector
+
+```tsx
+const SideSelector = ({ value, onChange }) => (
+  <div className="flex gap-3">
+    <button
+      onClick={() => onChange('plaintiff')}
+      className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+        value === 'plaintiff'
+          ? 'border-blue-500 bg-blue-500/10'
+          : 'border-slate-700 bg-slate-800/50'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+          value === 'plaintiff' ? 'bg-blue-500' : 'bg-slate-700'
+        }`}>
+          <Scale className="w-5 h-5 text-white" />
+        </div>
+        <div className="text-left">
+          <div className="font-medium text-white">Plaintiff</div>
+          <div className="text-xs text-slate-500">Proving allegations</div>
+        </div>
+      </div>
+    </button>
+    
+    <button
+      onClick={() => onChange('defendant')}
+      className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+        value === 'defendant'
+          ? 'border-blue-500 bg-blue-500/10'
+          : 'border-slate-700 bg-slate-800/50'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+          value === 'defendant' ? 'bg-blue-500' : 'bg-slate-700'
+        }`}>
+          <Shield className="w-5 h-5 text-white" />
+        </div>
+        <div className="text-left">
+          <div className="font-medium text-white">Defendant</div>
+          <div className="text-xs text-slate-500">Defending allegations</div>
+        </div>
+      </div>
+    </button>
+  </div>
+);
+```
+
+### Position Badge
+
+```tsx
+const PositionBadge = ({ position }: { position: 'supports' | 'hurts' }) => {
+  if (position === 'supports') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+        <ThumbsUp className="w-3 h-3" />
+        SUPPORTS YOUR POSITION
+      </span>
+    );
+  }
+  
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+      <ThumbsDown className="w-3 h-3" />
+      HURTS YOUR POSITION
+    </span>
+  );
+};
+```
+
+### Allegation Result Group
+
+```tsx
+const AllegationResultGroup = ({ allegation, results, expanded, onToggle, side }) => {
+  const supports = results.filter(r => r.position === 'supports');
+  const hurts = results.filter(r => r.position === 'hurts');
+  
+  return (
+    <div className="rounded-lg border border-slate-700/50 overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full px-3 py-2 flex items-center gap-2 bg-slate-800/50 hover:bg-slate-800"
+      >
+        {expanded ? <ChevronDown /> : <ChevronRight />}
+        <span className="text-[10px] font-mono text-slate-500">{allegation.paragraph}</span>
+        <span className="flex-1 text-xs text-slate-200 truncate">{allegation.text.slice(0, 50)}...</span>
+        <div className="flex items-center gap-2">
+          {supports.length > 0 && (
+            <span className="flex items-center gap-0.5 text-[10px] text-green-400">
+              <ThumbsUp className="w-3 h-3" />{supports.length}
+            </span>
+          )}
+          {hurts.length > 0 && (
+            <span className="flex items-center gap-0.5 text-[10px] text-red-400">
+              <ThumbsDown className="w-3 h-3" />{hurts.length}
+            </span>
+          )}
+        </div>
+      </button>
+      
+      {expanded && (
+        <div className="border-t border-slate-700/30 p-2 space-y-2">
+          {results.map(result => (
+            <EvidenceCard key={result.id} result={result} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+## API Endpoints
+
+### Pleading Upload & Extraction
+
+```
+POST /api/sessions/:sessionId/pleading/upload
+  Content-Type: multipart/form-data
+  Body: { file, documentType, side }
+  → Returns: { allegations: Allegation[] }
+
+POST /api/sessions/:sessionId/pleading/extract
+  Body: { text, documentType, side }
+  → Returns: { allegations: Allegation[] }
+```
+
+### Allegation Management
+
+```
+GET    /api/sessions/:sessionId/allegations
+PUT    /api/sessions/:sessionId/allegations/:id
+DELETE /api/sessions/:sessionId/allegations/:id
+POST   /api/sessions/:sessionId/allegations
+  Body: { paragraph, text, type, keywords }
+```
+
+### Evidence Results
+
+```
+GET /api/sessions/:sessionId/evidence
+  Query: { allegationId?, position?, since? }
+  → Returns: { results: EvidenceResult[] }
+
+PUT /api/sessions/:sessionId/evidence/:id
+  Body: { dismissed?, starred? }
+```
+
+## Transcript Highlighting
+
+When testimony matches a focus issue, highlight it in the transcript:
+
+```tsx
+const HighlightedTranscriptLine = ({ line, matchedAllegation, position }) => {
+  if (!matchedAllegation) {
+    return <StandardTranscriptLine line={line} />;
+  }
+  
+  return (
+    <div className={`p-3 rounded-lg border ${
+      position === 'supports' 
+        ? 'bg-green-500/10 border-green-500/30' 
+        : 'bg-red-500/10 border-red-500/30'
+    }`}>
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-sm font-medium text-blue-400">{line.speaker}</span>
+        <span className="text-xs text-slate-600">{line.time}</span>
+        <PositionBadge position={position} />
+      </div>
+      <p className="text-sm text-slate-200">
+        <HighlightKeywords text={line.text} keywords={matchedAllegation.keywords} />
+      </p>
+      <div className={`mt-2 text-xs flex items-center gap-1 ${
+        position === 'supports' ? 'text-green-400' : 'text-red-400'
+      }`}>
+        <ArrowRight className="w-3 h-3" />
+        {position === 'supports' ? 'Supports' : 'Hurts'} {matchedAllegation.paragraph}
+      </div>
+    </div>
+  );
+};
+```
+
+## Notifications
+
+### High-Confidence "Hurts" Alert
+
+When evidence that hurts the user's position is found with high confidence:
+
+```typescript
+// Server
+if (classification.position === 'hurts' && classification.confidence === 'high') {
+  socket.emit('evidence:alert', {
+    type: 'hurts_position',
+    allegation: allegation.paragraph,
+    evidence: result.title,
+    explanation: classification.explanation
+  });
+}
+
+// Client - show toast notification
+function handleEvidenceAlert(alert) {
+  if (alert.type === 'hurts_position') {
+    toast.warning({
+      title: '⚠️ Evidence Against Your Position',
+      description: `${alert.evidence} may hurt ${alert.allegation}`,
+      duration: 10000,
+      action: {
+        label: 'View',
+        onClick: () => scrollToEvidence(alert.evidenceId)
+      }
+    });
+    
+    // Optional: play subtle alert sound
+    playNotificationSound('warning');
+  }
+}
+```
+
+## Integration with Existing Features
+
+### Case Linking
+- When session is linked to a case, allegations are stored with the case
+- Re-use allegations across multiple sessions for the same case
+- "Import from previous session" option
+
+### Deposition Outlines
+- If user uploads a depo outline, cross-reference with allegations
+- Map outline questions to specific allegations
+
+### Post-Session Report
+- Generate summary: "Evidence found for X allegations, Y supports, Z hurts"
+- Timeline of key testimony moments
+- Export for case strategy review
+
+## Implementation Priority
+
+1. **Phase 1:** Side selector + manual focus issue entry
+2. **Phase 2:** Pleading upload + AI extraction
+3. **Phase 3:** Supports/Hurts classification
+4. **Phase 4:** Transcript highlighting
+5. **Phase 5:** Real-time alerts for high-confidence hurts
+6. **Phase 6:** Post-session evidence summary report
