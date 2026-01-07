@@ -278,6 +278,52 @@ import {
   type InsertChecklistItemDocument,
   type ChecklistItemComment,
   type InsertChecklistItemComment,
+  peFirms,
+  peFirmSettings,
+  peDeals,
+  dealContacts,
+  workstreams,
+  diligenceQuestions,
+  questionDocumentLinks,
+  peCalls,
+  peCallParticipants,
+  callDocumentReferences,
+  callQuestionReferences,
+  peRiskFlags,
+  patternMatches,
+  portfolioCompanies,
+  diligenceTemplates,
+  peDealDocuments,
+  dealTimelineEvents,
+  type PEFirm,
+  type InsertPEFirm,
+  type PEFirmSettings,
+  type PEDeal,
+  type InsertPEDeal,
+  type DealContact,
+  type InsertDealContact,
+  type Workstream,
+  type InsertWorkstream,
+  type DiligenceQuestion,
+  type InsertDiligenceQuestion,
+  type QuestionDocumentLink,
+  type PECall,
+  type InsertPECall,
+  type PECallParticipant,
+  type CallDocumentReference,
+  type CallQuestionReference,
+  type PERiskFlag,
+  type InsertPERiskFlag,
+  type PatternMatch,
+  type InsertPatternMatch,
+  type PortfolioCompany,
+  type InsertPortfolioCompany,
+  type DiligenceTemplate,
+  type InsertDiligenceTemplate,
+  type PEDealDocument,
+  type InsertPEDealDocument,
+  type DealTimelineEvent,
+  type InsertDealTimelineEvent,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray } from "drizzle-orm";
@@ -5542,6 +5588,354 @@ export class DatabaseStorage implements IStorage {
   async createChecklistItemComment(comment: InsertChecklistItemComment): Promise<ChecklistItemComment> {
     const result = await db.insert(checklistItemComments).values(comment).returning();
     return result[0];
+  }
+
+  // ===== PE FIRM OPERATIONS =====
+
+  async getPEFirms(): Promise<PEFirm[]> {
+    return db.select().from(peFirms).orderBy(peFirms.name);
+  }
+
+  async getPEFirm(id: string): Promise<PEFirm | undefined> {
+    const result = await db.select().from(peFirms).where(eq(peFirms.id, id));
+    return result[0];
+  }
+
+  async createPEFirm(firm: InsertPEFirm): Promise<PEFirm> {
+    const result = await db.insert(peFirms).values(firm).returning();
+    return result[0];
+  }
+
+  async updatePEFirm(id: string, updates: Partial<PEFirm>): Promise<PEFirm> {
+    const result = await db.update(peFirms)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(peFirms.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // ===== PE DEAL OPERATIONS =====
+
+  async getPEDeals(filters?: { firmId?: string; status?: string; sector?: string }): Promise<PEDeal[]> {
+    let query = db.select().from(peDeals);
+    const conditions = [];
+    
+    if (filters?.firmId) conditions.push(eq(peDeals.firmId, filters.firmId));
+    if (filters?.status) conditions.push(eq(peDeals.status, filters.status as any));
+    if (filters?.sector) conditions.push(eq(peDeals.sector, filters.sector));
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    return query.orderBy(desc(peDeals.updatedAt));
+  }
+
+  async getPEDeal(id: string): Promise<PEDeal | undefined> {
+    const result = await db.select().from(peDeals).where(eq(peDeals.id, id));
+    return result[0];
+  }
+
+  async createPEDeal(deal: InsertPEDeal): Promise<PEDeal> {
+    const result = await db.insert(peDeals).values(deal).returning();
+    return result[0];
+  }
+
+  async updatePEDeal(id: string, updates: Partial<PEDeal>): Promise<PEDeal> {
+    const result = await db.update(peDeals)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(peDeals.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deletePEDeal(id: string): Promise<void> {
+    await db.delete(peDeals).where(eq(peDeals.id, id));
+  }
+
+  // ===== DEAL CONTACTS OPERATIONS =====
+
+  async getDealContacts(dealId: string): Promise<DealContact[]> {
+    return db.select().from(dealContacts).where(eq(dealContacts.dealId, dealId));
+  }
+
+  async createDealContact(contact: InsertDealContact): Promise<DealContact> {
+    const result = await db.insert(dealContacts).values(contact).returning();
+    return result[0];
+  }
+
+  async updateDealContact(id: string, updates: Partial<DealContact>): Promise<DealContact> {
+    const result = await db.update(dealContacts)
+      .set(updates)
+      .where(eq(dealContacts.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteDealContact(id: string): Promise<void> {
+    await db.delete(dealContacts).where(eq(dealContacts.id, id));
+  }
+
+  // ===== WORKSTREAM OPERATIONS =====
+
+  async getWorkstreams(dealId: string): Promise<Workstream[]> {
+    return db.select().from(workstreams).where(eq(workstreams.dealId, dealId)).orderBy(workstreams.name);
+  }
+
+  async getWorkstream(id: string): Promise<Workstream | undefined> {
+    const result = await db.select().from(workstreams).where(eq(workstreams.id, id));
+    return result[0];
+  }
+
+  async createWorkstream(workstream: InsertWorkstream): Promise<Workstream> {
+    const result = await db.insert(workstreams).values(workstream).returning();
+    return result[0];
+  }
+
+  async updateWorkstream(id: string, updates: Partial<Workstream>): Promise<Workstream> {
+    const result = await db.update(workstreams)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(workstreams.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteWorkstream(id: string): Promise<void> {
+    await db.delete(workstreams).where(eq(workstreams.id, id));
+  }
+
+  // ===== DILIGENCE QUESTIONS OPERATIONS =====
+
+  async getDiligenceQuestions(filters: { dealId?: string; workstreamId?: string; status?: string }): Promise<DiligenceQuestion[]> {
+    let query = db.select().from(diligenceQuestions);
+    const conditions = [];
+    
+    if (filters.dealId) conditions.push(eq(diligenceQuestions.dealId, filters.dealId));
+    if (filters.workstreamId) conditions.push(eq(diligenceQuestions.workstreamId, filters.workstreamId));
+    if (filters.status) conditions.push(eq(diligenceQuestions.status, filters.status as any));
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    return query.orderBy(desc(diligenceQuestions.createdAt));
+  }
+
+  async getDiligenceQuestion(id: string): Promise<DiligenceQuestion | undefined> {
+    const result = await db.select().from(diligenceQuestions).where(eq(diligenceQuestions.id, id));
+    return result[0];
+  }
+
+  async createDiligenceQuestion(question: InsertDiligenceQuestion): Promise<DiligenceQuestion> {
+    const result = await db.insert(diligenceQuestions).values(question).returning();
+    return result[0];
+  }
+
+  async updateDiligenceQuestion(id: string, updates: Partial<DiligenceQuestion>): Promise<DiligenceQuestion> {
+    const result = await db.update(diligenceQuestions)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(diligenceQuestions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteDiligenceQuestion(id: string): Promise<void> {
+    await db.delete(diligenceQuestions).where(eq(diligenceQuestions.id, id));
+  }
+
+  // ===== PE CALLS OPERATIONS =====
+
+  async getPECalls(dealId: string): Promise<PECall[]> {
+    return db.select().from(peCalls).where(eq(peCalls.dealId, dealId)).orderBy(desc(peCalls.scheduledAt));
+  }
+
+  async getPECall(id: string): Promise<PECall | undefined> {
+    const result = await db.select().from(peCalls).where(eq(peCalls.id, id));
+    return result[0];
+  }
+
+  async createPECall(call: InsertPECall): Promise<PECall> {
+    const result = await db.insert(peCalls).values(call).returning();
+    return result[0];
+  }
+
+  async updatePECall(id: string, updates: Partial<PECall>): Promise<PECall> {
+    const result = await db.update(peCalls)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(peCalls.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deletePECall(id: string): Promise<void> {
+    await db.delete(peCalls).where(eq(peCalls.id, id));
+  }
+
+  // ===== PE CALL PARTICIPANTS OPERATIONS =====
+
+  async getPECallParticipants(callId: string): Promise<PECallParticipant[]> {
+    return db.select().from(peCallParticipants).where(eq(peCallParticipants.callId, callId));
+  }
+
+  async createPECallParticipant(participant: InsertPECallParticipant): Promise<PECallParticipant> {
+    const result = await db.insert(peCallParticipants).values(participant).returning();
+    return result[0];
+  }
+
+  async deletePECallParticipant(id: string): Promise<void> {
+    await db.delete(peCallParticipants).where(eq(peCallParticipants.id, id));
+  }
+
+  // ===== PE RISK FLAGS OPERATIONS =====
+
+  async getPERiskFlags(dealId: string): Promise<PERiskFlag[]> {
+    return db.select().from(peRiskFlags).where(eq(peRiskFlags.dealId, dealId)).orderBy(desc(peRiskFlags.createdAt));
+  }
+
+  async getPERiskFlag(id: string): Promise<PERiskFlag | undefined> {
+    const result = await db.select().from(peRiskFlags).where(eq(peRiskFlags.id, id));
+    return result[0];
+  }
+
+  async createPERiskFlag(flag: InsertPERiskFlag): Promise<PERiskFlag> {
+    const result = await db.insert(peRiskFlags).values(flag).returning();
+    return result[0];
+  }
+
+  async updatePERiskFlag(id: string, updates: Partial<PERiskFlag>): Promise<PERiskFlag> {
+    const result = await db.update(peRiskFlags)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(peRiskFlags.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deletePERiskFlag(id: string): Promise<void> {
+    await db.delete(peRiskFlags).where(eq(peRiskFlags.id, id));
+  }
+
+  // ===== PATTERN MATCHES OPERATIONS =====
+
+  async getPatternMatches(dealId: string): Promise<PatternMatch[]> {
+    return db.select().from(patternMatches).where(eq(patternMatches.dealId, dealId)).orderBy(desc(patternMatches.createdAt));
+  }
+
+  async createPatternMatch(match: InsertPatternMatch): Promise<PatternMatch> {
+    const result = await db.insert(patternMatches).values(match).returning();
+    return result[0];
+  }
+
+  async updatePatternMatch(id: string, updates: Partial<PatternMatch>): Promise<PatternMatch> {
+    const result = await db.update(patternMatches)
+      .set(updates)
+      .where(eq(patternMatches.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // ===== PORTFOLIO COMPANIES OPERATIONS =====
+
+  async getPortfolioCompanies(firmId?: string): Promise<PortfolioCompany[]> {
+    if (firmId) {
+      return db.select().from(portfolioCompanies).where(eq(portfolioCompanies.firmId, firmId)).orderBy(portfolioCompanies.name);
+    }
+    return db.select().from(portfolioCompanies).orderBy(portfolioCompanies.name);
+  }
+
+  async getPortfolioCompany(id: string): Promise<PortfolioCompany | undefined> {
+    const result = await db.select().from(portfolioCompanies).where(eq(portfolioCompanies.id, id));
+    return result[0];
+  }
+
+  async createPortfolioCompany(company: InsertPortfolioCompany): Promise<PortfolioCompany> {
+    const result = await db.insert(portfolioCompanies).values(company).returning();
+    return result[0];
+  }
+
+  async updatePortfolioCompany(id: string, updates: Partial<PortfolioCompany>): Promise<PortfolioCompany> {
+    const result = await db.update(portfolioCompanies)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(portfolioCompanies.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // ===== PE DEAL DOCUMENTS OPERATIONS =====
+
+  async getPEDealDocuments(dealId: string, category?: string): Promise<PEDealDocument[]> {
+    let query = db.select().from(peDealDocuments).where(eq(peDealDocuments.dealId, dealId));
+    
+    if (category) {
+      query = db.select().from(peDealDocuments).where(
+        and(eq(peDealDocuments.dealId, dealId), eq(peDealDocuments.category, category as any))
+      );
+    }
+    
+    return query.orderBy(desc(peDealDocuments.uploadedAt));
+  }
+
+  async getPEDealDocument(id: string): Promise<PEDealDocument | undefined> {
+    const result = await db.select().from(peDealDocuments).where(eq(peDealDocuments.id, id));
+    return result[0];
+  }
+
+  async createPEDealDocument(doc: InsertPEDealDocument): Promise<PEDealDocument> {
+    const result = await db.insert(peDealDocuments).values(doc).returning();
+    return result[0];
+  }
+
+  async updatePEDealDocument(id: string, updates: Partial<PEDealDocument>): Promise<PEDealDocument> {
+    const result = await db.update(peDealDocuments)
+      .set(updates)
+      .where(eq(peDealDocuments.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deletePEDealDocument(id: string): Promise<void> {
+    await db.delete(peDealDocuments).where(eq(peDealDocuments.id, id));
+  }
+
+  // ===== DEAL TIMELINE EVENTS OPERATIONS =====
+
+  async getDealTimelineEvents(dealId: string): Promise<DealTimelineEvent[]> {
+    return db.select().from(dealTimelineEvents).where(eq(dealTimelineEvents.dealId, dealId)).orderBy(desc(dealTimelineEvents.occurredAt));
+  }
+
+  async createDealTimelineEvent(event: InsertDealTimelineEvent): Promise<DealTimelineEvent> {
+    const result = await db.insert(dealTimelineEvents).values(event).returning();
+    return result[0];
+  }
+
+  // ===== DILIGENCE TEMPLATES OPERATIONS =====
+
+  async getDiligenceTemplates(firmId?: string): Promise<DiligenceTemplate[]> {
+    if (firmId) {
+      return db.select().from(diligenceTemplates).where(eq(diligenceTemplates.firmId, firmId));
+    }
+    return db.select().from(diligenceTemplates);
+  }
+
+  async getDiligenceTemplate(id: string): Promise<DiligenceTemplate | undefined> {
+    const result = await db.select().from(diligenceTemplates).where(eq(diligenceTemplates.id, id));
+    return result[0];
+  }
+
+  async createDiligenceTemplate(template: InsertDiligenceTemplate): Promise<DiligenceTemplate> {
+    const result = await db.insert(diligenceTemplates).values(template).returning();
+    return result[0];
+  }
+
+  async updateDiligenceTemplate(id: string, updates: Partial<DiligenceTemplate>): Promise<DiligenceTemplate> {
+    const result = await db.update(diligenceTemplates)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(diligenceTemplates.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteDiligenceTemplate(id: string): Promise<void> {
+    await db.delete(diligenceTemplates).where(eq(diligenceTemplates.id, id));
   }
 }
 

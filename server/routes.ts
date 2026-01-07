@@ -25512,10 +25512,492 @@ Guidelines:
       res.status(500).json({ message: error.message });
     }
   });
-  const httpServer = createServer(app);
+  // =============================================
+  // PE DUE DILIGENCE ROUTES
+  // =============================================
+
+  // PE Deals
+  app.get("/api/pe/deals", isAuthenticated, async (req: any, res) => {
+    try {
+      const { firmId, status, sector } = req.query;
+      const deals = await storage.getPEDeals({ firmId, status, sector });
+      res.json(deals);
+    } catch (error: any) {
+      console.error("Error fetching PE deals:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/pe/deals/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const deal = await storage.getPEDeal(req.params.id);
+      if (!deal) {
+        return res.status(404).json({ message: "Deal not found" });
+      }
+      res.json(deal);
+    } catch (error: any) {
+      console.error("Error fetching PE deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals", isAuthenticated, async (req: any, res) => {
+    try {
+      const deal = await storage.createPEDeal(req.body);
+      res.status(201).json(deal);
+    } catch (error: any) {
+      console.error("Error creating PE deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/deals/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const deal = await storage.updatePEDeal(req.params.id, req.body);
+      res.json(deal);
+    } catch (error: any) {
+      console.error("Error updating PE deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/pe/deals/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deletePEDeal(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting PE deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Deal Contacts
+  app.get("/api/pe/deals/:dealId/contacts", isAuthenticated, async (req: any, res) => {
+    try {
+      const contacts = await storage.getDealContacts(req.params.dealId);
+      res.json(contacts);
+    } catch (error: any) {
+      console.error("Error fetching deal contacts:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals/:dealId/contacts", isAuthenticated, async (req: any, res) => {
+    try {
+      const contact = await storage.createDealContact({ ...req.body, dealId: req.params.dealId });
+      res.status(201).json(contact);
+    } catch (error: any) {
+      console.error("Error creating deal contact:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/contacts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const contact = await storage.updateDealContact(req.params.id, req.body);
+      res.json(contact);
+    } catch (error: any) {
+      console.error("Error updating deal contact:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/pe/contacts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteDealContact(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting deal contact:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Workstreams
+  app.get("/api/pe/deals/:dealId/workstreams", isAuthenticated, async (req: any, res) => {
+    try {
+      const workstreams = await storage.getWorkstreams(req.params.dealId);
+      res.json(workstreams);
+    } catch (error: any) {
+      console.error("Error fetching workstreams:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals/:dealId/workstreams", isAuthenticated, async (req: any, res) => {
+    try {
+      const workstream = await storage.createWorkstream({ ...req.body, dealId: req.params.dealId });
+      res.status(201).json(workstream);
+    } catch (error: any) {
+      console.error("Error creating workstream:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/workstreams/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const workstream = await storage.updateWorkstream(req.params.id, req.body);
+      res.json(workstream);
+    } catch (error: any) {
+      console.error("Error updating workstream:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/pe/workstreams/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteWorkstream(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting workstream:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Diligence Questions
+  app.get("/api/pe/deals/:dealId/questions", isAuthenticated, async (req: any, res) => {
+    try {
+      const { workstreamId, status } = req.query;
+      const questions = await storage.getDiligenceQuestions({ dealId: req.params.dealId, workstreamId, status });
+      res.json(questions);
+    } catch (error: any) {
+      console.error("Error fetching diligence questions:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals/:dealId/questions", isAuthenticated, async (req: any, res) => {
+    try {
+      const question = await storage.createDiligenceQuestion({ ...req.body, dealId: req.params.dealId });
+      res.status(201).json(question);
+    } catch (error: any) {
+      console.error("Error creating diligence question:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/questions/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const question = await storage.updateDiligenceQuestion(req.params.id, req.body);
+      res.json(question);
+    } catch (error: any) {
+      console.error("Error updating diligence question:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/pe/questions/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteDiligenceQuestion(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting diligence question:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // PE Calls
+  app.get("/api/pe/deals/:dealId/calls", isAuthenticated, async (req: any, res) => {
+    try {
+      const calls = await storage.getPECalls(req.params.dealId);
+      res.json(calls);
+    } catch (error: any) {
+      console.error("Error fetching PE calls:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/pe/calls/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const call = await storage.getPECall(req.params.id);
+      if (!call) {
+        return res.status(404).json({ message: "Call not found" });
+      }
+      res.json(call);
+    } catch (error: any) {
+      console.error("Error fetching PE call:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals/:dealId/calls", isAuthenticated, async (req: any, res) => {
+    try {
+      const call = await storage.createPECall({ ...req.body, dealId: req.params.dealId });
+      res.status(201).json(call);
+    } catch (error: any) {
+      console.error("Error creating PE call:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/calls/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const call = await storage.updatePECall(req.params.id, req.body);
+      res.json(call);
+    } catch (error: any) {
+      console.error("Error updating PE call:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/pe/calls/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deletePECall(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting PE call:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // PE Risk Flags
+  app.get("/api/pe/deals/:dealId/risks", isAuthenticated, async (req: any, res) => {
+    try {
+      const risks = await storage.getPERiskFlags(req.params.dealId);
+      res.json(risks);
+    } catch (error: any) {
+      console.error("Error fetching PE risk flags:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals/:dealId/risks", isAuthenticated, async (req: any, res) => {
+    try {
+      const risk = await storage.createPERiskFlag({ ...req.body, dealId: req.params.dealId });
+      res.status(201).json(risk);
+    } catch (error: any) {
+      console.error("Error creating PE risk flag:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/risks/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const risk = await storage.updatePERiskFlag(req.params.id, req.body);
+      res.json(risk);
+    } catch (error: any) {
+      console.error("Error updating PE risk flag:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/pe/risks/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deletePERiskFlag(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting PE risk flag:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Pattern Matches
+  app.get("/api/pe/deals/:dealId/patterns", isAuthenticated, async (req: any, res) => {
+    try {
+      const patterns = await storage.getPatternMatches(req.params.dealId);
+      res.json(patterns);
+    } catch (error: any) {
+      console.error("Error fetching pattern matches:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals/:dealId/patterns", isAuthenticated, async (req: any, res) => {
+    try {
+      const pattern = await storage.createPatternMatch({ ...req.body, dealId: req.params.dealId });
+      res.status(201).json(pattern);
+    } catch (error: any) {
+      console.error("Error creating pattern match:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/patterns/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const pattern = await storage.updatePatternMatch(req.params.id, req.body);
+      res.json(pattern);
+    } catch (error: any) {
+      console.error("Error updating pattern match:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // PE Deal Documents
+  app.get("/api/pe/deals/:dealId/documents", isAuthenticated, async (req: any, res) => {
+    try {
+      const { category } = req.query;
+      const documents = await storage.getPEDealDocuments(req.params.dealId, category);
+      res.json(documents);
+    } catch (error: any) {
+      console.error("Error fetching PE deal documents:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals/:dealId/documents", isAuthenticated, async (req: any, res) => {
+    try {
+      const doc = await storage.createPEDealDocument({ ...req.body, dealId: req.params.dealId });
+      res.status(201).json(doc);
+    } catch (error: any) {
+      console.error("Error creating PE deal document:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/documents/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const doc = await storage.updatePEDealDocument(req.params.id, req.body);
+      res.json(doc);
+    } catch (error: any) {
+      console.error("Error updating PE deal document:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/pe/documents/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deletePEDealDocument(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting PE deal document:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Deal Timeline Events
+  app.get("/api/pe/deals/:dealId/timeline", isAuthenticated, async (req: any, res) => {
+    try {
+      const events = await storage.getDealTimelineEvents(req.params.dealId);
+      res.json(events);
+    } catch (error: any) {
+      console.error("Error fetching deal timeline events:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/deals/:dealId/timeline", isAuthenticated, async (req: any, res) => {
+    try {
+      const event = await storage.createDealTimelineEvent({ ...req.body, dealId: req.params.dealId });
+      res.status(201).json(event);
+    } catch (error: any) {
+      console.error("Error creating deal timeline event:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Portfolio Companies
+  app.get("/api/pe/portfolio", isAuthenticated, async (req: any, res) => {
+    try {
+      const { firmId } = req.query;
+      const companies = await storage.getPortfolioCompanies(firmId);
+      res.json(companies);
+    } catch (error: any) {
+      console.error("Error fetching portfolio companies:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/pe/portfolio/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const company = await storage.getPortfolioCompany(req.params.id);
+      if (!company) {
+        return res.status(404).json({ message: "Portfolio company not found" });
+      }
+      res.json(company);
+    } catch (error: any) {
+      console.error("Error fetching portfolio company:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/portfolio", isAuthenticated, async (req: any, res) => {
+    try {
+      const company = await storage.createPortfolioCompany(req.body);
+      res.status(201).json(company);
+    } catch (error: any) {
+      console.error("Error creating portfolio company:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/portfolio/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const company = await storage.updatePortfolioCompany(req.params.id, req.body);
+      res.json(company);
+    } catch (error: any) {
+      console.error("Error updating portfolio company:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Diligence Templates
+  app.get("/api/pe/templates", isAuthenticated, async (req: any, res) => {
+    try {
+      const { firmId } = req.query;
+      const templates = await storage.getDiligenceTemplates(firmId);
+      res.json(templates);
+    } catch (error: any) {
+      console.error("Error fetching diligence templates:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/templates", isAuthenticated, async (req: any, res) => {
+    try {
+      const template = await storage.createDiligenceTemplate(req.body);
+      res.status(201).json(template);
+    } catch (error: any) {
+      console.error("Error creating diligence template:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/pe/templates/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const template = await storage.updateDiligenceTemplate(req.params.id, req.body);
+      res.json(template);
+    } catch (error: any) {
+      console.error("Error updating diligence template:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/pe/templates/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteDiligenceTemplate(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting diligence template:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // PE Firms
+  app.get("/api/pe/firms", isAuthenticated, async (req: any, res) => {
+    try {
+      const firms = await storage.getPEFirms();
+      res.json(firms);
+    } catch (error: any) {
+      console.error("Error fetching PE firms:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/firms", isAuthenticated, async (req: any, res) => {
+    try {
+      const firm = await storage.createPEFirm(req.body);
+      res.status(201).json(firm);
+    } catch (error: any) {
+      console.error("Error creating PE firm:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   
   // Setup WebRTC signaling for live interview sessions
   setupWebRTCSignaling(httpServer);
+  const httpServer = createServer(app);
+
+  // =============================================
   
   return httpServer;
 }
