@@ -195,6 +195,18 @@ export function AppSidebar() {
       ],
     },
     {
+      title: "PE Deal Intelligence",
+      defaultOpen: true,
+      items: [
+        {
+          title: "Deal Pipeline",
+          url: "/pe/deals",
+          icon: TrendingUp,
+          roles: ["admin", "attorney", "external_counsel"],
+        },
+      ],
+    },
+    {
       title: "Risk Management",
       defaultOpen: true,
       items: [

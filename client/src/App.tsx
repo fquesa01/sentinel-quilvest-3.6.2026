@@ -102,6 +102,8 @@ import InterviewReviewPage from "@/pages/interview-review";
 import JoinInterview from "@/pages/join-interview";
 import WitnessInterview from "@/pages/witness-interview";
 import StatementDetailPage from "@/pages/statement-detail";
+import PEDealPipeline from "@/pages/pe-deal-pipeline";
+import PEDealDetail from "@/pages/pe-deal-detail";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { NotificationBell } from "@/components/notification-bell";
@@ -211,6 +213,8 @@ function AuthenticatedApp() {
               <Route path="/transactions/search" component={TransactionsDocumentSearch} />
               <Route path="/transactions/templates" component={TransactionsTemplates} />
               <Route path="/transactions/deal-templates/:templateId" component={TransactionsDealTemplateDetail} />
+              <Route path="/pe/deals" component={PEDealPipeline} />
+              <Route path="/pe/deals/:id" component={PEDealDetail} />
               <Route path="/background-research" component={BackgroundResearch} />
               <Route path="/background-research/:id" component={BackgroundResearchDetail} />
               <Route path="/vendor-risk" component={VendorRiskPage} />

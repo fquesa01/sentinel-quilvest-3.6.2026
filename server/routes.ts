@@ -25993,9 +25993,10 @@ Guidelines:
   });
 
   
+  const httpServer = createServer(app);
+
   // Setup WebRTC signaling for live interview sessions
   setupWebRTCSignaling(httpServer);
-  const httpServer = createServer(app);
 
   // =============================================
   
