@@ -9919,3 +9919,750 @@ export const batesSequencesRelations = relations(batesSequences, ({ one }) => ({
     references: [cases.id],
   }),
 }));
+
+// ============ PE DUE DILIGENCE MODULE ============
+
+// PE Firm management for multi-tenancy
+export const peFirms = pgTable("pe_firms", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  logoUrl: text("logo_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PEFirm = typeof peFirms.$inferSelect;
+export const insertPEFirmSchema = createInsertSchema(peFirms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertPEFirm = z.infer<typeof insertPEFirmSchema>;
+
+// PE Firm Settings
+export const peFirmSettings = pgTable("pe_firm_settings", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  firmId: varchar("firm_id")
+    .references(() => peFirms.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+  defaultWorkstreams: jsonb("default_workstreams").$type<any[]>().default([]),
+  riskCategories: jsonb("risk_categories").$type<any[]>().default([]),
+  integrations: jsonb("integrations").$type<Record<string, any>>().default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PEFirmSettings = typeof peFirmSettings.$inferSelect;
+
+// Deal Status Enum
+export const peDealStatusEnum = pgEnum("pe_deal_status", [
+  "pipeline",
+  "preliminary_review",
+  "management_meeting",
+  "loi_submitted",
+  "loi_signed",
+  "diligence",
+  "exclusivity",
+  "definitive_docs",
+  "closed",
+  "passed",
+  "lost",
+]);
+
+// Deal Type Enum
+export const peDealTypeEnum = pgEnum("pe_deal_type", [
+  "platform",
+  "add_on",
+  "carve_out",
+  "growth_equity",
+  "recap",
+  "secondary",
+]);
+
+// Data Room Type Enum
+export const dataRoomTypeEnum = pgEnum("data_room_type", [
+  "intralinks",
+  "datasite",
+  "box",
+  "google_drive",
+  "sharepoint",
+  "other",
+]);
+
+// PE Deals
+export const peDeals = pgTable("pe_deals", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  firmId: varchar("firm_id").references(() => peFirms.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  codeName: varchar("code_name", { length: 100 }),
+  status: peDealStatusEnum("status").default("pipeline").notNull(),
+  dealType: peDealTypeEnum("deal_type").notNull(),
+  sector: varchar("sector", { length: 100 }).notNull(),
+  subsector: varchar("subsector", { length: 100 }),
+  geography: varchar("geography", { length: 100 }).notNull(),
+  targetDescription: text("target_description"),
+  
+  // Financials (stored as strings to avoid decimal issues)
+  enterpriseValue: varchar("enterprise_value", { length: 50 }),
+  revenue: varchar("revenue", { length: 50 }),
+  ebitda: varchar("ebitda", { length: 50 }),
+  
+  // Timeline
+  cimReceivedDate: date("cim_received_date"),
+  loiSubmittedDate: date("loi_submitted_date"),
+  loiSignedDate: date("loi_signed_date"),
+  exclusivityStart: date("exclusivity_start"),
+  exclusivityEnd: date("exclusivity_end"),
+  expectedCloseDate: date("expected_close_date"),
+  actualCloseDate: date("actual_close_date"),
+  
+  // Data Room
+  dataRoomUrl: text("data_room_url"),
+  dataRoomType: dataRoomTypeEnum("data_room_type"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  firmStatusIdx: index("pe_deals_firm_status_idx").on(table.firmId, table.status),
+  sectorIdx: index("pe_deals_sector_idx").on(table.sector),
+}));
+
+export type PEDeal = typeof peDeals.$inferSelect;
+export const insertPEDealSchema = createInsertSchema(peDeals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertPEDeal = z.infer<typeof insertPEDealSchema>;
+
+// Deal Contact Role Enum
+export const dealContactRoleEnum = pgEnum("deal_contact_role", [
+  "target_management",
+  "target_board",
+  "sell_side_banker",
+  "sell_side_lawyer",
+  "sell_side_accountant",
+  "lender",
+  "consultant",
+  "other",
+]);
+
+// Deal Contacts
+export const dealContacts = pgTable("deal_contacts", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .references(() => peDeals.id, { onDelete: "cascade" })
+    .notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  company: varchar("company", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  role: dealContactRoleEnum("role").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type DealContact = typeof dealContacts.$inferSelect;
+export const insertDealContactSchema = createInsertSchema(dealContacts).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertDealContact = z.infer<typeof insertDealContactSchema>;
+
+// Workstream Status Enum
+export const workstreamStatusEnum = pgEnum("workstream_status", [
+  "not_started",
+  "in_progress",
+  "blocked",
+  "completed",
+]);
+
+// Workstreams
+export const workstreams = pgTable("workstreams", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .references(() => peDeals.id, { onDelete: "cascade" })
+    .notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  ownerId: varchar("owner_id").references(() => users.id),
+  status: workstreamStatusEnum("status").default("not_started").notNull(),
+  progress: integer("progress").default(0).notNull(),
+  dueDate: date("due_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  dealNameUnique: unique("workstream_deal_name_unique").on(table.dealId, table.name),
+}));
+
+export type Workstream = typeof workstreams.$inferSelect;
+export const insertWorkstreamSchema = createInsertSchema(workstreams).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertWorkstream = z.infer<typeof insertWorkstreamSchema>;
+
+// Diligence Question Status Enum
+export const diligenceQuestionStatusEnum = pgEnum("diligence_question_status", [
+  "open",
+  "pending_response",
+  "answered",
+  "closed",
+  "na",
+]);
+
+// Diligence Question Priority Enum
+export const diligenceQuestionPriorityEnum = pgEnum("diligence_question_priority", [
+  "critical",
+  "high",
+  "medium",
+  "low",
+]);
+
+// Diligence Questions
+export const diligenceQuestions = pgTable("diligence_questions", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .references(() => peDeals.id, { onDelete: "cascade" })
+    .notNull(),
+  workstreamId: varchar("workstream_id")
+    .references(() => workstreams.id, { onDelete: "set null" }),
+  question: text("question").notNull(),
+  status: diligenceQuestionStatusEnum("status").default("open").notNull(),
+  priority: diligenceQuestionPriorityEnum("priority").default("medium").notNull(),
+  
+  // Answer tracking
+  answer: text("answer"),
+  answeredAt: timestamp("answered_at"),
+  source: varchar("source", { length: 255 }),
+  
+  // Follow-up
+  followUpNeeded: boolean("follow_up_needed").default(false).notNull(),
+  followUpNote: text("follow_up_note"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  dealStatusIdx: index("diligence_questions_deal_status_idx").on(table.dealId, table.status),
+}));
+
+export type DiligenceQuestion = typeof diligenceQuestions.$inferSelect;
+export const insertDiligenceQuestionSchema = createInsertSchema(diligenceQuestions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertDiligenceQuestion = z.infer<typeof insertDiligenceQuestionSchema>;
+
+// Question to Document Links
+export const questionDocumentLinks = pgTable("question_document_links", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  questionId: varchar("question_id")
+    .references(() => diligenceQuestions.id, { onDelete: "cascade" })
+    .notNull(),
+  documentId: varchar("document_id").notNull(),
+  relevanceNote: text("relevance_note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  questionDocUnique: unique("question_document_unique").on(table.questionId, table.documentId),
+}));
+
+export type QuestionDocumentLink = typeof questionDocumentLinks.$inferSelect;
+
+// PE Call Type Enum
+export const peCallTypeEnum = pgEnum("pe_call_type", [
+  "management_presentation",
+  "expert_call",
+  "site_visit",
+  "customer_call",
+  "employee_interview",
+  "advisor_call",
+  "ic_meeting",
+  "other",
+]);
+
+// PE Calls
+export const peCalls = pgTable("pe_calls", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .references(() => peDeals.id, { onDelete: "cascade" })
+    .notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  callType: peCallTypeEnum("call_type").notNull(),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+  duration: integer("duration"),
+  
+  // Recording & Transcription
+  recordingUrl: text("recording_url"),
+  transcriptRaw: text("transcript_raw"),
+  transcriptProcessed: jsonb("transcript_processed").$type<any[]>(),
+  summary: text("summary"),
+  keyPoints: jsonb("key_points").$type<string[]>(),
+  
+  // Pre-call prep
+  suggestedQuestions: jsonb("suggested_questions").$type<string[]>(),
+  briefingDoc: text("briefing_doc"),
+  
+  // Post-call
+  followUps: jsonb("follow_ups").$type<any[]>(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  dealScheduledIdx: index("pe_calls_deal_scheduled_idx").on(table.dealId, table.scheduledAt),
+}));
+
+export type PECall = typeof peCalls.$inferSelect;
+export const insertPECallSchema = createInsertSchema(peCalls).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertPECall = z.infer<typeof insertPECallSchema>;
+
+// PE Call Participants
+export const peCallParticipants = pgTable("pe_call_participants", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  callId: varchar("call_id")
+    .references(() => peCalls.id, { onDelete: "cascade" })
+    .notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  externalName: varchar("external_name", { length: 255 }),
+  externalTitle: varchar("external_title", { length: 255 }),
+  externalCompany: varchar("external_company", { length: 255 }),
+  role: varchar("role", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type PECallParticipant = typeof peCallParticipants.$inferSelect;
+
+// Call Document References
+export const callDocumentReferences = pgTable("call_document_references", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  callId: varchar("call_id")
+    .references(() => peCalls.id, { onDelete: "cascade" })
+    .notNull(),
+  documentId: varchar("document_id").notNull(),
+  timestamp: integer("timestamp"),
+  context: text("context"),
+  surfacedBy: varchar("surfaced_by", { length: 20 }).default("manual").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type CallDocumentReference = typeof callDocumentReferences.$inferSelect;
+
+// Call Question References
+export const callQuestionReferences = pgTable("call_question_references", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  callId: varchar("call_id")
+    .references(() => peCalls.id, { onDelete: "cascade" })
+    .notNull(),
+  questionId: varchar("question_id")
+    .references(() => diligenceQuestions.id, { onDelete: "cascade" })
+    .notNull(),
+  timestamp: integer("timestamp"),
+  discussed: boolean("discussed").default(false).notNull(),
+  answered: boolean("answered").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type CallQuestionReference = typeof callQuestionReferences.$inferSelect;
+
+// PE Risk Severity Enum
+export const peRiskSeverityEnum = pgEnum("pe_risk_severity", [
+  "deal_breaker",
+  "price_chip",
+  "integration_issue",
+  "watch_item",
+  "acceptable",
+]);
+
+// PE Risk Category Enum
+export const peRiskCategoryEnum = pgEnum("pe_risk_category", [
+  "financial",
+  "legal",
+  "commercial",
+  "operational",
+  "regulatory",
+  "environmental",
+  "hr_employment",
+  "it_cyber",
+  "integration",
+  "other",
+]);
+
+// PE Risk Status Enum
+export const peRiskStatusEnum = pgEnum("pe_risk_status", [
+  "open",
+  "investigating",
+  "mitigated",
+  "accepted",
+  "resolved",
+]);
+
+// PE Risk Flags
+export const peRiskFlags = pgTable("pe_risk_flags", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .references(() => peDeals.id, { onDelete: "cascade" })
+    .notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  category: peRiskCategoryEnum("category").notNull(),
+  severity: peRiskSeverityEnum("severity").notNull(),
+  status: peRiskStatusEnum("status").default("open").notNull(),
+  
+  // Source tracking
+  sourceType: varchar("source_type", { length: 50 }).notNull(),
+  sourceId: varchar("source_id"),
+  sourceContext: text("source_context"),
+  
+  // Resolution
+  mitigation: text("mitigation"),
+  resolution: text("resolution"),
+  resolvedAt: timestamp("resolved_at"),
+  
+  // Ownership
+  flaggedById: varchar("flagged_by_id").references(() => users.id),
+  assignedToId: varchar("assigned_to_id").references(() => users.id),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  dealStatusIdx: index("pe_risk_flags_deal_status_idx").on(table.dealId, table.status),
+  severityIdx: index("pe_risk_flags_severity_idx").on(table.severity),
+}));
+
+export type PERiskFlag = typeof peRiskFlags.$inferSelect;
+export const insertPERiskFlagSchema = createInsertSchema(peRiskFlags).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertPERiskFlag = z.infer<typeof insertPERiskFlagSchema>;
+
+// Pattern Match Type Enum
+export const patternMatchTypeEnum = pgEnum("pattern_match_type", [
+  "customer_concentration",
+  "key_person_risk",
+  "contract_terms",
+  "margin_trend",
+  "working_capital",
+  "integration_complexity",
+  "regulatory_issue",
+  "litigation_pattern",
+  "sector_specific",
+  "other",
+]);
+
+// Pattern Matches (Institutional Memory)
+export const patternMatches = pgTable("pattern_matches", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .references(() => peDeals.id, { onDelete: "cascade" })
+    .notNull(),
+  matchType: patternMatchTypeEnum("match_type").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  confidence: real("confidence").notNull(),
+  
+  // Historical reference
+  historicalDealId: varchar("historical_deal_id"),
+  historicalContext: text("historical_context"),
+  outcome: text("outcome"),
+  
+  // Learning
+  lesson: text("lesson"),
+  recommendation: text("recommendation"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  reviewedAt: timestamp("reviewed_at"),
+  dismissed: boolean("dismissed").default(false).notNull(),
+}, (table) => ({
+  dealIdx: index("pattern_matches_deal_idx").on(table.dealId),
+}));
+
+export type PatternMatch = typeof patternMatches.$inferSelect;
+export const insertPatternMatchSchema = createInsertSchema(patternMatches).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPatternMatch = z.infer<typeof insertPatternMatchSchema>;
+
+// Portfolio Status Enum
+export const portfolioStatusEnum = pgEnum("portfolio_status", [
+  "active",
+  "exited",
+  "written_off",
+]);
+
+// Portfolio Companies
+export const portfolioCompanies = pgTable("portfolio_companies", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  firmId: varchar("firm_id").references(() => peFirms.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  sector: varchar("sector", { length: 100 }).notNull(),
+  subsector: varchar("subsector", { length: 100 }),
+  acquisitionDate: date("acquisition_date").notNull(),
+  acquisitionEV: varchar("acquisition_ev", { length: 50 }),
+  currentStatus: portfolioStatusEnum("current_status").default("active").notNull(),
+  exitDate: date("exit_date"),
+  exitValue: varchar("exit_value", { length: 50 }),
+  
+  // For pattern matching
+  diligenceFindings: jsonb("diligence_findings").$type<Record<string, any>>(),
+  integrationLessons: jsonb("integration_lessons").$type<Record<string, any>>(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PortfolioCompany = typeof portfolioCompanies.$inferSelect;
+export const insertPortfolioCompanySchema = createInsertSchema(portfolioCompanies).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertPortfolioCompany = z.infer<typeof insertPortfolioCompanySchema>;
+
+// Diligence Templates
+export const diligenceTemplates = pgTable("diligence_templates", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  firmId: varchar("firm_id").references(() => peFirms.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  dealType: peDealTypeEnum("deal_type"),
+  sector: varchar("sector", { length: 100 }),
+  workstreams: jsonb("workstreams").$type<any[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type DiligenceTemplate = typeof diligenceTemplates.$inferSelect;
+export const insertDiligenceTemplateSchema = createInsertSchema(diligenceTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertDiligenceTemplate = z.infer<typeof insertDiligenceTemplateSchema>;
+
+// Deal Documents (links deals to documents with PE-specific categories)
+export const peDealDocumentCategoryEnum = pgEnum("pe_deal_document_category", [
+  "financial_statements",
+  "tax_returns",
+  "quality_of_earnings",
+  "contracts_customer",
+  "contracts_vendor",
+  "contracts_employment",
+  "contracts_other",
+  "corporate_docs",
+  "ip_documents",
+  "real_estate",
+  "environmental",
+  "insurance",
+  "litigation",
+  "regulatory",
+  "hr_benefits",
+  "it_systems",
+  "management_presentation",
+  "cim",
+  "model",
+  "other",
+]);
+
+export const peDealDocuments = pgTable("pe_deal_documents", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .references(() => peDeals.id, { onDelete: "cascade" })
+    .notNull(),
+  filename: varchar("filename", { length: 500 }).notNull(),
+  originalPath: text("original_path"),
+  storagePath: text("storage_path"),
+  mimeType: varchar("mime_type", { length: 100 }),
+  sizeBytes: integer("size_bytes"),
+  category: peDealDocumentCategoryEnum("category").default("other").notNull(),
+  subcategory: varchar("subcategory", { length: 100 }),
+  
+  // Processing
+  status: varchar("status", { length: 50 }).default("pending").notNull(),
+  extractedText: text("extracted_text"),
+  summary: text("summary"),
+  keyEntities: jsonb("key_entities").$type<Record<string, any>>(),
+  
+  // Review
+  documentDate: date("document_date"),
+  reviewedById: varchar("reviewed_by_id").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+}, (table) => ({
+  dealCategoryIdx: index("pe_deal_documents_deal_category_idx").on(table.dealId, table.category),
+  statusIdx: index("pe_deal_documents_status_idx").on(table.status),
+}));
+
+export type PEDealDocument = typeof peDealDocuments.$inferSelect;
+export const insertPEDealDocumentSchema = createInsertSchema(peDealDocuments).omit({
+  id: true,
+  uploadedAt: true,
+});
+export type InsertPEDealDocument = z.infer<typeof insertPEDealDocumentSchema>;
+
+// Deal Timeline Events
+export const dealTimelineEvents = pgTable("deal_timeline_events", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .references(() => peDeals.id, { onDelete: "cascade" })
+    .notNull(),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  occurredAt: timestamp("occurred_at").notNull(),
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  dealOccurredIdx: index("deal_timeline_events_deal_occurred_idx").on(table.dealId, table.occurredAt),
+}));
+
+export type DealTimelineEvent = typeof dealTimelineEvents.$inferSelect;
+export const insertDealTimelineEventSchema = createInsertSchema(dealTimelineEvents).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertDealTimelineEvent = z.infer<typeof insertDealTimelineEventSchema>;
+
+// PE Deal Relations
+export const peDealsRelations = relations(peDeals, ({ one, many }) => ({
+  firm: one(peFirms, {
+    fields: [peDeals.firmId],
+    references: [peFirms.id],
+  }),
+  contacts: many(dealContacts),
+  workstreams: many(workstreams),
+  questions: many(diligenceQuestions),
+  calls: many(peCalls),
+  riskFlags: many(peRiskFlags),
+  patternMatches: many(patternMatches),
+  documents: many(peDealDocuments),
+  timelineEvents: many(dealTimelineEvents),
+}));
+
+export const peFirmsRelations = relations(peFirms, ({ one, many }) => ({
+  settings: one(peFirmSettings),
+  deals: many(peDeals),
+  portfolioCompanies: many(portfolioCompanies),
+  templates: many(diligenceTemplates),
+}));
+
+export const workstreamsRelations = relations(workstreams, ({ one, many }) => ({
+  deal: one(peDeals, {
+    fields: [workstreams.dealId],
+    references: [peDeals.id],
+  }),
+  owner: one(users, {
+    fields: [workstreams.ownerId],
+    references: [users.id],
+  }),
+  questions: many(diligenceQuestions),
+}));
+
+export const diligenceQuestionsRelations = relations(diligenceQuestions, ({ one, many }) => ({
+  deal: one(peDeals, {
+    fields: [diligenceQuestions.dealId],
+    references: [peDeals.id],
+  }),
+  workstream: one(workstreams, {
+    fields: [diligenceQuestions.workstreamId],
+    references: [workstreams.id],
+  }),
+  documentLinks: many(questionDocumentLinks),
+  callReferences: many(callQuestionReferences),
+}));
+
+export const peCallsRelations = relations(peCalls, ({ one, many }) => ({
+  deal: one(peDeals, {
+    fields: [peCalls.dealId],
+    references: [peDeals.id],
+  }),
+  participants: many(peCallParticipants),
+  documentRefs: many(callDocumentReferences),
+  questionRefs: many(callQuestionReferences),
+}));
+
+export const peRiskFlagsRelations = relations(peRiskFlags, ({ one }) => ({
+  deal: one(peDeals, {
+    fields: [peRiskFlags.dealId],
+    references: [peDeals.id],
+  }),
+  flaggedBy: one(users, {
+    fields: [peRiskFlags.flaggedById],
+    references: [users.id],
+  }),
+  assignedTo: one(users, {
+    fields: [peRiskFlags.assignedToId],
+    references: [users.id],
+  }),
+}));
+
+export const patternMatchesRelations = relations(patternMatches, ({ one }) => ({
+  deal: one(peDeals, {
+    fields: [patternMatches.dealId],
+    references: [peDeals.id],
+  }),
+}));
+
+export const portfolioCompaniesRelations = relations(portfolioCompanies, ({ one }) => ({
+  firm: one(peFirms, {
+    fields: [portfolioCompanies.firmId],
+    references: [peFirms.id],
+  }),
+}));
+
+export const peDealDocumentsRelations = relations(peDealDocuments, ({ one }) => ({
+  deal: one(peDeals, {
+    fields: [peDealDocuments.dealId],
+    references: [peDeals.id],
+  }),
+  reviewedBy: one(users, {
+    fields: [peDealDocuments.reviewedById],
+    references: [users.id],
+  }),
+}));
