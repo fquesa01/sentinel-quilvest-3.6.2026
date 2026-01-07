@@ -1,0 +1,1726 @@
+# Sentinel PE Due Diligence Platform
+## Technical Specification for Replit Implementation
+
+---
+
+## Project Overview
+
+**Product Name:** Sentinel Deal Intelligence  
+**Target User:** Private Equity firms conducting M&A due diligence  
+**Core Value Proposition:** AI-powered due diligence platform that provides institutional memory across deals, real-time intelligence during management calls, and automated pattern matching from historical transactions.
+
+**Design Aesthetic:** Refined, institutional finance aesthetic. Navy blue (#0A1628) primary with warm gold (#C9A962) accents. Typography: Playfair Display for headings, DM Sans for body. Dark mode default. Subtle gradients, crisp data visualization, premium feel appropriate for PE managing directors.
+
+---
+
+## Tech Stack
+
+```
+Frontend: React 18 + TypeScript + Vite
+Styling: Tailwind CSS + Framer Motion
+State: Zustand
+Backend: Node.js + Express + TypeScript
+Database: PostgreSQL + Prisma ORM
+AI/ML: Google Gemini API (via proxy)
+Real-time: Socket.io for live transcription
+File Processing: pdf-parse, mammoth (docx), xlsx
+Search: PostgreSQL full-text search (upgrade path: Pinecone)
+Auth: JWT + bcrypt
+```
+
+---
+
+## Database Schema
+
+```prisma
+// schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ FIRM & USER MANAGEMENT ============
+
+model Firm {
+  id              String    @id @default(uuid())
+  name            String
+  logoUrl         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  users           User[]
+  deals           Deal[]
+  portfolioCompanies PortfolioCompany[]
+  diligenceTemplates DiligenceTemplate[]
+  settings        FirmSettings?
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  role            UserRole  @default(ASSOCIATE)
+  avatarUrl       String?
+  firmId          String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  firm            Firm      @relation(fields: [firmId], references: [id])
+  assignedWorkstreams Workstream[]
+  documentReviews DocumentReview[]
+  callParticipations CallParticipant[]
+  comments        Comment[]
+  riskFlags       RiskFlag[]
+}
+
+enum UserRole {
+  ASSOCIATE
+  VICE_PRESIDENT
+  DIRECTOR
+  MANAGING_DIRECTOR
+  OPERATING_PARTNER
+  ADMIN
+}
+
+model FirmSettings {
+  id              String    @id @default(uuid())
+  firmId          String    @unique
+  defaultWorkstreams Json    // Default workstream templates
+  riskCategories  Json      // Custom risk categorization
+  integrations    Json      // Connected services (Datasite, etc.)
+  
+  firm            Firm      @relation(fields: [firmId], references: [id])
+}
+
+// ============ DEAL MANAGEMENT ============
+
+model Deal {
+  id              String    @id @default(uuid())
+  firmId          String
+  name            String
+  codeName        String?   // "Project Atlas"
+  status          DealStatus @default(PIPELINE)
+  dealType        DealType
+  sector          String
+  subsector       String?
+  geography       String
+  targetDescription String?  @db.Text
+  
+  // Financials
+  enterpriseValue Decimal?  @db.Decimal(15, 2)
+  revenue         Decimal?  @db.Decimal(15, 2)
+  ebitda          Decimal?  @db.Decimal(15, 2)
+  
+  // Timeline
+  cimReceivedDate DateTime?
+  lolSubmittedDate DateTime?
+  loiSignedDate   DateTime?
+  exclusivityStart DateTime?
+  exclusivityEnd  DateTime?
+  expectedCloseDate DateTime?
+  actualCloseDate DateTime?
+  
+  // Metadata
+  dataRoomUrl     String?
+  dataRoomType    DataRoomType?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  firm            Firm      @relation(fields: [firmId], references: [id])
+  documents       Document[]
+  workstreams     Workstream[]
+  calls           Call[]
+  riskFlags       RiskFlag[]
+  questions       DiligenceQuestion[]
+  contacts        DealContact[]
+  patternMatches  PatternMatch[]
+  timeline        TimelineEvent[]
+  
+  @@index([firmId, status])
+  @@index([sector])
+}
+
+enum DealStatus {
+  PIPELINE
+  PRELIMINARY_REVIEW
+  MANAGEMENT_MEETING
+  LOI_SUBMITTED
+  LOI_SIGNED
+  DILIGENCE
+  EXCLUSIVITY
+  DEFINITIVE_DOCS
+  CLOSED
+  PASSED
+  LOST
+}
+
+enum DealType {
+  PLATFORM
+  ADD_ON
+  CARVE_OUT
+  GROWTH_EQUITY
+  RECAP
+  SECONDARY
+}
+
+enum DataRoomType {
+  INTRALINKS
+  DATASITE
+  BOX
+  GOOGLE_DRIVE
+  SHAREPOINT
+  OTHER
+}
+
+model DealContact {
+  id              String    @id @default(uuid())
+  dealId          String
+  name            String
+  title           String
+  company         String    // Target, Advisor, etc.
+  email           String?
+  phone           String?
+  role            ContactRole
+  notes           String?   @db.Text
+  
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+}
+
+enum ContactRole {
+  TARGET_MANAGEMENT
+  TARGET_BOARD
+  SELL_SIDE_BANKER
+  SELL_SIDE_LAWYER
+  SELL_SIDE_ACCOUNTANT
+  LENDER
+  CONSULTANT
+  OTHER
+}
+
+// ============ DOCUMENT MANAGEMENT ============
+
+model Document {
+  id              String    @id @default(uuid())
+  dealId          String
+  filename        String
+  originalPath    String    // Path in data room
+  storagePath     String    // Local storage path
+  mimeType        String
+  sizeBytes       Int
+  category        DocumentCategory
+  subcategory     String?
+  
+  // Processing status
+  status          ProcessingStatus @default(PENDING)
+  extractedText   String?   @db.Text
+  summary         String?   @db.Text
+  keyEntities     Json?     // Extracted entities
+  embedding       Bytes?    // Vector embedding for similarity
+  
+  // Metadata
+  documentDate    DateTime?
+  uploadedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  reviews         DocumentReview[]
+  questionLinks   QuestionDocument[]
+  callReferences  CallDocumentReference[]
+  
+  @@index([dealId, category])
+  @@index([status])
+}
+
+enum DocumentCategory {
+  FINANCIAL_STATEMENTS
+  TAX_RETURNS
+  QUALITY_OF_EARNINGS
+  CONTRACTS_CUSTOMER
+  CONTRACTS_VENDOR
+  CONTRACTS_EMPLOYMENT
+  CONTRACTS_OTHER
+  CORPORATE_DOCS
+  IP_DOCUMENTS
+  REAL_ESTATE
+  ENVIRONMENTAL
+  INSURANCE
+  LITIGATION
+  REGULATORY
+  HR_BENEFITS
+  IT_SYSTEMS
+  MANAGEMENT_PRESENTATION
+  CIM
+  MODEL
+  OTHER
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model DocumentReview {
+  id              String    @id @default(uuid())
+  documentId      String
+  userId          String
+  status          ReviewStatus @default(NOT_STARTED)
+  notes           String?   @db.Text
+  flaggedIssues   Json?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  
+  document        Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id])
+  
+  @@unique([documentId, userId])
+}
+
+enum ReviewStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  NEEDS_FOLLOWUP
+}
+
+// ============ WORKSTREAM MANAGEMENT ============
+
+model Workstream {
+  id              String    @id @default(uuid())
+  dealId          String
+  name            String    // "Financial", "Legal", "Commercial", etc.
+  description     String?
+  ownerId         String?
+  status          WorkstreamStatus @default(NOT_STARTED)
+  progress        Int       @default(0) // 0-100
+  dueDate         DateTime?
+  
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  owner           User?     @relation(fields: [ownerId], references: [id])
+  questions       DiligenceQuestion[]
+  
+  @@unique([dealId, name])
+}
+
+enum WorkstreamStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+}
+
+model DiligenceTemplate {
+  id              String    @id @default(uuid())
+  firmId          String
+  name            String    // "Healthcare Platform", "SaaS Add-on"
+  dealType        DealType?
+  sector          String?
+  workstreams     Json      // Template workstreams with questions
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  firm            Firm      @relation(fields: [firmId], references: [id])
+}
+
+// ============ DILIGENCE QUESTIONS ============
+
+model DiligenceQuestion {
+  id              String    @id @default(uuid())
+  dealId          String
+  workstreamId    String?
+  question        String    @db.Text
+  status          QuestionStatus @default(OPEN)
+  priority        Priority  @default(MEDIUM)
+  
+  // Answer tracking
+  answer          String?   @db.Text
+  answeredAt      DateTime?
+  source          String?   // "Management Call 3/15", "Data Room Doc X"
+  
+  // Follow-up
+  followUpNeeded  Boolean   @default(false)
+  followUpNote    String?
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  workstream      Workstream? @relation(fields: [workstreamId], references: [id])
+  documents       QuestionDocument[]
+  callReferences  CallQuestionReference[]
+  
+  @@index([dealId, status])
+}
+
+enum QuestionStatus {
+  OPEN
+  PENDING_RESPONSE
+  ANSWERED
+  CLOSED
+  NA
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model QuestionDocument {
+  id              String    @id @default(uuid())
+  questionId      String
+  documentId      String
+  relevanceNote   String?
+  
+  question        DiligenceQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  document        Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  
+  @@unique([questionId, documentId])
+}
+
+// ============ CALLS & TRANSCRIPTION ============
+
+model Call {
+  id              String    @id @default(uuid())
+  dealId          String
+  title           String    // "Management Presentation", "CFO Deep Dive"
+  callType        CallType
+  scheduledAt     DateTime
+  startedAt       DateTime?
+  endedAt         DateTime?
+  duration        Int?      // minutes
+  
+  // Recording & Transcription
+  recordingUrl    String?
+  transcriptRaw   String?   @db.Text
+  transcriptProcessed Json? // Structured with speakers, timestamps
+  summary         String?   @db.Text
+  keyPoints       Json?     // AI-extracted key points
+  
+  // Pre-call prep
+  suggestedQuestions Json?  // AI-generated based on context
+  briefingDoc     String?   @db.Text
+  
+  // Post-call
+  followUps       Json?     // Generated follow-up items
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  participants    CallParticipant[]
+  documentRefs    CallDocumentReference[]
+  questionRefs    CallQuestionReference[]
+  
+  @@index([dealId, scheduledAt])
+}
+
+enum CallType {
+  MANAGEMENT_PRESENTATION
+  EXPERT_CALL
+  SITE_VISIT
+  CUSTOMER_CALL
+  EMPLOYEE_INTERVIEW
+  ADVISOR_CALL
+  IC_MEETING
+  OTHER
+}
+
+model CallParticipant {
+  id              String    @id @default(uuid())
+  callId          String
+  userId          String?   // Internal participant
+  externalName    String?   // External participant
+  externalTitle   String?
+  externalCompany String?
+  role            String?   // "Presenter", "Note-taker"
+  
+  call            Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user            User?     @relation(fields: [userId], references: [id])
+}
+
+model CallDocumentReference {
+  id              String    @id @default(uuid())
+  callId          String
+  documentId      String
+  timestamp       Int?      // Seconds into call when referenced
+  context         String?   // How it was referenced
+  surfacedBy      String    @default("MANUAL") // "AI" or "MANUAL"
+  
+  call            Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+  document        Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model CallQuestionReference {
+  id              String    @id @default(uuid())
+  callId          String
+  questionId      String
+  timestamp       Int?
+  discussed       Boolean   @default(false)
+  answered        Boolean   @default(false)
+  
+  call            Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+  question        DiligenceQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+// ============ RISK TRACKING ============
+
+model RiskFlag {
+  id              String    @id @default(uuid())
+  dealId          String
+  title           String
+  description     String    @db.Text
+  category        RiskCategory
+  severity        RiskSeverity
+  status          RiskStatus @default(OPEN)
+  
+  // Source tracking
+  sourceType      String    // "DOCUMENT", "CALL", "MANUAL", "AI"
+  sourceId        String?   // Reference to document/call
+  sourceContext   String?   @db.Text
+  
+  // Resolution
+  mitigation      String?   @db.Text
+  resolution      String?   @db.Text
+  resolvedAt      DateTime?
+  
+  // Ownership
+  flaggedById     String
+  assignedToId    String?
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  flaggedBy       User      @relation(fields: [flaggedById], references: [id])
+  comments        Comment[]
+  
+  @@index([dealId, status])
+  @@index([severity])
+}
+
+enum RiskCategory {
+  FINANCIAL
+  LEGAL
+  COMMERCIAL
+  OPERATIONAL
+  REGULATORY
+  ENVIRONMENTAL
+  HR_EMPLOYMENT
+  IT_CYBER
+  INTEGRATION
+  OTHER
+}
+
+enum RiskSeverity {
+  DEAL_BREAKER
+  PRICE_CHIP
+  INTEGRATION_ISSUE
+  WATCH_ITEM
+  ACCEPTABLE
+}
+
+enum RiskStatus {
+  OPEN
+  INVESTIGATING
+  MITIGATED
+  ACCEPTED
+  RESOLVED
+}
+
+// ============ PATTERN MATCHING (INSTITUTIONAL MEMORY) ============
+
+model PatternMatch {
+  id              String    @id @default(uuid())
+  dealId          String    // Current deal
+  matchType       PatternMatchType
+  title           String
+  description     String    @db.Text
+  confidence      Float     // 0-1 confidence score
+  
+  // Historical reference
+  historicalDealId String?
+  historicalContext String? @db.Text
+  outcome         String?   @db.Text // What happened in the historical deal
+  
+  // Learning
+  lesson          String?   @db.Text
+  recommendation  String?   @db.Text
+  
+  createdAt       DateTime  @default(now())
+  reviewedAt      DateTime?
+  dismissed       Boolean   @default(false)
+  
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  
+  @@index([dealId])
+}
+
+enum PatternMatchType {
+  CUSTOMER_CONCENTRATION
+  KEY_PERSON_RISK
+  CONTRACT_TERMS
+  MARGIN_TREND
+  WORKING_CAPITAL
+  INTEGRATION_COMPLEXITY
+  REGULATORY_ISSUE
+  LITIGATION_PATTERN
+  SECTOR_SPECIFIC
+  OTHER
+}
+
+// ============ PORTFOLIO COMPANIES ============
+
+model PortfolioCompany {
+  id              String    @id @default(uuid())
+  firmId          String
+  name            String
+  sector          String
+  subsector       String?
+  acquisitionDate DateTime
+  acquisitionEV   Decimal   @db.Decimal(15, 2)
+  currentStatus   PortfolioStatus @default(ACTIVE)
+  exitDate        DateTime?
+  exitValue       Decimal?  @db.Decimal(15, 2)
+  
+  // For pattern matching
+  diligenceFindings Json?   // Key findings from original diligence
+  integrationLessons Json?  // What we learned post-close
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  firm            Firm      @relation(fields: [firmId], references: [id])
+}
+
+enum PortfolioStatus {
+  ACTIVE
+  EXITED
+  WRITTEN_OFF
+}
+
+// ============ COLLABORATION ============
+
+model Comment {
+  id              String    @id @default(uuid())
+  userId          String
+  content         String    @db.Text
+  
+  // Polymorphic reference
+  entityType      String    // "DEAL", "DOCUMENT", "RISK_FLAG", "QUESTION"
+  entityId        String
+  
+  parentId        String?   // For threaded comments
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  user            User      @relation(fields: [userId], references: [id])
+  parent          Comment?  @relation("CommentThread", fields: [parentId], references: [id])
+  replies         Comment[] @relation("CommentThread")
+  riskFlag        RiskFlag? @relation(fields: [entityId], references: [id], map: "comment_risk_flag")
+  
+  @@index([entityType, entityId])
+}
+
+model TimelineEvent {
+  id              String    @id @default(uuid())
+  dealId          String
+  eventType       String
+  title           String
+  description     String?
+  occurredAt      DateTime
+  metadata        Json?
+  
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  
+  @@index([dealId, occurredAt])
+}
+```
+
+---
+
+## API Endpoints
+
+### Authentication
+```
+POST   /api/auth/login              - Login with email/password
+POST   /api/auth/logout             - Logout
+GET    /api/auth/me                 - Get current user
+POST   /api/auth/refresh            - Refresh JWT token
+```
+
+### Deals
+```
+GET    /api/deals                   - List all deals (with filters)
+POST   /api/deals                   - Create new deal
+GET    /api/deals/:id               - Get deal details
+PUT    /api/deals/:id               - Update deal
+DELETE /api/deals/:id               - Delete deal
+GET    /api/deals/:id/dashboard     - Get deal dashboard data
+POST   /api/deals/:id/apply-template - Apply diligence template
+```
+
+### Documents
+```
+GET    /api/deals/:dealId/documents           - List documents
+POST   /api/deals/:dealId/documents           - Upload document(s)
+POST   /api/deals/:dealId/documents/bulk      - Bulk upload from data room
+GET    /api/deals/:dealId/documents/:id       - Get document details
+DELETE /api/deals/:dealId/documents/:id       - Delete document
+POST   /api/deals/:dealId/documents/:id/process - Trigger AI processing
+GET    /api/deals/:dealId/documents/search    - Search documents
+POST   /api/deals/:dealId/documents/:id/review - Submit review
+```
+
+### Workstreams
+```
+GET    /api/deals/:dealId/workstreams         - List workstreams
+POST   /api/deals/:dealId/workstreams         - Create workstream
+PUT    /api/deals/:dealId/workstreams/:id     - Update workstream
+GET    /api/deals/:dealId/workstreams/:id/progress - Get detailed progress
+```
+
+### Questions
+```
+GET    /api/deals/:dealId/questions           - List all questions
+POST   /api/deals/:dealId/questions           - Create question
+PUT    /api/deals/:dealId/questions/:id       - Update question
+POST   /api/deals/:dealId/questions/:id/answer - Submit answer
+POST   /api/deals/:dealId/questions/generate  - AI generate questions
+```
+
+### Calls
+```
+GET    /api/deals/:dealId/calls               - List calls
+POST   /api/deals/:dealId/calls               - Schedule call
+GET    /api/deals/:dealId/calls/:id           - Get call details
+PUT    /api/deals/:dealId/calls/:id           - Update call
+POST   /api/deals/:dealId/calls/:id/start     - Start call session
+POST   /api/deals/:dealId/calls/:id/end       - End call session
+GET    /api/deals/:dealId/calls/:id/briefing  - Get pre-call briefing
+POST   /api/deals/:dealId/calls/:id/transcript - Submit transcript
+```
+
+### Real-time Call Intelligence (WebSocket)
+```
+WS     /ws/call/:callId                       - Live call connection
+       -> Events: transcription, document_suggestion, question_match, 
+                  inconsistency_detected, follow_up_generated
+```
+
+### Risk Flags
+```
+GET    /api/deals/:dealId/risks               - List risk flags
+POST   /api/deals/:dealId/risks               - Create risk flag
+PUT    /api/deals/:dealId/risks/:id           - Update risk flag
+POST   /api/deals/:dealId/risks/:id/mitigate  - Add mitigation
+```
+
+### Pattern Matching
+```
+GET    /api/deals/:dealId/patterns            - Get pattern matches
+POST   /api/deals/:dealId/patterns/analyze    - Trigger pattern analysis
+PUT    /api/deals/:dealId/patterns/:id/dismiss - Dismiss pattern
+GET    /api/patterns/historical/:type         - Get historical patterns by type
+```
+
+### Portfolio & Cross-Deal
+```
+GET    /api/portfolio                         - List portfolio companies
+GET    /api/portfolio/:id                     - Get portfolio company
+GET    /api/search/cross-deal                 - Search across all deals
+GET    /api/analytics/benchmarks              - Get benchmark data
+```
+
+### Templates
+```
+GET    /api/templates                         - List diligence templates
+POST   /api/templates                         - Create template
+PUT    /api/templates/:id                     - Update template
+POST   /api/templates/:id/clone               - Clone template
+```
+
+### AI Endpoints
+```
+POST   /api/ai/summarize                      - Summarize document(s)
+POST   /api/ai/extract-entities               - Extract key entities
+POST   /api/ai/generate-questions             - Generate diligence questions
+POST   /api/ai/analyze-risk                   - Analyze for risks
+POST   /api/ai/find-patterns                  - Find historical patterns
+POST   /api/ai/chat                           - General AI chat about deal
+```
+
+---
+
+## Frontend Components
+
+### Layout Structure
+
+```
+src/
+├── components/
+│   ├── layout/
+│   │   ├── AppShell.tsx           # Main app wrapper
+│   │   ├── Sidebar.tsx            # Left navigation
+│   │   ├── Header.tsx             # Top bar with search
+│   │   └── CommandPalette.tsx     # Cmd+K quick actions
+│   │
+│   ├── deals/
+│   │   ├── DealList.tsx           # Pipeline view
+│   │   ├── DealCard.tsx           # Deal summary card
+│   │   ├── DealDashboard.tsx      # Main deal view
+│   │   ├── DealHeader.tsx         # Deal title, status, key metrics
+│   │   ├── DealTimeline.tsx       # Visual timeline
+│   │   └── DealCreationModal.tsx  # New deal form
+│   │
+│   ├── documents/
+│   │   ├── DocumentList.tsx       # Document browser
+│   │   ├── DocumentUploader.tsx   # Drag-drop upload
+│   │   ├── DocumentViewer.tsx     # Preview with annotations
+│   │   ├── DocumentSearch.tsx     # AI-powered search
+│   │   ├── DataRoomSync.tsx       # Data room connector
+│   │   └── ProcessingStatus.tsx   # Document processing queue
+│   │
+│   ├── workstreams/
+│   │   ├── WorkstreamBoard.tsx    # Kanban-style view
+│   │   ├── WorkstreamProgress.tsx # Progress visualization
+│   │   ├── WorkstreamDetail.tsx   # Single workstream view
+│   │   └── TemplateSelector.tsx   # Apply templates
+│   │
+│   ├── questions/
+│   │   ├── QuestionList.tsx       # All questions view
+│   │   ├── QuestionCard.tsx       # Single question
+│   │   ├── QuestionForm.tsx       # Create/edit question
+│   │   ├── QuestionGenerator.tsx  # AI question generation
+│   │   └── AnswerTracker.tsx      # Answer status tracking
+│   │
+│   ├── calls/
+│   │   ├── CallScheduler.tsx      # Schedule new call
+│   │   ├── CallList.tsx           # Upcoming/past calls
+│   │   ├── CallBriefing.tsx       # Pre-call prep view
+│   │   ├── LiveCallInterface.tsx  # Active call view
+│   │   ├── TranscriptViewer.tsx   # Post-call transcript
+│   │   ├── CallSummary.tsx        # AI-generated summary
+│   │   └── AmbientIntelligence.tsx # Real-time suggestions
+│   │
+│   ├── risks/
+│   │   ├── RiskRegister.tsx       # Risk dashboard
+│   │   ├── RiskCard.tsx           # Single risk
+│   │   ├── RiskMatrix.tsx         # Severity/likelihood grid
+│   │   ├── RiskForm.tsx           # Create/edit risk
+│   │   └── RiskResolution.tsx     # Track mitigation
+│   │
+│   ├── patterns/
+│   │   ├── PatternAlerts.tsx      # Pattern match notifications
+│   │   ├── PatternDetail.tsx      # Historical comparison
+│   │   ├── HistoricalDealView.tsx # View past deal context
+│   │   └── LessonsLearned.tsx     # Institutional knowledge
+│   │
+│   ├── portfolio/
+│   │   ├── PortfolioOverview.tsx  # All portfolio companies
+│   │   ├── PortfolioCompany.tsx   # Single company view
+│   │   ├── CrossDealSearch.tsx    # Search across deals
+│   │   └── Benchmarking.tsx       # Comparison analytics
+│   │
+│   ├── ai/
+│   │   ├── AIChat.tsx             # Chat interface
+│   │   ├── AISuggestion.tsx       # Inline suggestions
+│   │   ├── AIInsightCard.tsx      # AI-generated insight
+│   │   └── AIProcessingIndicator.tsx
+│   │
+│   └── shared/
+│       ├── Button.tsx
+│       ├── Card.tsx
+│       ├── Modal.tsx
+│       ├── Table.tsx
+│       ├── Badge.tsx
+│       ├── Progress.tsx
+│       ├── Avatar.tsx
+│       ├── Dropdown.tsx
+│       ├── DatePicker.tsx
+│       ├── FileUpload.tsx
+│       ├── SearchInput.tsx
+│       ├── EmptyState.tsx
+│       ├── LoadingState.tsx
+│       └── Toast.tsx
+│
+├── pages/
+│   ├── Dashboard.tsx              # Firm-wide dashboard
+│   ├── Pipeline.tsx               # Deal pipeline
+│   ├── DealView.tsx               # Single deal (tabs)
+│   ├── Documents.tsx              # Deal documents
+│   ├── Workstreams.tsx            # Deal workstreams
+│   ├── Questions.tsx              # Deal questions
+│   ├── Calls.tsx                  # Deal calls
+│   ├── Risks.tsx                  # Deal risks
+│   ├── LiveCall.tsx               # Active call interface
+│   ├── Portfolio.tsx              # Portfolio companies
+│   ├── Search.tsx                 # Cross-deal search
+│   ├── Templates.tsx              # Manage templates
+│   ├── Settings.tsx               # Firm settings
+│   └── Login.tsx                  # Authentication
+│
+├── hooks/
+│   ├── useDeals.ts
+│   ├── useDocuments.ts
+│   ├── useWorkstreams.ts
+│   ├── useQuestions.ts
+│   ├── useCalls.ts
+│   ├── useRisks.ts
+│   ├── usePatterns.ts
+│   ├── useWebSocket.ts
+│   ├── useAI.ts
+│   └── useSearch.ts
+│
+├── stores/
+│   ├── authStore.ts
+│   ├── dealStore.ts
+│   ├── uiStore.ts
+│   └── callStore.ts
+│
+├── services/
+│   ├── api.ts                     # API client
+│   ├── websocket.ts               # WebSocket client
+│   ├── ai.ts                      # AI service calls
+│   └── fileProcessor.ts           # Client-side file handling
+│
+├── utils/
+│   ├── formatting.ts
+│   ├── dates.ts
+│   ├── validation.ts
+│   └── constants.ts
+│
+└── styles/
+    ├── globals.css
+    └── theme.ts
+```
+
+---
+
+## Core Feature Implementations
+
+### 1. Deal Dashboard
+
+```typescript
+// pages/DealView.tsx
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { useParams } from 'react-router-dom';
+import { useDeal } from '../hooks/useDeals';
+import { DealHeader } from '../components/deals/DealHeader';
+import { WorkstreamProgress } from '../components/workstreams/WorkstreamProgress';
+import { RiskSummary } from '../components/risks/RiskSummary';
+import { UpcomingCalls } from '../components/calls/UpcomingCalls';
+import { PatternAlerts } from '../components/patterns/PatternAlerts';
+import { RecentActivity } from '../components/deals/RecentActivity';
+import { AIInsightCard } from '../components/ai/AIInsightCard';
+
+export function DealView() {
+  const { dealId } = useParams();
+  const { deal, isLoading } = useDeal(dealId);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'documents', label: 'Documents' },
+    { id: 'workstreams', label: 'Workstreams' },
+    { id: 'questions', label: 'Questions' },
+    { id: 'calls', label: 'Calls' },
+    { id: 'risks', label: 'Risks' },
+  ];
+
+  if (isLoading) return <LoadingState />;
+
+  return (
+    <div className="min-h-screen bg-slate-950">
+      <DealHeader deal={deal} />
+      
+      {/* Tab Navigation */}
+      <div className="border-b border-slate-800 px-8">
+        <nav className="flex gap-8">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`py-4 text-sm font-medium transition-colors relative
+                ${activeTab === tab.id 
+                  ? 'text-amber-400' 
+                  : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              {tab.label}
+              {activeTab === tab.id && (
+                <motion.div
+                  layoutId="activeTab"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-400"
+                />
+              )}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Content */}
+      <div className="p-8">
+        {activeTab === 'overview' && (
+          <div className="grid grid-cols-3 gap-6">
+            {/* Left Column - Progress & Activity */}
+            <div className="col-span-2 space-y-6">
+              <WorkstreamProgress dealId={dealId} />
+              <RecentActivity dealId={dealId} />
+            </div>
+            
+            {/* Right Column - AI Insights & Alerts */}
+            <div className="space-y-6">
+              <PatternAlerts dealId={dealId} />
+              <RiskSummary dealId={dealId} />
+              <UpcomingCalls dealId={dealId} />
+              <AIInsightCard dealId={dealId} />
+            </div>
+          </div>
+        )}
+        {/* Other tab content... */}
+      </div>
+    </div>
+  );
+}
+```
+
+### 2. Live Call Intelligence Interface
+
+```typescript
+// pages/LiveCall.tsx
+import { useEffect, useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useParams } from 'react-router-dom';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { useCall } from '../hooks/useCalls';
+
+interface TranscriptSegment {
+  id: string;
+  speaker: string;
+  text: string;
+  timestamp: number;
+  confidence: number;
+}
+
+interface DocumentSuggestion {
+  id: string;
+  documentId: string;
+  filename: string;
+  relevance: number;
+  context: string;
+  timestamp: number;
+}
+
+interface Inconsistency {
+  id: string;
+  type: string;
+  description: string;
+  source1: string;
+  source2: string;
+  timestamp: number;
+}
+
+export function LiveCall() {
+  const { callId } = useParams();
+  const { call } = useCall(callId);
+  const [transcript, setTranscript] = useState<TranscriptSegment[]>([]);
+  const [suggestions, setSuggestions] = useState<DocumentSuggestion[]>([]);
+  const [inconsistencies, setInconsistencies] = useState<Inconsistency[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+
+  const { sendMessage, lastMessage, connectionStatus } = useWebSocket(
+    `/ws/call/${callId}`
+  );
+
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    const data = JSON.parse(lastMessage.data);
+
+    switch (data.type) {
+      case 'transcription':
+        setTranscript(prev => [...prev, data.segment]);
+        break;
+      case 'document_suggestion':
+        setSuggestions(prev => [data.suggestion, ...prev].slice(0, 5));
+        break;
+      case 'inconsistency_detected':
+        setInconsistencies(prev => [...prev, data.inconsistency]);
+        break;
+    }
+  }, [lastMessage]);
+
+  const handleStartRecording = useCallback(() => {
+    sendMessage(JSON.stringify({ type: 'start_recording' }));
+    setIsRecording(true);
+  }, [sendMessage]);
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex">
+      {/* Main Transcript Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Call Header */}
+        <header className="bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold text-white">{call?.title}</h1>
+              <p className="text-sm text-slate-400">{call?.participants?.length} participants</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm
+                ${isRecording ? 'bg-red-500/20 text-red-400' : 'bg-slate-800 text-slate-400'}`}>
+                <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-slate-500'}`} />
+                {isRecording ? 'Recording' : 'Not Recording'}
+              </div>
+              <button
+                onClick={isRecording ? () => setIsRecording(false) : handleStartRecording}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors
+                  ${isRecording 
+                    ? 'bg-red-500 hover:bg-red-600 text-white' 
+                    : 'bg-amber-500 hover:bg-amber-600 text-slate-900'}`}
+              >
+                {isRecording ? 'Stop' : 'Start Recording'}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Transcript */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <AnimatePresence>
+            {transcript.map((segment) => (
+              <motion.div
+                key={segment.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex gap-4"
+              >
+                <div className="w-24 flex-shrink-0">
+                  <span className="text-sm font-medium text-amber-400">{segment.speaker}</span>
+                  <span className="text-xs text-slate-500 block">
+                    {formatTime(segment.timestamp)}
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">{segment.text}</p>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* Right Sidebar - AI Intelligence */}
+      <div className="w-96 bg-slate-900/50 border-l border-slate-800 flex flex-col">
+        {/* Document Suggestions */}
+        <div className="p-4 border-b border-slate-800">
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+            Relevant Documents
+          </h2>
+          <div className="space-y-2">
+            <AnimatePresence>
+              {suggestions.map((suggestion) => (
+                <motion.div
+                  key={suggestion.id}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="bg-slate-800/50 rounded-lg p-3 cursor-pointer hover:bg-slate-800 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-white">{suggestion.filename}</p>
+                      <p className="text-xs text-slate-400 mt-1">{suggestion.context}</p>
+                    </div>
+                    <span className="text-xs text-amber-400">
+                      {Math.round(suggestion.relevance * 100)}%
+                    </span>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Inconsistencies Detected */}
+        {inconsistencies.length > 0 && (
+          <div className="p-4 border-b border-slate-800">
+            <h2 className="text-sm font-semibold text-red-400 uppercase tracking-wider mb-3">
+              ⚠️ Inconsistencies Detected
+            </h2>
+            <div className="space-y-2">
+              {inconsistencies.map((inc) => (
+                <div key={inc.id} className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <p className="text-sm text-red-300">{inc.description}</p>
+                  <p className="text-xs text-red-400/60 mt-1">
+                    {inc.source1} vs {inc.source2}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Open Questions */}
+        <div className="flex-1 p-4 overflow-y-auto">
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+            Open Questions
+          </h2>
+          {/* Question list... */}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### 3. Pattern Matching Service
+
+```typescript
+// server/services/patternMatching.ts
+import { prisma } from '../db';
+import { generateEmbedding, findSimilarEmbeddings } from './embeddings';
+import { analyzeWithGemini } from './gemini';
+
+interface PatternMatchResult {
+  type: string;
+  title: string;
+  description: string;
+  confidence: number;
+  historicalDealId?: string;
+  historicalContext?: string;
+  outcome?: string;
+  lesson?: string;
+  recommendation?: string;
+}
+
+export async function findPatterns(dealId: string): Promise<PatternMatchResult[]> {
+  const deal = await prisma.deal.findUnique({
+    where: { id: dealId },
+    include: {
+      documents: true,
+      riskFlags: true,
+      workstreams: { include: { questions: true } },
+    },
+  });
+
+  if (!deal) throw new Error('Deal not found');
+
+  const patterns: PatternMatchResult[] = [];
+
+  // 1. Customer Concentration Analysis
+  const customerConcentration = await analyzeCustomerConcentration(deal);
+  if (customerConcentration) patterns.push(customerConcentration);
+
+  // 2. Key Person Risk
+  const keyPersonRisk = await analyzeKeyPersonRisk(deal);
+  if (keyPersonRisk) patterns.push(keyPersonRisk);
+
+  // 3. Contract Terms Patterns
+  const contractPatterns = await analyzeContractPatterns(deal);
+  patterns.push(...contractPatterns);
+
+  // 4. Financial Trend Patterns
+  const financialPatterns = await analyzeFinancialPatterns(deal);
+  patterns.push(...financialPatterns);
+
+  // 5. Sector-Specific Patterns
+  const sectorPatterns = await findSectorPatterns(deal);
+  patterns.push(...sectorPatterns);
+
+  // Store patterns in database
+  for (const pattern of patterns) {
+    await prisma.patternMatch.create({
+      data: {
+        dealId,
+        matchType: pattern.type as any,
+        title: pattern.title,
+        description: pattern.description,
+        confidence: pattern.confidence,
+        historicalDealId: pattern.historicalDealId,
+        historicalContext: pattern.historicalContext,
+        outcome: pattern.outcome,
+        lesson: pattern.lesson,
+        recommendation: pattern.recommendation,
+      },
+    });
+  }
+
+  return patterns;
+}
+
+async function analyzeCustomerConcentration(deal: any): Promise<PatternMatchResult | null> {
+  // Find financial documents
+  const financialDocs = deal.documents.filter(
+    (d: any) => d.category === 'FINANCIAL_STATEMENTS' || d.category === 'QUALITY_OF_EARNINGS'
+  );
+
+  if (financialDocs.length === 0) return null;
+
+  // Extract customer concentration data using AI
+  const analysisPrompt = `
+    Analyze these financial documents for customer concentration risk.
+    Extract: top customer revenue %, top 5 customers revenue %, any concentration trends.
+    Documents: ${financialDocs.map((d: any) => d.extractedText).join('\n\n')}
+  `;
+
+  const analysis = await analyzeWithGemini(analysisPrompt);
+  
+  // Find historical deals with similar concentration
+  const historicalDeals = await prisma.portfolioCompany.findMany({
+    where: { firmId: deal.firmId },
+  });
+
+  // Match against historical patterns
+  const similarDeals = historicalDeals.filter((h: any) => {
+    const findings = h.diligenceFindings as any;
+    return findings?.customerConcentration > 30; // Example threshold
+  });
+
+  if (similarDeals.length === 0) return null;
+
+  return {
+    type: 'CUSTOMER_CONCENTRATION',
+    title: 'Customer Concentration Risk Identified',
+    description: analysis.summary,
+    confidence: analysis.concentration > 40 ? 0.9 : 0.7,
+    historicalDealId: similarDeals[0].id,
+    historicalContext: `${similarDeals[0].name} had ${similarDeals[0].diligenceFindings?.customerConcentration}% concentration`,
+    outcome: similarDeals[0].integrationLessons?.concentrationOutcome,
+    lesson: 'Customer concentration above 30% has historically required pricing protection',
+    recommendation: 'Consider reps & warranties insurance, earnout structure, or price adjustment',
+  };
+}
+
+async function findSectorPatterns(deal: any): Promise<PatternMatchResult[]> {
+  // Generate embedding for deal description
+  const dealEmbedding = await generateEmbedding(
+    `${deal.sector} ${deal.subsector} ${deal.targetDescription}`
+  );
+
+  // Find similar historical deals by embedding similarity
+  const similarDeals = await prisma.$queryRaw`
+    SELECT 
+      pc.id,
+      pc.name,
+      pc.sector,
+      pc."diligenceFindings",
+      pc."integrationLessons",
+      1 - (pc.embedding <=> ${dealEmbedding}::vector) as similarity
+    FROM "PortfolioCompany" pc
+    WHERE pc."firmId" = ${deal.firmId}
+      AND pc.embedding IS NOT NULL
+    ORDER BY pc.embedding <=> ${dealEmbedding}::vector
+    LIMIT 5
+  `;
+
+  return similarDeals.map((sd: any) => ({
+    type: 'SECTOR_SPECIFIC',
+    title: `Similar to ${sd.name}`,
+    description: `This deal shares characteristics with your prior ${sd.sector} investment`,
+    confidence: sd.similarity,
+    historicalDealId: sd.id,
+    historicalContext: JSON.stringify(sd.diligenceFindings),
+    lesson: sd.integrationLessons?.keyLesson,
+    recommendation: sd.integrationLessons?.recommendation,
+  }));
+}
+```
+
+### 4. Document Processing Pipeline
+
+```typescript
+// server/services/documentProcessor.ts
+import { prisma } from '../db';
+import { extractTextFromPDF, extractTextFromDocx, extractTextFromXlsx } from './extractors';
+import { generateEmbedding } from './embeddings';
+import { analyzeWithGemini } from './gemini';
+
+interface ProcessingResult {
+  extractedText: string;
+  summary: string;
+  keyEntities: Record<string, any>;
+  embedding: number[];
+  suggestedCategory?: string;
+}
+
+export async function processDocument(documentId: string): Promise<ProcessingResult> {
+  const document = await prisma.document.findUnique({
+    where: { id: documentId },
+  });
+
+  if (!document) throw new Error('Document not found');
+
+  // Update status to processing
+  await prisma.document.update({
+    where: { id: documentId },
+    data: { status: 'PROCESSING' },
+  });
+
+  try {
+    // 1. Extract text based on file type
+    let extractedText = '';
+    switch (document.mimeType) {
+      case 'application/pdf':
+        extractedText = await extractTextFromPDF(document.storagePath);
+        break;
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        extractedText = await extractTextFromDocx(document.storagePath);
+        break;
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+        extractedText = await extractTextFromXlsx(document.storagePath);
+        break;
+      default:
+        extractedText = await extractTextFromPDF(document.storagePath);
+    }
+
+    // 2. Generate AI summary and extract entities
+    const analysisPrompt = `
+      Analyze this legal/financial document and provide:
+      1. A concise summary (2-3 sentences)
+      2. Key entities (parties, dates, amounts, obligations)
+      3. Document type classification
+      4. Any red flags or notable terms
+      
+      Document text:
+      ${extractedText.slice(0, 50000)} // Limit for context window
+    `;
+
+    const analysis = await analyzeWithGemini(analysisPrompt);
+
+    // 3. Generate embedding for semantic search
+    const embedding = await generateEmbedding(
+      `${document.filename} ${analysis.summary} ${extractedText.slice(0, 5000)}`
+    );
+
+    // 4. Update document with results
+    await prisma.document.update({
+      where: { id: documentId },
+      data: {
+        status: 'COMPLETED',
+        extractedText,
+        summary: analysis.summary,
+        keyEntities: analysis.entities,
+        embedding: Buffer.from(new Float32Array(embedding).buffer),
+        processedAt: new Date(),
+      },
+    });
+
+    // 5. Check for automatic risk flagging
+    if (analysis.redFlags && analysis.redFlags.length > 0) {
+      for (const flag of analysis.redFlags) {
+        await prisma.riskFlag.create({
+          data: {
+            dealId: document.dealId,
+            title: flag.title,
+            description: flag.description,
+            category: mapToRiskCategory(flag.category),
+            severity: mapToSeverity(flag.severity),
+            sourceType: 'DOCUMENT',
+            sourceId: documentId,
+            sourceContext: flag.context,
+            flaggedById: 'SYSTEM',
+          },
+        });
+      }
+    }
+
+    return {
+      extractedText,
+      summary: analysis.summary,
+      keyEntities: analysis.entities,
+      embedding,
+      suggestedCategory: analysis.documentType,
+    };
+
+  } catch (error) {
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { status: 'FAILED' },
+    });
+    throw error;
+  }
+}
+
+// Batch processor for data room sync
+export async function processDataRoomBatch(dealId: string, documents: any[]) {
+  const queue = documents.map((doc) => ({
+    dealId,
+    ...doc,
+    priority: categorizePriority(doc.filename, doc.path),
+  }));
+
+  // Sort by priority (financials, contracts, then others)
+  queue.sort((a, b) => a.priority - b.priority);
+
+  // Process in parallel batches of 5
+  const batchSize = 5;
+  for (let i = 0; i < queue.length; i += batchSize) {
+    const batch = queue.slice(i, i + batchSize);
+    await Promise.all(batch.map((doc) => processDocument(doc.id)));
+  }
+}
+
+function categorizePriority(filename: string, path: string): number {
+  const lower = (filename + path).toLowerCase();
+  if (lower.includes('financ') || lower.includes('qoe') || lower.includes('quality of earnings')) return 1;
+  if (lower.includes('contract') || lower.includes('agreement')) return 2;
+  if (lower.includes('cim') || lower.includes('management')) return 3;
+  return 4;
+}
+```
+
+---
+
+## Design System
+
+### Colors
+
+```css
+/* tailwind.config.js extended colors */
+{
+  colors: {
+    navy: {
+      950: '#0A1628',
+      900: '#0F1D2F',
+      800: '#1A2942',
+      700: '#243B5C',
+      600: '#2F4D75',
+    },
+    gold: {
+      500: '#C9A962',
+      400: '#D4B87A',
+      300: '#DFC792',
+    },
+    slate: {
+      950: '#0B0F1A',
+      900: '#111827',
+      800: '#1E293B',
+      700: '#334155',
+      600: '#475569',
+      500: '#64748B',
+      400: '#94A3B8',
+      300: '#CBD5E1',
+    },
+    status: {
+      success: '#22C55E',
+      warning: '#F59E0B',
+      danger: '#EF4444',
+      info: '#3B82F6',
+    }
+  }
+}
+```
+
+### Typography
+
+```css
+/* Font imports */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+/* Base styles */
+body {
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: 'Playfair Display', serif;
+}
+
+/* Type scale */
+.text-display { font-size: 3rem; line-height: 1.1; }
+.text-h1 { font-size: 2.25rem; line-height: 1.2; }
+.text-h2 { font-size: 1.875rem; line-height: 1.25; }
+.text-h3 { font-size: 1.5rem; line-height: 1.3; }
+.text-h4 { font-size: 1.25rem; line-height: 1.4; }
+.text-body { font-size: 1rem; line-height: 1.5; }
+.text-sm { font-size: 0.875rem; line-height: 1.5; }
+.text-xs { font-size: 0.75rem; line-height: 1.5; }
+```
+
+### Component Patterns
+
+```typescript
+// Shared card pattern
+const Card = ({ children, className = '' }) => (
+  <div className={`
+    bg-slate-900/50 
+    backdrop-blur-sm 
+    border border-slate-800 
+    rounded-xl 
+    overflow-hidden
+    ${className}
+  `}>
+    {children}
+  </div>
+);
+
+// Status badge pattern
+const StatusBadge = ({ status, size = 'md' }) => {
+  const styles = {
+    active: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    pending: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    critical: 'bg-red-500/20 text-red-400 border-red-500/30',
+    neutral: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+  };
+  
+  const sizes = {
+    sm: 'px-2 py-0.5 text-xs',
+    md: 'px-3 py-1 text-sm',
+    lg: 'px-4 py-1.5 text-base',
+  };
+
+  return (
+    <span className={`
+      inline-flex items-center gap-1.5 
+      rounded-full border font-medium
+      ${styles[status]} ${sizes[size]}
+    `}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current" />
+      {status}
+    </span>
+  );
+};
+
+// Button patterns
+const Button = ({ variant = 'primary', size = 'md', children, ...props }) => {
+  const variants = {
+    primary: 'bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-lg shadow-amber-500/20',
+    secondary: 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700',
+    ghost: 'hover:bg-slate-800 text-slate-400 hover:text-white',
+    danger: 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30',
+  };
+
+  const sizes = {
+    sm: 'px-3 py-1.5 text-sm',
+    md: 'px-4 py-2 text-sm',
+    lg: 'px-6 py-3 text-base',
+  };
+
+  return (
+    <button
+      className={`
+        font-medium rounded-lg transition-all duration-200
+        ${variants[variant]} ${sizes[size]}
+      `}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+```
+
+---
+
+## Environment Variables
+
+```env
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/sentinel_pe"
+
+# Authentication
+JWT_SECRET="your-secret-key"
+JWT_EXPIRY="7d"
+
+# AI Services
+GEMINI_API_KEY="your-gemini-key"
+
+# File Storage
+STORAGE_PATH="/data/documents"
+MAX_FILE_SIZE_MB=100
+
+# Real-time
+WEBSOCKET_PORT=3001
+
+# External Integrations
+DATASITE_API_KEY=""
+INTRALINKS_API_KEY=""
+BOX_CLIENT_ID=""
+BOX_CLIENT_SECRET=""
+```
+
+---
+
+## Implementation Phases
+
+### Phase 1: Core Foundation (Week 1-2)
+- [ ] Database setup with Prisma
+- [ ] Authentication system
+- [ ] Basic deal CRUD
+- [ ] Document upload and storage
+- [ ] Simple document list view
+
+### Phase 2: Document Intelligence (Week 3-4)
+- [ ] PDF/DOCX/XLSX text extraction
+- [ ] Gemini integration for summarization
+- [ ] Embedding generation
+- [ ] Document search
+- [ ] Auto-categorization
+
+### Phase 3: Workstream Management (Week 5)
+- [ ] Workstream CRUD
+- [ ] Question management
+- [ ] Progress tracking
+- [ ] Template system
+
+### Phase 4: Call Intelligence (Week 6-7)
+- [ ] Call scheduling
+- [ ] WebSocket real-time connection
+- [ ] Transcription integration (Deepgram)
+- [ ] Ambient document suggestions
+- [ ] Post-call summary generation
+
+### Phase 5: Risk & Patterns (Week 8)
+- [ ] Risk flag system
+- [ ] Pattern matching engine
+- [ ] Historical deal comparison
+- [ ] Portfolio integration
+
+### Phase 6: Polish & Integration (Week 9-10)
+- [ ] Data room connectors
+- [ ] Cross-deal search
+- [ ] Dashboards and analytics
+- [ ] Performance optimization
+- [ ] Testing and bug fixes
+
+---
+
+## Getting Started
+
+```bash
+# Clone and install
+npm install
+
+# Setup database
+npx prisma migrate dev
+
+# Seed sample data
+npm run seed
+
+# Start development
+npm run dev
+```
+
+---
+
+## Notes for Implementation
+
+1. **Start with the deal dashboard** - it's the core interface users will live in
+2. **Document processing can be async** - show upload immediately, process in background
+3. **Pattern matching is the differentiator** - invest in making this feel magical
+4. **Live call UI needs to be snappy** - optimize for real-time feel
+5. **Mobile is secondary** - PE associates work on laptops
+6. **Dark mode only** - matches the "working late on a deal" reality
