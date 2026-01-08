@@ -107,7 +107,6 @@ import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { ContextSourceSelector, type ContextSource } from "@/components/context-source-selector";
 
 type Communication = {
   id: string;
@@ -1456,70 +1455,44 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
                 <h1 className="text-lg font-semibold">Document Review</h1>
               </div>
               
-              {/* Context source selection prompt */}
+              {/* Case selection prompt */}
               <div className="flex items-center justify-center flex-1 p-8">
                 <Card className="max-w-2xl w-full">
                   <CardHeader className="text-center">
-                    <CardTitle className="text-xl">Select Document Source</CardTitle>
+                    <CardTitle className="text-xl">Case Selection</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <p className="text-center text-muted-foreground">
-                      Select a case, transaction, PE deal, or data room to review documents. Document review is scoped to a specific context to ensure proper data isolation.
+                      Please select a case to review documents. Document review must be performed within the context of a specific case to ensure proper scoping and data isolation.
                     </p>
                     
-                    <div className="space-y-2">
-                      <Label>Document Source</Label>
-                      <ContextSourceSelector
-                        value={null}
-                        onChange={(ctx: ContextSource | null) => {
-                          if (ctx) {
-                            if (ctx.type === "case") {
-                              setLocation(`/cases/${ctx.id}/document-review`);
-                            } else if (ctx.type === "transaction") {
-                              setLocation(`/document-review?contextType=transaction&contextId=${ctx.id}`);
-                            } else if (ctx.type === "pe_deal") {
-                              setLocation(`/document-review?contextType=pe_deal&contextId=${ctx.id}`);
-                            } else if (ctx.type === "data_room") {
-                              setLocation(`/document-review?contextType=data_room&contextId=${ctx.id}`);
-                            }
-                          }
-                        }}
-                        placeholder="Select case, transaction, PE deal, or data room..."
-                      />
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Quick Access - Recent Cases</p>
-                      {casesLoading ? (
-                        <div className="text-center py-4 text-muted-foreground">Loading cases...</div>
-                      ) : allCases.length > 0 ? (
-                        <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                          {allCases.filter(c => c.status !== 'archived').slice(0, 5).map((caseItem) => (
-                            <div
-                              key={caseItem.id}
-                              className="flex items-center justify-between p-3 border rounded-lg hover-elevate cursor-pointer"
-                              onClick={() => setLocation(`/cases/${caseItem.id}/document-review`)}
-                              data-testid={`case-select-${caseItem.id}`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <Briefcase className="h-5 w-5 text-muted-foreground" />
-                                <div>
-                                  <div className="font-medium">{caseItem.title}</div>
-                                  <div className="text-sm text-muted-foreground">{caseItem.caseNumber}</div>
-                                </div>
+                    {casesLoading ? (
+                      <div className="text-center py-4 text-muted-foreground">Loading cases...</div>
+                    ) : allCases.length > 0 ? (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {allCases.filter(c => c.status !== 'archived').map((caseItem) => (
+                          <div
+                            key={caseItem.id}
+                            className="flex items-center justify-between p-3 border rounded-lg hover-elevate cursor-pointer"
+                            onClick={() => setLocation(`/cases/${caseItem.id}/document-review`)}
+                            data-testid={`case-select-${caseItem.id}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Briefcase className="h-5 w-5 text-muted-foreground" />
+                              <div>
+                                <div className="font-medium">{caseItem.title}</div>
+                                <div className="text-sm text-muted-foreground">{caseItem.caseNumber}</div>
                               </div>
-                              <Badge variant="outline">{caseItem.status}</Badge>
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-4 text-muted-foreground">
-                          No cases available. Create a case first to review documents.
-                        </div>
-                      )}
-                    </div>
+                            <Badge variant="outline">{caseItem.status}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 text-muted-foreground">
+                        No cases available. Create a case first to review documents.
+                      </div>
+                    )}
                     
                     <div className="flex justify-center pt-4">
                       <Button
