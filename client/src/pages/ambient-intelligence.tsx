@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Case } from "@shared/schema";
+import { ContextSourceSelector, type ContextSource, type ContextType } from "@/components/context-source-selector";
 import { 
   Mic, 
   Clock, 
@@ -54,6 +55,8 @@ type AmbientSession = {
   sessionType: string;
   status: string;
   caseId: string | null;
+  contextType: ContextType | null;
+  contextId: string | null;
   notes: string | null;
   startedAt: string | null;
   endedAt: string | null;
@@ -76,6 +79,9 @@ export default function AmbientIntelligence() {
   const [sessionName, setSessionName] = useState("");
   const [sessionType, setSessionType] = useState<string>("");
   const [selectedCaseId, setSelectedCaseId] = useState<string>(caseIdFromUrl);
+  const [selectedContext, setSelectedContext] = useState<ContextSource | null>(
+    caseIdFromUrl ? { type: "case", id: caseIdFromUrl, name: "" } : null
+  );
   const [participants, setParticipants] = useState("");
   const [notes, setNotes] = useState("");
   const [consentGiven, setConsentGiven] = useState(false);
@@ -143,6 +149,8 @@ export default function AmbientIntelligence() {
       sessionName: string;
       sessionType: string;
       caseId: string | null;
+      contextType: ContextType | null;
+      contextId: string | null;
       participants: string[];
       notes: string;
     }) => {
@@ -208,7 +216,9 @@ export default function AmbientIntelligence() {
       createSessionMutation.mutate({
         sessionName: sessionName.trim(),
         sessionType,
-        caseId: selectedCaseId || null,
+        caseId: selectedContext?.type === "case" ? selectedContext.id : null,
+        contextType: selectedContext?.type || null,
+        contextId: selectedContext?.id || null,
         participants: participantList,
         notes: notes.trim(),
       });
@@ -230,7 +240,9 @@ export default function AmbientIntelligence() {
           title: sessionName.trim(),
           description: notes.trim() || undefined,
           meetingType: meetingTypeMap[sessionType] || "other",
-          caseId: selectedCaseId || undefined,
+          caseId: selectedContext?.type === "case" ? selectedContext.id : undefined,
+          contextType: selectedContext?.type || undefined,
+          contextId: selectedContext?.id || undefined,
           recordingEnabled: "true",
           transcriptionEnabled: "true",
         };
@@ -544,22 +556,17 @@ export default function AmbientIntelligence() {
                       </div>
                       
                       <div className="space-y-2">
-                        <Label htmlFor="case-link">Link to Case <span className="text-muted-foreground font-normal">(Optional)</span></Label>
-                        <Select value={selectedCaseId || "none"} onValueChange={(value) => setSelectedCaseId(value === "none" ? "" : value)}>
-                          <SelectTrigger id="case-link" data-testid="select-case-link">
-                            <SelectValue placeholder="Select a case..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">No case linked</SelectItem>
-                            {cases.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.caseNumber} - {c.title}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Label htmlFor="context-link">Link to Context <span className="text-muted-foreground font-normal">(Optional)</span></Label>
+                        <ContextSourceSelector
+                          value={selectedContext}
+                          onChange={(ctx) => {
+                            setSelectedContext(ctx);
+                            setSelectedCaseId(ctx?.type === "case" ? ctx.id : "");
+                          }}
+                          placeholder="Select case, transaction, PE deal, or data room..."
+                        />
                         <p className="text-xs text-muted-foreground">
-                          Linking to a case enables document suggestions from the case data room
+                          Linking to a context enables AI-powered document discovery from that source
                         </p>
                       </div>
                       

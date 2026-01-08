@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { CaseMessage, User as UserType, Case } from "@shared/schema";
+import { ContextSourceSelector, type ContextSource } from "@/components/context-source-selector";
 
 type InboxMessage = CaseMessage & { sender: UserType; case: Case };
 
@@ -27,11 +28,14 @@ export default function MailboxPage() {
   const [composeDialogOpen, setComposeDialogOpen] = useState(false);
   const [composeData, setComposeData] = useState({
     caseId: "",
+    contextType: "" as string,
+    contextId: "" as string,
     recipientIds: [] as string[],
     subject: "",
     body: "",
     priority: "normal",
   });
+  const [selectedContext, setSelectedContext] = useState<ContextSource | null>(null);
 
   // Fetch inbox messages
   const { data: inbox = [], isLoading } = useQuery<InboxMessage[]>({
@@ -72,7 +76,22 @@ export default function MailboxPage() {
   // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: async (data: typeof composeData) => {
-      const response = await apiRequest("POST", `/api/cases/${data.caseId}/messages`, {
+      // For case context, use the existing case messages endpoint for backward compatibility
+      // For other contexts, use the new context-aware endpoint
+      if (data.contextType === "case" && data.caseId) {
+        const response = await apiRequest("POST", `/api/cases/${data.caseId}/messages`, {
+          recipientIds: data.recipientIds,
+          subject: data.subject,
+          body: data.body,
+          priority: data.priority,
+        });
+        return response.json();
+      }
+      
+      // Use context-aware messages endpoint for non-case contexts
+      const response = await apiRequest("POST", "/api/messages/send", {
+        contextType: data.contextType,
+        contextId: data.contextId,
         recipientIds: data.recipientIds,
         subject: data.subject,
         body: data.body,
@@ -90,11 +109,14 @@ export default function MailboxPage() {
       setComposeDialogOpen(false);
       setComposeData({
         caseId: "",
+        contextType: "",
+        contextId: "",
         recipientIds: [],
         subject: "",
         body: "",
         priority: "normal",
       });
+      setSelectedContext(null);
     },
     onError: (error: Error) => {
       toast({
@@ -106,10 +128,10 @@ export default function MailboxPage() {
   });
 
   const handleSendMessage = () => {
-    if (!composeData.caseId || composeData.recipientIds.length === 0 || !composeData.subject || !composeData.body) {
+    if (!composeData.contextId || composeData.recipientIds.length === 0 || !composeData.subject || !composeData.body) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all required fields.",
+        description: "Please fill in all required fields including a context source.",
         variant: "destructive",
       });
       return;
@@ -405,24 +427,25 @@ export default function MailboxPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Case Selection */}
+            {/* Context Source Selection */}
             <div className="space-y-2">
-              <Label htmlFor="case-select">Case *</Label>
-              <Select
-                value={composeData.caseId}
-                onValueChange={(value) => setComposeData({ ...composeData, caseId: value })}
-              >
-                <SelectTrigger id="case-select" data-testid="select-case">
-                  <SelectValue placeholder="Select a case" />
-                </SelectTrigger>
-                <SelectContent>
-                  {cases.map((c) => (
-                    <SelectItem key={c.id} value={c.id} data-testid={`case-option-${c.id}`}>
-                      {c.caseNumber} - {c.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Link to Context *</Label>
+              <ContextSourceSelector
+                value={selectedContext}
+                onChange={(ctx) => {
+                  setSelectedContext(ctx);
+                  setComposeData({ 
+                    ...composeData, 
+                    caseId: ctx?.type === "case" ? ctx.id : "",
+                    contextType: ctx?.type || "",
+                    contextId: ctx?.id || "",
+                  });
+                }}
+                placeholder="Select case, transaction, PE deal, or data room..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Message will be linked to the selected context
+              </p>
             </div>
 
             {/* Recipients Selection */}

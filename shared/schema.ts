@@ -418,6 +418,8 @@ export const users = pgTable("users", {
   role: userRoleEnum("role").default("compliance_officer").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Communications being monitored
@@ -522,6 +524,8 @@ export const chatThreads = pgTable("chat_threads", {
   reviewedAt: timestamp("reviewed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   caseIdx: index("chat_threads_case_idx").on(table.caseId),
   sourceTypeIdx: index("chat_threads_source_type_idx").on(table.sourceType),
@@ -583,6 +587,8 @@ export const chatMessageNotes = pgTable("chat_message_notes", {
   noteText: text("note_text").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Document Relationships for tracking violation clusters
@@ -683,6 +689,8 @@ export const cases = pgTable("cases", {
   reopenedBy: varchar("reopened_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Case AI Analysis - Comprehensive AI-generated legal analysis for case detail page
@@ -715,6 +723,8 @@ export const caseAIAnalysis = pgTable("case_ai_analysis", {
   lastGeneratedAt: timestamp("last_generated_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Issue Topic Enum for classification - 10 compliance categories
@@ -784,6 +794,8 @@ export const caseIssues = pgTable("case_issues", {
   analysisVersion: varchar("analysis_version"), // Model version used
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   caseIdx: index("case_issues_case_idx").on(table.caseId),
   topicIdx: index("case_issues_topic_idx").on(table.topic),
@@ -837,6 +849,8 @@ export const caseParties = pgTable("case_parties", {
   addedBy: varchar("added_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Timeline Risk Level Enum
@@ -889,6 +903,8 @@ export const caseTimelineEvents = pgTable("case_timeline_events", {
   createdBy: varchar("created_by").references(() => users.id), // User ID or "system" for AI-generated
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Custom Timeline Columns - User-defined columns for timeline events
@@ -926,6 +942,8 @@ export const customTimelineColumnValues = pgTable("custom_timeline_column_values
   value: text("value"), // Store as text, parse based on column type
   updatedBy: varchar("updated_by").references(() => users.id),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Case Tasks - Task management scoped to individual cases
@@ -949,6 +967,8 @@ export const caseTasks = pgTable("case_tasks", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Document Ingestion Jobs - Track file upload and processing jobs
@@ -972,6 +992,8 @@ export const ingestionJobs = pgTable("ingestion_jobs", {
   metadata: jsonb("metadata"), // Additional job metadata
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Individual files within ingestion jobs
@@ -995,6 +1017,8 @@ export const ingestionFiles = pgTable("ingestion_files", {
   metadata: jsonb("metadata"), // File-specific metadata (email count for PST, pages for PDF, etc.)
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Case Assignments - Track which users are assigned to cases (investigators, external counsel)
@@ -1033,6 +1057,8 @@ export const tags = pgTable("tags", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Bulk tagging actions for audit trail and search reproducibility
@@ -1116,6 +1142,8 @@ export const regulations = pgTable("regulations", {
   tags: jsonb("tags"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Interview scheduling with jurisdiction-aware consent
@@ -1168,6 +1196,8 @@ export const interviews = pgTable("interviews", {
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // AI Interview Templates
@@ -1187,6 +1217,8 @@ export const interviewTemplates = pgTable("interview_templates", {
   isActive: varchar("is_active").default("true").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // AI Interview Invitations
@@ -1215,6 +1247,8 @@ export const interviewInvites = pgTable("interview_invites", {
     .notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Recorded AI Interviews
@@ -1249,6 +1283,8 @@ export const recordedInterviews = pgTable("recorded_interviews", {
   deviceMetadata: jsonb("device_metadata"), // Browser, OS, IP captured at start
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Interview Notes (for attorney annotations)
@@ -1267,6 +1303,8 @@ export const interviewNotes = pgTable("interview_notes", {
   tags: jsonb("tags"), // Array of tags (follow_up, credibility, etc.)
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Interview Responses (per-question video responses for self-recording interviews)
@@ -1288,6 +1326,8 @@ export const interviewResponses = pgTable("interview_responses", {
   recordedAt: timestamp("recorded_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Live Interview Sessions (WebRTC-based video interviews)
@@ -1314,6 +1354,8 @@ export const liveInterviewSessions = pgTable("live_interview_sessions", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Live Interview Participants
@@ -1337,6 +1379,8 @@ export const liveInterviewParticipants = pgTable("live_interview_participants", 
   connectionQuality: varchar("connection_quality"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Interview Recordings (video/audio files)
@@ -1362,6 +1406,8 @@ export const interviewRecordings = pgTable("interview_recordings", {
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Interview Transcript Segments (detailed word-level segments with AI analysis)
@@ -1393,6 +1439,8 @@ export const interviewTranscriptSegments = pgTable("interview_transcript_segment
   highlightColor: varchar("highlight_color"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   sessionIdx: index("transcript_segments_session_idx").on(table.sessionId),
   timeIdx: index("transcript_segments_time_idx").on(table.startTime),
@@ -1421,6 +1469,8 @@ export const interviewQuestions = pgTable("interview_questions", {
   evidenceLinks: jsonb("evidence_links"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Interview AI Analysis (comprehensive AI-generated analysis)
@@ -1457,6 +1507,8 @@ export const interviewAnalyses = pgTable("interview_analyses", {
   error: text("error"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Interview Session Notes (privileged collaborative notes during/after interview)
@@ -1481,6 +1533,8 @@ export const interviewSessionNotes = pgTable("interview_session_notes", {
   timestamp: integer("timestamp"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Interview Evidence Links (connect interview segments to case documents)
@@ -1508,6 +1562,8 @@ export const interviewEvidenceLinks = pgTable("interview_evidence_links", {
     .notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Video Meeting Status Enum (for simple video depositions/recorded statements)
@@ -1536,6 +1592,8 @@ export const videoMeetings = pgTable("video_meetings", {
     .default(sql`gen_random_uuid()`),
   caseId: varchar("case_id")
     .references(() => cases.id),
+  contextType: varchar("context_type", { length: 50 }),
+  contextId: varchar("context_id", { length: 255 }),
   title: text("title").notNull(),
   description: text("description"),
   meetingType: videoMeetingTypeEnum("meeting_type").default("deposition").notNull(),
@@ -1560,6 +1618,8 @@ export const videoMeetings = pgTable("video_meetings", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Video Meeting Participant Status Enum (for waiting room)
@@ -1593,6 +1653,8 @@ export const videoMeetingParticipants = pgTable("video_meeting_participants", {
   consentTimestamp: timestamp("consent_timestamp"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Video Meeting Recordings
@@ -1615,6 +1677,8 @@ export const videoMeetingRecordings = pgTable("video_meeting_recordings", {
   endedAt: timestamp("ended_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Video Meeting Chat Messages (real-time chat during meetings)
@@ -1658,6 +1722,8 @@ export const meetingInvitations = pgTable("meeting_invitations", {
   tokenExpiresAt: timestamp("token_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   meetingIdx: index("meeting_invitations_meeting_idx").on(table.meetingId),
   emailIdx: index("meeting_invitations_email_idx").on(table.inviteeEmail),
@@ -1695,6 +1761,8 @@ export const meetingTranscriptions = pgTable("meeting_transcriptions", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   meetingIdx: index("meeting_transcriptions_meeting_idx").on(table.meetingId),
   recordingIdx: index("meeting_transcriptions_recording_idx").on(table.recordingId),
@@ -1736,6 +1804,8 @@ export const meetingSummaries = pgTable("meeting_summaries", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   meetingIdx: index("meeting_summaries_meeting_idx").on(table.meetingId),
   transcriptionIdx: index("meeting_summaries_transcription_idx").on(table.transcriptionId),
@@ -1777,6 +1847,8 @@ export const chatSessions = pgTable("chat_sessions", {
   lastMessageAt: timestamp("last_message_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Ava AI Assistant Chat Messages
@@ -1812,9 +1884,12 @@ export const caseMessages = pgTable("case_messages", {
   readBy: text("read_by").array().default(sql`ARRAY[]::text[]`).notNull(), // Array of user IDs who have read the message
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   caseIdx: index("case_messages_case_idx").on(table.caseId),
   senderIdx: index("case_messages_sender_idx").on(table.senderId),
+  contextIdx: index("case_messages_context_idx").on(table.contextType, table.contextId),
 }));
 
 // Connector configurations for external integrations
@@ -1833,6 +1908,8 @@ export const connectorConfigurations = pgTable("connector_configurations", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Google Gemini File Search stores - RAG for document search
@@ -1848,6 +1925,8 @@ export const fileSearchStores = pgTable("file_search_stores", {
   displayName: text("display_name").notNull(), // User-friendly name
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Document indexing status tracking for Gemini File Search RAG
@@ -1867,6 +1946,8 @@ export const documentIndexStatus = pgTable("document_indexing_status", {
   retryCount: integer("retry_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   documentIdIdx: index("document_index_status_document_id_idx").on(table.documentId),
   caseIdIdx: index("document_index_status_case_id_idx").on(table.caseId),
@@ -1895,6 +1976,8 @@ export const legalHolds = pgTable("legal_holds", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Detection rules for hybrid rules+ML engine
@@ -1927,6 +2010,8 @@ export const detectionRules = pgTable("detection_rules", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Remediation Plans
@@ -1961,6 +2046,8 @@ export const remediationPlans = pgTable("remediation_plans", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Regulatory Strategies
@@ -1982,6 +2069,8 @@ export const regulatoryStrategies = pgTable("regulatory_strategies", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Disclosure Playbooks
@@ -2002,6 +2091,8 @@ export const disclosurePlaybooks = pgTable("disclosure_playbooks", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Board Reports
@@ -2035,6 +2126,8 @@ export const boardReports = pgTable("board_reports", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Privilege Log for eDiscovery
@@ -2065,6 +2158,8 @@ export const privilegeLogs = pgTable("privilege_logs", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Document Sets for grouping communications into categories
@@ -2081,6 +2176,8 @@ export const documentSets = pgTable("document_sets", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Junction table for documents in sets (many-to-many)
@@ -2132,6 +2229,8 @@ export const sectorRulePacks = pgTable("sector_rule_packs", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Data Subject Access Requests (GDPR/CCPA)
@@ -2158,6 +2257,8 @@ export const dsarRequests = pgTable("dsar_requests", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // White-Label Training Content
@@ -2178,6 +2279,8 @@ export const trainingCourses = pgTable("training_courses", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Training Enrollment and Completion Tracking
@@ -2199,6 +2302,8 @@ export const trainingEnrollments = pgTable("training_enrollments", {
   lastAccessedAt: timestamp("last_accessed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // HR Compliance: Policies & Procedures
@@ -2230,6 +2335,8 @@ export const policies = pgTable("policies", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // HR Compliance: Policy Attestations
@@ -2292,6 +2399,8 @@ export const trainingAssignments = pgTable("training_assignments", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // HR Compliance: Certification Tracking
@@ -2323,6 +2432,8 @@ export const certifications = pgTable("certifications", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Note: reporterIdentities table disabled - using inline reporter fields in hotlineReports for now
@@ -2386,6 +2497,8 @@ export const hotlineReports = pgTable("hotline_reports", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
   closedAt: timestamp("closed_at"),
   closedBy: varchar("closed_by").references(() => users.id),
 });
@@ -2435,6 +2548,8 @@ export const whistleblowerProtections = pgTable("whistleblower_protections", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Whistleblowing & Hotline: Retaliation Alerts
@@ -2467,6 +2582,8 @@ export const retaliationAlerts = pgTable("retaliation_alerts", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Whistleblowing & Hotline: Global Jurisdictional Requirements
@@ -2506,6 +2623,8 @@ export const whistleblowingJurisdictions = pgTable("whistleblowing_jurisdictions
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Whistleblowing & Hotline: Regulatory Change Management
@@ -2547,6 +2666,8 @@ export const regulatoryChanges = pgTable("regulatory_changes", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Custodian Profiles for Collection Management
@@ -2575,6 +2696,8 @@ export const custodians = pgTable("custodians", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Document Families (email threads + attachments)
@@ -2593,6 +2716,8 @@ export const documentFamilies = pgTable("document_families", {
   familyHash: text("family_hash"), // For de-duplication
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Review Batches for Document Assignment
@@ -2628,6 +2753,8 @@ export const reviewBatches = pgTable("review_batches", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Reviewer Assignments (per-document assignment tracking)
@@ -2665,6 +2792,8 @@ export const reviewerAssignments = pgTable("reviewer_assignments", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Coding Forms (customizable review fields)
@@ -2682,6 +2811,8 @@ export const codingForms = pgTable("coding_forms", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Document Review Codings (responses to coding forms)
@@ -2713,6 +2844,8 @@ export const documentCodings = pgTable("document_codings", {
   reviewedAt: timestamp("reviewed_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Annotation Mentions: Track user mentions in document annotations
@@ -2797,6 +2930,8 @@ export const productionSets = pgTable("production_sets", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Redaction Templates for Pattern-Based Redaction
@@ -2822,6 +2957,8 @@ export const redactionTemplates = pgTable("redaction_templates", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Document Redactions (applied redactions)
@@ -2888,6 +3025,8 @@ export const savedSearches = pgTable("saved_searches", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Persistent Highlight Sets (terms to highlight in viewer)
@@ -2918,6 +3057,8 @@ export const highlightSets = pgTable("highlight_sets", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // eDiscovery: Document Viewing History (track what each reviewer has seen)
@@ -2976,6 +3117,8 @@ export const experts = pgTable("experts", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Regulator Communication Log
@@ -3012,6 +3155,8 @@ export const regulatorCommunications = pgTable("regulator_communications", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Investigation Deadline Tracker
@@ -3049,6 +3194,8 @@ export const investigationDeadlines = pgTable("investigation_deadlines", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Document Preservation Checklist
@@ -3088,6 +3235,8 @@ export const preservationChecklists = pgTable("preservation_checklists", {
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Conflict Check System
@@ -3127,6 +3276,8 @@ export const conflictChecks = pgTable("conflict_checks", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Legal Hold Notifications (extends custodian legal hold tracking)
@@ -3166,6 +3317,8 @@ export const legalHoldNotifications = pgTable("legal_hold_notifications", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Reports and Productions: Report Templates for Custom Reports
@@ -3196,6 +3349,8 @@ export const reportTemplates = pgTable("report_templates", {
   organizationId: varchar("organization_id"), // For multi-tenant support
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Relations
@@ -5103,6 +5258,8 @@ export const employees = pgTable("employees", {
   lastActivityDate: timestamp("last_activity_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   emailIdx: index("employee_email_idx").on(table.email),
   departmentIdx: index("employee_department_idx").on(table.department),
@@ -5128,6 +5285,8 @@ export const vendorContacts = pgTable("vendor_contacts", {
   lastActivityDate: timestamp("last_activity_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   emailIdx: index("vendor_contact_email_idx").on(table.email),
   vendorTypeIdx: index("vendor_contact_type_idx").on(table.vendorType),
@@ -5182,6 +5341,8 @@ export const communicationStats = pgTable("communication_stats", {
   lastContactDate: timestamp("last_contact_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   person1Idx: index("comm_stats_person1_idx").on(table.personId1),
   person2Idx: index("comm_stats_person2_idx").on(table.personId2),
@@ -5224,6 +5385,8 @@ export const employeeAnalyticsCache = pgTable("employee_analytics_cache", {
   requestedBy: varchar("requested_by").notNull(), // User ID who requested the analysis
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   employeeIdx: index("employee_analytics_employee_idx").on(table.employeeId),
   statusIdx: index("employee_analytics_status_idx").on(table.status),
@@ -5639,6 +5802,8 @@ export const documentHighlights = pgTable("document_highlights", {
   color: varchar("color").default("yellow").notNull(), // Highlight color
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 // Table for generated business intelligence reports linked to cases
@@ -5677,6 +5842,8 @@ export const highlightComments = pgTable("highlight_comments", {
   commentText: text("comment_text").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 
@@ -7266,6 +7433,8 @@ export const nearDuplicateClusters = pgTable("near_duplicate_clusters", {
   representativeText: text("representative_text"), // Sample text for cluster identification
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   caseIdx: index("near_duplicate_clusters_case_idx").on(table.caseId),
 }));
@@ -7299,6 +7468,8 @@ export const emailThreads = pgTable("email_threads", {
   participants: jsonb("participants"), // Array of unique participant emails
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   caseIdx: index("email_threads_case_idx").on(table.caseId),
   threadIdIdx: index("email_threads_thread_id_idx").on(table.threadId),
@@ -7364,6 +7535,8 @@ export const processingJobs = pgTable("processing_jobs", {
   metadata: jsonb("metadata"), // Additional job metadata
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   caseIdx: index("processing_jobs_case_idx").on(table.caseId),
   statusIdx: index("processing_jobs_status_idx").on(table.status),
@@ -7648,6 +7821,8 @@ export const predictionModels = pgTable("prediction_models", {
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   caseIdx: index("prediction_models_case_idx").on(table.caseId),
   statusIdx: index("prediction_models_status_idx").on(table.status),
@@ -7705,6 +7880,8 @@ export const documentPredictions = pgTable("document_predictions", {
   reviewerAgreed: boolean("reviewer_agreed"), // Did reviewer agree with prediction
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   modelIdx: index("document_predictions_model_idx").on(table.modelId),
   communicationIdx: index("document_predictions_communication_idx").on(table.communicationId),
@@ -8859,10 +9036,20 @@ export const ambientSuggestionConfidenceEnum = pgEnum("ambient_suggestion_confid
   "low",
 ]);
 
+// Context type enum for linking to various data sources
+export const contextTypeEnum = pgEnum("context_type", [
+  "case",
+  "transaction",
+  "pe_deal",
+  "data_room",
+]);
+
 // Ambient Intelligence Sessions
 export const ambientSessions = pgTable("ambient_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  contextType: contextTypeEnum("context_type"),
+  contextId: varchar("context_id", { length: 255 }),
   sessionName: varchar("session_name", { length: 255 }).notNull(),
   sessionType: ambientSessionTypeEnum("session_type").default("other"),
   status: ambientSessionStatusEnum("status").default("active"),
@@ -8877,6 +9064,7 @@ export const ambientSessions = pgTable("ambient_sessions", {
 }, (table) => ({
   caseIdx: index("idx_ambient_sessions_case").on(table.caseId),
   statusIdx: index("idx_ambient_sessions_status").on(table.status),
+  contextIdx: index("idx_ambient_sessions_context").on(table.contextType, table.contextId),
 }));
 
 export type AmbientSession = typeof ambientSessions.$inferSelect;
@@ -9364,6 +9552,8 @@ export const recordedStatements = pgTable("recorded_statements", {
   uploadedBy: varchar("uploaded_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   caseIdx: index("idx_recorded_statements_case").on(table.caseId),
   speakerIdx: index("idx_recorded_statements_speaker").on(table.speakerName),
@@ -9395,6 +9585,8 @@ export const recordedStatementAnnotations = pgTable("recorded_statement_annotati
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   statementIdx: index("idx_statement_annotations_statement").on(table.statementId),
   timestampIdx: index("idx_statement_annotations_timestamp").on(table.timestampSeconds),
@@ -9469,6 +9661,8 @@ export const emailAccounts = pgTable("email_accounts", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type EmailAccount = typeof emailAccounts.$inferSelect;
@@ -9523,6 +9717,8 @@ export const syncedEmails = pgTable("synced_emails", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   accountExternalIdx: uniqueIndex("email_account_external_idx").on(table.accountId, table.externalId),
   threadIdx: index("email_thread_idx").on(table.threadId),
@@ -9587,6 +9783,8 @@ export const emailAutoCcRules = pgTable("email_auto_cc_rules", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type EmailAutoCcRule = typeof emailAutoCcRules.$inferSelect;
@@ -9615,6 +9813,8 @@ export const emailStampTemplates = pgTable("email_stamp_templates", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type EmailStampTemplate = typeof emailStampTemplates.$inferSelect;
@@ -9657,6 +9857,8 @@ export const emailDrafts = pgTable("email_drafts", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type EmailDraft = typeof emailDrafts.$inferSelect;
@@ -9763,6 +9965,8 @@ export const batesSequences = pgTable("bates_sequences", {
   padding: integer("padding").default(6).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type BatesSequence = typeof batesSequences.$inferSelect;
@@ -9803,6 +10007,8 @@ export const productionBatches = pgTable("production_batches", {
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type ProductionBatch = typeof productionBatches.$inferSelect;
@@ -9931,6 +10137,8 @@ export const peFirms = pgTable("pe_firms", {
   logoUrl: text("logo_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type PEFirm = typeof peFirms.$inferSelect;
@@ -9955,6 +10163,8 @@ export const peFirmSettings = pgTable("pe_firm_settings", {
   integrations: jsonb("integrations").$type<Record<string, any>>().default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type PEFirmSettings = typeof peFirmSettings.$inferSelect;
@@ -10029,6 +10239,8 @@ export const peDeals = pgTable("pe_deals", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   firmStatusIdx: index("pe_deals_firm_status_idx").on(table.firmId, table.status),
   sectorIdx: index("pe_deals_sector_idx").on(table.sector),
@@ -10103,6 +10315,8 @@ export const workstreams = pgTable("workstreams", {
   dueDate: date("due_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   dealNameUnique: unique("workstream_deal_name_unique").on(table.dealId, table.name),
 }));
@@ -10157,6 +10371,8 @@ export const diligenceQuestions = pgTable("diligence_questions", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   dealStatusIdx: index("diligence_questions_deal_status_idx").on(table.dealId, table.status),
 }));
@@ -10229,6 +10445,8 @@ export const peCalls = pgTable("pe_calls", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   dealScheduledIdx: index("pe_calls_deal_scheduled_idx").on(table.dealId, table.scheduledAt),
 }));
@@ -10357,6 +10575,8 @@ export const peRiskFlags = pgTable("pe_risk_flags", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 }, (table) => ({
   dealStatusIdx: index("pe_risk_flags_deal_status_idx").on(table.dealId, table.status),
   severityIdx: index("pe_risk_flags_severity_idx").on(table.severity),
@@ -10448,6 +10668,8 @@ export const portfolioCompanies = pgTable("portfolio_companies", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type PortfolioCompany = typeof portfolioCompanies.$inferSelect;
@@ -10470,6 +10692,8 @@ export const diligenceTemplates = pgTable("diligence_templates", {
   workstreams: jsonb("workstreams").$type<any[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  contextType: varchar("context_type"), // case, transaction, pe_deal, data_room
+  contextId: varchar("context_id"), // ID of the linked context
 });
 
 export type DiligenceTemplate = typeof diligenceTemplates.$inferSelect;
