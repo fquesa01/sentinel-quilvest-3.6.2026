@@ -69,39 +69,38 @@ import { format } from "date-fns";
 interface PEDeal {
   id: string;
   firmId: string | null;
-  targetCompanyName: string;
+  name: string;
+  codeName: string | null;
+  status: string;
+  dealType: string;
   sector: string;
   subsector: string | null;
-  geography: string | null;
-  dealStage: string;
-  dealType: string;
-  targetOwnership: string | null;
+  geography: string;
+  targetDescription: string | null;
   enterpriseValue: string | null;
-  evMultiple: string | null;
-  targetClosingDate: string | null;
-  exclusivityEndDate: string | null;
-  managementMeetingDate: string | null;
-  leadPartner: string | null;
-  dealTeam: string[] | null;
-  investmentThesis: string | null;
-  keyRisks: string | null;
-  competitiveProcess: boolean | null;
-  dealSource: string | null;
-  confidentialityLevel: string;
+  revenue: string | null;
+  ebitda: string | null;
+  cimReceivedDate: string | null;
+  loiSubmittedDate: string | null;
+  loiSignedDate: string | null;
+  exclusivityStart: string | null;
+  exclusivityEnd: string | null;
+  expectedCloseDate: string | null;
+  actualCloseDate: string | null;
+  dataRoomUrl: string | null;
+  dataRoomType: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 const dealStages = [
   { value: "pipeline", label: "Pipeline", color: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300" },
-  { value: "initial_review", label: "Initial Review", color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300" },
-  { value: "nda_signed", label: "NDA Signed", color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300" },
-  { value: "cim_received", label: "CIM Received", color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300" },
-  { value: "ioi_submitted", label: "IOI Submitted", color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300" },
+  { value: "preliminary_review", label: "Preliminary Review", color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300" },
   { value: "management_meeting", label: "Management Meeting", color: "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300" },
   { value: "loi_submitted", label: "LOI Submitted", color: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300" },
+  { value: "loi_signed", label: "LOI Signed", color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300" },
+  { value: "diligence", label: "Diligence", color: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300" },
   { value: "exclusivity", label: "Exclusivity", color: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300" },
-  { value: "due_diligence", label: "Due Diligence", color: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300" },
   { value: "definitive_docs", label: "Definitive Docs", color: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300" },
   { value: "closed", label: "Closed", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" },
   { value: "passed", label: "Passed", color: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300" },
@@ -114,13 +113,11 @@ const sectors = [
 ];
 
 const dealTypes = [
-  { value: "lbo", label: "LBO" },
-  { value: "growth_equity", label: "Growth Equity" },
   { value: "platform", label: "Platform" },
   { value: "add_on", label: "Add-on" },
   { value: "carve_out", label: "Carve-out" },
-  { value: "take_private", label: "Take Private" },
-  { value: "recapitalization", label: "Recapitalization" },
+  { value: "growth_equity", label: "Growth Equity" },
+  { value: "recap", label: "Recapitalization" },
   { value: "secondary", label: "Secondary" },
 ];
 
@@ -135,18 +132,15 @@ export default function PEDealPipeline() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [dealToDelete, setDealToDelete] = useState<PEDeal | null>(null);
   const [newDeal, setNewDeal] = useState({
-    targetCompanyName: "",
+    name: "",
     sector: "Technology",
     subsector: "",
-    geography: "",
-    dealStage: "pipeline",
-    dealType: "lbo",
+    geography: "North America",
+    status: "pipeline",
+    dealType: "platform",
     enterpriseValue: "",
-    investmentThesis: "",
-    keyRisks: "",
-    targetClosingDate: "",
-    leadPartner: "",
-    dealSource: "",
+    targetDescription: "",
+    expectedCloseDate: "",
   });
 
   const { data: deals, isLoading } = useQuery<PEDeal[]>({
@@ -156,26 +150,30 @@ export default function PEDealPipeline() {
   const createDealMutation = useMutation({
     mutationFn: async (data: typeof newDeal) => {
       return apiRequest("POST", "/api/pe/deals", {
-        ...data,
-        targetClosingDate: data.targetClosingDate ? new Date(data.targetClosingDate) : null,
+        name: data.name,
+        sector: data.sector,
+        subsector: data.subsector || null,
+        geography: data.geography,
+        status: data.status,
+        dealType: data.dealType,
+        enterpriseValue: data.enterpriseValue || null,
+        targetDescription: data.targetDescription || null,
+        expectedCloseDate: data.expectedCloseDate ? data.expectedCloseDate : null,
       });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/pe/deals"] });
       setIsCreateDialogOpen(false);
       setNewDeal({
-        targetCompanyName: "",
+        name: "",
         sector: "Technology",
         subsector: "",
-        geography: "",
-        dealStage: "pipeline",
-        dealType: "lbo",
+        geography: "North America",
+        status: "pipeline",
+        dealType: "platform",
         enterpriseValue: "",
-        investmentThesis: "",
-        keyRisks: "",
-        targetClosingDate: "",
-        leadPartner: "",
-        dealSource: "",
+        targetDescription: "",
+        expectedCloseDate: "",
       });
       toast({ title: "Deal created successfully" });
     },
@@ -207,7 +205,7 @@ export default function PEDealPipeline() {
   });
 
   const handleCreateDeal = () => {
-    if (!newDeal.targetCompanyName.trim()) {
+    if (!newDeal.name.trim()) {
       toast({ title: "Please enter a target company name", variant: "destructive" });
       return;
     }
@@ -216,9 +214,9 @@ export default function PEDealPipeline() {
 
   const filteredDeals = deals?.filter((deal) => {
     const matchesSearch = 
-      deal.targetCompanyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      deal.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       deal.sector.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStage = stageFilter === "all" || deal.dealStage === stageFilter;
+    const matchesStage = stageFilter === "all" || deal.status === stageFilter;
     const matchesSector = sectorFilter === "all" || deal.sector === sectorFilter;
     return matchesSearch && matchesStage && matchesSector;
   });
@@ -238,17 +236,17 @@ export default function PEDealPipeline() {
   };
 
   const getDealsByStage = (stage: string) => {
-    return filteredDeals?.filter(d => d.dealStage === stage) || [];
+    return filteredDeals?.filter(d => d.status === stage) || [];
   };
 
   const activeStages = stageOrder.filter(s => !["passed", "lost"].includes(s));
 
   const pipelineStats = {
     totalDeals: deals?.length || 0,
-    activeDeals: deals?.filter(d => !["closed", "passed", "lost"].includes(d.dealStage)).length || 0,
-    closedDeals: deals?.filter(d => d.dealStage === "closed").length || 0,
+    activeDeals: deals?.filter(d => !["closed", "passed", "lost"].includes(d.status)).length || 0,
+    closedDeals: deals?.filter(d => d.status === "closed").length || 0,
     totalEV: deals?.reduce((sum, d) => sum + (parseFloat(d.enterpriseValue || "0") || 0), 0) || 0,
-    inDueDiligence: deals?.filter(d => d.dealStage === "due_diligence").length || 0,
+    inDueDiligence: deals?.filter(d => d.status === "diligence").length || 0,
   };
 
   if (isLoading) {
@@ -436,7 +434,7 @@ export default function PEDealPipeline() {
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <h4 className="font-medium text-sm line-clamp-1" data-testid={`text-deal-name-${deal.id}`}>
-                                  {deal.targetCompanyName}
+                                  {deal.name}
                                 </h4>
                                 <p className="text-xs text-muted-foreground mt-1">
                                   {deal.sector}
@@ -456,10 +454,10 @@ export default function PEDealPipeline() {
                                 </Badge>
                               )}
                             </div>
-                            {deal.targetClosingDate && (
+                            {deal.expectedCloseDate && (
                               <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
                                 <Calendar className="h-3 w-3" />
-                                <span>Target: {format(new Date(deal.targetClosingDate), "MMM d, yyyy")}</span>
+                                <span>Target: {format(new Date(deal.expectedCloseDate), "MMM d, yyyy")}</span>
                               </div>
                             )}
                           </CardContent>
@@ -482,19 +480,19 @@ export default function PEDealPipeline() {
                 <TableHead>Stage</TableHead>
                 <TableHead>Deal Type</TableHead>
                 <TableHead>Enterprise Value</TableHead>
-                <TableHead>Target Close</TableHead>
-                <TableHead>Lead Partner</TableHead>
+                <TableHead>Expected Close</TableHead>
+                <TableHead>Created</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredDeals?.map((deal) => {
-                const stageInfo = getStageInfo(deal.dealStage);
+                const stageInfo = getStageInfo(deal.status);
                 return (
                   <TableRow key={deal.id} data-testid={`row-deal-${deal.id}`}>
                     <TableCell>
                       <div>
-                        <span className="font-medium">{deal.targetCompanyName}</span>
+                        <span className="font-medium">{deal.name}</span>
                         {deal.geography && (
                           <span className="text-xs text-muted-foreground ml-2">({deal.geography})</span>
                         )}
@@ -509,12 +507,14 @@ export default function PEDealPipeline() {
                     </TableCell>
                     <TableCell>{formatCurrency(deal.enterpriseValue)}</TableCell>
                     <TableCell>
-                      {deal.targetClosingDate 
-                        ? format(new Date(deal.targetClosingDate), "MMM d, yyyy")
+                      {deal.expectedCloseDate 
+                        ? format(new Date(deal.expectedCloseDate), "MMM d, yyyy")
                         : "-"
                       }
                     </TableCell>
-                    <TableCell>{deal.leadPartner || "-"}</TableCell>
+                    <TableCell>
+                      {format(new Date(deal.createdAt), "MMM d, yyyy")}
+                    </TableCell>
                     <TableCell>
                       <Link href={`/pe/deals/${deal.id}`}>
                         <Button variant="ghost" size="icon" data-testid={`button-view-deal-${deal.id}`}>
@@ -544,11 +544,11 @@ export default function PEDealPipeline() {
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="targetCompanyName">Target Company Name *</Label>
+              <Label htmlFor="name">Target Company Name *</Label>
               <Input
-                id="targetCompanyName"
-                value={newDeal.targetCompanyName}
-                onChange={(e) => setNewDeal({ ...newDeal, targetCompanyName: e.target.value })}
+                id="name"
+                value={newDeal.name}
+                onChange={(e) => setNewDeal({ ...newDeal, name: e.target.value })}
                 placeholder="Enter company name"
                 data-testid="input-target-company"
               />
@@ -569,8 +569,8 @@ export default function PEDealPipeline() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="dealStage">Deal Stage</Label>
-              <Select value={newDeal.dealStage} onValueChange={(v) => setNewDeal({ ...newDeal, dealStage: v })}>
+              <Label htmlFor="status">Deal Stage</Label>
+              <Select value={newDeal.status} onValueChange={(v) => setNewDeal({ ...newDeal, status: v })}>
                 <SelectTrigger data-testid="select-deal-stage">
                   <SelectValue placeholder="Select stage" />
                 </SelectTrigger>
@@ -620,45 +620,24 @@ export default function PEDealPipeline() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="targetClosingDate">Target Closing Date</Label>
+              <Label htmlFor="expectedCloseDate">Expected Closing Date</Label>
               <Input
-                id="targetClosingDate"
+                id="expectedCloseDate"
                 type="date"
-                value={newDeal.targetClosingDate}
-                onChange={(e) => setNewDeal({ ...newDeal, targetClosingDate: e.target.value })}
-                data-testid="input-target-close"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="leadPartner">Lead Partner</Label>
-              <Input
-                id="leadPartner"
-                value={newDeal.leadPartner}
-                onChange={(e) => setNewDeal({ ...newDeal, leadPartner: e.target.value })}
-                placeholder="Partner name"
-                data-testid="input-lead-partner"
+                value={newDeal.expectedCloseDate}
+                onChange={(e) => setNewDeal({ ...newDeal, expectedCloseDate: e.target.value })}
+                data-testid="input-expected-close"
               />
             </div>
             <div className="col-span-2 space-y-2">
-              <Label htmlFor="investmentThesis">Investment Thesis</Label>
+              <Label htmlFor="targetDescription">Target Description</Label>
               <Textarea
-                id="investmentThesis"
-                value={newDeal.investmentThesis}
-                onChange={(e) => setNewDeal({ ...newDeal, investmentThesis: e.target.value })}
-                placeholder="Key reasons for pursuing this deal..."
+                id="targetDescription"
+                value={newDeal.targetDescription}
+                onChange={(e) => setNewDeal({ ...newDeal, targetDescription: e.target.value })}
+                placeholder="Brief description of the target company..."
                 rows={3}
-                data-testid="input-investment-thesis"
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label htmlFor="keyRisks">Key Risks</Label>
-              <Textarea
-                id="keyRisks"
-                value={newDeal.keyRisks}
-                onChange={(e) => setNewDeal({ ...newDeal, keyRisks: e.target.value })}
-                placeholder="Initial risk observations..."
-                rows={2}
-                data-testid="input-key-risks"
+                data-testid="input-target-description"
               />
             </div>
           </div>
@@ -682,7 +661,7 @@ export default function PEDealPipeline() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Deal</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{dealToDelete?.targetCompanyName}"? 
+              Are you sure you want to delete "{dealToDelete?.name}"? 
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

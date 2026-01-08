@@ -64,25 +64,26 @@ import { format } from "date-fns";
 interface PEDeal {
   id: string;
   firmId: string | null;
-  targetCompanyName: string;
+  name: string;
+  codeName: string | null;
+  status: string;
+  dealType: string;
   sector: string;
   subsector: string | null;
-  geography: string | null;
-  dealStage: string;
-  dealType: string;
-  targetOwnership: string | null;
+  geography: string;
+  targetDescription: string | null;
   enterpriseValue: string | null;
-  evMultiple: string | null;
-  targetClosingDate: string | null;
-  exclusivityEndDate: string | null;
-  managementMeetingDate: string | null;
-  leadPartner: string | null;
-  dealTeam: string[] | null;
-  investmentThesis: string | null;
-  keyRisks: string | null;
-  competitiveProcess: boolean | null;
-  dealSource: string | null;
-  confidentialityLevel: string;
+  revenue: string | null;
+  ebitda: string | null;
+  cimReceivedDate: string | null;
+  loiSubmittedDate: string | null;
+  loiSignedDate: string | null;
+  exclusivityStart: string | null;
+  exclusivityEnd: string | null;
+  expectedCloseDate: string | null;
+  actualCloseDate: string | null;
+  dataRoomUrl: string | null;
+  dataRoomType: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -139,14 +140,12 @@ interface PatternMatch {
 
 const dealStages = [
   { value: "pipeline", label: "Pipeline" },
-  { value: "initial_review", label: "Initial Review" },
-  { value: "nda_signed", label: "NDA Signed" },
-  { value: "cim_received", label: "CIM Received" },
-  { value: "ioi_submitted", label: "IOI Submitted" },
+  { value: "preliminary_review", label: "Preliminary Review" },
   { value: "management_meeting", label: "Management Meeting" },
   { value: "loi_submitted", label: "LOI Submitted" },
+  { value: "loi_signed", label: "LOI Signed" },
+  { value: "diligence", label: "Diligence" },
   { value: "exclusivity", label: "Exclusivity" },
-  { value: "due_diligence", label: "Due Diligence" },
   { value: "definitive_docs", label: "Definitive Docs" },
   { value: "closed", label: "Closed" },
   { value: "passed", label: "Passed" },
@@ -154,13 +153,11 @@ const dealStages = [
 ];
 
 const dealTypes = [
-  { value: "lbo", label: "LBO" },
-  { value: "growth_equity", label: "Growth Equity" },
   { value: "platform", label: "Platform" },
   { value: "add_on", label: "Add-on" },
   { value: "carve_out", label: "Carve-out" },
-  { value: "take_private", label: "Take Private" },
-  { value: "recapitalization", label: "Recapitalization" },
+  { value: "growth_equity", label: "Growth Equity" },
+  { value: "recap", label: "Recapitalization" },
   { value: "secondary", label: "Secondary" },
 ];
 
@@ -337,7 +334,7 @@ export default function PEDealDetail() {
     );
   }
 
-  const stageInfo = dealStages.find(s => s.value === deal.dealStage);
+  const stageInfo = dealStages.find(s => s.value === deal.status);
   const overallProgress = workstreams?.length 
     ? Math.round(workstreams.reduce((sum, w) => sum + (w.progress || 0), 0) / workstreams.length)
     : 0;
@@ -357,14 +354,13 @@ export default function PEDealDetail() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold" data-testid="text-deal-name">
-                {deal.targetCompanyName}
+                {deal.name}
               </h1>
               <Badge variant="outline">{deal.sector}</Badge>
               {deal.geography && <Badge variant="outline">{deal.geography}</Badge>}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType} 
-              {deal.leadPartner && ` • Lead: ${deal.leadPartner}`}
+              {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}
             </p>
           </div>
         </div>
@@ -385,7 +381,7 @@ export default function PEDealDetail() {
               </Select>
               <Button 
                 size="sm" 
-                onClick={() => updateDealMutation.mutate({ dealStage: selectedStage })}
+                onClick={() => updateDealMutation.mutate({ status: selectedStage })}
                 disabled={updateDealMutation.isPending}
                 data-testid="button-save-stage"
               >
@@ -399,12 +395,12 @@ export default function PEDealDetail() {
             <Button 
               variant="outline" 
               onClick={() => {
-                setSelectedStage(deal.dealStage);
+                setSelectedStage(deal.status);
                 setIsEditingStage(true);
               }}
               data-testid="button-change-stage"
             >
-              {stageInfo?.label || deal.dealStage}
+              {stageInfo?.label || deal.status}
               <Edit2 className="h-4 w-4 ml-2" />
             </Button>
           )}
@@ -500,7 +496,7 @@ export default function PEDealDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-xs text-muted-foreground">Target Company</Label>
-                    <p className="font-medium">{deal.targetCompanyName}</p>
+                    <p className="font-medium">{deal.name}</p>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Sector</Label>
@@ -508,7 +504,7 @@ export default function PEDealDetail() {
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Deal Type</Label>
-                    <p className="font-medium">{deal.dealType}</p>
+                    <p className="font-medium">{dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}</p>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Geography</Label>
@@ -519,16 +515,16 @@ export default function PEDealDetail() {
                     <p className="font-medium">{formatCurrency(deal.enterpriseValue)}</p>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">EV Multiple</Label>
-                    <p className="font-medium">{deal.evMultiple ? `${deal.evMultiple}x` : "-"}</p>
+                    <Label className="text-xs text-muted-foreground">Revenue</Label>
+                    <p className="font-medium">{formatCurrency(deal.revenue)}</p>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Competitive Process</Label>
-                    <p className="font-medium">{deal.competitiveProcess ? "Yes" : "No"}</p>
+                    <Label className="text-xs text-muted-foreground">EBITDA</Label>
+                    <p className="font-medium">{formatCurrency(deal.ebitda)}</p>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Deal Source</Label>
-                    <p className="font-medium">{deal.dealSource || "-"}</p>
+                    <Label className="text-xs text-muted-foreground">Data Room</Label>
+                    <p className="font-medium">{deal.dataRoomType || "-"}</p>
                   </div>
                 </div>
               </CardContent>
@@ -544,10 +540,10 @@ export default function PEDealDetail() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-xs text-muted-foreground">Target Close</Label>
+                    <Label className="text-xs text-muted-foreground">Expected Close</Label>
                     <p className="font-medium">
-                      {deal.targetClosingDate 
-                        ? format(new Date(deal.targetClosingDate), "MMM d, yyyy")
+                      {deal.expectedCloseDate 
+                        ? format(new Date(deal.expectedCloseDate), "MMM d, yyyy")
                         : "-"
                       }
                     </p>
@@ -555,17 +551,17 @@ export default function PEDealDetail() {
                   <div>
                     <Label className="text-xs text-muted-foreground">Exclusivity Ends</Label>
                     <p className="font-medium">
-                      {deal.exclusivityEndDate 
-                        ? format(new Date(deal.exclusivityEndDate), "MMM d, yyyy")
+                      {deal.exclusivityEnd 
+                        ? format(new Date(deal.exclusivityEnd), "MMM d, yyyy")
                         : "-"
                       }
                     </p>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Management Meeting</Label>
+                    <Label className="text-xs text-muted-foreground">LOI Signed</Label>
                     <p className="font-medium">
-                      {deal.managementMeetingDate 
-                        ? format(new Date(deal.managementMeetingDate), "MMM d, yyyy")
+                      {deal.loiSignedDate 
+                        ? format(new Date(deal.loiSignedDate), "MMM d, yyyy")
                         : "-"
                       }
                     </p>
@@ -581,35 +577,19 @@ export default function PEDealDetail() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Lightbulb className="h-5 w-5" />
-                  Investment Thesis
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">
-                  {deal.investmentThesis || "No investment thesis recorded yet."}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Key Risks
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">
-                  {deal.keyRisks || "No key risks documented yet."}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Target Description
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm">
+                {deal.targetDescription || "No description provided."}
+              </p>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="workstreams" className="space-y-4">
