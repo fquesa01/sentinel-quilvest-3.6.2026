@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, FileText, Download, Sparkles, BarChart3, Briefcase, Clock, User, Trash2, History, FileDown, Brain, Globe, TrendingUp, Building2, CheckCircle2, AlertTriangle, Scale, DollarSign, Users, Shield, FileCheck } from "lucide-react";
+import { DueDiligenceWizard } from "@/components/due-diligence";
 
 interface PEDeal {
   id: string;
@@ -94,6 +95,7 @@ export default function PEDealIntelligence() {
   const [selectedSourceType, setSelectedSourceType] = useState<SourceType | null>(null);
   const [targetCompanyName, setTargetCompanyName] = useState("");
   const [enableLiveWebSearch, setEnableLiveWebSearch] = useState(true);
+  const [showWizard, setShowWizard] = useState(false);
   const { toast } = useToast();
 
   const { data: peDeals = [], isLoading: peDealsLoading } = useQuery<PEDeal[]>({
@@ -592,6 +594,60 @@ export default function PEDealIntelligence() {
             </CardContent>
           </Card>
 
+
+          {selectedDealId && selectedSourceType && (
+            <>
+              <div className="flex items-center justify-center gap-4">
+                <Button
+                  variant={showWizard ? "default" : "outline"}
+                  onClick={() => setShowWizard(!showWizard)}
+                  data-testid="button-toggle-wizard"
+                >
+                  <FileCheck className="h-4 w-4 mr-2" />
+                  {showWizard ? "Hide Checklist Builder" : "Customize Due Diligence Checklist"}
+                </Button>
+              </div>
+              {showWizard && (
+                <DueDiligenceWizard
+                  dealId={selectedDealId}
+                  dealName={selectedPeDeal?.name || selectedTransaction?.title || selectedDataRoom?.name || "Selected Deal"}
+                  sourceType={selectedSourceType}
+                  onGenerateReport={async (config) => {
+                    try {
+                      const response = await apiRequest("POST", `/api/due-diligence/deals/${selectedDealId}/checklists`, {
+                        transactionTypeId: config.transactionTypeId,
+                        industrySectorId: config.industrySectorId,
+                        sections: config.checklistSections,
+                        sourceType: selectedSourceType,
+                        name: "AI Due Diligence Checklist"
+                      });
+                      const result = await response.json();
+                      toast({
+                        title: "Checklist Saved",
+                        description: "Your customized checklist has been saved. Generating report...",
+                      });
+                      setShowWizard(false);
+                      generateReport.mutate({
+                        dealId: selectedDealId,
+                        sourceType: selectedSourceType!,
+                        targetName: targetCompanyName,
+                        enableWebResearch: config.enableLiveSearch,
+                        checklistId: result.checklist?.id
+                      });
+                    } catch (error) {
+                      console.error("Error saving checklist:", error);
+                      toast({
+                        title: "Error",
+                        description: "Failed to save checklist. Please try again.",
+                        variant: "destructive"
+                      });
+                    }
+                  }}
+                  isGenerating={generateReport.isPending}
+                />
+              )}
+            </>
+          )}
           {selectedDealId && (
             <Card data-testid="card-saved-reports">
               <CardHeader>

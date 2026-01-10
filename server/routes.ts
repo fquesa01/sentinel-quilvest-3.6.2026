@@ -48,6 +48,7 @@ import { registerPEDealIntelligenceRoutes } from "./routes-pe-intelligence";
 import { secEdgarApi } from "./services/sec-edgar-api";
 import { corporateResearchApi } from "./services/corporate-research-api";
 import recordedStatementsRouter from "./routes/recorded-statements";
+import dueDiligenceRouter from "./routes-due-diligence";
 
 // Helper to extract email from various formats (e.g., "John Doe <john@example.com>" -> "john@example.com")
 function extractEmail(input: string): string | null {
@@ -278,6 +279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const chunkedUploadRouter = await import('./chunked-upload');
   app.use('/api/chunked-upload', chunkedUploadRouter.default);
   app.use('/api/recorded-statements', recordedStatementsRouter);
+  app.use('/api/due-diligence', dueDiligenceRouter);
 
   // Register video meeting routes
   registerVideoMeetingRoutes(app, logAction);

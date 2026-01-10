@@ -14,6 +14,7 @@ import {
   unique,
   real,
   date,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -10602,6 +10603,321 @@ export const insertPEDealIntelligenceReportSchema = createInsertSchema(peDealInt
   createdAt: true,
 });
 export type InsertPEDealIntelligenceReport = z.infer<typeof insertPEDealIntelligenceReportSchema>;
+
+// ============================================================
+// DUE DILIGENCE CUSTOMIZATION SYSTEM
+// ============================================================
+
+// Transaction Types (equity, debt, hybrid, asset)
+export const ddTransactionTypes = pgTable("dd_transaction_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  category: varchar("category", { length: 100 }).notNull(), // 'equity', 'debt', 'hybrid', 'asset'
+  subcategory: varchar("subcategory", { length: 100 }),
+  description: text("description"),
+  parentTypeId: varchar("parent_type_id").references(() => ddTransactionTypes.id),
+  isActive: boolean("is_active").default(true),
+  displayOrder: integer("display_order"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type DDTransactionType = typeof ddTransactionTypes.$inferSelect;
+export const insertDDTransactionTypeSchema = createInsertSchema(ddTransactionTypes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDTransactionType = z.infer<typeof insertDDTransactionTypeSchema>;
+
+// Industry Sectors
+export const ddIndustrySectors = pgTable("dd_industry_sectors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  code: varchar("code", { length: 50 }).notNull(),
+  description: text("description"),
+  parentSectorId: varchar("parent_sector_id").references(() => ddIndustrySectors.id),
+  icon: varchar("icon", { length: 50 }),
+  isActive: boolean("is_active").default(true),
+  displayOrder: integer("display_order"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DDIndustrySector = typeof ddIndustrySectors.$inferSelect;
+export const insertDDIndustrySectorSchema = createInsertSchema(ddIndustrySectors).omit({ id: true, createdAt: true });
+export type InsertDDIndustrySector = z.infer<typeof insertDDIndustrySectorSchema>;
+
+// Checklist Sections (the 23+ sections)
+export const ddChecklistSections = pgTable("dd_checklist_sections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  displayOrder: integer("display_order"),
+  icon: varchar("icon", { length: 50 }),
+  isLiveSearch: boolean("is_live_search").default(false),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DDChecklistSection = typeof ddChecklistSections.$inferSelect;
+export const insertDDChecklistSectionSchema = createInsertSchema(ddChecklistSections).omit({ id: true, createdAt: true });
+export type InsertDDChecklistSection = z.infer<typeof insertDDChecklistSectionSchema>;
+
+// Master Checklist Items Library
+export const ddChecklistItemsMaster = pgTable("dd_checklist_items_master", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sectionId: varchar("section_id").notNull().references(() => ddChecklistSections.id),
+  itemText: text("item_text").notNull(),
+  itemDescription: text("item_description"),
+  priority: varchar("priority", { length: 20 }).default("standard"), // 'critical', 'standard', 'optional'
+  isDefault: boolean("is_default").default(true),
+  source: varchar("source", { length: 100 }).default("system"), // 'system', 'industry', 'custom'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DDChecklistItemMaster = typeof ddChecklistItemsMaster.$inferSelect;
+export const insertDDChecklistItemMasterSchema = createInsertSchema(ddChecklistItemsMaster).omit({ id: true, createdAt: true });
+export type InsertDDChecklistItemMaster = z.infer<typeof insertDDChecklistItemMasterSchema>;
+
+// Transaction Type <-> Checklist Item Mapping
+export const ddTransactionTypeChecklistItems = pgTable("dd_transaction_type_checklist_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionTypeId: varchar("transaction_type_id").notNull().references(() => ddTransactionTypes.id),
+  checklistItemId: varchar("checklist_item_id").notNull().references(() => ddChecklistItemsMaster.id),
+  isRequired: boolean("is_required").default(false),
+  isRecommended: boolean("is_recommended").default(true),
+  relevanceScore: numeric("relevance_score", { precision: 3, scale: 2 }).default("1.00"),
+  notes: text("notes"),
+});
+
+export type DDTransactionTypeChecklistItem = typeof ddTransactionTypeChecklistItems.$inferSelect;
+export const insertDDTransactionTypeChecklistItemSchema = createInsertSchema(ddTransactionTypeChecklistItems).omit({ id: true });
+export type InsertDDTransactionTypeChecklistItem = z.infer<typeof insertDDTransactionTypeChecklistItemSchema>;
+
+// Industry <-> Checklist Item Mapping
+export const ddIndustryChecklistItems = pgTable("dd_industry_checklist_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  industrySectorId: varchar("industry_sector_id").notNull().references(() => ddIndustrySectors.id),
+  checklistItemId: varchar("checklist_item_id").notNull().references(() => ddChecklistItemsMaster.id),
+  isRequired: boolean("is_required").default(false),
+  isRecommended: boolean("is_recommended").default(true),
+  relevanceScore: numeric("relevance_score", { precision: 3, scale: 2 }).default("1.00"),
+  notes: text("notes"),
+});
+
+export type DDIndustryChecklistItem = typeof ddIndustryChecklistItems.$inferSelect;
+export const insertDDIndustryChecklistItemSchema = createInsertSchema(ddIndustryChecklistItems).omit({ id: true });
+export type InsertDDIndustryChecklistItem = z.infer<typeof insertDDIndustryChecklistItemSchema>;
+
+// User-Created Checklist Templates
+export const ddChecklistTemplates = pgTable("dd_checklist_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id"),
+  createdBy: varchar("created_by").references(() => users.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  transactionTypeId: varchar("transaction_type_id").references(() => ddTransactionTypes.id),
+  industrySectorId: varchar("industry_sector_id").references(() => ddIndustrySectors.id),
+  isShared: boolean("is_shared").default(false),
+  isDefault: boolean("is_default").default(false),
+  baseTemplateId: varchar("base_template_id").references(() => ddChecklistTemplates.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type DDChecklistTemplate = typeof ddChecklistTemplates.$inferSelect;
+export const insertDDChecklistTemplateSchema = createInsertSchema(ddChecklistTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDChecklistTemplate = z.infer<typeof insertDDChecklistTemplateSchema>;
+
+// Template Items
+export const ddChecklistTemplateItems = pgTable("dd_checklist_template_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => ddChecklistTemplates.id),
+  sectionId: varchar("section_id").notNull().references(() => ddChecklistSections.id),
+  masterItemId: varchar("master_item_id").references(() => ddChecklistItemsMaster.id),
+  customItemText: text("custom_item_text"),
+  customItemDescription: text("custom_item_description"),
+  isIncluded: boolean("is_included").default(true),
+  isRequired: boolean("is_required").default(false),
+  displayOrder: integer("display_order"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DDChecklistTemplateItem = typeof ddChecklistTemplateItems.$inferSelect;
+export const insertDDChecklistTemplateItemSchema = createInsertSchema(ddChecklistTemplateItems).omit({ id: true, createdAt: true });
+export type InsertDDChecklistTemplateItem = z.infer<typeof insertDDChecklistTemplateItemSchema>;
+
+// Deal Checklist Instance
+export const ddDealChecklists = pgTable("dd_deal_checklists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").notNull(),
+  sourceType: dealIntelligenceSourceTypeEnum("source_type").default("pe_deal"),
+  templateId: varchar("template_id").references(() => ddChecklistTemplates.id),
+  transactionTypeId: varchar("transaction_type_id").references(() => ddTransactionTypes.id),
+  industrySectorId: varchar("industry_sector_id").references(() => ddIndustrySectors.id),
+  name: varchar("name", { length: 255 }),
+  status: varchar("status", { length: 50 }).default("draft"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type DDDealChecklist = typeof ddDealChecklists.$inferSelect;
+export const insertDDDealChecklistSchema = createInsertSchema(ddDealChecklists).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDDealChecklist = z.infer<typeof insertDDDealChecklistSchema>;
+
+// Deal Checklist Items (actual tracking)
+export const ddDealChecklistItems = pgTable("dd_deal_checklist_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealChecklistId: varchar("deal_checklist_id").notNull().references(() => ddDealChecklists.id),
+  sectionId: varchar("section_id").notNull().references(() => ddChecklistSections.id),
+  masterItemId: varchar("master_item_id").references(() => ddChecklistItemsMaster.id),
+  itemText: text("item_text").notNull(),
+  itemDescription: text("item_description"),
+  status: varchar("status", { length: 50 }).default("pending"),
+  priority: varchar("priority", { length: 20 }).default("standard"),
+  assignedTo: varchar("assigned_to").references(() => users.id),
+  dueDate: timestamp("due_date"),
+  completionDate: timestamp("completion_date"),
+  notes: text("notes"),
+  riskFlag: varchar("risk_flag", { length: 20 }).default("none"),
+  riskNotes: text("risk_notes"),
+  documentIds: jsonb("document_ids"),
+  displayOrder: integer("display_order"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type DDDealChecklistItem = typeof ddDealChecklistItems.$inferSelect;
+export const insertDDDealChecklistItemSchema = createInsertSchema(ddDealChecklistItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDDealChecklistItem = z.infer<typeof insertDDDealChecklistItemSchema>;
+
+// Due Diligence Relations
+export const ddTransactionTypesRelations = relations(ddTransactionTypes, ({ one, many }) => ({
+  parent: one(ddTransactionTypes, {
+    fields: [ddTransactionTypes.parentTypeId],
+    references: [ddTransactionTypes.id],
+    relationName: "transactionTypeParent",
+  }),
+  children: many(ddTransactionTypes, { relationName: "transactionTypeParent" }),
+  checklistItems: many(ddTransactionTypeChecklistItems),
+}));
+
+export const ddIndustrySectorsRelations = relations(ddIndustrySectors, ({ one, many }) => ({
+  parent: one(ddIndustrySectors, {
+    fields: [ddIndustrySectors.parentSectorId],
+    references: [ddIndustrySectors.id],
+    relationName: "industrySectorParent",
+  }),
+  children: many(ddIndustrySectors, { relationName: "industrySectorParent" }),
+  checklistItems: many(ddIndustryChecklistItems),
+}));
+
+export const ddChecklistSectionsRelations = relations(ddChecklistSections, ({ many }) => ({
+  items: many(ddChecklistItemsMaster),
+}));
+
+export const ddChecklistItemsMasterRelations = relations(ddChecklistItemsMaster, ({ one }) => ({
+  section: one(ddChecklistSections, {
+    fields: [ddChecklistItemsMaster.sectionId],
+    references: [ddChecklistSections.id],
+  }),
+}));
+
+export const ddTransactionTypeChecklistItemsRelations = relations(ddTransactionTypeChecklistItems, ({ one }) => ({
+  transactionType: one(ddTransactionTypes, {
+    fields: [ddTransactionTypeChecklistItems.transactionTypeId],
+    references: [ddTransactionTypes.id],
+  }),
+  checklistItem: one(ddChecklistItemsMaster, {
+    fields: [ddTransactionTypeChecklistItems.checklistItemId],
+    references: [ddChecklistItemsMaster.id],
+  }),
+}));
+
+export const ddIndustryChecklistItemsRelations = relations(ddIndustryChecklistItems, ({ one }) => ({
+  industrySector: one(ddIndustrySectors, {
+    fields: [ddIndustryChecklistItems.industrySectorId],
+    references: [ddIndustrySectors.id],
+  }),
+  checklistItem: one(ddChecklistItemsMaster, {
+    fields: [ddIndustryChecklistItems.checklistItemId],
+    references: [ddChecklistItemsMaster.id],
+  }),
+}));
+
+export const ddChecklistTemplatesRelations = relations(ddChecklistTemplates, ({ one, many }) => ({
+  transactionType: one(ddTransactionTypes, {
+    fields: [ddChecklistTemplates.transactionTypeId],
+    references: [ddTransactionTypes.id],
+  }),
+  industrySector: one(ddIndustrySectors, {
+    fields: [ddChecklistTemplates.industrySectorId],
+    references: [ddIndustrySectors.id],
+  }),
+  createdByUser: one(users, {
+    fields: [ddChecklistTemplates.createdBy],
+    references: [users.id],
+  }),
+  baseTemplate: one(ddChecklistTemplates, {
+    fields: [ddChecklistTemplates.baseTemplateId],
+    references: [ddChecklistTemplates.id],
+    relationName: "templateBase",
+  }),
+  derivedTemplates: many(ddChecklistTemplates, { relationName: "templateBase" }),
+  items: many(ddChecklistTemplateItems),
+}));
+
+export const ddChecklistTemplateItemsRelations = relations(ddChecklistTemplateItems, ({ one }) => ({
+  template: one(ddChecklistTemplates, {
+    fields: [ddChecklistTemplateItems.templateId],
+    references: [ddChecklistTemplates.id],
+  }),
+  section: one(ddChecklistSections, {
+    fields: [ddChecklistTemplateItems.sectionId],
+    references: [ddChecklistSections.id],
+  }),
+  masterItem: one(ddChecklistItemsMaster, {
+    fields: [ddChecklistTemplateItems.masterItemId],
+    references: [ddChecklistItemsMaster.id],
+  }),
+}));
+
+export const ddDealChecklistsRelations = relations(ddDealChecklists, ({ one, many }) => ({
+  template: one(ddChecklistTemplates, {
+    fields: [ddDealChecklists.templateId],
+    references: [ddChecklistTemplates.id],
+  }),
+  transactionType: one(ddTransactionTypes, {
+    fields: [ddDealChecklists.transactionTypeId],
+    references: [ddTransactionTypes.id],
+  }),
+  industrySector: one(ddIndustrySectors, {
+    fields: [ddDealChecklists.industrySectorId],
+    references: [ddIndustrySectors.id],
+  }),
+  createdByUser: one(users, {
+    fields: [ddDealChecklists.createdBy],
+    references: [users.id],
+  }),
+  items: many(ddDealChecklistItems),
+}));
+
+export const ddDealChecklistItemsRelations = relations(ddDealChecklistItems, ({ one }) => ({
+  dealChecklist: one(ddDealChecklists, {
+    fields: [ddDealChecklistItems.dealChecklistId],
+    references: [ddDealChecklists.id],
+  }),
+  section: one(ddChecklistSections, {
+    fields: [ddDealChecklistItems.sectionId],
+    references: [ddChecklistSections.id],
+  }),
+  masterItem: one(ddChecklistItemsMaster, {
+    fields: [ddDealChecklistItems.masterItemId],
+    references: [ddChecklistItemsMaster.id],
+  }),
+  assignedToUser: one(users, {
+    fields: [ddDealChecklistItems.assignedTo],
+    references: [users.id],
+  }),
+}));
 
 // PE Deal Relations
 export const peDealsRelations = relations(peDeals, ({ one, many }) => ({
