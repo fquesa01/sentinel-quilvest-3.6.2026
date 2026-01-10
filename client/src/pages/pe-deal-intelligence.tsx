@@ -8,7 +8,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -26,6 +28,25 @@ interface PEDeal {
   sector: string;
   enterpriseValue: string | null;
 }
+
+interface BusinessTransaction {
+  id: string;
+  title: string;
+  dealType: string;
+  status: string;
+  priority: string;
+  dealValue: string | null;
+}
+
+interface DataRoom {
+  id: string;
+  name: string;
+  description: string | null;
+  dealId: string | null;
+  isActive: boolean;
+}
+
+type SourceType = "pe_deal" | "transaction" | "data_room";
 
 interface SavedReport {
   id: string;
@@ -70,27 +91,60 @@ const webSearchSections = [
 
 export default function PEDealIntelligence() {
   const [selectedDealId, setSelectedDealId] = useState<string>("");
+  const [selectedSourceType, setSelectedSourceType] = useState<SourceType | null>(null);
   const [targetCompanyName, setTargetCompanyName] = useState("");
   const [enableLiveWebSearch, setEnableLiveWebSearch] = useState(true);
   const { toast } = useToast();
 
-  const { data: deals = [], isLoading: dealsLoading } = useQuery<PEDeal[]>({
+  const { data: peDeals = [], isLoading: peDealsLoading } = useQuery<PEDeal[]>({
     queryKey: ["/api/pe-deals"],
   });
+
+  const { data: transactions = [], isLoading: transactionsLoading } = useQuery<BusinessTransaction[]>({
+    queryKey: ["/api/deals"],
+  });
+
+  const { data: dataRooms = [], isLoading: dataRoomsLoading } = useQuery<DataRoom[]>({
+    queryKey: ["/api/data-rooms"],
+  });
+
+  const isLoading = peDealsLoading || transactionsLoading || dataRoomsLoading;
 
   const { data: savedReports = [], isLoading: reportsLoading, refetch: refetchReports } = useQuery<SavedReport[]>({
     queryKey: ["/api/pe-deal-intelligence/reports", selectedDealId],
     enabled: !!selectedDealId,
   });
 
-  useEffect(() => {
-    if (selectedDealId) {
-      const selectedDeal = deals.find(d => d.id === selectedDealId);
-      if (selectedDeal) {
-        setTargetCompanyName(selectedDeal.name);
-      }
+  const handleSelectionChange = (value: string) => {
+    const [sourceType, id] = value.split(":") as [SourceType, string];
+    setSelectedDealId(id);
+    setSelectedSourceType(sourceType);
+
+    let name = "";
+    if (sourceType === "pe_deal") {
+      const deal = peDeals.find(d => d.id === id);
+      name = deal?.name || "";
+    } else if (sourceType === "transaction") {
+      const tx = transactions.find(t => t.id === id);
+      name = tx?.title || "";
+    } else if (sourceType === "data_room") {
+      const room = dataRooms.find(r => r.id === id);
+      name = room?.name || "";
     }
-  }, [selectedDealId, deals]);
+    setTargetCompanyName(name);
+  };
+
+  const getSelectedDisplayName = () => {
+    if (!selectedDealId || !selectedSourceType) return "";
+    if (selectedSourceType === "pe_deal") {
+      return peDeals.find(d => d.id === selectedDealId)?.name || "";
+    } else if (selectedSourceType === "transaction") {
+      return transactions.find(t => t.id === selectedDealId)?.title || "";
+    } else if (selectedSourceType === "data_room") {
+      return dataRooms.find(r => r.id === selectedDealId)?.name || "";
+    }
+    return "";
+  };
 
   const generateReport = useMutation({
     mutationFn: async ({ dealId, targetName, enableWebResearch }: { dealId: string; targetName: string; enableWebResearch: boolean }) => {
@@ -219,7 +273,9 @@ export default function PEDealIntelligence() {
     generateReport.mutate({ dealId: selectedDealId, targetName: targetCompanyName, enableWebResearch: enableLiveWebSearch });
   };
 
-  const selectedDeal = deals.find(d => d.id === selectedDealId);
+  const selectedPeDeal = selectedSourceType === "pe_deal" ? peDeals.find(d => d.id === selectedDealId) : null;
+  const selectedTransaction = selectedSourceType === "transaction" ? transactions.find(t => t.id === selectedDealId) : null;
+  const selectedDataRoom = selectedSourceType === "data_room" ? dataRooms.find(r => r.id === selectedDealId) : null;
   const totalSections = enableLiveWebSearch ? diligenceSections.length + webSearchSections.length : diligenceSections.length;
 
   return (
@@ -251,43 +307,119 @@ export default function PEDealIntelligence() {
                   </span>
                 </Label>
                 <Select
-                  value={selectedDealId}
-                  onValueChange={setSelectedDealId}
-                  disabled={generateReport.isPending || dealsLoading}
+                  value={selectedDealId && selectedSourceType ? `${selectedSourceType}:${selectedDealId}` : ""}
+                  onValueChange={handleSelectionChange}
+                  disabled={generateReport.isPending || isLoading}
                 >
                   <SelectTrigger 
                     id="deal-select"
                     data-testid="select-deal"
                     className="w-full"
                   >
-                    <SelectValue placeholder={dealsLoading ? "Loading deals..." : "Select a deal..."} />
+                    <SelectValue placeholder={isLoading ? "Loading..." : "Select a deal, transaction, or data room..."} />
                   </SelectTrigger>
                   <SelectContent>
-                    {deals.map((d) => (
-                      <SelectItem key={d.id} value={d.id} data-testid={`deal-option-${d.id}`}>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{d.name}</span>
-                          {d.codeName && (
-                            <>
-                              <span className="text-muted-foreground">-</span>
-                              <span className="text-muted-foreground">{d.codeName}</span>
-                            </>
-                          )}
-                          <Badge variant="outline" className="text-xs">{d.dealType}</Badge>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {peDeals.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel className="text-xs font-semibold text-primary flex items-center gap-2">
+                          <TrendingUp className="h-3 w-3" />
+                          Deal Pipeline
+                        </SelectLabel>
+                        {peDeals.map((d) => (
+                          <SelectItem key={`pe_deal:${d.id}`} value={`pe_deal:${d.id}`} data-testid={`deal-option-${d.id}`}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{d.name}</span>
+                              {d.codeName && (
+                                <span className="text-muted-foreground">({d.codeName})</span>
+                              )}
+                              <Badge variant="outline" className="text-xs">{d.dealType}</Badge>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {transactions.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel className="text-xs font-semibold text-primary flex items-center gap-2">
+                          <Briefcase className="h-3 w-3" />
+                          Business Transactions
+                        </SelectLabel>
+                        {transactions.map((t) => (
+                          <SelectItem key={`transaction:${t.id}`} value={`transaction:${t.id}`} data-testid={`transaction-option-${t.id}`}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{t.title}</span>
+                              <Badge variant="outline" className="text-xs">{t.dealType}</Badge>
+                              <Badge variant="secondary" className="text-xs">{t.status}</Badge>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {dataRooms.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel className="text-xs font-semibold text-primary flex items-center gap-2">
+                          <Building2 className="h-3 w-3" />
+                          Data Rooms
+                        </SelectLabel>
+                        {dataRooms.map((r) => (
+                          <SelectItem key={`data_room:${r.id}`} value={`data_room:${r.id}`} data-testid={`dataroom-option-${r.id}`}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{r.name}</span>
+                              {r.isActive ? (
+                                <Badge variant="outline" className="text-xs text-green-600">Active</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs text-muted-foreground">Inactive</Badge>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {peDeals.length === 0 && transactions.length === 0 && dataRooms.length === 0 && (
+                      <div className="p-2 text-sm text-muted-foreground text-center">
+                        No deals, transactions, or data rooms available
+                      </div>
+                    )}
                   </SelectContent>
                 </Select>
-                {selectedDeal && (
+                {selectedPeDeal && (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Stage: {selectedDeal.status}</span>
+                    <Badge variant="secondary" className="text-xs">PE Deal</Badge>
+                    <span>Stage: {selectedPeDeal.status}</span>
                     <span>|</span>
-                    <span>Sector: {selectedDeal.sector}</span>
-                    {selectedDeal.enterpriseValue && (
+                    <span>Sector: {selectedPeDeal.sector}</span>
+                    {selectedPeDeal.enterpriseValue && (
                       <>
                         <span>|</span>
-                        <span>EV: {selectedDeal.enterpriseValue}</span>
+                        <span>EV: {selectedPeDeal.enterpriseValue}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+                {selectedTransaction && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="secondary" className="text-xs">Transaction</Badge>
+                    <span>Type: {selectedTransaction.dealType}</span>
+                    <span>|</span>
+                    <span>Status: {selectedTransaction.status}</span>
+                    <span>|</span>
+                    <span>Priority: {selectedTransaction.priority}</span>
+                    {selectedTransaction.dealValue && (
+                      <>
+                        <span>|</span>
+                        <span>Value: {selectedTransaction.dealValue}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+                {selectedDataRoom && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="secondary" className="text-xs">Data Room</Badge>
+                    <span>Status: {selectedDataRoom.isActive ? 'Active' : 'Inactive'}</span>
+                    {selectedDataRoom.description && (
+                      <>
+                        <span>|</span>
+                        <span className="truncate max-w-xs">{selectedDataRoom.description}</span>
                       </>
                     )}
                   </div>
@@ -365,10 +497,10 @@ export default function PEDealIntelligence() {
               <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-4 rounded-lg">
                 <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
                   <BarChart3 className="h-4 w-4" />
-                  Data Sources {selectedDeal && <span className="font-normal text-muted-foreground">for {selectedDeal.name}</span>}
+                  Data Sources {selectedDealId && <span className="font-normal text-muted-foreground">for {getSelectedDisplayName()}</span>}
                 </h4>
                 <ul className="text-sm space-y-1 text-muted-foreground">
-                  {selectedDeal ? (
+                  {selectedDealId ? (
                     <>
                       <li className="flex items-center gap-2"><Building2 className="h-3 w-3" /> Deal data room documents and files</li>
                       <li className="flex items-center gap-2"><DollarSign className="h-3 w-3" /> Financial statements and projections</li>
