@@ -108,8 +108,15 @@ export async function generatePEDueDiligenceReport(
       if (doc.category) docInfo.push(`Category: ${doc.category}`);
       if (doc.documentType) docInfo.push(`Type: ${doc.documentType}`);
       
-      // Include AI summary if available (preferred - more concise)
-      if (doc.aiSummary) {
+      // Use comprehensive summary if available (covers ALL pages), otherwise fall back to aiSummary or extractedText
+      if (doc.comprehensiveSummary) {
+        const summary = doc.comprehensiveSummary.substring(0, MAX_PER_DOC * 2);
+        docInfo.push(`Full Document Analysis (${doc.totalCharacters || 'unknown'} chars, ${doc.chunksProcessed || 'unknown'} sections):`);
+        docInfo.push(summary);
+        if (doc.comprehensiveSummary.length > MAX_PER_DOC * 2) {
+          docInfo.push(`[...additional analysis truncated for token limits]`);
+        }
+      } else if (doc.aiSummary) {
         const summary = doc.aiSummary.substring(0, MAX_PER_DOC);
         docInfo.push(`Summary: ${summary}${doc.aiSummary.length > MAX_PER_DOC ? '...[truncated]' : ''}`);
       } 

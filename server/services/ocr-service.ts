@@ -370,14 +370,39 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
 
     // Generate AI summary from extracted text
     let aiSummary: string | null = null;
+    let comprehensiveSummary: string | null = null;
+    let chunksProcessed: number | null = null;
+    let totalCharacters: number | null = null;
+
     if (extractedText && extractedText.trim().length >= 50) {
-      aiSummary = await generateDocumentSummary(extractedText, doc.fileName);
+      const HIERARCHICAL_THRESHOLD = 5000;
+      
+      if (extractedText.length > HIERARCHICAL_THRESHOLD) {
+        console.log(`[OCR] Document ${doc.fileName} has ${extractedText.length} chars - using hierarchical summarization`);
+        try {
+          const { generateHierarchicalSummary } = await import('./hierarchical-summarization-service');
+          const result = await generateHierarchicalSummary(extractedText, doc.fileName);
+          comprehensiveSummary = result.comprehensiveSummary;
+          chunksProcessed = result.totalChunks;
+          totalCharacters = result.totalCharacters;
+          aiSummary = result.comprehensiveSummary.slice(0, 2000);
+          console.log(`[OCR] Hierarchical summary complete: ${chunksProcessed} chunks, ${totalCharacters} chars`);
+        } catch (error: any) {
+          console.error(`[OCR] Hierarchical summarization failed, falling back to quick summary:`, error.message);
+          aiSummary = await generateDocumentSummary(extractedText, doc.fileName);
+        }
+      } else {
+        aiSummary = await generateDocumentSummary(extractedText, doc.fileName);
+      }
     }
 
     await db.update(dataRoomDocuments)
       .set({ 
         extractedText: extractedText || doc.extractedText,
         aiSummary,
+        comprehensiveSummary,
+        chunksProcessed,
+        totalCharacters,
         ocrStatus: "completed",
         ocrProcessedAt: new Date(),
         documentDate,
@@ -507,6 +532,67 @@ export async function reprocessDocumentsWithoutText(): Promise<{ queued: number 
   
   console.log(`[OCR Reprocess] No documents need reprocessing`);
   return { queued: 0 };
+}
+
+// Reprocess documents to generate comprehensive summaries for large documents
+export async function reprocessForComprehensiveSummaries(dataRoomId?: string): Promise<{ processed: number; failed: number; skipped: number }> {
+  const { sql, and } = await import("drizzle-orm");
+  
+  const baseCondition = and(
+    sql`${dataRoomDocuments.extractedText} IS NOT NULL`,
+    sql`LENGTH(${dataRoomDocuments.extractedText}) > 5000`,
+    sql`${dataRoomDocuments.comprehensiveSummary} IS NULL`
+  );
+  
+  const whereCondition = dataRoomId 
+    ? and(baseCondition, sql`${dataRoomDocuments.dataRoomId} = ${dataRoomId}`)
+    : baseCondition;
+  
+  const docsNeedingSummary = await db
+    .select({ 
+      id: dataRoomDocuments.id, 
+      fileName: dataRoomDocuments.fileName,
+      extractedText: dataRoomDocuments.extractedText,
+    })
+    .from(dataRoomDocuments)
+    .where(whereCondition);
+  
+  console.log(`[Comprehensive Summary] Found ${docsNeedingSummary.length} documents needing hierarchical summarization`);
+  
+  let processed = 0;
+  let failed = 0;
+  let skipped = 0;
+  
+  const { generateHierarchicalSummary } = await import('./hierarchical-summarization-service');
+  
+  for (const doc of docsNeedingSummary) {
+    if (!doc.extractedText || doc.extractedText.length < 5000) {
+      skipped++;
+      continue;
+    }
+    
+    try {
+      console.log(`[Comprehensive Summary] Processing ${doc.fileName} (${doc.extractedText.length} chars)`);
+      const result = await generateHierarchicalSummary(doc.extractedText, doc.fileName);
+      
+      await db.update(dataRoomDocuments)
+        .set({
+          comprehensiveSummary: result.comprehensiveSummary,
+          chunksProcessed: result.totalChunks,
+          totalCharacters: result.totalCharacters,
+        })
+        .where(eq(dataRoomDocuments.id, doc.id));
+      
+      processed++;
+      console.log(`[Comprehensive Summary] Completed ${doc.fileName}: ${result.totalChunks} chunks`);
+    } catch (error: any) {
+      console.error(`[Comprehensive Summary] Failed for ${doc.fileName}:`, error.message);
+      failed++;
+    }
+  }
+  
+  console.log(`[Comprehensive Summary] Complete: ${processed} processed, ${failed} failed, ${skipped} skipped`);
+  return { processed, failed, skipped };
 }
 
 // Process pending OCR documents on startup (after 10 second delay)

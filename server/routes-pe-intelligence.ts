@@ -123,6 +123,9 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
           category: doc.category,
           extractedText: doc.extractedText,
           aiSummary: doc.summary,
+          comprehensiveSummary: null,
+          chunksProcessed: null,
+          totalCharacters: doc.extractedText?.length || null,
           documentType: doc.mimeType,
           fileSize: doc.sizeBytes,
         }));
@@ -171,6 +174,9 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
               category: doc.documentCategory,
               extractedText: doc.extractedText,
               aiSummary: doc.aiSummary,
+              comprehensiveSummary: doc.comprehensiveSummary,
+              chunksProcessed: doc.chunksProcessed,
+              totalCharacters: doc.totalCharacters,
               documentType: doc.fileType,
               fileSize: doc.fileSize,
               dataRoom: roomMap.get(doc.dataRoomId) || 'Unknown',
@@ -197,7 +203,7 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
           sector: "N/A",
           enterpriseValue: null,
         };
-        // Get data room documents with full content
+        // Get data room documents with full content including comprehensive summaries
         const dataRoomDocs = await db.select().from(schema.dataRoomDocuments).where(eq(schema.dataRoomDocuments.dataRoomId, dealId));
         documents = dataRoomDocs.map(doc => ({
           id: doc.id,
@@ -206,6 +212,9 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
           category: doc.documentCategory,
           extractedText: doc.extractedText,
           aiSummary: doc.aiSummary,
+          comprehensiveSummary: doc.comprehensiveSummary,
+          chunksProcessed: doc.chunksProcessed,
+          totalCharacters: doc.totalCharacters,
           documentType: doc.fileType,
           fileSize: doc.fileSize,
         }));

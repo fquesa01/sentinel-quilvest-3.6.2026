@@ -6672,6 +6672,12 @@ export const dataRoomDocuments = pgTable("data_room_documents", {
   extractedText: text("extracted_text"),
   // AI-generated summary of document content
   aiSummary: text("ai_summary"),
+  // Comprehensive AI summary covering ALL document pages (from hierarchical summarization)
+  comprehensiveSummary: text("comprehensive_summary"),
+  // Number of chunks processed for comprehensive summary
+  chunksProcessed: integer("chunks_processed"),
+  // Total character count of source document
+  totalCharacters: integer("total_characters"),
   // OCR processing fields
   ocrStatus: ocrStatusEnum("ocr_status").default("pending"),
   ocrProcessedAt: timestamp("ocr_processed_at"),
