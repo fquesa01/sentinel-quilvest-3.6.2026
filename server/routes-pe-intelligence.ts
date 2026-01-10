@@ -56,12 +56,13 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
       const reportsWithNames = await Promise.all(
         reports.map(async (report) => {
           const [user] = await db
-            .select({ name: schema.users.name })
+            .select({ firstName: schema.users.firstName, lastName: schema.users.lastName })
             .from(schema.users)
             .where(eq(schema.users.id, report.generatedBy));
+          const userName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : "Unknown";
           return {
             ...report,
-            generatedByName: user?.name || "Unknown",
+            generatedByName: userName || "Unknown",
           };
         })
       );
