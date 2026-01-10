@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { db } from './db';
 import * as schema from '@shared/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { generatePEDueDiligenceReport, generatePEDueDiligencePDF } from './services/pe-deal-intelligence-service';
 
@@ -145,26 +145,36 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
           sector: "N/A",
           enterpriseValue: transaction.dealValue,
         };
-        // Get ALL data rooms linked to this transaction and load all documents with full content
+        // Get ALL data rooms linked to this transaction and load all documents in a single query
         const linkedDataRooms = await db.select().from(schema.dataRooms).where(eq(schema.dataRooms.dealId, dealId));
         if (linkedDataRooms.length > 0) {
-          // Aggregate documents from ALL linked data rooms
-          const allDocs: any[] = [];
-          for (const dataRoom of linkedDataRooms) {
-            const dataRoomDocs = await db.select().from(schema.dataRoomDocuments)
-              .where(eq(schema.dataRoomDocuments.dataRoomId, dataRoom.id));
-            allDocs.push(...dataRoomDocs);
-          }
-          documents = allDocs.map(doc => ({
-            id: doc.id,
-            dealId: dealId,
-            name: doc.fileName,
-            category: doc.documentCategory,
-            extractedText: doc.extractedText,
-            aiSummary: doc.aiSummary,
-            documentType: doc.fileType,
-            fileSize: doc.fileSize,
-          }));
+          // Build a map of room IDs to room names for context
+          const roomMap = new Map(linkedDataRooms.map(r => [r.id, r.name]));
+          const roomIds = linkedDataRooms.map(r => r.id);
+          
+          // Single query to fetch all documents from all linked data rooms
+          const allDocs = await db.select().from(schema.dataRoomDocuments)
+            .where(inArray(schema.dataRoomDocuments.dataRoomId, roomIds));
+          
+          // Deduplicate by document ID (in case same doc in multiple rooms)
+          const seenIds = new Set<string>();
+          documents = allDocs
+            .filter(doc => {
+              if (seenIds.has(doc.id)) return false;
+              seenIds.add(doc.id);
+              return true;
+            })
+            .map(doc => ({
+              id: doc.id,
+              dealId: dealId,
+              name: doc.fileName,
+              category: doc.documentCategory,
+              extractedText: doc.extractedText,
+              aiSummary: doc.aiSummary,
+              documentType: doc.fileType,
+              fileSize: doc.fileSize,
+              dataRoom: roomMap.get(doc.dataRoomId) || 'Unknown',
+            }));
           console.log(`[PE Intelligence] Found ${documents.length} documents across ${linkedDataRooms.length} linked data room(s)`);
         } else {
           documents = [];

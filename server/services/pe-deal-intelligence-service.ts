@@ -104,6 +104,7 @@ export async function generatePEDueDiligenceReport(
       
       const docInfo: string[] = [];
       docInfo.push(`Document: ${doc.name || 'Untitled'}`);
+      if (doc.dataRoom) docInfo.push(`Data Room: ${doc.dataRoom}`);
       if (doc.category) docInfo.push(`Category: ${doc.category}`);
       if (doc.documentType) docInfo.push(`Type: ${doc.documentType}`);
       
