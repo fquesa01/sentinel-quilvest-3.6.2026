@@ -104,6 +104,7 @@ import WitnessInterview from "@/pages/witness-interview";
 import StatementDetailPage from "@/pages/statement-detail";
 import PEDealPipeline from "@/pages/pe-deal-pipeline";
 import PEDealDetail from "@/pages/pe-deal-detail";
+import PEDealIntelligence from "@/pages/pe-deal-intelligence";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { NotificationBell } from "@/components/notification-bell";
@@ -215,6 +216,7 @@ function AuthenticatedApp() {
               <Route path="/transactions/deal-templates/:templateId" component={TransactionsDealTemplateDetail} />
               <Route path="/pe/deals" component={PEDealPipeline} />
               <Route path="/pe/deals/:id" component={PEDealDetail} />
+              <Route path="/pe/deal-intelligence" component={PEDealIntelligence} />
               <Route path="/background-research" component={BackgroundResearch} />
               <Route path="/background-research/:id" component={BackgroundResearchDetail} />
               <Route path="/vendor-risk" component={VendorRiskPage} />

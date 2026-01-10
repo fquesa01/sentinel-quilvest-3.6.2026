@@ -10569,6 +10569,37 @@ export const insertDealTimelineEventSchema = createInsertSchema(dealTimelineEven
 });
 export type InsertDealTimelineEvent = z.infer<typeof insertDealTimelineEventSchema>;
 
+// PE Deal Intelligence Reports - AI-generated due diligence reports
+export const peDealIntelligenceReports = pgTable("pe_deal_intelligence_reports", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id")
+    .notNull()
+    .references(() => peDeals.id, { onDelete: "cascade" }),
+  dealName: varchar("deal_name").notNull(),
+  generatedBy: varchar("generated_by")
+    .notNull()
+    .references(() => users.id),
+  fileName: varchar("file_name").notNull(),
+  fileSize: integer("file_size"),
+  pdfData: text("pdf_data"), // Base64 encoded PDF or object storage URL
+  reportJson: jsonb("report_json"), // Full report JSON for reference
+  sectionsCompleted: integer("sections_completed"),
+  overallScore: integer("overall_score"), // Risk score (0-100)
+  enabledWebResearch: boolean("enabled_web_research").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  dealIdx: index("pe_deal_intelligence_reports_deal_idx").on(table.dealId),
+}));
+
+export type PEDealIntelligenceReport = typeof peDealIntelligenceReports.$inferSelect;
+export const insertPEDealIntelligenceReportSchema = createInsertSchema(peDealIntelligenceReports).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPEDealIntelligenceReport = z.infer<typeof insertPEDealIntelligenceReportSchema>;
+
 // PE Deal Relations
 export const peDealsRelations = relations(peDeals, ({ one, many }) => ({
   firm: one(peFirms, {

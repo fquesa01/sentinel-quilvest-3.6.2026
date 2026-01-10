@@ -204,6 +204,12 @@ export function AppSidebar() {
           icon: TrendingUp,
           roles: ["admin", "attorney", "external_counsel"],
         },
+        {
+          title: "Due Diligence Reports",
+          url: "/pe/deal-intelligence",
+          icon: FileScan,
+          roles: ["admin", "attorney", "external_counsel"],
+        },
       ],
     },
     {
