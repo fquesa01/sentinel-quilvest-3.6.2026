@@ -114,7 +114,19 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
           return res.status(404).json({ message: "PE Deal not found" });
         }
         deal = peDeal;
-        documents = await db.select().from(schema.peDealDocuments).where(eq(schema.peDealDocuments.dealId, dealId));
+        // Normalize peDealDocuments to match data room document structure
+        const peDealDocs = await db.select().from(schema.peDealDocuments).where(eq(schema.peDealDocuments.dealId, dealId));
+        documents = peDealDocs.map(doc => ({
+          id: doc.id,
+          dealId: dealId,
+          name: doc.filename,
+          category: doc.category,
+          extractedText: doc.extractedText,
+          aiSummary: doc.summary,
+          documentType: doc.mimeType,
+          fileSize: doc.sizeBytes,
+        }));
+        console.log(`[PE Intelligence] Found ${documents.length} PE deal documents`);
         workstreams = await db.select().from(schema.workstreams).where(eq(schema.workstreams.dealId, dealId));
         questions = await db.select().from(schema.diligenceQuestions).where(eq(schema.diligenceQuestions.dealId, dealId));
         riskFlags = await db.select().from(schema.peRiskFlags).where(eq(schema.peRiskFlags.dealId, dealId));
@@ -133,8 +145,30 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
           sector: "N/A",
           enterpriseValue: transaction.dealValue,
         };
-        // Get related documents if any
-        documents = [];
+        // Get ALL data rooms linked to this transaction and load all documents with full content
+        const linkedDataRooms = await db.select().from(schema.dataRooms).where(eq(schema.dataRooms.dealId, dealId));
+        if (linkedDataRooms.length > 0) {
+          // Aggregate documents from ALL linked data rooms
+          const allDocs: any[] = [];
+          for (const dataRoom of linkedDataRooms) {
+            const dataRoomDocs = await db.select().from(schema.dataRoomDocuments)
+              .where(eq(schema.dataRoomDocuments.dataRoomId, dataRoom.id));
+            allDocs.push(...dataRoomDocs);
+          }
+          documents = allDocs.map(doc => ({
+            id: doc.id,
+            dealId: dealId,
+            name: doc.fileName,
+            category: doc.documentCategory,
+            extractedText: doc.extractedText,
+            aiSummary: doc.aiSummary,
+            documentType: doc.fileType,
+            fileSize: doc.fileSize,
+          }));
+          console.log(`[PE Intelligence] Found ${documents.length} documents across ${linkedDataRooms.length} linked data room(s)`);
+        } else {
+          documents = [];
+        }
         workstreams = [];
         questions = [];
         riskFlags = [];
@@ -153,15 +187,19 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
           sector: "N/A",
           enterpriseValue: null,
         };
-        // Get data room documents
+        // Get data room documents with full content
         const dataRoomDocs = await db.select().from(schema.dataRoomDocuments).where(eq(schema.dataRoomDocuments.dataRoomId, dealId));
         documents = dataRoomDocs.map(doc => ({
           id: doc.id,
           dealId: dealId,
-          name: doc.name,
-          category: doc.category,
+          name: doc.fileName,
+          category: doc.documentCategory,
           extractedText: doc.extractedText,
+          aiSummary: doc.aiSummary,
+          documentType: doc.fileType,
+          fileSize: doc.fileSize,
         }));
+        console.log(`[PE Intelligence] Found ${documents.length} documents in data room`);
         workstreams = [];
         questions = [];
         riskFlags = [];

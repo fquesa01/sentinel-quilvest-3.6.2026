@@ -87,6 +87,50 @@ export async function generatePEDueDiligenceReport(
   console.log(`[PE Intelligence] Generating report for ${targetCompany}`);
   console.log(`[PE Intelligence] Documents: ${documents.length}, Workstreams: ${workstreams.length}, Questions: ${questions.length}`);
 
+  // Build document insights from AI summaries and extracted text
+  const buildDocumentInsights = (docs: any[]): string => {
+    if (!docs.length) return 'No documents available in the data room.';
+    
+    const MAX_TOTAL_CHARS = 40000; // ~10k tokens, leaving room for prompt and response
+    const MAX_PER_DOC = 2500; // Max chars per document content
+    let totalChars = 0;
+    
+    const insights: string[] = [];
+    for (const doc of docs.slice(0, 50)) { // Consider up to 50 docs
+      if (totalChars >= MAX_TOTAL_CHARS) {
+        insights.push(`[... ${docs.length - insights.length} additional documents not shown due to size limits]`);
+        break;
+      }
+      
+      const docInfo: string[] = [];
+      docInfo.push(`Document: ${doc.name || 'Untitled'}`);
+      if (doc.category) docInfo.push(`Category: ${doc.category}`);
+      if (doc.documentType) docInfo.push(`Type: ${doc.documentType}`);
+      
+      // Include AI summary if available (preferred - more concise)
+      if (doc.aiSummary) {
+        const summary = doc.aiSummary.substring(0, MAX_PER_DOC);
+        docInfo.push(`Summary: ${summary}${doc.aiSummary.length > MAX_PER_DOC ? '...[truncated]' : ''}`);
+      } 
+      // Fall back to extracted text (truncated to avoid token limits)
+      else if (doc.extractedText) {
+        const truncatedText = doc.extractedText.substring(0, MAX_PER_DOC);
+        docInfo.push(`Content: ${truncatedText}${doc.extractedText.length > MAX_PER_DOC ? '...[truncated]' : ''}`);
+      } else {
+        docInfo.push(`Content: [No text extracted]`);
+      }
+      
+      const docEntry = docInfo.join('\n');
+      totalChars += docEntry.length;
+      insights.push(docEntry);
+    }
+    
+    console.log(`[PE Intelligence] Built insights from ${insights.length} documents (${totalChars} chars)`);
+    return insights.join('\n\n---\n\n');
+  };
+
+  const documentInsights = buildDocumentInsights(documents);
+  
   // Build context from deal data
   const dealContext = `
 Target Company: ${targetCompany}
@@ -99,35 +143,42 @@ Revenue: ${deal.revenue || 'TBD'}
 EBITDA: ${deal.ebitda || 'TBD'}
 Status: ${deal.status}
 
-Data Room Documents (${documents.length}):
-${documents.slice(0, 20).map(d => `- ${d.name} (${d.category || 'uncategorized'})`).join('\n')}
-
 Workstreams Status:
 ${workstreams.map(w => `- ${w.name}: ${w.status} (${w.progress}% complete)`).join('\n') || 'No workstreams defined'}
 
 Outstanding Diligence Questions: ${questions.filter(q => q.status !== 'answered').length}
 Risk Flags Identified: ${riskFlags.length}
 ${riskFlags.map(r => `- [${r.severity}] ${r.title}: ${r.description}`).join('\n')}
+
+=== DATA ROOM DOCUMENTS AND INSIGHTS (${documents.length} documents) ===
+${documentInsights}
   `.trim();
 
   // Generate comprehensive analysis using AI
   const analysisPrompt = `You are an experienced private equity deal team member conducting due diligence. 
-Based on the available deal information, generate a comprehensive due diligence analysis.
+Based on the available deal information AND THE ACTUAL DOCUMENTS PROVIDED, generate a comprehensive due diligence analysis.
+
+CRITICAL INSTRUCTIONS:
+- You MUST analyze and reference the actual document content provided below
+- Cite specific documents by name when making findings (e.g., "According to the greco appraisal.pdf...")
+- Extract and use actual data points from documents (valuations, financial figures, key terms, risks, etc.)
+- If a document provides relevant information for a section, mark that section as "complete" or "partial" based on document coverage
+- Only mark sections as "not_started" if NO documents address that area
 
 ${dealContext}
 
 Generate a detailed analysis for each of the 20 standard due diligence sections. For each section:
-1. Assess completeness (complete, partial, not_started, or flagged if issues found)
-2. List key findings (at least 2-3 per section)
+1. Assess completeness (complete, partial, not_started, or flagged if issues found) - BASE THIS ON ACTUAL DOCUMENTS AVAILABLE
+2. List key findings (at least 2-3 per section) - CITE SPECIFIC DOCUMENTS AND EXTRACT REAL DATA
 3. Identify risk flags with severity (deal_breaker, price_chip, watch_item, acceptable)
 4. Recommend next steps
 
 Also provide:
-- Executive Summary (2-3 paragraphs)
-- Top 5 Key Risks
+- Executive Summary (2-3 paragraphs) - Reference key document findings
+- Top 5 Key Risks - Based on actual document analysis
 - Top 5 Recommendations
 
-Be specific and actionable. If information is not available, note what's missing.
+Be specific and actionable. Reference actual document names and data points. If a specific type of information is not available in the documents, note what additional documents are needed.
 
 Respond in JSON format:
 {
