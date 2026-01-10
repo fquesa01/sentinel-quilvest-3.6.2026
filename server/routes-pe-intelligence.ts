@@ -7,8 +7,11 @@ import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { generatePEDueDiligenceReport, generatePEDueDiligencePDF } from './services/pe-deal-intelligence-service';
 
+const sourceTypeSchema = z.enum(["pe_deal", "transaction", "data_room"]);
+
 const generateReportRequestSchema = z.object({
   dealId: z.string().min(1, "Deal ID is required"),
+  sourceType: sourceTypeSchema.optional().default("pe_deal"),
   target_company: z.string().min(1, "Target company name is required"),
   enableWebResearch: z.boolean().optional().default(true),
 });
@@ -33,14 +36,15 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
     }
   });
 
-  // Get saved PE deal intelligence reports for a specific deal
-  app.get("/api/pe-deal-intelligence/reports/:dealId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res: any) => {
+  // Get saved PE deal intelligence reports for a specific deal and source type
+  app.get("/api/pe-deal-intelligence/reports/:sourceType/:dealId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res: any) => {
     try {
-      const { dealId } = req.params;
+      const { dealId, sourceType } = req.params;
       
       const reports = await db.select({
         id: schema.peDealIntelligenceReports.id,
         dealName: schema.peDealIntelligenceReports.dealName,
+        sourceType: schema.peDealIntelligenceReports.sourceType,
         generatedBy: schema.peDealIntelligenceReports.generatedBy,
         fileName: schema.peDealIntelligenceReports.fileName,
         fileSize: schema.peDealIntelligenceReports.fileSize,
@@ -49,7 +53,10 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
         createdAt: schema.peDealIntelligenceReports.createdAt,
       })
       .from(schema.peDealIntelligenceReports)
-      .where(eq(schema.peDealIntelligenceReports.dealId, dealId))
+      .where(and(
+        eq(schema.peDealIntelligenceReports.dealId, dealId),
+        eq(schema.peDealIntelligenceReports.sourceType, sourceType)
+      ))
       .orderBy(desc(schema.peDealIntelligenceReports.createdAt));
 
       // Get user names for each report
@@ -91,22 +98,79 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
         });
       }
       
-      const { dealId, target_company, enableWebResearch } = parseResult.data;
+      const { dealId, sourceType, target_company, enableWebResearch } = parseResult.data;
 
-      // Get deal data
-      const [deal] = await db.select().from(schema.peDeals).where(eq(schema.peDeals.id, dealId));
-      if (!deal) {
-        return res.status(404).json({ message: "Deal not found" });
+      let deal: any = null;
+      let documents: any[] = [];
+      let workstreams: any[] = [];
+      let questions: any[] = [];
+      let riskFlags: any[] = [];
+
+      // Fetch data based on source type
+      if (sourceType === "pe_deal") {
+        // PE Deal Pipeline
+        const [peDeal] = await db.select().from(schema.peDeals).where(eq(schema.peDeals.id, dealId));
+        if (!peDeal) {
+          return res.status(404).json({ message: "PE Deal not found" });
+        }
+        deal = peDeal;
+        documents = await db.select().from(schema.peDealDocuments).where(eq(schema.peDealDocuments.dealId, dealId));
+        workstreams = await db.select().from(schema.workstreams).where(eq(schema.workstreams.dealId, dealId));
+        questions = await db.select().from(schema.diligenceQuestions).where(eq(schema.diligenceQuestions.dealId, dealId));
+        riskFlags = await db.select().from(schema.peRiskFlags).where(eq(schema.peRiskFlags.dealId, dealId));
+      } else if (sourceType === "transaction") {
+        // Business Transaction
+        const [transaction] = await db.select().from(schema.deals).where(eq(schema.deals.id, dealId));
+        if (!transaction) {
+          return res.status(404).json({ message: "Transaction not found" });
+        }
+        deal = {
+          id: transaction.id,
+          name: transaction.title,
+          codeName: null,
+          status: transaction.status,
+          dealType: transaction.dealType,
+          sector: "N/A",
+          enterpriseValue: transaction.dealValue,
+        };
+        // Get related documents if any
+        documents = [];
+        workstreams = [];
+        questions = [];
+        riskFlags = [];
+      } else if (sourceType === "data_room") {
+        // Data Room
+        const [dataRoom] = await db.select().from(schema.dataRooms).where(eq(schema.dataRooms.id, dealId));
+        if (!dataRoom) {
+          return res.status(404).json({ message: "Data Room not found" });
+        }
+        deal = {
+          id: dataRoom.id,
+          name: dataRoom.name,
+          codeName: null,
+          status: dataRoom.isActive ? "active" : "inactive",
+          dealType: "data_room",
+          sector: "N/A",
+          enterpriseValue: null,
+        };
+        // Get data room documents
+        const dataRoomDocs = await db.select().from(schema.dataRoomDocuments).where(eq(schema.dataRoomDocuments.dataRoomId, dealId));
+        documents = dataRoomDocs.map(doc => ({
+          id: doc.id,
+          dealId: dealId,
+          name: doc.name,
+          category: doc.category,
+          extractedText: doc.extractedText,
+        }));
+        workstreams = [];
+        questions = [];
+        riskFlags = [];
+      } else {
+        return res.status(400).json({ message: "Invalid source type" });
       }
 
-      console.log(`[PE Deal Intelligence] Starting report generation for deal: ${deal.name}`);
+      console.log(`[PE Deal Intelligence] Starting report generation for ${sourceType}: ${deal.name}`);
       console.log(`[PE Deal Intelligence] Web research enabled: ${enableWebResearch}`);
-
-      // Get deal documents, workstreams, questions, risk flags
-      const documents = await db.select().from(schema.peDealDocuments).where(eq(schema.peDealDocuments.dealId, dealId));
-      const workstreams = await db.select().from(schema.workstreams).where(eq(schema.workstreams.dealId, dealId));
-      const questions = await db.select().from(schema.diligenceQuestions).where(eq(schema.diligenceQuestions.dealId, dealId));
-      const riskFlags = await db.select().from(schema.peRiskFlags).where(eq(schema.peRiskFlags.dealId, dealId));
 
       // Generate comprehensive due diligence report using AI
       const reportData = await generatePEDueDiligenceReport(
@@ -138,6 +202,7 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
       // Save report to database
       const [savedReport] = await db.insert(schema.peDealIntelligenceReports).values({
         dealId,
+        sourceType,
         dealName: target_company,
         generatedBy: userId,
         fileName,
@@ -166,15 +231,16 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
   });
 
   // Download saved PE deal intelligence report
-  app.get("/api/pe-deal-intelligence/reports/:dealId/:reportId/download", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res: any) => {
+  app.get("/api/pe-deal-intelligence/reports/:sourceType/:dealId/:reportId/download", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res: any) => {
     try {
-      const { dealId, reportId } = req.params;
+      const { sourceType, dealId, reportId } = req.params;
 
       const [report] = await db.select()
         .from(schema.peDealIntelligenceReports)
         .where(and(
           eq(schema.peDealIntelligenceReports.id, reportId),
-          eq(schema.peDealIntelligenceReports.dealId, dealId)
+          eq(schema.peDealIntelligenceReports.dealId, dealId),
+          eq(schema.peDealIntelligenceReports.sourceType, sourceType)
         ));
 
       if (!report) {
@@ -197,14 +263,15 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
   });
 
   // Delete PE deal intelligence report
-  app.delete("/api/pe-deal-intelligence/reports/:dealId/:reportId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res: any) => {
+  app.delete("/api/pe-deal-intelligence/reports/:sourceType/:dealId/:reportId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res: any) => {
     try {
-      const { dealId, reportId } = req.params;
+      const { sourceType, dealId, reportId } = req.params;
 
       const deleted = await db.delete(schema.peDealIntelligenceReports)
         .where(and(
           eq(schema.peDealIntelligenceReports.id, reportId),
-          eq(schema.peDealIntelligenceReports.dealId, dealId)
+          eq(schema.peDealIntelligenceReports.dealId, dealId),
+          eq(schema.peDealIntelligenceReports.sourceType, sourceType)
         ))
         .returning();
 

@@ -111,8 +111,16 @@ export default function PEDealIntelligence() {
   const isLoading = peDealsLoading || transactionsLoading || dataRoomsLoading;
 
   const { data: savedReports = [], isLoading: reportsLoading, refetch: refetchReports } = useQuery<SavedReport[]>({
-    queryKey: ["/api/pe-deal-intelligence/reports", selectedDealId],
-    enabled: !!selectedDealId,
+    queryKey: ["pe-deal-intelligence-reports", selectedSourceType, selectedDealId],
+    queryFn: async () => {
+      if (!selectedSourceType || !selectedDealId) return [];
+      const response = await fetch(`/api/pe-deal-intelligence/reports/${selectedSourceType}/${selectedDealId}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch reports");
+      }
+      return response.json();
+    },
+    enabled: !!selectedDealId && !!selectedSourceType,
   });
 
   const handleSelectionChange = (value: string) => {
@@ -147,11 +155,11 @@ export default function PEDealIntelligence() {
   };
 
   const generateReport = useMutation({
-    mutationFn: async ({ dealId, targetName, enableWebResearch }: { dealId: string; targetName: string; enableWebResearch: boolean }) => {
+    mutationFn: async ({ dealId, sourceType, targetName, enableWebResearch }: { dealId: string; sourceType: SourceType; targetName: string; enableWebResearch: boolean }) => {
       const response = await fetch("/api/pe-deal-intelligence/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId, target_company: targetName, enableWebResearch }),
+        body: JSON.stringify({ dealId, sourceType, target_company: targetName, enableWebResearch }),
       });
 
       if (!response.ok) {
@@ -178,9 +186,9 @@ export default function PEDealIntelligence() {
     onSuccess: () => {
       toast({
         title: "Success",
-        description: "PE Due Diligence Report generated and saved successfully",
+        description: "Due Diligence Report generated and saved successfully",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/pe-deal-intelligence/reports", selectedDealId] });
+      queryClient.invalidateQueries({ queryKey: ["pe-deal-intelligence-reports", selectedSourceType, selectedDealId] });
     },
     onError: (error: Error) => {
       toast({
@@ -192,8 +200,16 @@ export default function PEDealIntelligence() {
   });
 
   const downloadReport = async (reportId: string, fileName: string) => {
+    if (!selectedSourceType || !selectedDealId) {
+      toast({
+        title: "Download Failed",
+        description: "No deal selected",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
-      const response = await fetch(`/api/pe-deal-intelligence/reports/${selectedDealId}/${reportId}/download`);
+      const response = await fetch(`/api/pe-deal-intelligence/reports/${selectedSourceType}/${selectedDealId}/${reportId}/download`);
       if (!response.ok) {
         throw new Error("Failed to download report");
       }
@@ -217,7 +233,10 @@ export default function PEDealIntelligence() {
 
   const deleteReport = useMutation({
     mutationFn: async (reportId: string) => {
-      const response = await fetch(`/api/pe-deal-intelligence/reports/${selectedDealId}/${reportId}`, {
+      if (!selectedSourceType || !selectedDealId) {
+        throw new Error("No deal selected");
+      }
+      const response = await fetch(`/api/pe-deal-intelligence/reports/${selectedSourceType}/${selectedDealId}/${reportId}`, {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -231,7 +250,7 @@ export default function PEDealIntelligence() {
         title: "Report Deleted",
         description: "The report has been removed",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/pe-deal-intelligence/reports", selectedDealId] });
+      queryClient.invalidateQueries({ queryKey: ["pe-deal-intelligence-reports", selectedSourceType, selectedDealId] });
     },
     onError: (error: Error) => {
       toast({
@@ -270,7 +289,7 @@ export default function PEDealIntelligence() {
       });
       return;
     }
-    generateReport.mutate({ dealId: selectedDealId, targetName: targetCompanyName, enableWebResearch: enableLiveWebSearch });
+    generateReport.mutate({ dealId: selectedDealId, sourceType: selectedSourceType!, targetName: targetCompanyName, enableWebResearch: enableLiveWebSearch });
   };
 
   const selectedPeDeal = selectedSourceType === "pe_deal" ? peDeals.find(d => d.id === selectedDealId) : null;
@@ -326,7 +345,12 @@ export default function PEDealIntelligence() {
                           Deal Pipeline
                         </SelectLabel>
                         {peDeals.map((d) => (
-                          <SelectItem key={`pe_deal:${d.id}`} value={`pe_deal:${d.id}`} data-testid={`deal-option-${d.id}`}>
+                          <SelectItem 
+                            key={`pe_deal:${d.id}`} 
+                            value={`pe_deal:${d.id}`} 
+                            textValue={d.name}
+                            data-testid={`deal-option-${d.id}`}
+                          >
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{d.name}</span>
                               {d.codeName && (
@@ -345,7 +369,12 @@ export default function PEDealIntelligence() {
                           Business Transactions
                         </SelectLabel>
                         {transactions.map((t) => (
-                          <SelectItem key={`transaction:${t.id}`} value={`transaction:${t.id}`} data-testid={`transaction-option-${t.id}`}>
+                          <SelectItem 
+                            key={`transaction:${t.id}`} 
+                            value={`transaction:${t.id}`} 
+                            textValue={t.title}
+                            data-testid={`transaction-option-${t.id}`}
+                          >
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{t.title}</span>
                               <Badge variant="outline" className="text-xs">{t.dealType}</Badge>
@@ -362,7 +391,12 @@ export default function PEDealIntelligence() {
                           Data Rooms
                         </SelectLabel>
                         {dataRooms.map((r) => (
-                          <SelectItem key={`data_room:${r.id}`} value={`data_room:${r.id}`} data-testid={`dataroom-option-${r.id}`}>
+                          <SelectItem 
+                            key={`data_room:${r.id}`} 
+                            value={`data_room:${r.id}`} 
+                            textValue={r.name}
+                            data-testid={`dataroom-option-${r.id}`}
+                          >
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{r.name}</span>
                               {r.isActive ? (

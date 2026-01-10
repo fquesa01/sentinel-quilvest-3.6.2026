@@ -10569,14 +10569,16 @@ export const insertDealTimelineEventSchema = createInsertSchema(dealTimelineEven
 });
 export type InsertDealTimelineEvent = z.infer<typeof insertDealTimelineEventSchema>;
 
+// Source Type Enum for Deal Intelligence Reports
+export const dealIntelligenceSourceTypeEnum = pgEnum("deal_intelligence_source_type", ["pe_deal", "transaction", "data_room"]);
+
 // PE Deal Intelligence Reports - AI-generated due diligence reports
 export const peDealIntelligenceReports = pgTable("pe_deal_intelligence_reports", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  dealId: varchar("deal_id")
-    .notNull()
-    .references(() => peDeals.id, { onDelete: "cascade" }),
+  dealId: varchar("deal_id").notNull(),
+  sourceType: dealIntelligenceSourceTypeEnum("source_type").default("pe_deal").notNull(),
   dealName: varchar("deal_name").notNull(),
   generatedBy: varchar("generated_by")
     .notNull()
@@ -10591,6 +10593,7 @@ export const peDealIntelligenceReports = pgTable("pe_deal_intelligence_reports",
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   dealIdx: index("pe_deal_intelligence_reports_deal_idx").on(table.dealId),
+  sourceTypeIdx: index("pe_deal_intelligence_reports_source_type_idx").on(table.sourceType),
 }));
 
 export type PEDealIntelligenceReport = typeof peDealIntelligenceReports.$inferSelect;
