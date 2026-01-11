@@ -12654,7 +12654,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   // ===== Data Room Documents API Endpoints =====
 
   // Upload documents to a data room (with file upload and ZIP extraction)
-  app.post("/api/data-rooms/:roomId/upload", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), upload.array("files", 20), async (req: any, res) => {
+  app.post("/api/data-rooms/:roomId/upload", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), upload.array("files", 100), async (req: any, res) => {
     try {
       const { roomId } = req.params;
       // Normalize folderId - treat empty string, "null", "undefined" as null
