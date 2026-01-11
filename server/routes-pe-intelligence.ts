@@ -240,19 +240,8 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
         enableWebResearch
       );
 
-      // Generate PDF
-      const pdfDoc = generatePEDueDiligencePDF(reportData, target_company, deal);
-      
-      // Collect PDF data into buffer
-      const pdfChunks: Buffer[] = [];
-      pdfDoc.on('data', (chunk: Buffer) => pdfChunks.push(chunk));
-      
-      await new Promise<void>((resolve, reject) => {
-        pdfDoc.on('end', resolve);
-        pdfDoc.on('error', reject);
-      });
-
-      const pdfBuffer = Buffer.concat(pdfChunks);
+      // Generate PDF with AI-enhanced cover graphics (returns Buffer directly)
+      const pdfBuffer = await generatePEDueDiligencePDF(reportData, target_company, deal);
       const pdfBase64 = pdfBuffer.toString('base64');
       const fileName = `pe-due-diligence-${target_company.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}.pdf`;
 
