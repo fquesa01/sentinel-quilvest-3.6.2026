@@ -621,16 +621,61 @@ Rules:
       },
     });
     
-    const responseText = (result as any).candidates?.[0]?.content?.parts?.[0]?.text ?? 
-                         (result as any).response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
+    // Extract text from various possible response structures
+    let responseText = "";
+    try {
+      // Try direct text property first (new SDK format)
+      if ((result as any).text) {
+        responseText = (result as any).text;
+      }
+      // Try candidates array structure
+      else if ((result as any).candidates?.[0]?.content?.parts?.[0]?.text) {
+        responseText = (result as any).candidates[0].content.parts[0].text;
+      }
+      // Try response.candidates structure
+      else if ((result as any).response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        responseText = (result as any).response.candidates[0].content.parts[0].text;
+      }
+      // Try response.text() method
+      else if (typeof (result as any).response?.text === 'function') {
+        responseText = await (result as any).response.text();
+      }
+      // Fallback: stringify and try to extract
+      else {
+        const resultStr = JSON.stringify(result);
+        console.log("[AmbientAI-Summary] Unexpected response structure, full result:", resultStr.substring(0, 500));
+        responseText = "[]";
+      }
+    } catch (extractError) {
+      console.error("[AmbientAI-Summary] Error extracting response text:", extractError);
+      responseText = "[]";
+    }
+    
     const cleanedText = responseText.replace(/```json\n?|\n?```/g, "").trim();
     
     let parsed: any[];
     try {
       parsed = JSON.parse(cleanedText);
     } catch {
-      console.warn("[AmbientAI-Summary] Failed to parse JSON:", cleanedText.substring(0, 100));
-      return [];
+      // Try to repair common JSON issues
+      let repairedText = cleanedText;
+      
+      // Try to find JSON array boundaries
+      const arrayStart = repairedText.indexOf('[');
+      const arrayEnd = repairedText.lastIndexOf(']');
+      if (arrayStart !== -1 && arrayEnd > arrayStart) {
+        repairedText = repairedText.substring(arrayStart, arrayEnd + 1);
+        try {
+          parsed = JSON.parse(repairedText);
+          console.log("[AmbientAI-Summary] Successfully repaired JSON");
+        } catch {
+          console.warn("[AmbientAI-Summary] Failed to parse/repair JSON:", cleanedText.substring(0, 200));
+          return [];
+        }
+      } else {
+        console.warn("[AmbientAI-Summary] No valid JSON array found:", cleanedText.substring(0, 200));
+        return [];
+      }
     }
     
     if (!Array.isArray(parsed)) {
