@@ -1013,6 +1013,180 @@ Respond in JSON format:
       })
       .where(eq(ddDocumentMatches.id, matchId));
   }
+
+  async generatePDFReport(runId: string): Promise<Buffer> {
+    const PDFDocument = (await import('pdfkit')).default;
+    const { format } = await import('date-fns');
+    
+    const { run, sectionResults, documentMatches } = await this.getAnalysisResults(runId);
+    
+    const COLORS = {
+      primary: '#1e3a5f',
+      accent: '#0ea5e9',
+      success: '#059669',
+      warning: '#d97706',
+      danger: '#dc2626',
+      muted: '#64748b',
+      text: '#334155',
+      cardBg: '#f8fafc',
+      cardBorder: '#e2e8f0',
+    };
+
+    const doc = new PDFDocument({
+      size: 'LETTER',
+      margins: { top: 60, bottom: 60, left: 56, right: 56 },
+      bufferPages: true,
+    });
+
+    const buffers: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => buffers.push(chunk));
+
+    const pageWidth = doc.page.width;
+    const contentWidth = pageWidth - 112;
+    const leftMargin = 56;
+
+    doc.rect(0, 0, pageWidth, 180).fill(COLORS.primary);
+    doc.rect(0, 180, pageWidth, 6).fill(COLORS.accent);
+    
+    doc.font('Helvetica-Bold').fontSize(14).fillColor(COLORS.accent);
+    doc.text('SENTINEL COUNSEL LLP', leftMargin, 50);
+    
+    doc.font('Helvetica-Bold').fontSize(28).fillColor('#ffffff');
+    doc.text('DD Boolean Search Report', leftMargin, 85);
+    
+    doc.font('Helvetica').fontSize(14).fillColor('#94b8db');
+    doc.text('Due Diligence Document Analysis', leftMargin, 125);
+    
+    doc.font('Helvetica').fontSize(10).fillColor('#94b8db');
+    doc.text(`Generated: ${format(new Date(), 'PPpp')}`, leftMargin, 150);
+
+    let y = 210;
+    
+    const totalDocs = sectionResults.reduce((sum: number, s: any) => sum + (s.documentsMatched || 0), 0);
+    const highRiskCount = sectionResults.filter((s: any) => s.riskLevel === 'high' || s.riskLevel === 'critical').length;
+    
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(COLORS.primary);
+    doc.text('ANALYSIS SUMMARY', leftMargin, y);
+    y += 25;
+    
+    doc.font('Helvetica').fontSize(10).fillColor(COLORS.text);
+    doc.text(`Sections Analyzed: ${sectionResults.length}`, leftMargin, y);
+    y += 16;
+    doc.text(`Documents Matched: ${totalDocs}`, leftMargin, y);
+    y += 16;
+    doc.text(`High Risk Sections: ${highRiskCount}`, leftMargin, y);
+    y += 16;
+    doc.text(`Status: ${run.status}`, leftMargin, y);
+    y += 30;
+
+    for (const section of sectionResults) {
+      if (y > doc.page.height - 200) {
+        doc.addPage();
+        y = 60;
+      }
+
+      const riskColor = section.riskLevel === 'critical' ? COLORS.danger :
+                       section.riskLevel === 'high' ? COLORS.warning :
+                       section.riskLevel === 'medium' ? '#eab308' : COLORS.success;
+
+      doc.roundedRect(leftMargin, y, contentWidth, 24, 4).fillAndStroke(COLORS.cardBg, COLORS.cardBorder);
+      doc.rect(leftMargin, y, 4, 24).fill(riskColor);
+      
+      doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.primary);
+      doc.text(section.sectionName || 'Unknown Section', leftMargin + 12, y + 6, { width: contentWidth - 100 });
+      
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(riskColor);
+      doc.text((section.riskLevel || 'low').toUpperCase(), pageWidth - 100, y + 7);
+      
+      y += 32;
+
+      if (section.summary) {
+        doc.font('Helvetica').fontSize(9).fillColor(COLORS.text);
+        const summaryText = section.summary.length > 300 ? section.summary.substring(0, 297) + '...' : section.summary;
+        doc.text(summaryText, leftMargin + 8, y, { width: contentWidth - 16 });
+        y += doc.heightOfString(summaryText, { width: contentWidth - 16 }) + 10;
+      }
+
+      if (section.keyFindings && section.keyFindings.length > 0) {
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.muted);
+        doc.text('Key Findings:', leftMargin + 8, y);
+        y += 14;
+        
+        for (const finding of section.keyFindings.slice(0, 3)) {
+          const findingObj = typeof finding === 'string' ? { finding } : finding;
+          doc.font('Helvetica').fontSize(8).fillColor(COLORS.text);
+          doc.text(`• ${findingObj.finding || finding}`, leftMargin + 12, y, { width: contentWidth - 24 });
+          y += 12;
+        }
+        y += 6;
+      }
+
+      if (section.riskFlags && section.riskFlags.length > 0) {
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.danger);
+        doc.text('Risk Flags:', leftMargin + 8, y);
+        y += 14;
+        
+        for (const flag of section.riskFlags.slice(0, 2)) {
+          const flagObj = typeof flag === 'string' ? { flag } : flag;
+          doc.font('Helvetica').fontSize(8).fillColor(COLORS.text);
+          doc.text(`! ${flagObj.flag || flag}`, leftMargin + 12, y, { width: contentWidth - 24 });
+          y += 12;
+        }
+        y += 6;
+      }
+
+      y += 15;
+    }
+
+    if (documentMatches.length > 0) {
+      doc.addPage();
+      y = 60;
+      
+      doc.rect(0, 0, pageWidth, 50).fill(COLORS.primary);
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff');
+      doc.text('DOCUMENT MATCHES', leftMargin, 20);
+      
+      y = 70;
+      
+      for (const match of documentMatches.slice(0, 50)) {
+        if (y > doc.page.height - 80) {
+          doc.addPage();
+          doc.rect(0, 0, pageWidth, 50).fill(COLORS.primary);
+          doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff');
+          doc.text('DOCUMENT MATCHES (continued)', leftMargin, 20);
+          y = 70;
+        }
+
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.primary);
+        const title = (match.documentTitle || 'Untitled').substring(0, 60);
+        doc.text(title, leftMargin, y, { width: contentWidth - 80 });
+        
+        doc.font('Helvetica').fontSize(8).fillColor(COLORS.muted);
+        doc.text(`[${match.documentSource}]`, pageWidth - 120, y);
+        
+        y += 14;
+        
+        if (match.matchedTerms && match.matchedTerms.length > 0) {
+          doc.font('Helvetica').fontSize(7).fillColor(COLORS.muted);
+          doc.text(`Terms: ${match.matchedTerms.slice(0, 5).join(', ')}`, leftMargin + 8, y);
+          y += 10;
+        }
+        
+        y += 8;
+      }
+    }
+
+    doc.font('Helvetica').fontSize(8).fillColor(COLORS.muted);
+    doc.text('CONFIDENTIAL - ATTORNEY WORK PRODUCT', 0, doc.page.height - 40, { align: 'center', width: pageWidth });
+
+    doc.end();
+
+    return new Promise((resolve) => {
+      doc.on('end', () => {
+        resolve(Buffer.concat(buffers));
+      });
+    });
+  }
 }
 
 export const ddBooleanSearchService = new DDBooleanSearchService();

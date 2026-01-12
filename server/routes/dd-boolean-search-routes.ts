@@ -192,4 +192,24 @@ router.put("/documents/:matchId/tag", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/analysis/results/:runId/pdf", async (req: Request, res: Response) => {
+  try {
+    const { runId } = req.params;
+    
+    const pdfBuffer = await ddBooleanSearchService.generatePDFReport(runId);
+    
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `DD_Boolean_Search_Report_${timestamp}.pdf`;
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    res.send(pdfBuffer);
+  } catch (error: any) {
+    console.error("Error generating PDF report:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

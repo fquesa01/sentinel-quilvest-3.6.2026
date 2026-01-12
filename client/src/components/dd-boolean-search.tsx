@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { 
   Loader2, Search, ChevronDown, ChevronRight, FileText, AlertTriangle, 
   CheckCircle2, XCircle, Edit2, Save, Plus, Play, Tag, Brain,
-  Filter, File, Folder, Building2, Scale, MessageSquare, RefreshCw
+  Filter, File, Folder, Building2, Scale, MessageSquare, RefreshCw, FileDown
 } from "lucide-react";
 
 interface DDSection {
@@ -73,6 +73,8 @@ export function DDBooleanSearch({ dealId, dealName, sourceType }: DDBooleanSearc
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [newTagName, setNewTagName] = useState("");
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const { data: sections = [], isLoading: sectionsLoading } = useQuery<DDSection[]>({
     queryKey: ["/api/dd-boolean-search/sections"],
@@ -103,6 +105,49 @@ export function DDBooleanSearch({ dealId, dealName, sourceType }: DDBooleanSearc
       toast({ title: "Update failed", description: error.message, variant: "destructive" });
     },
   });
+
+  const runAnalysis = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/dd-boolean-search/analysis/run", {
+        dealId,
+        sourceType,
+        targetCompanyName: dealName,
+      });
+      if (!response.ok) throw new Error("Failed to start analysis");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setCurrentRunId(data.runId);
+      toast({ title: "Analysis started", description: "AI is analyzing matched documents..." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Analysis failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const downloadPdf = async (runId: string) => {
+    setIsExportingPdf(true);
+    try {
+      const response = await fetch(`/api/dd-boolean-search/analysis/results/${runId}/pdf`);
+      if (!response.ok) throw new Error("Failed to generate PDF");
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `DD_Boolean_Search_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast({ title: "PDF Downloaded", description: "Report has been saved to your downloads" });
+    } catch (error: any) {
+      toast({ title: "Download failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   const runSearch = useMutation({
     mutationFn: async () => {
@@ -578,17 +623,59 @@ export function DDBooleanSearch({ dealId, dealName, sourceType }: DDBooleanSearc
                   {searchResults.reduce((sum, r) => sum + r.documentsFound, 0)} total documents matched across {searchResults.length} queries
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchResults([]);
-                  setSelectedDocuments(new Set());
-                }}
-                data-testid="button-clear-results"
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Clear Results
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    runAnalysis.mutate();
+                  }}
+                  disabled={runAnalysis.isPending}
+                  data-testid="button-run-ai-analysis"
+                >
+                  {runAnalysis.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="mr-2 h-4 w-4" />
+                      Run AI Analysis
+                    </>
+                  )}
+                </Button>
+                {currentRunId && (
+                  <Button
+                    onClick={() => downloadPdf(currentRunId)}
+                    disabled={isExportingPdf}
+                    data-testid="button-export-pdf"
+                  >
+                    {isExportingPdf ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Exporting...
+                      </>
+                    ) : (
+                      <>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Export PDF
+                      </>
+                    )}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearchResults([]);
+                    setSelectedDocuments(new Set());
+                    setCurrentRunId(null);
+                  }}
+                  data-testid="button-clear-results"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Clear Results
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
