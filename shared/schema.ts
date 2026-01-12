@@ -10823,6 +10823,196 @@ export type DocumentBulletSummary = typeof documentBulletSummaries.$inferSelect;
 export const insertDocumentBulletSummarySchema = createInsertSchema(documentBulletSummaries).omit({ id: true, createdAt: true });
 export type InsertDocumentBulletSummary = z.infer<typeof insertDocumentBulletSummarySchema>;
 
+// ============================================================
+// DD BOOLEAN QUERY SYSTEM - Two-Stage Retrieval Pipeline
+// ============================================================
+
+// Enum for boolean query types
+export const ddQueryTypeEnum = pgEnum("dd_query_type", [
+  "primary",
+  "secondary",
+  "risk_indicator",
+]);
+
+// Enum for document match types
+export const ddDocumentMatchTypeEnum = pgEnum("dd_document_match_type", [
+  "boolean_hit",
+  "ai_cited",
+  "user_tagged",
+]);
+
+// Enum for document source in DD context
+export const ddDocumentSourceEnum = pgEnum("dd_document_source", [
+  "data_room",
+  "case_evidence",
+  "transaction_folder",
+  "court_pleading",
+  "communication",
+]);
+
+// Master Boolean Queries Library - standard queries per section
+export const ddBooleanQueries = pgTable("dd_boolean_queries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sectionId: varchar("section_id").notNull().references(() => ddChecklistSections.id),
+  queryType: ddQueryTypeEnum("query_type").notNull(),
+  queryText: text("query_text").notNull(),
+  description: text("description"),
+  synonymExpansion: text("synonym_expansion"),
+  expectedDocTypes: text("expected_doc_types"),
+  version: integer("version").default(1),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  sectionQueryIdx: index("idx_dd_boolean_queries_section").on(table.sectionId, table.queryType),
+}));
+
+export type DDBooleanQuery = typeof ddBooleanQueries.$inferSelect;
+export const insertDDBooleanQuerySchema = createInsertSchema(ddBooleanQueries).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDBooleanQuery = z.infer<typeof insertDDBooleanQuerySchema>;
+
+// Per-Deal Customized Queries - editable copies of master queries
+export const ddDealQueries = pgTable("dd_deal_queries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").notNull(),
+  sourceType: dealIntelligenceSourceTypeEnum("source_type").default("pe_deal"),
+  sectionId: varchar("section_id").notNull().references(() => ddChecklistSections.id),
+  sourceQueryId: varchar("source_query_id").references(() => ddBooleanQueries.id),
+  queryType: ddQueryTypeEnum("query_type").notNull(),
+  queryText: text("query_text").notNull(),
+  isCustomized: boolean("is_customized").default(false),
+  lastEditedBy: varchar("last_edited_by").references(() => users.id),
+  lastEditedAt: timestamp("last_edited_at"),
+  isActive: boolean("is_active").default(true),
+  version: integer("version").default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  dealSectionIdx: index("idx_dd_deal_queries_deal_section").on(table.dealId, table.sectionId, table.queryType),
+  uniqueDealQuery: unique("uq_dd_deal_queries").on(table.dealId, table.sourceType, table.sectionId, table.queryType),
+}));
+
+export type DDDealQuery = typeof ddDealQueries.$inferSelect;
+export const insertDDDealQuerySchema = createInsertSchema(ddDealQueries).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDDealQuery = z.infer<typeof insertDDDealQuerySchema>;
+
+// Analysis Runs - track when analysis was executed
+export const ddAnalysisRuns = pgTable("dd_analysis_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").notNull(),
+  sourceType: dealIntelligenceSourceTypeEnum("source_type").default("pe_deal"),
+  initiatedBy: varchar("initiated_by").references(() => users.id),
+  initiatedAt: timestamp("initiated_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+  status: analysisStatusEnum("status").default("pending"),
+  totalDocumentsSearched: integer("total_documents_searched").default(0),
+  totalDocumentsMatched: integer("total_documents_matched").default(0),
+  inputSummary: jsonb("input_summary").$type<{
+    sectionsAnalyzed: number;
+    queriesExecuted: number;
+    documentSources: string[];
+    targetCompanyName?: string;
+    industryId?: string;
+  }>(),
+  outputSummary: jsonb("output_summary").$type<{
+    riskFlagsCount: number;
+    sectionsWithFindings: number;
+    totalFindings: number;
+    overallRiskLevel?: string;
+  }>(),
+  aiModel: varchar("ai_model", { length: 100 }),
+  notes: text("notes"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  dealIdx: index("idx_dd_analysis_runs_deal").on(table.dealId, table.sourceType),
+}));
+
+export type DDAnalysisRun = typeof ddAnalysisRuns.$inferSelect;
+export const insertDDAnalysisRunSchema = createInsertSchema(ddAnalysisRuns).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDAnalysisRun = z.infer<typeof insertDDAnalysisRunSchema>;
+
+// Section Results - AI analysis findings per section per run
+export const ddSectionResults = pgTable("dd_section_results", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  analysisRunId: varchar("analysis_run_id").notNull().references(() => ddAnalysisRuns.id, { onDelete: "cascade" }),
+  sectionId: varchar("section_id").notNull().references(() => ddChecklistSections.id),
+  documentsMatched: integer("documents_matched").default(0),
+  documentsAnalyzed: integer("documents_analyzed").default(0),
+  confidence: numeric("confidence", { precision: 5, scale: 4 }),
+  riskLevel: riskLevelEnum("risk_level").default("low"),
+  summary: text("summary"),
+  keyFindings: jsonb("key_findings").$type<{
+    finding: string;
+    severity: string;
+    documentRefs: string[];
+    pageRefs?: string[];
+  }[]>(),
+  riskFlags: jsonb("risk_flags").$type<{
+    flag: string;
+    severity: string;
+    evidence: string;
+    documentRef?: string;
+  }[]>(),
+  recommendations: jsonb("recommendations").$type<{
+    recommendation: string;
+    priority: string;
+    rationale?: string;
+  }[]>(),
+  aiFindings: jsonb("ai_findings"),
+  processingTimeMs: integer("processing_time_ms"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  runSectionIdx: index("idx_dd_section_results_run").on(table.analysisRunId, table.sectionId),
+  uniqueRunSection: unique("uq_dd_section_results").on(table.analysisRunId, table.sectionId),
+}));
+
+export type DDSectionResult = typeof ddSectionResults.$inferSelect;
+export const insertDDSectionResultSchema = createInsertSchema(ddSectionResults).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDSectionResult = z.infer<typeof insertDDSectionResultSchema>;
+
+// Document Matches - many-to-many linking documents to sections with match metadata
+export const ddDocumentMatches = pgTable("dd_document_matches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  analysisRunId: varchar("analysis_run_id").notNull().references(() => ddAnalysisRuns.id, { onDelete: "cascade" }),
+  sectionId: varchar("section_id").notNull().references(() => ddChecklistSections.id),
+  documentId: varchar("document_id").notNull(),
+  documentSource: ddDocumentSourceEnum("document_source").notNull(),
+  documentTitle: text("document_title"),
+  documentPath: text("document_path"),
+  matchType: ddDocumentMatchTypeEnum("match_type").notNull(),
+  relevanceScore: numeric("relevance_score", { precision: 5, scale: 4 }),
+  matchedTerms: jsonb("matched_terms").$type<string[]>(),
+  matchedExcerpts: jsonb("matched_excerpts").$type<{
+    text: string;
+    page?: number;
+    location?: string;
+  }[]>(),
+  aiAnalysis: text("ai_analysis"),
+  aiCitations: jsonb("ai_citations").$type<{
+    citation: string;
+    page?: number;
+    significance: string;
+  }[]>(),
+  userTags: jsonb("user_tags").$type<string[]>(),
+  userNotes: text("user_notes"),
+  isReviewed: boolean("is_reviewed").default(false),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  runSectionIdx: index("idx_dd_document_matches_run_section").on(table.analysisRunId, table.sectionId),
+  documentIdx: index("idx_dd_document_matches_document").on(table.documentId, table.documentSource),
+  uniqueMatch: unique("uq_dd_document_matches").on(table.analysisRunId, table.sectionId, table.documentId, table.matchType),
+}));
+
+export type DDDocumentMatch = typeof ddDocumentMatches.$inferSelect;
+export const insertDDDocumentMatchSchema = createInsertSchema(ddDocumentMatches).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDDDocumentMatch = z.infer<typeof insertDDDocumentMatchSchema>;
+
 // Due Diligence Relations
 export const ddTransactionTypesRelations = relations(ddTransactionTypes, ({ one, many }) => ({
   parent: one(ddTransactionTypes, {
@@ -10846,6 +11036,69 @@ export const ddIndustrySectorsRelations = relations(ddIndustrySectors, ({ one, m
 
 export const ddChecklistSectionsRelations = relations(ddChecklistSections, ({ many }) => ({
   items: many(ddChecklistItemsMaster),
+  booleanQueries: many(ddBooleanQueries),
+  dealQueries: many(ddDealQueries),
+  sectionResults: many(ddSectionResults),
+  documentMatches: many(ddDocumentMatches),
+}));
+
+// DD Boolean Query Relations
+export const ddBooleanQueriesRelations = relations(ddBooleanQueries, ({ one, many }) => ({
+  section: one(ddChecklistSections, {
+    fields: [ddBooleanQueries.sectionId],
+    references: [ddChecklistSections.id],
+  }),
+  dealQueries: many(ddDealQueries),
+}));
+
+export const ddDealQueriesRelations = relations(ddDealQueries, ({ one }) => ({
+  section: one(ddChecklistSections, {
+    fields: [ddDealQueries.sectionId],
+    references: [ddChecklistSections.id],
+  }),
+  sourceQuery: one(ddBooleanQueries, {
+    fields: [ddDealQueries.sourceQueryId],
+    references: [ddBooleanQueries.id],
+  }),
+  lastEditedByUser: one(users, {
+    fields: [ddDealQueries.lastEditedBy],
+    references: [users.id],
+  }),
+}));
+
+export const ddAnalysisRunsRelations = relations(ddAnalysisRuns, ({ one, many }) => ({
+  initiatedByUser: one(users, {
+    fields: [ddAnalysisRuns.initiatedBy],
+    references: [users.id],
+  }),
+  sectionResults: many(ddSectionResults),
+  documentMatches: many(ddDocumentMatches),
+}));
+
+export const ddSectionResultsRelations = relations(ddSectionResults, ({ one }) => ({
+  analysisRun: one(ddAnalysisRuns, {
+    fields: [ddSectionResults.analysisRunId],
+    references: [ddAnalysisRuns.id],
+  }),
+  section: one(ddChecklistSections, {
+    fields: [ddSectionResults.sectionId],
+    references: [ddChecklistSections.id],
+  }),
+}));
+
+export const ddDocumentMatchesRelations = relations(ddDocumentMatches, ({ one }) => ({
+  analysisRun: one(ddAnalysisRuns, {
+    fields: [ddDocumentMatches.analysisRunId],
+    references: [ddAnalysisRuns.id],
+  }),
+  section: one(ddChecklistSections, {
+    fields: [ddDocumentMatches.sectionId],
+    references: [ddChecklistSections.id],
+  }),
+  reviewedByUser: one(users, {
+    fields: [ddDocumentMatches.reviewedBy],
+    references: [users.id],
+  }),
 }));
 
 export const ddChecklistItemsMasterRelations = relations(ddChecklistItemsMaster, ({ one }) => ({
