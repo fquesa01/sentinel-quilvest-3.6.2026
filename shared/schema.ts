@@ -10795,6 +10795,34 @@ export type DDDealChecklistItem = typeof ddDealChecklistItems.$inferSelect;
 export const insertDDDealChecklistItemSchema = createInsertSchema(ddDealChecklistItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertDDDealChecklistItem = z.infer<typeof insertDDDealChecklistItemSchema>;
 
+// Document Bullet Summaries - cached bullet-point summaries for quick display
+export const documentBulletSummariesSourceTypeEnum = pgEnum("document_bullet_summaries_source_type", [
+  "communication",
+  "data_room_document",
+  "court_pleading",
+  "case_document",
+]);
+
+export const documentBulletSummaries = pgTable("document_bullet_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sourceType: documentBulletSummariesSourceTypeEnum("source_type").notNull(),
+  sourceId: varchar("source_id", { length: 255 }).notNull(),
+  bullets: jsonb("bullets").notNull().$type<{
+    text: string;
+    category?: string;
+  }[]>(),
+  contentHash: varchar("content_hash", { length: 64 }),
+  generatedAt: timestamp("generated_at").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  sourceIdx: index("idx_document_bullet_summaries_source").on(table.sourceType, table.sourceId),
+}));
+
+export type DocumentBulletSummary = typeof documentBulletSummaries.$inferSelect;
+export const insertDocumentBulletSummarySchema = createInsertSchema(documentBulletSummaries).omit({ id: true, createdAt: true });
+export type InsertDocumentBulletSummary = z.infer<typeof insertDocumentBulletSummarySchema>;
+
 // Due Diligence Relations
 export const ddTransactionTypesRelations = relations(ddTransactionTypes, ({ one, many }) => ({
   parent: one(ddTransactionTypes, {

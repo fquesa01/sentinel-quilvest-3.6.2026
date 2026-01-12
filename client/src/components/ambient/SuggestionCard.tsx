@@ -14,6 +14,11 @@ import {
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
+export interface BulletPoint {
+  text: string;
+  category?: string;
+}
+
 export interface DocumentResult {
   id: string;
   title: string;
@@ -22,6 +27,8 @@ export interface DocumentResult {
   date: string;
   preview: string;
   riskLevel?: string;
+  bullets?: BulletPoint[];
+  viewUrl?: string;
 }
 
 export interface SuggestionData {
@@ -115,11 +122,11 @@ export function SuggestionCard({
         </div>
       </div>
 
-      <CardContent className="p-2 pt-0 space-y-1">
+      <CardContent className="p-2 pt-0 space-y-2">
         {suggestion.results.map((doc) => (
-          <div key={doc.id} className="rounded-lg overflow-hidden" data-testid={`doc-item-${doc.id}`}>
+          <div key={doc.id} className="rounded-lg overflow-hidden border border-border/50" data-testid={`doc-item-${doc.id}`}>
             <div 
-              className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg hover:bg-muted transition-colors cursor-pointer group"
+              className="flex items-center gap-2 p-2 bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer group"
               onClick={() => onViewDocument(doc.id)}
               data-testid={`doc-row-${doc.id}`}
             >
@@ -143,21 +150,23 @@ export function SuggestionCard({
               </div>
 
               <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="h-8 w-8 border-green-200 text-green-600 hover:bg-green-50 dark:border-green-900 dark:text-green-400 dark:hover:bg-green-950/50"
-                  onClick={() => handleSummarize(doc.id)}
-                  disabled={summarizing === doc.id}
-                  title="AI Summary"
-                  data-testid={`button-summarize-doc-${doc.id}`}
-                >
-                  {summarizing === doc.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <AlignLeft className="h-4 w-4" />
-                  )}
-                </Button>
+                {!doc.bullets?.length && (
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8 border-green-200 text-green-600 hover:bg-green-50 dark:border-green-900 dark:text-green-400 dark:hover:bg-green-950/50"
+                    onClick={() => handleSummarize(doc.id)}
+                    disabled={summarizing === doc.id}
+                    title="AI Summary"
+                    data-testid={`button-summarize-doc-${doc.id}`}
+                  >
+                    {summarizing === doc.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <AlignLeft className="h-4 w-4" />
+                    )}
+                  </Button>
+                )}
                 <Button
                   size="icon"
                   variant="ghost"
@@ -171,7 +180,29 @@ export function SuggestionCard({
               </div>
             </div>
 
-            {expandedDoc === doc.id && summaries[doc.id] && (
+            {doc.bullets && doc.bullets.length > 0 && (
+              <div className="px-3 py-2 bg-primary/5 border-t border-border/30">
+                <ul className="space-y-1">
+                  {doc.bullets.slice(0, 3).map((bullet, idx) => (
+                    <li key={idx} className="flex items-start gap-2 text-xs text-foreground/80">
+                      <span className="text-primary mt-0.5 shrink-0">•</span>
+                      <span className="leading-relaxed">{bullet.text}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-auto px-0 mt-2 text-xs text-primary hover:text-primary/80 hover:bg-transparent"
+                  onClick={() => onViewDocument(doc.id)}
+                  data-testid={`button-view-full-${doc.id}`}
+                >
+                  View Full {doc.type === 'email' ? 'Email' : 'Document'} →
+                </Button>
+              </div>
+            )}
+
+            {expandedDoc === doc.id && summaries[doc.id] && !doc.bullets?.length && (
               <div className="p-3 bg-green-50 dark:bg-green-950/30 border-t border-green-200 dark:border-green-900">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide mb-2">
                   <Sparkles className="h-3 w-3" />
@@ -185,7 +216,7 @@ export function SuggestionCard({
                   variant="default"
                   className="bg-green-600 hover:bg-green-700 text-white"
                   onClick={() => onViewDocument(doc.id)}
-                  data-testid={`button-view-full-${doc.id}`}
+                  data-testid={`button-view-full-summary-${doc.id}`}
                 >
                   View Full Document →
                 </Button>

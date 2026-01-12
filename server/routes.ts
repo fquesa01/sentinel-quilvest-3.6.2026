@@ -33,6 +33,7 @@ import { setupWebRTCSignaling } from "./webrtc-signaling";
 import { registerVideoMeetingRoutes } from "./video-meeting-routes";
 import { registerFocusIssueRoutes } from "./routes/focus-issues-routes";
 import { registerCourtPleadingsRoutes } from "./routes/court-pleadings-routes";
+import { registerBulletSummaryRoutes } from "./routes/bullet-summaries-routes";
 import { askAboutCase } from "./services/case-investigation-service";
 import { triggerCaseSummaryUpdate } from "./services/case-summary-auto-update-service";
 import { askCaseRequestSchema } from "@shared/schema";
@@ -290,6 +291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register court pleadings routes
   registerCourtPleadingsRoutes(app, isAuthenticated);
 
+  registerBulletSummaryRoutes(app);
 
   // Register PE deal intelligence routes
   registerPEDealIntelligenceRoutes(app, isAuthenticated, requireRole, logAction);

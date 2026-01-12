@@ -155,6 +155,7 @@ export default function AmbientSession() {
   const [interimTranscript, setInterimTranscript] = useState("");
   const [showEndDialog, setShowEndDialog] = useState(false);
   const [suggestionDocs, setSuggestionDocs] = useState<Record<string, SuggestionDocument[]>>({});
+  const [bulletSummaries, setBulletSummaries] = useState<Record<string, Array<{ text: string; category?: string }>>>({});
   const [failedSuggestionIds, setFailedSuggestionIds] = useState<Set<string>>(new Set());
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [booleanResults, setBooleanResults] = useState<BooleanSearchResult[]>([]);
@@ -371,13 +372,32 @@ export default function AmbientSession() {
       });
       return response.json();
     },
-    onSuccess: (data: { queries: any[]; results: BooleanSearchResult[] }) => {
+    onSuccess: async (data: { queries: any[]; results: BooleanSearchResult[] }) => {
       if (data.results && data.results.length > 0) {
         const newResults = data.results.filter(r => !previousQueries.has(r.query));
         if (newResults.length > 0) {
           setBooleanResults(prev => [...newResults, ...prev].slice(0, 10));
           setPreviousQueries(prev => new Set(Array.from(prev).concat(newResults.map(r => r.query))));
-          // Don't show toast - results appear directly in the AI Suggestions panel
+          
+          // Fetch bullet summaries for new documents
+          const docIds = newResults.flatMap(r => r.documents.map(d => d.id));
+          if (docIds.length > 0) {
+            try {
+              const bulletResponse = await apiRequest("POST", "/api/bullet-summaries/batch", {
+                documentIds: docIds,
+              });
+              if (bulletResponse.ok) {
+                const bulletData = await bulletResponse.json();
+                if (bulletData.summaries) {
+                  setBulletSummaries((prev) => ({ ...prev, ...Object.fromEntries(
+                    Object.entries(bulletData.summaries).map(([id, data]: [string, any]) => [id, data.bullets])
+                  )}));
+                }
+              }
+            } catch (bulletError) {
+              console.error("Error fetching bullet summaries for boolean results:", bulletError);
+            }
+          }
         }
       }
     },
@@ -393,7 +413,7 @@ export default function AmbientSession() {
   }, [transcripts]);
   
 
-  // Fetch document details for suggestions with documentIds
+  // Fetch document details and bullet summaries for suggestions with documentIds
   useEffect(() => {
     // Wait for session to load with caseId before fetching documents
     if (!session?.caseId) return;
@@ -412,6 +432,26 @@ export default function AmbientSession() {
           if (response.ok) {
             const docs = await response.json();
             setSuggestionDocs((prev) => ({ ...prev, [suggestion.id]: docs }));
+            
+            // Fetch bullet summaries for these documents
+            const docIds = docs.map((d: SuggestionDocument) => d.id);
+            if (docIds.length > 0) {
+              try {
+                const bulletResponse = await apiRequest("POST", "/api/bullet-summaries/batch", {
+                  documentIds: docIds,
+                });
+                if (bulletResponse.ok) {
+                  const bulletData = await bulletResponse.json();
+                  if (bulletData.summaries) {
+                    setBulletSummaries((prev) => ({ ...prev, ...Object.fromEntries(
+                      Object.entries(bulletData.summaries).map(([id, data]: [string, any]) => [id, data.bullets])
+                    )}));
+                  }
+                }
+              } catch (bulletError) {
+                console.error("Error fetching bullet summaries:", bulletError);
+              }
+            }
           } else {
             // Mark as failed to prevent infinite retries
             setFailedSuggestionIds((prev) => new Set(Array.from(prev).concat(suggestion.id)));
@@ -748,6 +788,7 @@ export default function AmbientSession() {
         date: "",
         preview: "",
         riskLevel: doc.riskLevel || undefined,
+        bullets: bulletSummaries[doc.id] || undefined,
       })),
     status: 'found' as const,
   }));
@@ -770,6 +811,8 @@ export default function AmbientSession() {
           date: doc.sentAt || "",
           preview: doc.body?.substring(0, 150) || "",
           riskLevel: doc.riskLevel || undefined,
+          bullets: bulletSummaries[doc.id] || undefined,
+          viewUrl: doc.caseId ? `/cases/${doc.caseId}/communications/${doc.id}` : `/communications/${doc.id}`,
         })),
       status: 'found' as const,
     }));
