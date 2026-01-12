@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -115,6 +116,7 @@ export function RecordingsTab({ caseId }: RecordingsTabProps) {
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedSessionToImport, setSelectedSessionToImport] = useState<string | null>(null);
+  const [sessionToDelete, setSessionToDelete] = useState<AmbientSession | null>(null);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentUploadIndex, setCurrentUploadIndex] = useState(0);
@@ -188,6 +190,25 @@ export function RecordingsTab({ caseId }: RecordingsTabProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/recorded-statements?caseId=${caseId}`] });
       toast({ title: "Statement deleted" });
+    },
+  });
+
+  const deleteSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      return apiRequest("DELETE", `/api/ambient-sessions/${sessionId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/ambient-sessions?caseId=${caseId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ambient-sessions?unlinked=true"] });
+      toast({ title: "Recording deleted", description: "The live recording has been permanently deleted." });
+      setSessionToDelete(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete recording",
+        variant: "destructive",
+      });
     },
   });
 
@@ -707,12 +728,31 @@ export function RecordingsTab({ caseId }: RecordingsTabProps) {
                             {getStatusBadge(session.status)}
                           </CardDescription>
                         </div>
-                        <Link href={`/ambient-intelligence/${session.id}`}>
-                          <Button variant="outline" size="sm" data-testid={`button-view-recording-${session.id}`}>
-                            <ExternalLink className="h-4 w-4 mr-1" />
-                            View
-                          </Button>
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link href={`/ambient-intelligence/${session.id}`}>
+                            <Button variant="outline" size="sm" data-testid={`button-view-recording-${session.id}`}>
+                              <ExternalLink className="h-4 w-4 mr-1" />
+                              View
+                            </Button>
+                          </Link>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" data-testid={`button-recording-menu-${session.id}`}>
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setSessionToDelete(session)}
+                                data-testid={`button-delete-recording-${session.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Recording
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -1139,6 +1179,39 @@ export function RecordingsTab({ caseId }: RecordingsTabProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!sessionToDelete} onOpenChange={(open) => !open && setSessionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Recording?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{sessionToDelete?.sessionName}" and all associated transcripts, 
+              AI suggestions, and summaries. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-recording">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => sessionToDelete && deleteSessionMutation.mutate(sessionToDelete.id)}
+              disabled={deleteSessionMutation.isPending}
+              data-testid="button-confirm-delete-recording"
+            >
+              {deleteSessionMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
