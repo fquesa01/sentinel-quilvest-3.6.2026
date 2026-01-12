@@ -64,7 +64,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AISuggestionsPanel } from "@/components/ambient/AISuggestionsPanel";
+import { AISuggestionsPanel, InsightSuggestion } from "@/components/ambient/AISuggestionsPanel";
 import { FocusIssuesPanel } from "@/components/ambient/FocusIssuesPanel";
 
 import { SuggestionData } from "@/components/ambient/SuggestionCard";
@@ -817,6 +817,21 @@ export default function AmbientSession() {
       status: 'found' as const,
     }));
   
+  // Transform insight suggestions (summary, key_point, action_item) - no documents
+  const insightTypes = ["summary", "key_point", "action_item"];
+  const insightSuggestions: InsightSuggestion[] = suggestions
+    .filter(s => s.status !== "dismissed" && insightTypes.includes(s.suggestionType))
+    .map(s => ({
+      id: s.id,
+      topic: s.suggestionType === "summary" ? "Meeting Summary" : 
+             s.suggestionType === "key_point" ? "Key Point" : 
+             s.suggestionType === "action_item" ? "Action Item" : s.suggestionType,
+      triggerQuote: s.triggerQuote || s.userPrompt || "",
+      explanation: s.explanation || "",
+      confidence: (s.confidence || 'medium') as 'high' | 'medium' | 'low',
+      suggestionType: s.suggestionType,
+    }));
+  
   const allGlanceableSuggestions = [...transformedSuggestions, ...transformedTraditionalSuggestions]
     .filter(s => s.results.length > 0);
   
@@ -1153,6 +1168,7 @@ export default function AmbientSession() {
               {/* Use the new AISuggestionsPanel component */}
               <AISuggestionsPanel
                 suggestions={allGlanceableSuggestions as SuggestionData[]}
+                insightSuggestions={insightSuggestions}
                 caseId={session?.caseId || undefined}
                 isAnalyzing={isAnalyzing || isFocusSearching}
                 isRecording={isRecording}

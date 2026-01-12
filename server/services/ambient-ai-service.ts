@@ -36,7 +36,7 @@ export interface SearchIntent {
 
 export interface AnalysisResult {
   suggestions: Array<{
-    suggestionType: "document" | "email" | "person" | "date" | "topic" | "discrepancy" | "verification";
+    suggestionType: "document" | "email" | "person" | "date" | "topic" | "discrepancy" | "verification" | "summary" | "action_item" | "key_point";
     triggerQuote: string;
     explanation: string;
     userPrompt: string;
@@ -44,6 +44,13 @@ export interface AnalysisResult {
     documentIds?: string[];
     confidence: "high" | "medium" | "low";
   }>;
+}
+
+export interface RealtimeSummaryInsight {
+  type: "summary" | "action_item" | "key_point";
+  content: string;
+  context: string;
+  confidence: "high" | "medium" | "low";
 }
 
 export interface SessionSummary {
@@ -567,6 +574,93 @@ async function searchCaseDocuments(caseId: string, searchTerms: string[]): Promi
   return documentIds;
 }
 
+// Generate real-time summary insights from transcript chunk
+export async function generateRealtimeSummaryInsights(
+  transcriptText: string
+): Promise<RealtimeSummaryInsight[]> {
+  if (!transcriptText || transcriptText.length < 100) {
+    return [];
+  }
+  
+  const prompt = `Analyze this meeting transcript segment and extract key insights that would be valuable for a legal/compliance professional.
+
+TRANSCRIPT (recent segment):
+"${transcriptText.substring(0, 3000)}"
+
+Generate insights in these categories:
+1. SUMMARY: A brief 1-2 sentence overview of the main discussion point
+2. KEY_POINT: Important facts, decisions, or statements mentioned
+3. ACTION_ITEM: Tasks, follow-ups, or next steps mentioned or implied
+
+Return a JSON array with this structure:
+[
+  {
+    "type": "summary" | "key_point" | "action_item",
+    "content": "The insight text (keep concise, 1-2 sentences max)",
+    "context": "Brief context about why this is important",
+    "confidence": "high" | "medium" | "low"
+  }
+]
+
+Rules:
+- Only include genuinely important insights
+- Maximum 3-4 insights total
+- Be concise and actionable
+- If no meaningful insights, return empty array []
+- Return valid JSON only`;
+
+  try {
+    console.log(`[AmbientAI-Summary] Generating real-time insights from ${transcriptText.length} chars`);
+    
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        temperature: 0.3,
+        maxOutputTokens: 1000,
+      },
+    });
+    
+    const responseText = (result as any).candidates?.[0]?.content?.parts?.[0]?.text ?? 
+                         (result as any).response?.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
+    const cleanedText = responseText.replace(/```json\n?|\n?```/g, "").trim();
+    
+    let parsed: any[];
+    try {
+      parsed = JSON.parse(cleanedText);
+    } catch {
+      console.warn("[AmbientAI-Summary] Failed to parse JSON:", cleanedText.substring(0, 100));
+      return [];
+    }
+    
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    
+    const insights: RealtimeSummaryInsight[] = parsed
+      .slice(0, 4)
+      .filter((item: any) => 
+        item && 
+        ["summary", "key_point", "action_item"].includes(item.type) &&
+        typeof item.content === "string" &&
+        item.content.length > 0
+      )
+      .map((item: any) => ({
+        type: item.type as "summary" | "action_item" | "key_point",
+        content: String(item.content).substring(0, 300),
+        context: String(item.context || "").substring(0, 200),
+        confidence: ["high", "medium", "low"].includes(item.confidence) ? item.confidence : "medium",
+      }));
+    
+    console.log(`[AmbientAI-Summary] Generated ${insights.length} real-time insights`);
+    return insights;
+    
+  } catch (error) {
+    console.error("[AmbientAI-Summary] Failed to generate insights:", error);
+    return [];
+  }
+}
+
 export async function analyzeTranscriptChunk(
   sessionId: string,
   recentTranscriptText: string,
@@ -579,6 +673,20 @@ export async function analyzeTranscriptChunk(
   }
   
   try {
+    // Step 0: Generate real-time summary insights
+    const summaryInsights = await generateRealtimeSummaryInsights(recentTranscriptText);
+    for (const insight of summaryInsights) {
+      suggestions.push({
+        suggestionType: insight.type,
+        triggerQuote: insight.content,
+        explanation: insight.context,
+        userPrompt: insight.content,
+        searchQuery: "",
+        confidence: insight.confidence,
+      });
+    }
+    console.log(`[AmbientAI] Added ${summaryInsights.length} summary insights`);
+    
     // Step 1: Extract search intents from the conversation
     const searchIntents = await extractSearchIntents(recentTranscriptText);
     console.log(`[AmbientAI] Extracted ${searchIntents.length} search intents`);

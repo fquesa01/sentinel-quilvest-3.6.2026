@@ -8851,6 +8851,9 @@ export const ambientSuggestionTypeEnum = pgEnum("ambient_suggestion_type", [
   "topic",
   "discrepancy",
   "verification",
+  "summary",
+  "action_item",
+  "key_point",
 ]);
 
 export const ambientSuggestionStatusEnum = pgEnum("ambient_suggestion_status", [

@@ -2,12 +2,23 @@ import { SuggestionCard, SuggestionData, DocumentResult } from './SuggestionCard
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { 
   Sparkles, LayoutPanelLeft, Loader2, Target, ChevronDown, ChevronRight,
-  AlertTriangle, CheckCircle2, TrendingUp, MessageSquareWarning, FileText
+  AlertTriangle, CheckCircle2, TrendingUp, MessageSquareWarning, FileText,
+  Lightbulb, ListTodo, MessageCircle, X
 } from "lucide-react";
 import { useState } from "react";
+
+export interface InsightSuggestion {
+  id: string;
+  topic: string;
+  triggerQuote: string;
+  explanation: string;
+  confidence: 'high' | 'medium' | 'low';
+  suggestionType: string;
+}
 
 interface FocusIssueResult {
   documentId: string;
@@ -24,6 +35,7 @@ interface FocusIssueResult {
 
 interface AISuggestionsPanelProps {
   suggestions: SuggestionData[];
+  insightSuggestions?: InsightSuggestion[];
   caseId?: string;
   isAnalyzing?: boolean;
   isRecording?: boolean;
@@ -60,8 +72,27 @@ const relevanceLabels = {
   related: "Related",
 };
 
+const insightIcons = {
+  summary: MessageCircle,
+  key_point: Lightbulb,
+  action_item: ListTodo,
+};
+
+const insightColors = {
+  summary: "border-l-blue-500 bg-blue-500/5",
+  key_point: "border-l-amber-500 bg-amber-500/5",
+  action_item: "border-l-green-500 bg-green-500/5",
+};
+
+const insightLabels = {
+  summary: "Summary",
+  key_point: "Key Point",
+  action_item: "Action Item",
+};
+
 export function AISuggestionsPanel({
   suggestions,
+  insightSuggestions = [],
   caseId,
   isAnalyzing = false,
   isRecording = false,
@@ -74,6 +105,9 @@ export function AISuggestionsPanel({
   onViewAllSplit
 }: AISuggestionsPanelProps) {
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set());
+  const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(new Set());
+  
+  const activeInsights = insightSuggestions.filter(i => !dismissedInsights.has(i.id));
   
   const activeSuggestions = suggestions.filter(s => 
     s.status !== 'dismissed' && (s.status === 'searching' || s.results.length > 0)
@@ -141,8 +175,58 @@ export function AISuggestionsPanel({
 
       <ScrollArea className="flex-1 p-3">
         <div className="space-y-3">
+          {/* Real-time Insight Cards - Always show at top regardless of mode */}
+          {activeInsights.length > 0 && (
+            <div className="space-y-2 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Lightbulb className="h-4 w-4 text-amber-500" />
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Meeting Insights</span>
+              </div>
+              {activeInsights.map((insight) => {
+                const insightType = insight.suggestionType as keyof typeof insightIcons;
+                const InsightIcon = insightIcons[insightType] || Lightbulb;
+                const colorClass = insightColors[insightType] || "border-l-gray-500 bg-gray-500/5";
+                const label = insightLabels[insightType] || insight.topic;
+                
+                return (
+                  <Card 
+                    key={insight.id} 
+                    className={`p-3 border-l-4 ${colorClass}`}
+                    data-testid={`insight-card-${insight.id}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <InsightIcon className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="secondary" className="text-[10px]">{label}</Badge>
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            insight.confidence === 'high' ? 'bg-green-500' :
+                            insight.confidence === 'medium' ? 'bg-amber-500' : 'bg-muted-foreground'
+                          }`} />
+                        </div>
+                        <p className="text-sm">{insight.triggerQuote}</p>
+                        {insight.explanation && (
+                          <p className="text-xs text-muted-foreground mt-1">{insight.explanation}</p>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0 text-muted-foreground/50 hover:text-foreground"
+                        onClick={() => setDismissedInsights(prev => { const next = new Set(prev); next.add(insight.id); return next; })}
+                        data-testid={`button-dismiss-insight-${insight.id}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+          
           {focusMode === "focused" ? (
-            Object.keys(groupedByIssue).length === 0 ? (
+            Object.keys(groupedByIssue).length === 0 && activeInsights.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center" data-testid="focus-empty-state">
                 <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
                   <Target className="h-6 w-6 text-muted-foreground/50" />
@@ -218,27 +302,32 @@ export function AISuggestionsPanel({
                 </Collapsible>
               ))
             )
-          ) : activeSuggestions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center" data-testid="ai-suggestions-empty-state">
-              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                <Sparkles className="h-6 w-6 text-muted-foreground/50" />
-              </div>
-              <p className="text-sm text-muted-foreground" data-testid="text-listening">Listening for relevant topics...</p>
-              <p className="text-xs text-muted-foreground/70 mt-1" data-testid="text-emma-message">
-                Emma will surface documents as you speak
-              </p>
-            </div>
           ) : (
-            activeSuggestions.map(suggestion => (
-              <SuggestionCard
-                key={suggestion.id}
-                suggestion={suggestion}
-                caseId={caseId}
-                onViewDocument={onViewDocument}
-                onDismiss={() => onDismissSuggestion(suggestion.id)}
-                onDismissDocument={(docId) => onDismissDocument(suggestion.id, docId)}
-              />
-            ))
+            <>
+              {/* Document Suggestions */}
+              {activeSuggestions.length === 0 && activeInsights.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center" data-testid="ai-suggestions-empty-state">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                    <Sparkles className="h-6 w-6 text-muted-foreground/50" />
+                  </div>
+                  <p className="text-sm text-muted-foreground" data-testid="text-listening">Listening for relevant topics...</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1" data-testid="text-emma-message">
+                    Emma will surface documents as you speak
+                  </p>
+                </div>
+              ) : (
+                activeSuggestions.map(suggestion => (
+                  <SuggestionCard
+                    key={suggestion.id}
+                    suggestion={suggestion}
+                    caseId={caseId}
+                    onViewDocument={onViewDocument}
+                    onDismiss={() => onDismissSuggestion(suggestion.id)}
+                    onDismissDocument={(docId) => onDismissDocument(suggestion.id, docId)}
+                  />
+                ))
+              )}
+            </>
           )}
         </div>
       </ScrollArea>
