@@ -1,0 +1,2372 @@
+# Auto Search Term Generation Feature Specification
+## Sentinel Counsel LLP - Discovery & Case Intelligence Module
+
+---
+
+## Overview
+
+This feature automates the creation of Boolean search terms from legal documents to streamline document review. It consists of three interconnected capabilities:
+
+1. **Discovery Search Terms**: Parse opposing counsel's Requests for Production (RFPs) to generate search terms per request
+2. **Case Proving Search Terms**: Parse complaints to generate search terms per claim/cause of action
+3. **Privilege Detection**: Auto-identify privileged communications and generate downloadable privilege logs
+
+The workflow follows Sentinel's proven two-stage methodology: Boolean queries filter documents to relevant subsets, then focused AI analysis on pre-filtered content.
+
+---
+
+## Database Schema
+
+### Core Tables
+
+```sql
+-- Search Term Sets (parent container for a set of generated terms)
+CREATE TABLE search_term_sets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  
+  -- Source Document Info
+  source_type VARCHAR(30) NOT NULL CHECK (
+    source_type IN ('rfp', 'complaint', 'subpoena', 'interrogatory', 'manual')
+  ),
+  source_document_id UUID REFERENCES case_pleadings(id), -- Link to uploaded pleading
+  source_document_name TEXT,
+  
+  -- Metadata
+  name TEXT NOT NULL, -- e.g., "Defendant's First RFPs" or "Complaint Claims"
+  description TEXT,
+  
+  -- Processing Status
+  generation_status VARCHAR(20) DEFAULT 'pending' CHECK (
+    generation_status IN ('pending', 'processing', 'completed', 'failed')
+  ),
+  generation_error TEXT,
+  
+  -- Execution Stats
+  total_requests INTEGER DEFAULT 0, -- Number of RFPs or claims
+  last_executed_at TIMESTAMP WITH TIME ZONE,
+  documents_searched INTEGER DEFAULT 0,
+  documents_tagged INTEGER DEFAULT 0,
+  
+  -- Audit
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_by UUID REFERENCES users(id),
+  updated_by UUID REFERENCES users(id)
+);
+
+CREATE INDEX idx_search_term_sets_case ON search_term_sets(case_id);
+CREATE INDEX idx_search_term_sets_source ON search_term_sets(source_type);
+
+-- Individual Requests/Claims with their Search Terms
+CREATE TABLE search_term_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  search_term_set_id UUID NOT NULL REFERENCES search_term_sets(id) ON DELETE CASCADE,
+  
+  -- Request/Claim Info
+  item_number INTEGER NOT NULL, -- RFP #1, Claim #2, etc.
+  item_type VARCHAR(30) NOT NULL CHECK (
+    item_type IN ('rfp_request', 'complaint_claim', 'privilege_category', 'custom')
+  ),
+  
+  -- Full Text of Request/Claim
+  full_text TEXT NOT NULL, -- Complete text of the RFP request or claim
+  summary TEXT, -- AI-generated summary
+  
+  -- For Complaints: Cause of Action Details
+  cause_of_action TEXT, -- e.g., "Breach of Contract", "Negligence"
+  legal_elements JSONB, -- Elements that must be proven
+  
+  -- Generated Search Terms (editable by user)
+  search_terms JSONB NOT NULL DEFAULT '[]', 
+  -- Structure: [
+  --   { 
+  --     "id": "uuid",
+  --     "term": "contract AND breach", 
+  --     "type": "boolean", 
+  --     "enabled": true,
+  --     "ai_generated": true,
+  --     "rationale": "Why this term was suggested"
+  --   }
+  -- ]
+  
+  -- Combined Boolean String (auto-generated from enabled terms)
+  combined_boolean_string TEXT,
+  
+  -- Execution Status
+  execution_status VARCHAR(20) DEFAULT 'pending' CHECK (
+    execution_status IN ('pending', 'running', 'completed', 'failed')
+  ),
+  last_executed_at TIMESTAMP WITH TIME ZONE,
+  documents_matched INTEGER DEFAULT 0,
+  
+  -- For Privilege Items
+  is_privilege_category BOOLEAN DEFAULT FALSE,
+  
+  -- Audit
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_search_term_items_set ON search_term_items(search_term_set_id);
+CREATE INDEX idx_search_term_items_type ON search_term_items(item_type);
+
+-- Document Tags (results of search execution)
+CREATE TABLE document_search_tags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  document_id UUID NOT NULL, -- References document in doc review
+  
+  -- Tag Source
+  search_term_item_id UUID REFERENCES search_term_items(id) ON DELETE SET NULL,
+  tag_source VARCHAR(30) NOT NULL CHECK (
+    tag_source IN ('search_term', 'ai_review', 'manual', 'privilege_scan')
+  ),
+  
+  -- Tag Details
+  tag_name TEXT NOT NULL, -- e.g., "RFP-001", "Claim-Negligence", "Privileged"
+  tag_category VARCHAR(50), -- e.g., "discovery_response", "case_proving", "privilege"
+  tag_color VARCHAR(7) DEFAULT '#6B7280', -- Hex color for UI
+  
+  -- Match Details
+  matched_terms TEXT[], -- Which specific terms matched
+  match_snippets JSONB, -- Highlighted text snippets showing matches
+  confidence_score DECIMAL(5,4), -- For AI-based tagging
+  
+  -- Review Status
+  review_status VARCHAR(20) DEFAULT 'pending' CHECK (
+    review_status IN ('pending', 'confirmed', 'rejected', 'needs_review')
+  ),
+  reviewed_by UUID REFERENCES users(id),
+  reviewed_at TIMESTAMP WITH TIME ZONE,
+  review_notes TEXT,
+  
+  -- Audit
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  
+  UNIQUE(document_id, search_term_item_id) -- Prevent duplicate tags
+);
+
+CREATE INDEX idx_document_tags_case ON document_search_tags(case_id);
+CREATE INDEX idx_document_tags_document ON document_search_tags(document_id);
+CREATE INDEX idx_document_tags_item ON document_search_tags(search_term_item_id);
+CREATE INDEX idx_document_tags_category ON document_search_tags(tag_category);
+
+-- Privilege Log Entries
+CREATE TABLE privilege_log_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  document_id UUID NOT NULL,
+  document_tag_id UUID REFERENCES document_search_tags(id),
+  
+  -- Standard Privilege Log Fields
+  bates_begin TEXT,
+  bates_end TEXT,
+  document_date DATE,
+  document_type TEXT, -- Email, Memo, Letter, etc.
+  
+  -- Parties
+  author TEXT,
+  author_title TEXT,
+  recipients TEXT[], -- Array of recipient names
+  cc_recipients TEXT[],
+  
+  -- Privilege Details
+  privilege_type VARCHAR(50) NOT NULL CHECK (
+    privilege_type IN (
+      'attorney_client', 
+      'work_product', 
+      'work_product_opinion',
+      'common_interest',
+      'joint_defense',
+      'deliberative_process',
+      'other'
+    )
+  ),
+  privilege_description TEXT NOT NULL, -- Brief description for the log
+  
+  -- AI Analysis
+  ai_privilege_basis TEXT, -- AI explanation of why privileged
+  ai_confidence DECIMAL(5,4),
+  
+  -- Status
+  log_status VARCHAR(20) DEFAULT 'draft' CHECK (
+    log_status IN ('draft', 'reviewed', 'final', 'challenged')
+  ),
+  reviewed_by UUID REFERENCES users(id),
+  reviewed_at TIMESTAMP WITH TIME ZONE,
+  
+  -- Audit
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_privilege_log_case ON privilege_log_entries(case_id);
+CREATE INDEX idx_privilege_log_type ON privilege_log_entries(privilege_type);
+```
+
+### Drizzle ORM Schema
+
+```typescript
+// schema/searchTerms.ts
+import { pgTable, uuid, varchar, text, integer, timestamp, boolean, jsonb, decimal, date, unique, index } from 'drizzle-orm/pg-core';
+import { cases } from './cases';
+import { casePleadings } from './casePleadings';
+import { users } from './users';
+
+// Enums
+export const sourceTypes = ['rfp', 'complaint', 'subpoena', 'interrogatory', 'manual'] as const;
+export const itemTypes = ['rfp_request', 'complaint_claim', 'privilege_category', 'custom'] as const;
+export const generationStatuses = ['pending', 'processing', 'completed', 'failed'] as const;
+export const executionStatuses = ['pending', 'running', 'completed', 'failed'] as const;
+export const tagSources = ['search_term', 'ai_review', 'manual', 'privilege_scan'] as const;
+export const reviewStatuses = ['pending', 'confirmed', 'rejected', 'needs_review'] as const;
+export const privilegeTypes = [
+  'attorney_client', 'work_product', 'work_product_opinion',
+  'common_interest', 'joint_defense', 'deliberative_process', 'other'
+] as const;
+
+// Search Term Sets
+export const searchTermSets = pgTable('search_term_sets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  caseId: uuid('case_id').notNull().references(() => cases.id, { onDelete: 'cascade' }),
+  
+  sourceType: varchar('source_type', { length: 30 }).notNull(),
+  sourceDocumentId: uuid('source_document_id').references(() => casePleadings.id),
+  sourceDocumentName: text('source_document_name'),
+  
+  name: text('name').notNull(),
+  description: text('description'),
+  
+  generationStatus: varchar('generation_status', { length: 20 }).default('pending'),
+  generationError: text('generation_error'),
+  
+  totalRequests: integer('total_requests').default(0),
+  lastExecutedAt: timestamp('last_executed_at', { withTimezone: true }),
+  documentsSearched: integer('documents_searched').default(0),
+  documentsTagged: integer('documents_tagged').default(0),
+  
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  createdBy: uuid('created_by').references(() => users.id),
+  updatedBy: uuid('updated_by').references(() => users.id),
+}, (table) => ({
+  caseIdx: index('idx_search_term_sets_case').on(table.caseId),
+}));
+
+// Search Term Items (individual RFPs or Claims)
+export const searchTermItems = pgTable('search_term_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  searchTermSetId: uuid('search_term_set_id').notNull().references(() => searchTermSets.id, { onDelete: 'cascade' }),
+  
+  itemNumber: integer('item_number').notNull(),
+  itemType: varchar('item_type', { length: 30 }).notNull(),
+  
+  fullText: text('full_text').notNull(),
+  summary: text('summary'),
+  
+  causeOfAction: text('cause_of_action'),
+  legalElements: jsonb('legal_elements'),
+  
+  searchTerms: jsonb('search_terms').notNull().default([]),
+  combinedBooleanString: text('combined_boolean_string'),
+  
+  executionStatus: varchar('execution_status', { length: 20 }).default('pending'),
+  lastExecutedAt: timestamp('last_executed_at', { withTimezone: true }),
+  documentsMatched: integer('documents_matched').default(0),
+  
+  isPrivilegeCategory: boolean('is_privilege_category').default(false),
+  
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  setIdx: index('idx_search_term_items_set').on(table.searchTermSetId),
+}));
+
+// Document Tags
+export const documentSearchTags = pgTable('document_search_tags', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  caseId: uuid('case_id').notNull().references(() => cases.id, { onDelete: 'cascade' }),
+  documentId: uuid('document_id').notNull(),
+  
+  searchTermItemId: uuid('search_term_item_id').references(() => searchTermItems.id, { onDelete: 'set null' }),
+  tagSource: varchar('tag_source', { length: 30 }).notNull(),
+  
+  tagName: text('tag_name').notNull(),
+  tagCategory: varchar('tag_category', { length: 50 }),
+  tagColor: varchar('tag_color', { length: 7 }).default('#6B7280'),
+  
+  matchedTerms: text('matched_terms').array(),
+  matchSnippets: jsonb('match_snippets'),
+  confidenceScore: decimal('confidence_score', { precision: 5, scale: 4 }),
+  
+  reviewStatus: varchar('review_status', { length: 20 }).default('pending'),
+  reviewedBy: uuid('reviewed_by').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  reviewNotes: text('review_notes'),
+  
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  caseIdx: index('idx_document_tags_case').on(table.caseId),
+  documentIdx: index('idx_document_tags_document').on(table.documentId),
+  uniqueTag: unique().on(table.documentId, table.searchTermItemId),
+}));
+
+// Privilege Log
+export const privilegeLogEntries = pgTable('privilege_log_entries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  caseId: uuid('case_id').notNull().references(() => cases.id, { onDelete: 'cascade' }),
+  documentId: uuid('document_id').notNull(),
+  documentTagId: uuid('document_tag_id').references(() => documentSearchTags.id),
+  
+  batesBegin: text('bates_begin'),
+  batesEnd: text('bates_end'),
+  documentDate: date('document_date'),
+  documentType: text('document_type'),
+  
+  author: text('author'),
+  authorTitle: text('author_title'),
+  recipients: text('recipients').array(),
+  ccRecipients: text('cc_recipients').array(),
+  
+  privilegeType: varchar('privilege_type', { length: 50 }).notNull(),
+  privilegeDescription: text('privilege_description').notNull(),
+  
+  aiPrivilegeBasis: text('ai_privilege_basis'),
+  aiConfidence: decimal('ai_confidence', { precision: 5, scale: 4 }),
+  
+  logStatus: varchar('log_status', { length: 20 }).default('draft'),
+  reviewedBy: uuid('reviewed_by').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  caseIdx: index('idx_privilege_log_case').on(table.caseId),
+}));
+
+// Types
+export type SearchTermSet = typeof searchTermSets.$inferSelect;
+export type NewSearchTermSet = typeof searchTermSets.$inferInsert;
+export type SearchTermItem = typeof searchTermItems.$inferSelect;
+export type NewSearchTermItem = typeof searchTermItems.$inferInsert;
+export type DocumentSearchTag = typeof documentSearchTags.$inferSelect;
+export type PrivilegeLogEntry = typeof privilegeLogEntries.$inferSelect;
+
+// Search Term Structure
+export interface SearchTerm {
+  id: string;
+  term: string;
+  type: 'boolean' | 'phrase' | 'proximity' | 'wildcard';
+  enabled: boolean;
+  aiGenerated: boolean;
+  rationale?: string;
+}
+```
+
+---
+
+## AI Services
+
+### RFP Parser Service
+
+```typescript
+// services/rfpParserService.ts
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+interface ParsedRFP {
+  requestNumber: number;
+  fullText: string;
+  summary: string;
+  searchTerms: SearchTerm[];
+  combinedBoolean: string;
+}
+
+interface SearchTerm {
+  id: string;
+  term: string;
+  type: 'boolean' | 'phrase' | 'proximity' | 'wildcard';
+  enabled: boolean;
+  aiGenerated: boolean;
+  rationale: string;
+}
+
+export class RFPParserService {
+  private genAI: GoogleGenerativeAI;
+  
+  constructor() {
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  }
+  
+  async parseRFPDocument(documentText: string): Promise<ParsedRFP[]> {
+    const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    
+    const prompt = `You are a legal discovery expert. Analyze this Request for Production document and extract each individual request.
+
+For each request, generate Boolean search terms that would find responsive documents. Follow these guidelines:
+
+## Boolean Search Best Practices:
+1. Use AND to require all terms: "contract AND breach AND damages"
+2. Use OR for synonyms/alternatives: "(email OR correspondence OR communication)"
+3. Use quotation marks for exact phrases: "employment agreement"
+4. Use proximity operators where supported: "termination W/10 cause"
+5. Use wildcards for variations: "employ*" matches employ, employee, employment, employer
+6. Consider common misspellings and abbreviations
+7. Think about how the concepts would appear in actual business documents
+
+## For Each RFP Request, Generate:
+1. **Primary Terms**: Core concepts that MUST appear (use AND)
+2. **Synonym Groups**: Alternative words for the same concept (use OR within parentheses)
+3. **Contextual Terms**: Terms that indicate relevance when combined with primary terms
+4. **Exclusion Terms**: Terms that might indicate non-responsive documents (use NOT sparingly)
+
+## Example Output for "All documents relating to the termination of John Smith's employment":
+
+Primary Search String:
+(terminat* OR discharg* OR "let go" OR fired OR separation) AND (Smith OR "John Smith") AND (employ* OR job OR position OR "human resources" OR HR)
+
+Alternative Searches:
+1. "performance review" AND Smith - rationale: termination often preceded by performance issues
+2. "exit interview" AND Smith - rationale: exit documentation
+3. "severance" AND Smith - rationale: severance discussions indicate termination
+
+Now analyze this document:
+
+---
+${documentText}
+---
+
+Return JSON array:
+[
+  {
+    "requestNumber": 1,
+    "fullText": "Complete text of the request",
+    "summary": "Brief 1-2 sentence summary",
+    "searchTerms": [
+      {
+        "id": "uuid-here",
+        "term": "Boolean search string",
+        "type": "boolean",
+        "enabled": true,
+        "aiGenerated": true,
+        "rationale": "Why this search term is relevant"
+      }
+    ],
+    "combinedBoolean": "All enabled terms combined with OR"
+  }
+]`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+    
+    // Parse JSON from response
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw new Error('Failed to parse RFP response');
+    }
+    
+    const parsed: ParsedRFP[] = JSON.parse(jsonMatch[0]);
+    
+    // Add UUIDs to search terms if not present
+    return parsed.map(rfp => ({
+      ...rfp,
+      searchTerms: rfp.searchTerms.map(term => ({
+        ...term,
+        id: term.id || crypto.randomUUID()
+      }))
+    }));
+  }
+}
+```
+
+### Complaint Parser Service
+
+```typescript
+// services/complaintParserService.ts
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+interface ParsedClaim {
+  claimNumber: number;
+  causeOfAction: string;
+  fullText: string;
+  summary: string;
+  legalElements: LegalElement[];
+  searchTerms: SearchTerm[];
+  combinedBoolean: string;
+}
+
+interface LegalElement {
+  element: string;
+  description: string;
+  searchTerms: SearchTerm[];
+}
+
+export class ComplaintParserService {
+  private genAI: GoogleGenerativeAI;
+  
+  constructor() {
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  }
+  
+  async parseComplaint(documentText: string): Promise<ParsedClaim[]> {
+    const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    
+    const prompt = `You are a litigation support expert. Analyze this complaint and extract each cause of action/claim.
+
+For each claim, you need to:
+1. Identify the cause of action (e.g., "Breach of Contract", "Negligence", "Fraud")
+2. Break down the legal elements that must be proven
+3. Generate Boolean search terms to find documents that prove each element
+
+## Legal Element Analysis:
+For each cause of action, identify what must be proven. Example for Breach of Contract:
+- Element 1: Existence of a valid contract
+- Element 2: Plaintiff's performance or excuse for non-performance  
+- Element 3: Defendant's breach
+- Element 4: Damages resulting from breach
+
+## Search Term Generation Strategy:
+For proving a case, focus on:
+1. **Documentary Evidence**: Contracts, agreements, communications showing obligations
+2. **Performance Evidence**: Invoices, deliverables, correspondence showing work done
+3. **Breach Evidence**: Complaints, failure notices, deviation from requirements
+4. **Damages Evidence**: Financial records, lost revenue, mitigation efforts
+5. **Timeline Evidence**: Dates, deadlines, milestone documents
+
+## Boolean Search Best Practices:
+- Use AND to require concepts: "contract AND breach"
+- Use OR for synonyms: "(agreement OR contract OR understanding)"
+- Use phrases: "material breach"
+- Use wildcards: "perform*" for perform, performance, performed
+- Use proximity: "deliver* W/15 fail*"
+
+Now analyze this complaint:
+
+---
+${documentText}
+---
+
+Return JSON array:
+[
+  {
+    "claimNumber": 1,
+    "causeOfAction": "Breach of Contract",
+    "fullText": "Complete text of the claim from the complaint",
+    "summary": "Brief summary of what is alleged",
+    "legalElements": [
+      {
+        "element": "Existence of Valid Contract",
+        "description": "Plaintiff must prove a valid contract existed",
+        "searchTerms": [
+          {
+            "id": "uuid",
+            "term": "(contract OR agreement OR \"master services agreement\" OR MSA)",
+            "type": "boolean",
+            "enabled": true,
+            "aiGenerated": true,
+            "rationale": "Find the underlying contract documents"
+          }
+        ]
+      }
+    ],
+    "searchTerms": [
+      {
+        "id": "uuid",
+        "term": "Combined search for this entire claim",
+        "type": "boolean",
+        "enabled": true,
+        "aiGenerated": true,
+        "rationale": "Overall search for claim-related documents"
+      }
+    ],
+    "combinedBoolean": "All enabled terms for this claim"
+  }
+]`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+    
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw new Error('Failed to parse complaint response');
+    }
+    
+    return JSON.parse(jsonMatch[0]);
+  }
+}
+```
+
+### Privilege Detection Service
+
+```typescript
+// services/privilegeDetectionService.ts
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+interface PrivilegeSearchTerms {
+  categories: PrivilegeCategory[];
+}
+
+interface PrivilegeCategory {
+  id: string;
+  categoryName: string;
+  privilegeType: string;
+  description: string;
+  searchTerms: SearchTerm[];
+  combinedBoolean: string;
+}
+
+interface PrivilegeAnalysisResult {
+  isPrivileged: boolean;
+  privilegeType: string | null;
+  confidence: number;
+  basis: string;
+  author: string | null;
+  authorTitle: string | null;
+  recipients: string[];
+  documentDate: string | null;
+  documentType: string;
+  suggestedDescription: string;
+}
+
+export class PrivilegeDetectionService {
+  private genAI: GoogleGenerativeAI;
+  
+  constructor() {
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  }
+  
+  // Generate standard privilege search terms
+  generatePrivilegeSearchTerms(): PrivilegeSearchTerms {
+    return {
+      categories: [
+        {
+          id: crypto.randomUUID(),
+          categoryName: 'Attorney-Client Communications',
+          privilegeType: 'attorney_client',
+          description: 'Communications between attorney and client for legal advice',
+          searchTerms: [
+            {
+              id: crypto.randomUUID(),
+              term: '(attorney OR lawyer OR counsel OR "legal department" OR "general counsel" OR "outside counsel")',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Identify communications involving attorneys'
+            },
+            {
+              id: crypto.randomUUID(),
+              term: '("legal advice" OR "attorney-client" OR "privileged" OR "confidential legal")',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Explicit privilege markers'
+            },
+            {
+              id: crypto.randomUUID(),
+              term: '("Esq" OR "J.D." OR "Attorney at Law" OR "Law Firm" OR "LLP")',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Attorney identifiers in signatures'
+            }
+          ],
+          combinedBoolean: '(attorney OR lawyer OR counsel OR "legal department") OR ("legal advice" OR "attorney-client" OR privileged) OR (Esq OR "Law Firm" OR LLP)'
+        },
+        {
+          id: crypto.randomUUID(),
+          categoryName: 'Work Product - Fact',
+          privilegeType: 'work_product',
+          description: 'Documents prepared in anticipation of litigation',
+          searchTerms: [
+            {
+              id: crypto.randomUUID(),
+              term: '(litigation OR lawsuit OR "legal action" OR "potential claim" OR dispute)',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Litigation-related terminology'
+            },
+            {
+              id: crypto.randomUUID(),
+              term: '("work product" OR "prepared for litigation" OR "in anticipation of")',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Work product indicators'
+            },
+            {
+              id: crypto.randomUUID(),
+              term: '("legal hold" OR "litigation hold" OR "preserve" AND document*)',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Preservation notices indicate litigation'
+            }
+          ],
+          combinedBoolean: '(litigation OR lawsuit OR "legal action") OR ("work product" OR "prepared for litigation") OR ("legal hold" AND preserve)'
+        },
+        {
+          id: crypto.randomUUID(),
+          categoryName: 'Work Product - Opinion',
+          privilegeType: 'work_product_opinion',
+          description: 'Attorney mental impressions, conclusions, opinions',
+          searchTerms: [
+            {
+              id: crypto.randomUUID(),
+              term: '("legal analysis" OR "legal opinion" OR "legal assessment" OR "legal strategy")',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Attorney analysis and opinions'
+            },
+            {
+              id: crypto.randomUUID(),
+              term: '("litigation strategy" OR "case strategy" OR "defense strategy" OR "trial preparation")',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Strategic litigation planning'
+            }
+          ],
+          combinedBoolean: '("legal analysis" OR "legal opinion" OR "legal strategy") OR ("litigation strategy" OR "case strategy" OR "trial preparation")'
+        },
+        {
+          id: crypto.randomUUID(),
+          categoryName: 'Common Interest / Joint Defense',
+          privilegeType: 'joint_defense',
+          description: 'Shared communications under joint defense agreement',
+          searchTerms: [
+            {
+              id: crypto.randomUUID(),
+              term: '("joint defense" OR "common interest" OR "joint privilege" OR "common legal interest")',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Joint defense agreement references'
+            },
+            {
+              id: crypto.randomUUID(),
+              term: '("JDA" OR "joint defense agreement" OR "common interest agreement")',
+              type: 'boolean',
+              enabled: true,
+              aiGenerated: true,
+              rationale: 'Agreement abbreviations and terms'
+            }
+          ],
+          combinedBoolean: '("joint defense" OR "common interest" OR JDA) OR ("joint defense agreement" OR "common interest agreement")'
+        }
+      ]
+    };
+  }
+  
+  // Analyze a specific document for privilege
+  async analyzeDocumentForPrivilege(
+    documentText: string,
+    documentMetadata: { fileName: string; author?: string; recipients?: string[]; date?: string }
+  ): Promise<PrivilegeAnalysisResult> {
+    const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    
+    const prompt = `You are a legal privilege reviewer. Analyze this document for potential attorney-client privilege or work product protection.
+
+## Privilege Analysis Framework:
+
+### Attorney-Client Privilege requires ALL of:
+1. Communication between attorney and client (or their agents)
+2. Made for purpose of obtaining/providing legal advice
+3. Intended to be confidential
+4. Privilege not waived
+
+### Work Product Protection requires:
+1. Document prepared in anticipation of litigation
+2. By or for a party or their representative
+3. For trial preparation purposes
+
+### Key Indicators to Look For:
+- Attorney names, law firm names, legal department
+- Legal advice being sought or provided
+- References to litigation, claims, disputes
+- "Privileged," "Confidential," or similar markings
+- Legal strategy discussions
+- Mental impressions or opinions of counsel
+
+## Document Metadata:
+- File Name: ${documentMetadata.fileName}
+- Author: ${documentMetadata.author || 'Unknown'}
+- Recipients: ${documentMetadata.recipients?.join(', ') || 'Unknown'}
+- Date: ${documentMetadata.date || 'Unknown'}
+
+## Document Content:
+---
+${documentText.substring(0, 15000)}
+---
+
+Analyze and return JSON:
+{
+  "isPrivileged": true/false,
+  "privilegeType": "attorney_client" | "work_product" | "work_product_opinion" | "joint_defense" | "common_interest" | null,
+  "confidence": 0.0-1.0,
+  "basis": "Detailed explanation of why this is or is not privileged",
+  "author": "Extracted author name if identifiable",
+  "authorTitle": "Author's title/role if identifiable",
+  "recipients": ["List", "of", "recipients"],
+  "documentDate": "YYYY-MM-DD or null",
+  "documentType": "Email | Memorandum | Letter | Report | Draft | Other",
+  "suggestedDescription": "Brief privilege log description (1-2 sentences)"
+}`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+    
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('Failed to parse privilege analysis');
+    }
+    
+    return JSON.parse(jsonMatch[0]);
+  }
+}
+```
+
+### Boolean Search Executor Service
+
+```typescript
+// services/booleanSearchService.ts
+import { db } from '../db';
+import { sql } from 'drizzle-orm';
+
+interface SearchResult {
+  documentId: string;
+  matchedTerms: string[];
+  snippets: { term: string; context: string; position: number }[];
+  score: number;
+}
+
+export class BooleanSearchService {
+  
+  // Parse Boolean string into PostgreSQL tsquery
+  parseBooleanToTsquery(booleanString: string): string {
+    let query = booleanString;
+    
+    // Handle quoted phrases - convert to tsquery phrase
+    query = query.replace(/"([^"]+)"/g, (_, phrase) => {
+      return phrase.split(/\s+/).join(' <-> ');
+    });
+    
+    // Handle OR
+    query = query.replace(/\bOR\b/gi, ' | ');
+    
+    // Handle AND
+    query = query.replace(/\bAND\b/gi, ' & ');
+    
+    // Handle NOT
+    query = query.replace(/\bNOT\b/gi, ' !');
+    
+    // Handle wildcards - PostgreSQL uses :* for prefix matching
+    query = query.replace(/(\w+)\*/g, '$1:*');
+    
+    // Handle parentheses (already PostgreSQL compatible)
+    
+    // Handle proximity operators (W/n) - convert to distance operator
+    query = query.replace(/(\S+)\s+W\/(\d+)\s+(\S+)/gi, (_, term1, distance, term2) => {
+      return `${term1} <${distance}> ${term2}`;
+    });
+    
+    return query;
+  }
+  
+  // Execute search against document collection
+  async executeSearch(
+    caseId: string,
+    booleanString: string,
+    options: {
+      documentSetId?: string; // Limit to specific document set
+      limit?: number;
+      offset?: number;
+    } = {}
+  ): Promise<{ results: SearchResult[]; totalCount: number }> {
+    const tsquery = this.parseBooleanToTsquery(booleanString);
+    
+    // Build the search query
+    const query = sql`
+      SELECT 
+        d.id as document_id,
+        ts_headline('english', d.content, to_tsquery('english', ${tsquery}),
+          'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') as snippet,
+        ts_rank(d.search_vector, to_tsquery('english', ${tsquery})) as score
+      FROM case_documents d
+      WHERE d.case_id = ${caseId}
+        AND d.search_vector @@ to_tsquery('english', ${tsquery})
+        ${options.documentSetId ? sql`AND d.document_set_id = ${options.documentSetId}` : sql``}
+      ORDER BY score DESC
+      LIMIT ${options.limit || 1000}
+      OFFSET ${options.offset || 0}
+    `;
+    
+    const results = await db.execute(query);
+    
+    // Get total count
+    const countQuery = sql`
+      SELECT COUNT(*) as total
+      FROM case_documents d
+      WHERE d.case_id = ${caseId}
+        AND d.search_vector @@ to_tsquery('english', ${tsquery})
+        ${options.documentSetId ? sql`AND d.document_set_id = ${options.documentSetId}` : sql``}
+    `;
+    
+    const countResult = await db.execute(countQuery);
+    
+    return {
+      results: results.rows.map((row: any) => ({
+        documentId: row.document_id,
+        matchedTerms: [booleanString], // In real impl, extract actual matched terms
+        snippets: [{ term: booleanString, context: row.snippet, position: 0 }],
+        score: row.score
+      })),
+      totalCount: parseInt(countResult.rows[0]?.total || '0')
+    };
+  }
+  
+  // Execute multiple search terms and tag documents
+  async executeAndTagDocuments(
+    caseId: string,
+    searchTermItemId: string,
+    searchTerms: SearchTerm[],
+    tagInfo: { tagName: string; tagCategory: string; tagColor: string },
+    options: { documentSetId?: string } = {}
+  ): Promise<{ documentsTagged: number; documentsSearched: number }> {
+    const enabledTerms = searchTerms.filter(t => t.enabled);
+    
+    if (enabledTerms.length === 0) {
+      return { documentsTagged: 0, documentsSearched: 0 };
+    }
+    
+    // Combine all enabled terms with OR for maximum recall
+    const combinedBoolean = enabledTerms.map(t => `(${t.term})`).join(' OR ');
+    
+    const { results, totalCount } = await this.executeSearch(caseId, combinedBoolean, options);
+    
+    // Tag each matching document
+    for (const result of results) {
+      await db.insert(documentSearchTags).values({
+        caseId,
+        documentId: result.documentId,
+        searchTermItemId,
+        tagSource: 'search_term',
+        tagName: tagInfo.tagName,
+        tagCategory: tagInfo.tagCategory,
+        tagColor: tagInfo.tagColor,
+        matchedTerms: result.matchedTerms,
+        matchSnippets: result.snippets,
+        confidenceScore: result.score.toString(),
+        reviewStatus: 'pending'
+      }).onConflictDoUpdate({
+        target: [documentSearchTags.documentId, documentSearchTags.searchTermItemId],
+        set: {
+          matchedTerms: result.matchedTerms,
+          matchSnippets: result.snippets,
+          confidenceScore: result.score.toString()
+        }
+      });
+    }
+    
+    return {
+      documentsTagged: results.length,
+      documentsSearched: totalCount
+    };
+  }
+}
+```
+
+---
+
+## API Endpoints
+
+### Search Term Set Management
+
+```typescript
+// routes/searchTerms.ts
+import { Router } from 'express';
+import { db } from '../db';
+import { searchTermSets, searchTermItems, documentSearchTags } from '../schema/searchTerms';
+import { eq, and, desc } from 'drizzle-orm';
+import { RFPParserService } from '../services/rfpParserService';
+import { ComplaintParserService } from '../services/complaintParserService';
+import { PrivilegeDetectionService } from '../services/privilegeDetectionService';
+import { BooleanSearchService } from '../services/booleanSearchService';
+import multer from 'multer';
+
+const router = Router();
+const upload = multer({ dest: 'uploads/temp/' });
+
+// GET /api/cases/:caseId/search-term-sets
+router.get('/:caseId/search-term-sets', async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    const { sourceType } = req.query;
+    
+    let query = db.select()
+      .from(searchTermSets)
+      .where(eq(searchTermSets.caseId, caseId))
+      .orderBy(desc(searchTermSets.createdAt));
+    
+    if (sourceType) {
+      query = query.where(and(
+        eq(searchTermSets.caseId, caseId),
+        eq(searchTermSets.sourceType, sourceType as string)
+      ));
+    }
+    
+    const sets = await query;
+    
+    res.json({ success: true, data: sets });
+  } catch (error) {
+    console.error('Failed to fetch search term sets:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch' });
+  }
+});
+
+// POST /api/cases/:caseId/search-term-sets/upload-rfp
+router.post('/:caseId/search-term-sets/upload-rfp', upload.single('file'), async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    const { name } = req.body;
+    const file = req.file;
+    
+    if (!file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+    
+    // Create the search term set
+    const [set] = await db.insert(searchTermSets).values({
+      caseId,
+      sourceType: 'rfp',
+      sourceDocumentName: file.originalname,
+      name: name || `RFP Analysis - ${file.originalname}`,
+      generationStatus: 'processing',
+      createdBy: req.user?.id,
+    }).returning();
+    
+    // Process async
+    processRFPUpload(set.id, file.path).catch(console.error);
+    
+    res.json({ success: true, data: set });
+  } catch (error) {
+    console.error('Failed to upload RFP:', error);
+    res.status(500).json({ success: false, error: 'Failed to upload' });
+  }
+});
+
+async function processRFPUpload(setId: string, filePath: string) {
+  const rfpService = new RFPParserService();
+  
+  try {
+    // Extract text from document
+    const documentText = await extractTextFromDocument(filePath);
+    
+    // Parse RFPs
+    const parsedRFPs = await rfpService.parseRFPDocument(documentText);
+    
+    // Create search term items for each RFP
+    for (const rfp of parsedRFPs) {
+      await db.insert(searchTermItems).values({
+        searchTermSetId: setId,
+        itemNumber: rfp.requestNumber,
+        itemType: 'rfp_request',
+        fullText: rfp.fullText,
+        summary: rfp.summary,
+        searchTerms: rfp.searchTerms,
+        combinedBooleanString: rfp.combinedBoolean,
+      });
+    }
+    
+    // Update set status
+    await db.update(searchTermSets)
+      .set({
+        generationStatus: 'completed',
+        totalRequests: parsedRFPs.length,
+        updatedAt: new Date()
+      })
+      .where(eq(searchTermSets.id, setId));
+      
+  } catch (error) {
+    await db.update(searchTermSets)
+      .set({
+        generationStatus: 'failed',
+        generationError: error.message,
+        updatedAt: new Date()
+      })
+      .where(eq(searchTermSets.id, setId));
+    throw error;
+  }
+}
+
+// POST /api/cases/:caseId/search-term-sets/upload-complaint
+router.post('/:caseId/search-term-sets/upload-complaint', upload.single('file'), async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    const { name } = req.body;
+    const file = req.file;
+    
+    if (!file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+    
+    // Create the search term set
+    const [set] = await db.insert(searchTermSets).values({
+      caseId,
+      sourceType: 'complaint',
+      sourceDocumentName: file.originalname,
+      name: name || `Complaint Analysis - ${file.originalname}`,
+      generationStatus: 'processing',
+      createdBy: req.user?.id,
+    }).returning();
+    
+    // Process async
+    processComplaintUpload(set.id, file.path).catch(console.error);
+    
+    res.json({ success: true, data: set });
+  } catch (error) {
+    console.error('Failed to upload complaint:', error);
+    res.status(500).json({ success: false, error: 'Failed to upload' });
+  }
+});
+
+async function processComplaintUpload(setId: string, filePath: string) {
+  const complaintService = new ComplaintParserService();
+  const privilegeService = new PrivilegeDetectionService();
+  
+  try {
+    const documentText = await extractTextFromDocument(filePath);
+    
+    // Parse claims
+    const parsedClaims = await complaintService.parseComplaint(documentText);
+    
+    // Create search term items for each claim
+    for (const claim of parsedClaims) {
+      await db.insert(searchTermItems).values({
+        searchTermSetId: setId,
+        itemNumber: claim.claimNumber,
+        itemType: 'complaint_claim',
+        fullText: claim.fullText,
+        summary: claim.summary,
+        causeOfAction: claim.causeOfAction,
+        legalElements: claim.legalElements,
+        searchTerms: claim.searchTerms,
+        combinedBooleanString: claim.combinedBoolean,
+      });
+    }
+    
+    // Also add privilege search terms
+    const privilegeTerms = privilegeService.generatePrivilegeSearchTerms();
+    for (const category of privilegeTerms.categories) {
+      await db.insert(searchTermItems).values({
+        searchTermSetId: setId,
+        itemNumber: 900 + privilegeTerms.categories.indexOf(category), // High number to sort last
+        itemType: 'privilege_category',
+        fullText: category.description,
+        summary: category.categoryName,
+        searchTerms: category.searchTerms,
+        combinedBooleanString: category.combinedBoolean,
+        isPrivilegeCategory: true,
+      });
+    }
+    
+    // Update set status
+    await db.update(searchTermSets)
+      .set({
+        generationStatus: 'completed',
+        totalRequests: parsedClaims.length + privilegeTerms.categories.length,
+        updatedAt: new Date()
+      })
+      .where(eq(searchTermSets.id, setId));
+      
+  } catch (error) {
+    await db.update(searchTermSets)
+      .set({
+        generationStatus: 'failed',
+        generationError: error.message,
+        updatedAt: new Date()
+      })
+      .where(eq(searchTermSets.id, setId));
+    throw error;
+  }
+}
+
+// GET /api/cases/:caseId/search-term-sets/:setId/items
+router.get('/:caseId/search-term-sets/:setId/items', async (req, res) => {
+  try {
+    const { setId } = req.params;
+    
+    const items = await db.select()
+      .from(searchTermItems)
+      .where(eq(searchTermItems.searchTermSetId, setId))
+      .orderBy(searchTermItems.itemNumber);
+    
+    res.json({ success: true, data: items });
+  } catch (error) {
+    console.error('Failed to fetch items:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch' });
+  }
+});
+
+// PATCH /api/cases/:caseId/search-term-sets/:setId/items/:itemId
+router.patch('/:caseId/search-term-sets/:setId/items/:itemId', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { searchTerms, combinedBooleanString } = req.body;
+    
+    const [item] = await db.update(searchTermItems)
+      .set({
+        searchTerms,
+        combinedBooleanString,
+        updatedAt: new Date()
+      })
+      .where(eq(searchTermItems.id, itemId))
+      .returning();
+    
+    res.json({ success: true, data: item });
+  } catch (error) {
+    console.error('Failed to update item:', error);
+    res.status(500).json({ success: false, error: 'Failed to update' });
+  }
+});
+
+// POST /api/cases/:caseId/search-term-sets/:setId/items/:itemId/execute
+router.post('/:caseId/search-term-sets/:setId/items/:itemId/execute', async (req, res) => {
+  try {
+    const { caseId, setId, itemId } = req.params;
+    const { documentSetId } = req.body; // Optional: limit to specific doc set
+    
+    // Get the search term item
+    const [item] = await db.select()
+      .from(searchTermItems)
+      .where(eq(searchTermItems.id, itemId));
+    
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Item not found' });
+    }
+    
+    // Update status to running
+    await db.update(searchTermItems)
+      .set({ executionStatus: 'running' })
+      .where(eq(searchTermItems.id, itemId));
+    
+    // Execute search
+    const searchService = new BooleanSearchService();
+    const tagColor = item.isPrivilegeCategory ? '#EF4444' : '#3B82F6'; // Red for privilege, blue for others
+    const tagCategory = item.isPrivilegeCategory ? 'privilege' : 
+      item.itemType === 'rfp_request' ? 'discovery_response' : 'case_proving';
+    
+    const result = await searchService.executeAndTagDocuments(
+      caseId,
+      itemId,
+      item.searchTerms as SearchTerm[],
+      {
+        tagName: item.isPrivilegeCategory ? item.summary! : `${item.itemType === 'rfp_request' ? 'RFP' : 'Claim'}-${item.itemNumber}`,
+        tagCategory,
+        tagColor
+      },
+      { documentSetId }
+    );
+    
+    // Update item with results
+    await db.update(searchTermItems)
+      .set({
+        executionStatus: 'completed',
+        lastExecutedAt: new Date(),
+        documentsMatched: result.documentsTagged,
+        updatedAt: new Date()
+      })
+      .where(eq(searchTermItems.id, itemId));
+    
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Failed to execute search:', error);
+    res.status(500).json({ success: false, error: 'Failed to execute' });
+  }
+});
+
+// POST /api/cases/:caseId/search-term-sets/:setId/execute-all
+router.post('/:caseId/search-term-sets/:setId/execute-all', async (req, res) => {
+  try {
+    const { caseId, setId } = req.params;
+    const { documentSetId } = req.body;
+    
+    // Get all items in this set
+    const items = await db.select()
+      .from(searchTermItems)
+      .where(eq(searchTermItems.searchTermSetId, setId));
+    
+    // Execute each (could be parallelized with Promise.all for speed)
+    const results = [];
+    for (const item of items) {
+      const searchService = new BooleanSearchService();
+      const tagColor = item.isPrivilegeCategory ? '#EF4444' : '#3B82F6';
+      const tagCategory = item.isPrivilegeCategory ? 'privilege' : 
+        item.itemType === 'rfp_request' ? 'discovery_response' : 'case_proving';
+      
+      const result = await searchService.executeAndTagDocuments(
+        caseId,
+        item.id,
+        item.searchTerms as SearchTerm[],
+        {
+          tagName: item.isPrivilegeCategory ? item.summary! : `${item.itemType === 'rfp_request' ? 'RFP' : 'Claim'}-${item.itemNumber}`,
+          tagCategory,
+          tagColor
+        },
+        { documentSetId }
+      );
+      
+      results.push({ itemId: item.id, ...result });
+    }
+    
+    // Update set stats
+    const totalTagged = results.reduce((sum, r) => sum + r.documentsTagged, 0);
+    await db.update(searchTermSets)
+      .set({
+        lastExecutedAt: new Date(),
+        documentsTagged: totalTagged,
+        updatedAt: new Date()
+      })
+      .where(eq(searchTermSets.id, setId));
+    
+    res.json({ success: true, data: results });
+  } catch (error) {
+    console.error('Failed to execute all:', error);
+    res.status(500).json({ success: false, error: 'Failed to execute' });
+  }
+});
+
+export default router;
+```
+
+### Privilege Log Export
+
+```typescript
+// routes/privilegeLog.ts
+import { Router } from 'express';
+import { db } from '../db';
+import { privilegeLogEntries, documentSearchTags } from '../schema/searchTerms';
+import { eq, and } from 'drizzle-orm';
+import ExcelJS from 'exceljs';
+
+const router = Router();
+
+// GET /api/cases/:caseId/privilege-log
+router.get('/:caseId/privilege-log', async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    
+    const entries = await db.select()
+      .from(privilegeLogEntries)
+      .where(eq(privilegeLogEntries.caseId, caseId))
+      .orderBy(privilegeLogEntries.batesBegin);
+    
+    res.json({ success: true, data: entries });
+  } catch (error) {
+    console.error('Failed to fetch privilege log:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch' });
+  }
+});
+
+// POST /api/cases/:caseId/privilege-log/generate
+// Auto-generate privilege log from tagged documents
+router.post('/:caseId/privilege-log/generate', async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    
+    // Get all privilege-tagged documents
+    const privilegeTags = await db.select()
+      .from(documentSearchTags)
+      .where(and(
+        eq(documentSearchTags.caseId, caseId),
+        eq(documentSearchTags.tagCategory, 'privilege')
+      ));
+    
+    const privilegeService = new PrivilegeDetectionService();
+    
+    for (const tag of privilegeTags) {
+      // Get document details and analyze
+      const document = await getDocument(tag.documentId); // Implement based on your doc storage
+      
+      const analysis = await privilegeService.analyzeDocumentForPrivilege(
+        document.content,
+        {
+          fileName: document.fileName,
+          author: document.metadata?.author,
+          recipients: document.metadata?.recipients,
+          date: document.metadata?.date
+        }
+      );
+      
+      if (analysis.isPrivileged) {
+        await db.insert(privilegeLogEntries).values({
+          caseId,
+          documentId: tag.documentId,
+          documentTagId: tag.id,
+          batesBegin: document.batesBegin,
+          batesEnd: document.batesEnd,
+          documentDate: analysis.documentDate,
+          documentType: analysis.documentType,
+          author: analysis.author,
+          authorTitle: analysis.authorTitle,
+          recipients: analysis.recipients,
+          privilegeType: analysis.privilegeType!,
+          privilegeDescription: analysis.suggestedDescription,
+          aiPrivilegeBasis: analysis.basis,
+          aiConfidence: analysis.confidence.toString(),
+        }).onConflictDoNothing();
+      }
+    }
+    
+    res.json({ success: true, message: 'Privilege log generated' });
+  } catch (error) {
+    console.error('Failed to generate privilege log:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate' });
+  }
+});
+
+// GET /api/cases/:caseId/privilege-log/export
+router.get('/:caseId/privilege-log/export', async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    const { format = 'xlsx' } = req.query;
+    
+    const entries = await db.select()
+      .from(privilegeLogEntries)
+      .where(eq(privilegeLogEntries.caseId, caseId))
+      .orderBy(privilegeLogEntries.batesBegin);
+    
+    if (format === 'csv') {
+      // CSV Export
+      const headers = [
+        'Bates Begin', 'Bates End', 'Date', 'Document Type',
+        'Author', 'Author Title', 'Recipients', 'CC Recipients',
+        'Privilege Type', 'Privilege Description'
+      ];
+      
+      const rows = entries.map(e => [
+        e.batesBegin || '',
+        e.batesEnd || '',
+        e.documentDate || '',
+        e.documentType || '',
+        e.author || '',
+        e.authorTitle || '',
+        (e.recipients || []).join('; '),
+        (e.ccRecipients || []).join('; '),
+        formatPrivilegeType(e.privilegeType),
+        e.privilegeDescription || ''
+      ]);
+      
+      const csvContent = [headers, ...rows]
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="privilege-log-${caseId}.csv"`);
+      return res.send(csvContent);
+    }
+    
+    // Excel Export
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Privilege Log');
+    
+    // Define columns
+    worksheet.columns = [
+      { header: 'Bates Begin', key: 'batesBegin', width: 15 },
+      { header: 'Bates End', key: 'batesEnd', width: 15 },
+      { header: 'Date', key: 'documentDate', width: 12 },
+      { header: 'Document Type', key: 'documentType', width: 15 },
+      { header: 'Author', key: 'author', width: 25 },
+      { header: 'Author Title', key: 'authorTitle', width: 20 },
+      { header: 'Recipients', key: 'recipients', width: 40 },
+      { header: 'CC', key: 'ccRecipients', width: 30 },
+      { header: 'Privilege Type', key: 'privilegeType', width: 20 },
+      { header: 'Description', key: 'privilegeDescription', width: 50 },
+    ];
+    
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFD5E8F0' }
+    };
+    
+    // Add data
+    entries.forEach(entry => {
+      worksheet.addRow({
+        batesBegin: entry.batesBegin,
+        batesEnd: entry.batesEnd,
+        documentDate: entry.documentDate,
+        documentType: entry.documentType,
+        author: entry.author,
+        authorTitle: entry.authorTitle,
+        recipients: (entry.recipients || []).join('; '),
+        ccRecipients: (entry.ccRecipients || []).join('; '),
+        privilegeType: formatPrivilegeType(entry.privilegeType),
+        privilegeDescription: entry.privilegeDescription,
+      });
+    });
+    
+    // Add borders
+    worksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      });
+    });
+    
+    // Send file
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="privilege-log-${caseId}.xlsx"`);
+    
+    await workbook.xlsx.write(res);
+    res.end();
+    
+  } catch (error) {
+    console.error('Failed to export privilege log:', error);
+    res.status(500).json({ success: false, error: 'Failed to export' });
+  }
+});
+
+function formatPrivilegeType(type: string): string {
+  const labels: Record<string, string> = {
+    'attorney_client': 'Attorney-Client Privilege',
+    'work_product': 'Work Product - Fact',
+    'work_product_opinion': 'Work Product - Opinion',
+    'common_interest': 'Common Interest',
+    'joint_defense': 'Joint Defense',
+    'deliberative_process': 'Deliberative Process',
+    'other': 'Other Privilege'
+  };
+  return labels[type] || type;
+}
+
+export default router;
+```
+
+---
+
+## React Components
+
+### SearchTermSetsPage Component
+
+```tsx
+// pages/cases/[caseId]/search-terms.tsx
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Upload, FileText, Scale, Shield, Download } from 'lucide-react';
+import { SearchTermSetsList } from '@/components/search-terms/SearchTermSetsList';
+import { RFPUploadModal } from '@/components/search-terms/RFPUploadModal';
+import { ComplaintUploadModal } from '@/components/search-terms/ComplaintUploadModal';
+import { PrivilegeLogView } from '@/components/search-terms/PrivilegeLogView';
+
+export default function SearchTermsPage() {
+  const { caseId } = useParams();
+  const [activeTab, setActiveTab] = useState('discovery');
+  const [rfpModalOpen, setRfpModalOpen] = useState(false);
+  const [complaintModalOpen, setComplaintModalOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleUploadSuccess = () => {
+    setRefreshKey(k => k + 1);
+    setRfpModalOpen(false);
+    setComplaintModalOpen(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <FileText className="w-7 h-7 text-orange-400" />
+            Auto Search Term Generation
+          </h1>
+          <p className="text-gray-400 mt-1">
+            Generate Boolean search terms from discovery requests and complaints
+          </p>
+        </div>
+      </div>
+
+      {/* Main Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-gray-800 border-gray-700">
+          <TabsTrigger value="discovery" className="data-[state=active]:bg-orange-500">
+            <Scale className="w-4 h-4 mr-2" />
+            Discovery Response
+          </TabsTrigger>
+          <TabsTrigger value="case-proving" className="data-[state=active]:bg-orange-500">
+            <FileText className="w-4 h-4 mr-2" />
+            Prove Your Case
+          </TabsTrigger>
+          <TabsTrigger value="privilege" className="data-[state=active]:bg-orange-500">
+            <Shield className="w-4 h-4 mr-2" />
+            Privilege Log
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Discovery Tab */}
+        <TabsContent value="discovery" className="mt-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  Requests for Production Analysis
+                </h2>
+                <p className="text-sm text-gray-400">
+                  Upload opposing counsel's RFPs to auto-generate search terms per request
+                </p>
+              </div>
+              <Button 
+                onClick={() => setRfpModalOpen(true)}
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload RFP Document
+              </Button>
+            </div>
+
+            <SearchTermSetsList 
+              key={`rfp-${refreshKey}`}
+              caseId={caseId!} 
+              sourceType="rfp"
+              emptyMessage="No RFP documents analyzed yet. Upload a Request for Production to get started."
+            />
+          </div>
+        </TabsContent>
+
+        {/* Case Proving Tab */}
+        <TabsContent value="case-proving" className="mt-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  Complaint Analysis
+                </h2>
+                <p className="text-sm text-gray-400">
+                  Upload a complaint to generate search terms by claim and identify privilege
+                </p>
+              </div>
+              <Button 
+                onClick={() => setComplaintModalOpen(true)}
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload Complaint
+              </Button>
+            </div>
+
+            <SearchTermSetsList 
+              key={`complaint-${refreshKey}`}
+              caseId={caseId!} 
+              sourceType="complaint"
+              emptyMessage="No complaints analyzed yet. Upload a complaint to identify claims and generate search terms."
+            />
+          </div>
+        </TabsContent>
+
+        {/* Privilege Log Tab */}
+        <TabsContent value="privilege" className="mt-6">
+          <PrivilegeLogView caseId={caseId!} />
+        </TabsContent>
+      </Tabs>
+
+      {/* Modals */}
+      <RFPUploadModal
+        open={rfpModalOpen}
+        onOpenChange={setRfpModalOpen}
+        caseId={caseId!}
+        onSuccess={handleUploadSuccess}
+      />
+
+      <ComplaintUploadModal
+        open={complaintModalOpen}
+        onOpenChange={setComplaintModalOpen}
+        caseId={caseId!}
+        onSuccess={handleUploadSuccess}
+      />
+    </div>
+  );
+}
+```
+
+### SearchTermItemView Component (Per RFP/Claim)
+
+```tsx
+// components/search-terms/SearchTermItemView.tsx
+import React, { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { 
+  Play, Edit2, Plus, Trash2, ChevronDown, ChevronUp, 
+  FileSearch, CheckCircle, Loader2, AlertCircle 
+} from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+
+interface SearchTerm {
+  id: string;
+  term: string;
+  type: string;
+  enabled: boolean;
+  aiGenerated: boolean;
+  rationale?: string;
+}
+
+interface SearchTermItemViewProps {
+  item: {
+    id: string;
+    itemNumber: number;
+    itemType: string;
+    fullText: string;
+    summary?: string;
+    causeOfAction?: string;
+    legalElements?: any[];
+    searchTerms: SearchTerm[];
+    combinedBooleanString?: string;
+    executionStatus: string;
+    documentsMatched?: number;
+    isPrivilegeCategory?: boolean;
+  };
+  caseId: string;
+  onUpdate: () => void;
+}
+
+export function SearchTermItemView({ item, caseId, onUpdate }: SearchTermItemViewProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerms, setSearchTerms] = useState<SearchTerm[]>(item.searchTerms);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [newTerm, setNewTerm] = useState('');
+
+  const itemLabel = item.isPrivilegeCategory 
+    ? item.summary 
+    : item.itemType === 'rfp_request' 
+      ? `Request No. ${item.itemNumber}` 
+      : `${item.causeOfAction || `Claim ${item.itemNumber}`}`;
+
+  const toggleTerm = (termId: string) => {
+    setSearchTerms(terms => 
+      terms.map(t => t.id === termId ? { ...t, enabled: !t.enabled } : t)
+    );
+  };
+
+  const updateTerm = (termId: string, newTermText: string) => {
+    setSearchTerms(terms =>
+      terms.map(t => t.id === termId ? { ...t, term: newTermText } : t)
+    );
+  };
+
+  const deleteTerm = (termId: string) => {
+    setSearchTerms(terms => terms.filter(t => t.id !== termId));
+  };
+
+  const addTerm = () => {
+    if (!newTerm.trim()) return;
+    setSearchTerms(terms => [
+      ...terms,
+      {
+        id: crypto.randomUUID(),
+        term: newTerm,
+        type: 'boolean',
+        enabled: true,
+        aiGenerated: false
+      }
+    ]);
+    setNewTerm('');
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const combinedBoolean = searchTerms
+        .filter(t => t.enabled)
+        .map(t => `(${t.term})`)
+        .join(' OR ');
+
+      await fetch(`/api/cases/${caseId}/search-term-sets/${item.id.split('-')[0]}/items/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ searchTerms, combinedBooleanString: combinedBoolean })
+      });
+      
+      setIsEditing(false);
+      onUpdate();
+    } catch (error) {
+      console.error('Failed to save:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExecute = async () => {
+    setIsExecuting(true);
+    try {
+      await fetch(`/api/cases/${caseId}/search-term-sets/${item.id.split('-')[0]}/items/${item.id}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      onUpdate();
+    } catch (error) {
+      console.error('Failed to execute:', error);
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  return (
+    <Card className="bg-gray-800/50 border-gray-700">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-gray-800/80 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {isOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+                <div>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    {item.isPrivilegeCategory && <Badge variant="outline" className="bg-red-500/20 text-red-400 border-red-500/30">Privilege</Badge>}
+                    {itemLabel}
+                  </CardTitle>
+                  {item.summary && !item.isPrivilegeCategory && (
+                    <p className="text-sm text-gray-400 mt-1">{item.summary}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {item.executionStatus === 'completed' && (
+                  <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    {item.documentsMatched} docs matched
+                  </Badge>
+                )}
+                <Badge variant="outline" className="bg-gray-600/50 text-gray-300 border-gray-500">
+                  {searchTerms.filter(t => t.enabled).length} active terms
+                </Badge>
+              </div>
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <CardContent className="border-t border-gray-700 pt-4 space-y-4">
+            {/* Full Text of Request/Claim */}
+            <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+              <h4 className="text-sm font-medium text-gray-400 mb-2">
+                {item.itemType === 'rfp_request' ? 'Full Request Text' : 'Claim Text'}
+              </h4>
+              <p className="text-white text-sm whitespace-pre-wrap">{item.fullText}</p>
+            </div>
+
+            {/* Legal Elements (for complaints) */}
+            {item.legalElements && item.legalElements.length > 0 && (
+              <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                <h4 className="text-sm font-medium text-gray-400 mb-2">Legal Elements to Prove</h4>
+                <ul className="space-y-2">
+                  {item.legalElements.map((el: any, idx: number) => (
+                    <li key={idx} className="text-sm text-gray-300">
+                      <span className="font-medium text-white">{idx + 1}. {el.element}:</span>{' '}
+                      {el.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Search Terms */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-gray-400">
+                  Boolean Search Terms
+                </h4>
+                <div className="flex gap-2">
+                  {isEditing ? (
+                    <>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => {
+                          setSearchTerms(item.searchTerms);
+                          setIsEditing(false);
+                        }}
+                        className="border-gray-600"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        size="sm"
+                        onClick={handleSave}
+                        disabled={isSaving}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => setIsEditing(true)}
+                      className="border-gray-600"
+                    >
+                      <Edit2 className="w-4 h-4 mr-2" />
+                      Edit Terms
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {searchTerms.map((term) => (
+                  <div 
+                    key={term.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border ${
+                      term.enabled 
+                        ? 'bg-gray-900/30 border-gray-600' 
+                        : 'bg-gray-900/10 border-gray-700 opacity-60'
+                    }`}
+                  >
+                    <Switch
+                      checked={term.enabled}
+                      onCheckedChange={() => toggleTerm(term.id)}
+                      disabled={!isEditing}
+                    />
+                    <div className="flex-1 min-w-0">
+                      {isEditing ? (
+                        <Input
+                          value={term.term}
+                          onChange={(e) => updateTerm(term.id, e.target.value)}
+                          className="bg-gray-800 border-gray-600 text-white font-mono text-sm"
+                        />
+                      ) : (
+                        <code className="text-sm text-green-400 font-mono break-all">
+                          {term.term}
+                        </code>
+                      )}
+                      {term.rationale && (
+                        <p className="text-xs text-gray-500 mt-1">{term.rationale}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {term.aiGenerated && (
+                        <Badge variant="outline" className="text-xs bg-purple-500/20 text-purple-400 border-purple-500/30">
+                          AI
+                        </Badge>
+                      )}
+                      {isEditing && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => deleteTerm(term.id)}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Add new term */}
+                {isEditing && (
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      value={newTerm}
+                      onChange={(e) => setNewTerm(e.target.value)}
+                      placeholder="Add custom Boolean search term..."
+                      className="bg-gray-800 border-gray-600 text-white font-mono text-sm"
+                      onKeyDown={(e) => e.key === 'Enter' && addTerm()}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={addTerm}
+                      disabled={!newTerm.trim()}
+                      className="bg-orange-500 hover:bg-orange-600"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Combined Boolean String Preview */}
+            <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+              <h4 className="text-sm font-medium text-gray-400 mb-2">Combined Search Query</h4>
+              <code className="text-xs text-blue-400 font-mono break-all">
+                {searchTerms.filter(t => t.enabled).map(t => `(${t.term})`).join(' OR ') || 'No terms enabled'}
+              </code>
+            </div>
+
+            {/* Execute Button */}
+            <div className="flex justify-end pt-2">
+              <Button
+                onClick={handleExecute}
+                disabled={isExecuting || searchTerms.filter(t => t.enabled).length === 0}
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                {isExecuting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 mr-2" />
+                    Run Search & Tag Documents
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+}
+```
+
+### PrivilegeLogView Component
+
+```tsx
+// components/search-terms/PrivilegeLogView.tsx
+import React, { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { 
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell 
+} from '@/components/ui/table';
+import { 
+  Download, RefreshCw, FileSpreadsheet, FileText, 
+  Shield, Loader2, CheckCircle, AlertCircle 
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+interface PrivilegeLogEntry {
+  id: string;
+  batesBegin: string;
+  batesEnd: string;
+  documentDate: string;
+  documentType: string;
+  author: string;
+  authorTitle: string;
+  recipients: string[];
+  ccRecipients: string[];
+  privilegeType: string;
+  privilegeDescription: string;
+  logStatus: string;
+  aiConfidence: number;
+}
+
+interface PrivilegeLogViewProps {
+  caseId: string;
+}
+
+const privilegeTypeLabels: Record<string, string> = {
+  'attorney_client': 'Attorney-Client',
+  'work_product': 'Work Product (Fact)',
+  'work_product_opinion': 'Work Product (Opinion)',
+  'common_interest': 'Common Interest',
+  'joint_defense': 'Joint Defense',
+  'deliberative_process': 'Deliberative Process',
+  'other': 'Other'
+};
+
+const privilegeTypeColors: Record<string, string> = {
+  'attorney_client': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  'work_product': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  'work_product_opinion': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  'joint_defense': 'bg-green-500/20 text-green-400 border-green-500/30',
+  'common_interest': 'bg-green-500/20 text-green-400 border-green-500/30',
+  'deliberative_process': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  'other': 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+};
+
+export function PrivilegeLogView({ caseId }: PrivilegeLogViewProps) {
+  const [entries, setEntries] = useState<PrivilegeLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    fetchLog();
+  }, [caseId]);
+
+  const fetchLog = async () => {
+    try {
+      const response = await fetch(`/api/cases/${caseId}/privilege-log`);
+      const data = await response.json();
+      setEntries(data.data || []);
+    } catch (error) {
+      console.error('Failed to fetch privilege log:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      await fetch(`/api/cases/${caseId}/privilege-log/generate`, {
+        method: 'POST'
+      });
+      await fetchLog();
+    } catch (error) {
+      console.error('Failed to generate:', error);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleExport = async (format: 'xlsx' | 'csv') => {
+    setExporting(true);
+    try {
+      const response = await fetch(`/api/cases/${caseId}/privilege-log/export?format=${format}`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `privilege-log.${format}`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export:', error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <Shield className="w-5 h-5 text-red-400" />
+            Privilege Log
+          </h2>
+          <p className="text-sm text-gray-400">
+            {entries.length} privileged document{entries.length !== 1 ? 's' : ''} identified
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleGenerate}
+            disabled={generating}
+            className="border-gray-600"
+          >
+            {generating ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
+            Generate from Tags
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                className="bg-orange-500 hover:bg-orange-600"
+                disabled={entries.length === 0 || exporting}
+              >
+                {exporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="bg-gray-800 border-gray-700">
+              <DropdownMenuItem 
+                onClick={() => handleExport('xlsx')}
+                className="text-gray-200 hover:bg-gray-700"
+              >
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Export as Excel (.xlsx)
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => handleExport('csv')}
+                className="text-gray-200 hover:bg-gray-700"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Export as CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900/50">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-gray-700 hover:bg-transparent">
+                <TableHead className="text-gray-400 w-28">Bates Range</TableHead>
+                <TableHead className="text-gray-400 w-24">Date</TableHead>
+                <TableHead className="text-gray-400 w-24">Type</TableHead>
+                <TableHead className="text-gray-400">Author</TableHead>
+                <TableHead className="text-gray-400">Recipients</TableHead>
+                <TableHead className="text-gray-400 w-36">Privilege</TableHead>
+                <TableHead className="text-gray-400">Description</TableHead>
+                <TableHead className="text-gray-400 w-24">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-gray-500 py-8">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+                  </TableCell>
+                </TableRow>
+              ) : entries.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-gray-500 py-8">
+                    No privileged documents logged yet. Run privilege searches and click "Generate from Tags" to populate.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                entries.map((entry) => (
+                  <TableRow key={entry.id} className="border-gray-700 hover:bg-gray-800/50">
+                    <TableCell className="font-mono text-sm text-white">
+                      {entry.batesBegin}
+                      {entry.batesEnd && entry.batesEnd !== entry.batesBegin && (
+                        <> - {entry.batesEnd}</>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-gray-300 text-sm">
+                      {entry.documentDate || '-'}
+                    </TableCell>
+                    <TableCell className="text-gray-300 text-sm">
+                      {entry.documentType || '-'}
+                    </TableCell>
+                    <TableCell className="text-white text-sm">
+                      {entry.author || '-'}
+                      {entry.authorTitle && (
+                        <span className="text-gray-500 text-xs block">{entry.authorTitle}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-gray-300 text-sm max-w-[200px] truncate">
+                      {entry.recipients?.join('; ') || '-'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge 
+                        variant="outline" 
+                        className={privilegeTypeColors[entry.privilegeType] || privilegeTypeColors.other}
+                      >
+                        {privilegeTypeLabels[entry.privilegeType] || entry.privilegeType}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-gray-300 text-sm max-w-[300px]">
+                      {entry.privilegeDescription}
+                    </TableCell>
+                    <TableCell>
+                      <Badge 
+                        variant="outline"
+                        className={
+                          entry.logStatus === 'final' 
+                            ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                            : entry.logStatus === 'reviewed'
+                            ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                            : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                        }
+                      >
+                        {entry.logStatus}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Navigation Integration
+
+Add a new menu item under the Investigations section:
+
+```tsx
+// Update sidebar navigation
+{
+  icon: FileSearch,
+  label: 'Search Term Generator',
+  href: `/cases/${caseId}/search-terms`,
+}
+```
+
+Or add as a new tab in the case detail view between existing tabs.
+
+---
+
+## Implementation Checklist
+
+### Database
+- [ ] Add database migration for search_term_sets table
+- [ ] Add database migration for search_term_items table  
+- [ ] Add database migration for document_search_tags table
+- [ ] Add database migration for privilege_log_entries table
+- [ ] Create Drizzle schema files
+
+### Services
+- [ ] Implement RFPParserService with Gemini integration
+- [ ] Implement ComplaintParserService with legal elements extraction
+- [ ] Implement PrivilegeDetectionService
+- [ ] Implement BooleanSearchService with PostgreSQL tsquery
+
+### API Routes
+- [ ] Implement search term set CRUD endpoints
+- [ ] Implement RFP upload and processing endpoint
+- [ ] Implement complaint upload and processing endpoint
+- [ ] Implement search execution endpoint
+- [ ] Implement privilege log endpoints
+- [ ] Implement Excel/CSV export for privilege log
+
+### React Components
+- [ ] Create SearchTermsPage with tabs
+- [ ] Create SearchTermSetsList component
+- [ ] Create SearchTermItemView with editable terms
+- [ ] Create RFPUploadModal
+- [ ] Create ComplaintUploadModal
+- [ ] Create PrivilegeLogView with export buttons
+
+### Integration
+- [ ] Connect to existing document storage/review system
+- [ ] Add full-text search vectors to documents if not present
+- [ ] Integrate tagging with document review UI
+- [ ] Add navigation link to case sidebar
+
+---
+
+## Future Enhancements
+
+1. **Saved Search Templates**: Save frequently used Boolean patterns
+2. **Search Term Analytics**: Track which terms find the most responsive docs
+3. **Batch RFP Processing**: Handle multiple RFP sets from different parties
+4. **Privilege Waiver Detection**: Flag potential waiver situations
+5. **Redaction Automation**: Auto-suggest redactions for privileged content
+6. **Integration with Court ECF**: Auto-generate privilege logs in court formats
+7. **Machine Learning Refinement**: Learn from user edits to improve suggestions
