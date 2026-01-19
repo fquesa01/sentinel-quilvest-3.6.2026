@@ -11322,3 +11322,255 @@ export const peDealDocumentsRelations = relations(peDealDocuments, ({ one }) => 
     references: [users.id],
   }),
 }));
+
+// =============================================
+// AUTO SEARCH TERM GENERATION FEATURE
+// =============================================
+
+// Enums for search term generation
+export const searchTermSourceTypeEnum = pgEnum("search_term_source_type", [
+  "rfp",
+  "complaint",
+  "subpoena",
+  "interrogatory",
+  "manual"
+]);
+
+export const searchTermItemTypeEnum = pgEnum("search_term_item_type", [
+  "rfp_request",
+  "complaint_claim",
+  "privilege_category",
+  "custom"
+]);
+
+export const searchTermGenerationStatusEnum = pgEnum("search_term_generation_status", [
+  "pending",
+  "processing",
+  "completed",
+  "failed"
+]);
+
+export const searchTermExecutionStatusEnum = pgEnum("search_term_execution_status", [
+  "pending",
+  "running",
+  "completed",
+  "failed"
+]);
+
+export const documentTagSourceEnum = pgEnum("document_tag_source", [
+  "search_term",
+  "ai_review",
+  "manual",
+  "privilege_scan"
+]);
+
+export const documentTagReviewStatusEnum = pgEnum("document_tag_review_status", [
+  "pending",
+  "confirmed",
+  "rejected",
+  "needs_review"
+]);
+
+export const privilegeLogTypeEnum = pgEnum("privilege_log_type", [
+  "attorney_client",
+  "work_product",
+  "work_product_opinion",
+  "common_interest",
+  "joint_defense",
+  "deliberative_process",
+  "other"
+]);
+
+export const privilegeLogStatusEnum = pgEnum("privilege_log_status", [
+  "draft",
+  "reviewed",
+  "final",
+  "challenged"
+]);
+
+// Search Term Sets - Parent container for a set of generated terms
+export const searchTermSets = pgTable("search_term_sets", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id")
+    .references(() => cases.id, { onDelete: "cascade" })
+    .notNull(),
+  sourceType: searchTermSourceTypeEnum("source_type").notNull(),
+  sourceDocumentId: varchar("source_document_id")
+    .references(() => courtPleadings.id),
+  sourceDocumentName: text("source_document_name"),
+  name: text("name").notNull(),
+  description: text("description"),
+  generationStatus: searchTermGenerationStatusEnum("generation_status").default("pending"),
+  generationError: text("generation_error"),
+  totalRequests: integer("total_requests").default(0),
+  lastExecutedAt: timestamp("last_executed_at"),
+  documentsSearched: integer("documents_searched").default(0),
+  documentsTagged: integer("documents_tagged").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+  updatedBy: varchar("updated_by").references(() => users.id),
+});
+
+// Search Term Items - Individual RFP requests or complaint claims with their search terms
+export const searchTermItems = pgTable("search_term_items", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  searchTermSetId: varchar("search_term_set_id")
+    .references(() => searchTermSets.id, { onDelete: "cascade" })
+    .notNull(),
+  itemNumber: integer("item_number").notNull(),
+  itemType: searchTermItemTypeEnum("item_type").notNull(),
+  fullText: text("full_text").notNull(),
+  summary: text("summary"),
+  causeOfAction: text("cause_of_action"),
+  legalElements: jsonb("legal_elements"),
+  searchTerms: jsonb("search_terms").notNull().default([]),
+  combinedBooleanString: text("combined_boolean_string"),
+  executionStatus: searchTermExecutionStatusEnum("execution_status").default("pending"),
+  lastExecutedAt: timestamp("last_executed_at"),
+  documentsMatched: integer("documents_matched").default(0),
+  isPrivilegeCategory: boolean("is_privilege_category").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Document Search Tags - Results of search execution (tagged documents)
+export const documentSearchTags = pgTable("document_search_tags", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id")
+    .references(() => cases.id, { onDelete: "cascade" })
+    .notNull(),
+  documentId: varchar("document_id").notNull(),
+  searchTermItemId: varchar("search_term_item_id")
+    .references(() => searchTermItems.id, { onDelete: "set null" }),
+  tagSource: documentTagSourceEnum("tag_source").notNull(),
+  tagName: text("tag_name").notNull(),
+  tagCategory: varchar("tag_category", { length: 50 }),
+  tagColor: varchar("tag_color", { length: 7 }).default("#6B7280"),
+  matchedTerms: text("matched_terms").array(),
+  matchSnippets: jsonb("match_snippets"),
+  confidenceScore: integer("confidence_score"),
+  reviewStatus: documentTagReviewStatusEnum("review_status").default("pending"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Privilege Log Entries
+export const privilegeLogEntries = pgTable("privilege_log_entries", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id")
+    .references(() => cases.id, { onDelete: "cascade" })
+    .notNull(),
+  documentId: varchar("document_id").notNull(),
+  documentTagId: varchar("document_tag_id")
+    .references(() => documentSearchTags.id),
+  batesBegin: text("bates_begin"),
+  batesEnd: text("bates_end"),
+  documentDate: date("document_date"),
+  documentType: text("document_type"),
+  author: text("author"),
+  authorTitle: text("author_title"),
+  recipients: text("recipients").array(),
+  ccRecipients: text("cc_recipients").array(),
+  privilegeType: privilegeLogTypeEnum("privilege_type").notNull(),
+  privilegeDescription: text("privilege_description").notNull(),
+  aiPrivilegeBasis: text("ai_privilege_basis"),
+  aiConfidence: integer("ai_confidence"),
+  logStatus: privilegeLogStatusEnum("log_status").default("draft"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Relations for Search Term Sets
+export const searchTermSetsRelations = relations(searchTermSets, ({ one, many }) => ({
+  case: one(cases, {
+    fields: [searchTermSets.caseId],
+    references: [cases.id],
+  }),
+  sourceDocument: one(courtPleadings, {
+    fields: [searchTermSets.sourceDocumentId],
+    references: [courtPleadings.id],
+  }),
+  createdByUser: one(users, {
+    fields: [searchTermSets.createdBy],
+    references: [users.id],
+  }),
+  items: many(searchTermItems),
+}));
+
+export const searchTermItemsRelations = relations(searchTermItems, ({ one, many }) => ({
+  searchTermSet: one(searchTermSets, {
+    fields: [searchTermItems.searchTermSetId],
+    references: [searchTermSets.id],
+  }),
+  documentTags: many(documentSearchTags),
+}));
+
+export const documentSearchTagsRelations = relations(documentSearchTags, ({ one }) => ({
+  case: one(cases, {
+    fields: [documentSearchTags.caseId],
+    references: [cases.id],
+  }),
+  searchTermItem: one(searchTermItems, {
+    fields: [documentSearchTags.searchTermItemId],
+    references: [searchTermItems.id],
+  }),
+  reviewedByUser: one(users, {
+    fields: [documentSearchTags.reviewedBy],
+    references: [users.id],
+  }),
+}));
+
+export const privilegeLogEntriesRelations = relations(privilegeLogEntries, ({ one }) => ({
+  case: one(cases, {
+    fields: [privilegeLogEntries.caseId],
+    references: [cases.id],
+  }),
+  documentTag: one(documentSearchTags, {
+    fields: [privilegeLogEntries.documentTagId],
+    references: [documentSearchTags.id],
+  }),
+  reviewedByUser: one(users, {
+    fields: [privilegeLogEntries.reviewedBy],
+    references: [users.id],
+  }),
+}));
+
+// Types for Search Term Generation
+export type SearchTermSet = typeof searchTermSets.$inferSelect;
+export type InsertSearchTermSet = typeof searchTermSets.$inferInsert;
+export type SearchTermItem = typeof searchTermItems.$inferSelect;
+export type InsertSearchTermItem = typeof searchTermItems.$inferInsert;
+export type DocumentSearchTag = typeof documentSearchTags.$inferSelect;
+export type InsertDocumentSearchTag = typeof documentSearchTags.$inferInsert;
+export type PrivilegeLogEntry = typeof privilegeLogEntries.$inferSelect;
+export type InsertPrivilegeLogEntry = typeof privilegeLogEntries.$inferInsert;
+
+// Search Term interface for JSONB field
+export interface SearchTerm {
+  id: string;
+  term: string;
+  type: "boolean" | "phrase" | "proximity" | "wildcard";
+  enabled: boolean;
+  aiGenerated: boolean;
+  rationale?: string;
+}
+
+// Legal Element interface for complaint claims
+export interface LegalElement {
+  element: string;
+  description: string;
+  searchTerms: SearchTerm[];
+}

@@ -46,6 +46,8 @@ import { RedactionService } from "./services/redaction-service";
 import { PrivilegeLogService } from "./services/privilege-log-service";
 import { ProcessingJobsService } from "./services/processing-jobs-service";
 import { registerPEDealIntelligenceRoutes } from "./routes-pe-intelligence";
+import { registerSearchTermsRoutes } from "./routes/search-terms-routes";
+import { registerPrivilegeLogRoutes } from "./routes/privilege-log-routes";
 import { secEdgarApi } from "./services/sec-edgar-api";
 import { corporateResearchApi } from "./services/corporate-research-api";
 import recordedStatementsRouter from "./routes/recorded-statements";
@@ -297,6 +299,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register PE deal intelligence routes
   registerPEDealIntelligenceRoutes(app, isAuthenticated, requireRole, logAction);
+  registerSearchTermsRoutes(app);
+  registerPrivilegeLogRoutes(app);
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
