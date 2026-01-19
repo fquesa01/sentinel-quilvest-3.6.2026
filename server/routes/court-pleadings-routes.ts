@@ -161,6 +161,61 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
     }
   });
 
+  // Get court pleading preview/metadata
+  app.get("/api/court-pleadings/:id/preview", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      const [pleading] = await db
+        .select()
+        .from(courtPleadings)
+        .where(eq(courtPleadings.id, id))
+        .limit(1);
+      
+      if (!pleading) {
+        return res.status(404).json({ message: "Court pleading not found" });
+      }
+      
+      // Determine preview type based on file type
+      let previewType: 'pdf' | 'image' | 'text' | 'unsupported' = 'unsupported';
+      const fileType = pleading.fileType?.toLowerCase() || '';
+      
+      if (fileType.includes('pdf')) {
+        previewType = 'pdf';
+      } else if (fileType.includes('image') || fileType.includes('png') || fileType.includes('jpeg') || fileType.includes('jpg')) {
+        previewType = 'image';
+      } else if (fileType.includes('text') || fileType.includes('plain')) {
+        previewType = 'text';
+      } else if (fileType.includes('word') || fileType.includes('document')) {
+        // Word docs - we have extracted text
+        previewType = 'text';
+      }
+      
+      // Use download endpoint as preview URL (works for both PDFs and images)
+      const previewUrl = pleading.storagePath ? `/api/court-pleadings/${id}/download` : '';
+      
+      res.json({
+        id: pleading.id,
+        title: pleading.title,
+        fileName: pleading.fileName,
+        fileType: pleading.fileType,
+        fileSize: pleading.fileSize,
+        filingDate: pleading.filingDate,
+        filingParty: pleading.filingParty,
+        filingStatus: pleading.filingStatus,
+        pleadingType: pleading.pleadingType,
+        extractedText: pleading.extractedText,
+        isIndexed: pleading.isIndexed,
+        createdAt: pleading.createdAt,
+        previewType,
+        previewUrl,
+      });
+    } catch (error) {
+      console.error("[CourtPleadings] Error getting preview:", error);
+      res.status(500).json({ message: "Failed to get court pleading preview" });
+    }
+  });
+
   // Download a court pleading
   app.get("/api/court-pleadings/:id/download", isAuthenticated, async (req: Request, res: Response) => {
     try {

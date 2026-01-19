@@ -19,8 +19,10 @@ import {
   X,
   Pencil,
   Scale,
-  Gavel
+  Gavel,
+  Eye
 } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 
@@ -45,6 +47,23 @@ interface CourtPleading {
 
 interface CourtDocketTabProps {
   caseId: string;
+}
+
+interface PreviewMetadata {
+  id: string;
+  title: string;
+  fileName: string;
+  fileType: string | null;
+  fileSize: number | null;
+  filingDate: string | null;
+  filingParty: string | null;
+  filingStatus: string | null;
+  pleadingType: string;
+  extractedText: string | null;
+  isIndexed: boolean;
+  createdAt: string;
+  previewType: 'pdf' | 'image' | 'text' | 'unsupported';
+  previewUrl: string;
 }
 
 const filingPartyOptions = [
@@ -104,6 +123,26 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
     filingParty: "plaintiff",
     filingStatus: "court_filing",
     file: null as File | null,
+  });
+  
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  
+  const handlePreview = useCallback((pleading: CourtPleading) => {
+    setPreviewId(pleading.id);
+    setIsPreviewOpen(true);
+  }, []);
+  
+  const { data: previewMetadata, isLoading: isPreviewLoading } = useQuery<PreviewMetadata>({
+    queryKey: ["/api/court-pleadings", previewId, "preview"],
+    queryFn: async () => {
+      const res = await fetch(`/api/court-pleadings/${previewId}/preview`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to load preview");
+      return res.json();
+    },
+    enabled: !!previewId && isPreviewOpen,
   });
 
   const { data: pleadings = [], isLoading } = useQuery<CourtPleading[]>({
@@ -443,6 +482,15 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
                           <Button
                             variant="ghost"
                             size="icon"
+                            onClick={() => handlePreview(pleading)}
+                            title="View document"
+                            data-testid={`button-view-${pleading.id}`}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => startEdit(pleading)}
                             title="Edit entry"
                             data-testid={`button-edit-${pleading.id}`}
@@ -627,6 +675,128 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Document Preview Dialog */}
+      <Dialog open={isPreviewOpen} onOpenChange={(open) => {
+        setIsPreviewOpen(open);
+        if (!open) setPreviewId(null);
+      }}>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col" data-testid="dialog-document-preview">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              {previewMetadata?.title || "Document Preview"}
+            </DialogTitle>
+            {previewMetadata && (
+              <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                <span>{previewMetadata.fileName}</span>
+                {previewMetadata.fileSize && (
+                  <span>{(previewMetadata.fileSize / 1024).toFixed(1)} KB</span>
+                )}
+                {previewMetadata.filingDate && (
+                  <span>Filed: {format(new Date(previewMetadata.filingDate), "MMM d, yyyy")}</span>
+                )}
+                {previewMetadata.filingParty && (
+                  <Badge 
+                    variant="secondary" 
+                    className={`text-xs ${filingPartyColors[previewMetadata.filingParty] || ""}`}
+                  >
+                    {filingPartyOptions.find(o => o.value === previewMetadata.filingParty)?.label}
+                  </Badge>
+                )}
+              </div>
+            )}
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-hidden border rounded-lg bg-muted/20">
+            {isPreviewLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <p className="ml-2 text-muted-foreground">Loading preview...</p>
+              </div>
+            ) : previewMetadata?.previewType === 'pdf' && previewMetadata.previewUrl ? (
+              previewMetadata.extractedText ? (
+                <ScrollArea className="h-full">
+                  <div className="p-6">
+                    <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground border-b pb-2">
+                      <FileText className="h-4 w-4" />
+                      <span>Extracted text from PDF</span>
+                    </div>
+                    <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                      {previewMetadata.extractedText}
+                    </pre>
+                  </div>
+                </ScrollArea>
+              ) : (
+                <object
+                  data={previewMetadata.previewUrl}
+                  type="application/pdf"
+                  className="w-full h-full"
+                  title={previewMetadata.fileName}
+                >
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <FileText className="h-16 w-16 text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-medium mb-2">PDF Preview Unavailable</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Your browser may not support inline PDF viewing.</p>
+                    <Button onClick={() => previewMetadata && window.open(`/api/court-pleadings/${previewMetadata.id}/download`, "_blank")}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download PDF
+                    </Button>
+                  </div>
+                </object>
+              )
+            ) : previewMetadata?.previewType === 'image' && previewMetadata.previewUrl ? (
+              <div className="flex items-center justify-center h-full p-4">
+                <img 
+                  src={previewMetadata.previewUrl} 
+                  alt={previewMetadata.fileName}
+                  className="max-w-full max-h-full object-contain"
+                />
+              </div>
+            ) : previewMetadata?.extractedText ? (
+              <ScrollArea className="h-full">
+                <div className="p-6">
+                  <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground border-b pb-2">
+                    <FileText className="h-4 w-4" />
+                    <span>Document content</span>
+                  </div>
+                  <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                    {previewMetadata.extractedText}
+                  </pre>
+                </div>
+              </ScrollArea>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full">
+                <FileText className="h-16 w-16 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">Preview Not Available</h3>
+                <p className="text-sm text-muted-foreground mb-4">This document type cannot be previewed in the browser.</p>
+                {previewMetadata && (
+                  <Button onClick={() => window.open(`/api/court-pleadings/${previewMetadata.id}/download`, "_blank")}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Document
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="flex-shrink-0 mt-4">
+            {previewMetadata && (
+              <Button 
+                variant="outline" 
+                onClick={() => window.open(`/api/court-pleadings/${previewMetadata.id}/download`, "_blank")}
+                data-testid="button-download-from-preview"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
+            )}
+            <Button onClick={() => setIsPreviewOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
