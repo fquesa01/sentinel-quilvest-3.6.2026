@@ -152,6 +152,7 @@ export function EvidenceTab({ caseId, documents = [], isLoading, onViewDocument,
   const [showResponsiveOnly, setShowResponsiveOnly] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [isRetryingFailed, setIsRetryingFailed] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [previewDocument, setPreviewDocument] = useState<Document | null>(null);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
@@ -323,6 +324,45 @@ export function EvidenceTab({ caseId, documents = [], isLoading, onViewDocument,
       });
     } finally {
       setIsReprocessing(false);
+    }
+  };
+
+  // Retry failed uploads (for files that failed due to extraction errors)
+  const handleRetryFailed = async () => {
+    setIsRetryingFailed(true);
+    try {
+      const response = await apiRequest("POST", `/api/cases/${caseId}/retry-failed-uploads`);
+      const result = await response.json();
+      
+      if (result.succeeded > 0) {
+        toast({
+          title: "Retry successful",
+          description: `${result.succeeded} of ${result.retried} files processed successfully. ${result.stillFailed > 0 ? `${result.stillFailed} still failed.` : ''}`,
+        });
+        // Refresh data
+        queryClient.invalidateQueries({ queryKey: ["/api/communications"] });
+        queryClient.invalidateQueries({ queryKey: [`/api/cases/${caseId}/uploaded-files`] });
+      } else if (result.retried === 0) {
+        toast({
+          title: "No files to retry",
+          description: result.totalFailed > 0 ? `${result.totalFailed} failed files don't have valid file paths for retry.` : "No failed files found.",
+        });
+      } else {
+        toast({
+          title: "Retry complete",
+          description: `${result.stillFailed} files still failed. Check error messages for details.`,
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("Retry failed error:", error);
+      toast({
+        title: "Retry failed",
+        description: error?.message || "Failed to retry uploads",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRetryingFailed(false);
     }
   };
 
@@ -769,6 +809,24 @@ export function EvidenceTab({ caseId, documents = [], isLoading, onViewDocument,
                     <>
                       <RefreshCw className="h-4 w-4 mr-2" />
                       Reprocess Files
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleRetryFailed}
+                  disabled={isRetryingFailed}
+                  data-testid="button-retry-failed"
+                >
+                  {isRetryingFailed ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Retrying...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry Failed
                     </>
                   )}
                 </Button>

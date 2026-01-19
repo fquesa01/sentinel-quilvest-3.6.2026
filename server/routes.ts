@@ -3334,6 +3334,150 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
+
+  // Retry failed uploads for a case
+  app.post("/api/cases/:caseId/retry-failed-uploads", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+    try {
+      const { caseId } = req.params;
+      
+      // Verify case exists
+      const caseData = await storage.getCase(caseId);
+      if (!caseData) {
+        return res.status(404).json({ message: "Case not found" });
+      }
+      
+      // Get all ingestion files with "failed" status for this case
+      const failedFiles = await db.select({
+        id: schema.ingestionFiles.id,
+        fileName: schema.ingestionFiles.fileName,
+        fileType: schema.ingestionFiles.fileType,
+        objectStoragePath: schema.ingestionFiles.objectStoragePath,
+        jobId: schema.ingestionFiles.jobId,
+      })
+      .from(schema.ingestionFiles)
+      .innerJoin(schema.ingestionJobs, eq(schema.ingestionFiles.jobId, schema.ingestionJobs.id))
+      .where(
+        and(
+          eq(schema.ingestionJobs.caseId, caseId),
+          eq(schema.ingestionFiles.status, 'failed')
+        )
+      );
+      
+      // Filter out files without valid storage paths
+      const retryableFiles = failedFiles.filter(f => f.objectStoragePath && f.objectStoragePath !== 'failed');
+      
+      console.log(`[Routes] Found ${failedFiles.length} failed files, ${retryableFiles.length} retryable for case ${caseId}`);
+      
+      if (retryableFiles.length === 0) {
+        return res.json({
+          message: "No retryable failed files found",
+          totalFailed: failedFiles.length,
+          retried: 0,
+          succeeded: 0,
+          stillFailed: 0,
+        });
+      }
+      
+      const { processFile } = await import("./fileProcessor");
+      
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+      
+      // Process files in batches
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < retryableFiles.length; i += BATCH_SIZE) {
+        const batch = retryableFiles.slice(i, i + BATCH_SIZE);
+        
+        for (const file of batch) {
+          try {
+            // Reset status to processing
+            await db.update(schema.ingestionFiles)
+              .set({
+                status: "processing",
+                errorMessage: null,
+                processingStartedAt: new Date(),
+              })
+              .where(eq(schema.ingestionFiles.id, file.id));
+            
+            const result = await processFile(
+              file.id,
+              file.fileName,
+              file.fileType || 'pdf',
+              file.objectStoragePath,
+              caseId
+            );
+            
+            // Update the ingestion file record with success results
+            await db.update(schema.ingestionFiles)
+              .set({
+                status: "completed",
+                communicationsExtracted: result.communicationsCreated,
+                alertsCreated: result.alertsGenerated,
+                processingCompletedAt: new Date(),
+                errorMessage: null,
+              })
+              .where(eq(schema.ingestionFiles.id, file.id));
+            
+            successCount++;
+            console.log(`[Routes] Retry succeeded for ${file.fileName}`);
+          } catch (fileError: any) {
+            errorCount++;
+            errors.push(`${file.fileName}: ${fileError.message}`);
+            console.error(`[Routes] Retry failed for ${file.fileName}:`, fileError.message);
+            
+            // Update with new error
+            await db.update(schema.ingestionFiles)
+              .set({
+                status: "failed",
+                errorMessage: fileError.message,
+                processingCompletedAt: new Date(),
+              })
+              .where(eq(schema.ingestionFiles.id, file.id));
+          }
+        }
+        
+        console.log(`[Routes] Retry batch ${Math.floor(i/BATCH_SIZE) + 1} complete: ${successCount} succeeded, ${errorCount} failed`);
+      }
+      
+      // Update parent job statuses if all files in a job are now completed
+      const jobIds = [...new Set(retryableFiles.map(f => f.jobId))];
+      for (const jobId of jobIds) {
+        const jobFiles = await db.select({ status: schema.ingestionFiles.status })
+          .from(schema.ingestionFiles)
+          .where(eq(schema.ingestionFiles.jobId, jobId));
+        
+        const allCompleted = jobFiles.every(f => f.status === 'completed');
+        const anyFailed = jobFiles.some(f => f.status === 'failed');
+        
+        await db.update(schema.ingestionJobs)
+          .set({
+            status: allCompleted ? 'completed' : anyFailed ? 'completed_with_errors' : 'processing',
+          })
+          .where(eq(schema.ingestionJobs.id, jobId));
+      }
+      
+      res.json({
+        message: `Retried ${retryableFiles.length} failed files`,
+        totalFailed: failedFiles.length,
+        retried: retryableFiles.length,
+        succeeded: successCount,
+        stillFailed: errorCount,
+        errorDetails: errors.slice(0, 10),
+      });
+      
+      await logAction(req, "retry_failed_uploads", "case", caseId, {
+        totalRetried: retryableFiles.length,
+        succeeded: successCount,
+        failed: errorCount,
+      });
+      
+    } catch (error: any) {
+      console.error("Error retrying failed uploads:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Get ingested chat messages (with optional case filtering and access control)
   app.get("/api/chats", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
     try {

@@ -174,10 +174,10 @@ export interface FileProcessingResult {
 
 // Process a PDF file
 async function processPDFFile(buffer: Buffer, fileName: string): Promise<ProcessedEmail> {
-  const { PDFParse } = await import("pdf-parse");
+  // @ts-ignore - pdf-parse doesn't have type definitions
+  const pdfParse = (await import("pdf-parse")).default;
   
-  const parser = new PDFParse({ buffer });
-  const result = await parser.getText();
+  const result = await pdfParse(buffer);
   
   // Extract filename without extension for subject
   const fileNameWithoutExt = fileName.replace(/\.pdf$/i, '');
@@ -189,7 +189,7 @@ async function processPDFFile(buffer: Buffer, fileName: string): Promise<Process
     recipients: [],
     timestamp: new Date(),
     metadata: {
-      pages: result.pages,
+      numpages: result.numpages,
     },
   };
 }
