@@ -20,7 +20,8 @@ import {
   Pencil,
   Scale,
   Gavel,
-  Eye
+  Eye,
+  RefreshCw
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiRequest } from "@/lib/queryClient";
@@ -231,6 +232,27 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
     onError: (error: Error) => {
       toast({
         title: "Delete Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const reextractMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("POST", `/api/court-pleadings/${id}/reextract`);
+    },
+    onSuccess: (data: { success: boolean; extractedLength: number; message: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "court-pleadings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/court-pleadings", previewId, "preview"] });
+      toast({
+        title: "Text Re-extracted",
+        description: data.message || "Document text has been re-extracted successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Re-extraction Failed",
         description: error.message,
         variant: "destructive",
       });
@@ -780,16 +802,31 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
             )}
           </div>
           
-          <DialogFooter className="flex-shrink-0 mt-4">
+          <DialogFooter className="flex-shrink-0 mt-4 gap-2">
             {previewMetadata && (
-              <Button 
-                variant="outline" 
-                onClick={() => window.open(`/api/court-pleadings/${previewMetadata.id}/download`, "_blank")}
-                data-testid="button-download-from-preview"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </Button>
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={() => reextractMutation.mutate(previewMetadata.id)}
+                  disabled={reextractMutation.isPending}
+                  data-testid="button-reextract-from-preview"
+                >
+                  {reextractMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Re-extract Text
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => window.open(`/api/court-pleadings/${previewMetadata.id}/download`, "_blank")}
+                  data-testid="button-download-from-preview"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </Button>
+              </>
             )}
             <Button onClick={() => setIsPreviewOpen(false)}>
               Close

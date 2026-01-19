@@ -246,6 +246,88 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
     }
   });
 
+  // Re-extract text from existing court pleading
+  app.post("/api/court-pleadings/:id/reextract", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      const [pleading] = await db
+        .select()
+        .from(courtPleadings)
+        .where(eq(courtPleadings.id, id))
+        .limit(1);
+      
+      if (!pleading) {
+        return res.status(404).json({ message: "Court pleading not found" });
+      }
+      
+      if (!pleading.storagePath) {
+        return res.status(400).json({ message: "No file available for re-extraction" });
+      }
+      
+      console.log(`[CourtPleadings] Re-extracting text for pleading ${id}`);
+      
+      const objectStorage = new ObjectStorageService();
+      const fileBuffer = await objectStorage.downloadAsBuffer(pleading.storagePath);
+      
+      let extractedText = "";
+      const fileType = pleading.fileType?.toLowerCase() || '';
+      
+      try {
+        if (fileType.includes('pdf')) {
+          extractedText = await extractPdfTextWithFallback(fileBuffer);
+        } else if (fileType.includes('word') || fileType.includes('document')) {
+          const result = await mammoth.extractRawText({ buffer: fileBuffer });
+          extractedText = result.value;
+        } else if (fileType.includes('text') || fileType.includes('plain')) {
+          extractedText = fileBuffer.toString("utf-8");
+        }
+      } catch (extractError) {
+        console.error("[CourtPleadings] Error re-extracting text:", extractError);
+        return res.status(500).json({ message: "Failed to extract text from document" });
+      }
+      
+      console.log(`[CourtPleadings] Re-extracted ${extractedText.length} characters`);
+      
+      // Update the database with new extracted text
+      const [updated] = await db
+        .update(courtPleadings)
+        .set({ extractedText })
+        .where(eq(courtPleadings.id, id))
+        .returning();
+      
+      // Re-index if we got good text
+      if (extractedText && extractedText.length > 100) {
+        try {
+          await indexDocument({
+            documentId: `court-pleading-${id}`,
+            caseId: pleading.caseId,
+            fileName: `${pleading.title}.txt`,
+            displayName: pleading.title || pleading.fileName || "Court Pleading",
+            content: extractedText,
+            metadata: {
+              documentType: `court_pleading_${pleading.pleadingType}`,
+              subject: pleading.title,
+              date: pleading.filingDate || new Date().toISOString(),
+            }
+          });
+          console.log(`[CourtPleadings] Re-indexed pleading ${id} for RAG`);
+        } catch (indexError) {
+          console.error("[CourtPleadings] Error re-indexing document:", indexError);
+        }
+      }
+      
+      res.json({ 
+        success: true, 
+        extractedLength: extractedText.length,
+        message: `Successfully re-extracted ${extractedText.length} characters`
+      });
+    } catch (error) {
+      console.error("[CourtPleadings] Error re-extracting:", error);
+      res.status(500).json({ message: "Failed to re-extract text" });
+    }
+  });
+
   // Delete a court pleading
   app.delete("/api/court-pleadings/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
