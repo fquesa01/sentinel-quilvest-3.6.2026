@@ -46,6 +46,7 @@ type DocumentSet = {
 import { CaseHeader } from "@/components/case-detail/case-header";
 import { CaseSearchBar } from "@/components/case-detail/case-search-bar";
 import { OverviewTab } from "@/components/case-detail/overview-tab";
+import { CourtDocketTab } from "@/components/case-detail/court-docket-tab";
 import { EvidenceTab } from "@/components/case-detail/evidence-tab";
 import { PartiesTab } from "@/components/case-detail/parties-tab";
 import { CaseInterviewsSection } from "@/components/case-detail/case-interviews-section";
@@ -550,6 +551,9 @@ export default function CaseDetail() {
             <TabsTrigger value="overview" data-testid="tab-overview">
               Overview
             </TabsTrigger>
+            <TabsTrigger value="docket" data-testid="tab-docket">
+              Court Docket
+            </TabsTrigger>
             <TabsTrigger value="evidence" data-testid="tab-evidence">
               Evidence
             </TabsTrigger>
@@ -594,6 +598,10 @@ export default function CaseDetail() {
                 onViewAllInterviews={() => setActiveTab("interviews")}
                 onViewAllAlerts={() => setActiveTab("overview")}
               />
+            </TabsContent>
+
+            <TabsContent value="docket" className="mt-0">
+              <CourtDocketTab caseId={caseId!} />
             </TabsContent>
 
             <TabsContent value="evidence" className="mt-0">

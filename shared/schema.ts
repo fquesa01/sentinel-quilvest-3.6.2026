@@ -9152,6 +9152,20 @@ export const pleadingTypeEnum = pgEnum("pleading_type", [
   "other",
 ]);
 
+// Filing status enum - whether document is a court filing or draft
+export const filingStatusEnum = pgEnum("filing_status", [
+  "court_filing",  // Official court filing
+  "draft",         // Internal draft document
+]);
+
+// Filing party enum - who filed the document
+export const filingPartyEnum = pgEnum("filing_party", [
+  "plaintiff",
+  "defendant",
+  "court",
+  "third_party",
+]);
+
 export const courtPleadings = pgTable("court_pleadings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   caseId: varchar("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }),
@@ -9160,7 +9174,9 @@ export const courtPleadings = pgTable("court_pleadings", {
   title: varchar("title", { length: 500 }).notNull(),
   pleadingType: pleadingTypeEnum("pleading_type").default("other"),
   filingDate: timestamp("filing_date"),
-  filedBy: varchar("filed_by", { length: 255 }),  // Party who filed
+  filedBy: varchar("filed_by", { length: 255 }),  // Party who filed (legacy)
+  filingParty: filingPartyEnum("filing_party").default("plaintiff"),  // plaintiff, defendant, court, third_party
+  filingStatus: filingStatusEnum("filing_status").default("court_filing"),  // court_filing or draft
   
   // File storage
   fileName: varchar("file_name", { length: 500 }).notNull(),

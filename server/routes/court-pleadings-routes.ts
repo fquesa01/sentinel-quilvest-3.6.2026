@@ -13,12 +13,16 @@ import { z } from "zod";
 const upload = multer({ storage: multer.memoryStorage() });
 
 const validPleadingTypes = ["complaint", "answer", "motion", "brief", "court_order", "discovery", "subpoena", "settlement", "judgment", "other"] as const;
+const validFilingParties = ["plaintiff", "defendant", "court", "third_party"] as const;
+const validFilingStatuses = ["court_filing", "draft"] as const;
 
 const updatePleadingSchema = z.object({
   title: z.string().min(1).optional(),
   pleadingType: z.enum(validPleadingTypes).optional(),
   filingDate: z.string().nullable().optional(),
   filedBy: z.string().nullable().optional(),
+  filingParty: z.enum(validFilingParties).optional(),
+  filingStatus: z.enum(validFilingStatuses).optional(),
 });
 
 export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any) {
@@ -51,13 +55,11 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
         return res.status(400).json({ message: "No file uploaded" });
       }
       
-      const { title, pleadingType, filingDate, filedBy } = req.body;
-      
-      if (!title || typeof title !== "string" || title.trim().length === 0) {
-        return res.status(400).json({ message: "Title is required" });
-      }
+      const { title, pleadingType, filingDate, filedBy, filingParty, filingStatus } = req.body;
       
       const validatedType = validPleadingTypes.includes(pleadingType) ? pleadingType : "other";
+      const validatedFilingParty = validFilingParties.includes(filingParty) ? filingParty : "plaintiff";
+      const validatedFilingStatus = validFilingStatuses.includes(filingStatus) ? filingStatus : "court_filing";
       
       // Extract text from the document
       let extractedText = "";
@@ -78,6 +80,21 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
         console.error("[CourtPleadings] Error extracting text:", extractError);
       }
       
+      // Auto-extract headline from document if title not provided
+      let finalTitle = title?.trim();
+      if (!finalTitle && extractedText) {
+        // Extract first meaningful line as headline
+        const lines = extractedText.split('\n').filter(line => line.trim().length > 10);
+        if (lines.length > 0) {
+          finalTitle = lines[0].trim().substring(0, 200);
+          console.log(`[CourtPleadings] Auto-extracted headline: ${finalTitle}`);
+        }
+      }
+      
+      if (!finalTitle) {
+        finalTitle = file.originalname.replace(/\.[^/.]+$/, ""); // Use filename without extension
+      }
+      
       // Upload file to object storage
       let storagePath: string | null = null;
       try {
@@ -93,10 +110,12 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
       // Create the pleading record
       const [pleading] = await db.insert(courtPleadings).values({
         caseId,
-        title: title.trim(),
+        title: finalTitle,
         pleadingType: validatedType,
         filingDate: filingDate ? new Date(filingDate) : null,
         filedBy: filedBy || null,
+        filingParty: validatedFilingParty,
+        filingStatus: validatedFilingStatus,
         fileName: file.originalname,
         fileType: mimeType,
         fileSize: file.size,
@@ -111,12 +130,12 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
           await indexDocument({
             documentId: `court-pleading-${pleading.id}`,
             caseId,
-            fileName: `${title}.txt`,
-            displayName: title,
+            fileName: `${finalTitle}.txt`,
+            displayName: finalTitle,
             content: extractedText,
             metadata: {
               documentType: `court_pleading_${validatedType}`,
-              subject: title,
+              subject: finalTitle,
               date: filingDate || new Date().toISOString(),
             }
           });
@@ -200,7 +219,7 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
         });
       }
       
-      const { title, pleadingType, filingDate, filedBy } = validation.data;
+      const { title, pleadingType, filingDate, filedBy, filingParty, filingStatus } = validation.data;
       
       const updateData: Record<string, any> = {
         updatedAt: new Date(),
@@ -210,6 +229,8 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
       if (pleadingType !== undefined) updateData.pleadingType = pleadingType;
       if (filingDate !== undefined) updateData.filingDate = filingDate ? new Date(filingDate) : null;
       if (filedBy !== undefined) updateData.filedBy = filedBy;
+      if (filingParty !== undefined) updateData.filingParty = filingParty;
+      if (filingStatus !== undefined) updateData.filingStatus = filingStatus;
       
       const [updated] = await db.update(courtPleadings)
         .set(updateData)
