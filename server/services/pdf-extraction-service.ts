@@ -1,13 +1,6 @@
-// Use the legacy build for Node.js compatibility (no DOMMatrix, etc.)
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
-import type { TextItem, TextMarkedContent } from "pdfjs-dist/types/src/display/api";
-
-// Properly disable worker in Node.js - the fake worker must be explicitly disabled
-// @ts-ignore - disableWorker is a valid option but may not be typed
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/legacy/build/pdf.worker.mjs",
-  import.meta.url
-).toString();
+// Use pdf-parse which handles Node.js PDF extraction without worker issues
+// @ts-ignore - pdf-parse doesn't have type definitions
+import pdfParse from "pdf-parse";
 
 interface ExtractionResult {
   text: string;
@@ -19,78 +12,18 @@ interface ExtractionResult {
   };
 }
 
-function isTextItem(item: TextItem | TextMarkedContent): item is TextItem {
-  return "str" in item;
-}
-
 export async function extractPdfText(buffer: Buffer): Promise<ExtractionResult> {
   try {
-    const uint8Array = new Uint8Array(buffer);
-    
-    const loadingTask = pdfjsLib.getDocument({
-      data: uint8Array,
-      useSystemFonts: true,
-      standardFontDataUrl: undefined,
-    });
-    
-    const pdfDocument = await loadingTask.promise;
-    const pageCount = pdfDocument.numPages;
-    
-    let fullText = "";
-    
-    for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
-      const page = await pdfDocument.getPage(pageNum);
-      const textContent = await page.getTextContent({
-        includeMarkedContent: false,
-      });
-      
-      let lastY: number | null = null;
-      let pageText = "";
-      
-      for (const item of textContent.items) {
-        if (isTextItem(item)) {
-          const str = item.str;
-          const transform = item.transform;
-          const currentY = transform ? transform[5] : null;
-          
-          if (lastY !== null && currentY !== null) {
-            const yDiff = Math.abs(currentY - lastY);
-            if (yDiff > 5) {
-              pageText += "\n";
-            } else if (str && !pageText.endsWith(" ") && !str.startsWith(" ")) {
-              pageText += " ";
-            }
-          }
-          
-          pageText += str;
-          if (currentY !== null) {
-            lastY = currentY;
-          }
-        }
-      }
-      
-      if (pageText.trim()) {
-        fullText += pageText.trim() + "\n\n";
-      }
-    }
-    
-    let metadata: ExtractionResult["metadata"];
-    try {
-      const pdfMetadata = await pdfDocument.getMetadata();
-      const info = pdfMetadata.info as Record<string, unknown>;
-      metadata = {
-        title: typeof info?.Title === "string" ? info.Title : undefined,
-        author: typeof info?.Author === "string" ? info.Author : undefined,
-        subject: typeof info?.Subject === "string" ? info.Subject : undefined,
-      };
-    } catch (metaError) {
-      console.log("[PDFExtraction] Could not extract metadata:", metaError);
-    }
+    const data = await pdfParse(buffer);
     
     return {
-      text: fullText.trim(),
-      pageCount,
-      metadata,
+      text: data.text?.trim() || "",
+      pageCount: data.numpages || 0,
+      metadata: {
+        title: data.info?.Title,
+        author: data.info?.Author,
+        subject: data.info?.Subject,
+      },
     };
   } catch (error) {
     console.error("[PDFExtraction] Error extracting PDF text:", error);
