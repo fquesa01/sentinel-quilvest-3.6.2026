@@ -3,8 +3,8 @@ import { db } from "../db";
 import { courtPleadings } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 import multer from "multer";
-import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
+import { extractPdfTextWithFallback } from "../services/pdf-extraction-service";
 import { indexDocument } from "../services/document-indexing-service";
 import { ObjectStorageService } from "../objectStorage";
 import { nanoid } from "nanoid";
@@ -67,8 +67,7 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
       
       try {
         if (mimeType === "application/pdf") {
-          const pdfData = await pdfParse(file.buffer);
-          extractedText = pdfData.text;
+          extractedText = await extractPdfTextWithFallback(file.buffer);
         } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || 
                    mimeType === "application/msword") {
           const result = await mammoth.extractRawText({ buffer: file.buffer });
