@@ -2,8 +2,12 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { TextItem, TextMarkedContent } from "pdfjs-dist/types/src/display/api";
 
-// Disable worker in Node.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+// Properly disable worker in Node.js - the fake worker must be explicitly disabled
+// @ts-ignore - disableWorker is a valid option but may not be typed
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/legacy/build/pdf.worker.mjs",
+  import.meta.url
+).toString();
 
 interface ExtractionResult {
   text: string;
