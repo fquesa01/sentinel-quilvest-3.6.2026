@@ -63,6 +63,16 @@ export interface RFPAnalysisResult {
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY! });
 
+function stripMarkdownCodeFences(text: string): string {
+  let cleaned = text.trim();
+  
+  // Remove markdown code fences like ```json ... ``` or ``` ... ```
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '');
+  cleaned = cleaned.replace(/\n?```\s*$/i, '');
+  
+  return cleaned.trim();
+}
+
 const rfpAnalysisPrompt = `You are a litigation associate analyzing a Request for Production (RFP) document to create search terms that will find responsive documents.
 
 ## TASK 1: EXTRACT CASE CONTEXT
@@ -232,10 +242,14 @@ export class RFPParserService {
           temperature: 0.1,
         }
       });
-      const response = result.text || "";
+      const rawResponse = result.text || "";
       
-      console.log(`[RFPParser] Received response: ${response.length} chars`);
-      console.log(`[RFPParser] Response preview: ${response.substring(0, 500)}`);
+      console.log(`[RFPParser] Received response: ${rawResponse.length} chars`);
+      console.log(`[RFPParser] Response preview: ${rawResponse.substring(0, 500)}`);
+
+      // Strip markdown code fences if present
+      const response = stripMarkdownCodeFences(rawResponse);
+      console.log(`[RFPParser] After cleanup: ${response.length} chars, starts with: ${response.substring(0, 50)}`);
 
       // Try to parse as full analysis result first
       const jsonMatch = response.match(/\{[\s\S]*\}/);
@@ -302,9 +316,12 @@ export class RFPParserService {
           temperature: 0.1,
         }
       });
-      const response = result.text || "";
+      const rawResponse = result.text || "";
       
-      console.log(`[RFPParser] Full parse response: ${response.length} chars`);
+      console.log(`[RFPParser] Full parse response: ${rawResponse.length} chars`);
+
+      // Strip markdown code fences if present
+      const response = stripMarkdownCodeFences(rawResponse);
 
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {

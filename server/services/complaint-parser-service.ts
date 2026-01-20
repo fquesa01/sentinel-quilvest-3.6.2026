@@ -92,6 +92,16 @@ export interface ComplaintAnalysisResult {
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY! });
 
+function stripMarkdownCodeFences(text: string): string {
+  let cleaned = text.trim();
+  
+  // Remove markdown code fences like ```json ... ``` or ``` ... ```
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '');
+  cleaned = cleaned.replace(/\n?```\s*$/i, '');
+  
+  return cleaned.trim();
+}
+
 const complaintAnalysisPrompt = `You are a litigation associate analyzing a complaint to create a document search strategy.
 
 ## TASK 1: EXTRACT CASE SPECIFICS
@@ -221,10 +231,14 @@ export class ComplaintParserService {
           temperature: 0.1,
         }
       });
-      const response = result.text || "";
+      const rawResponse = result.text || "";
       
-      console.log(`[ComplaintParser] Received response: ${response.length} chars`);
-      console.log(`[ComplaintParser] Response preview: ${response.substring(0, 500)}`);
+      console.log(`[ComplaintParser] Received response: ${rawResponse.length} chars`);
+      console.log(`[ComplaintParser] Response preview: ${rawResponse.substring(0, 500)}`);
+
+      // Strip markdown code fences if present
+      const response = stripMarkdownCodeFences(rawResponse);
+      console.log(`[ComplaintParser] After cleanup: ${response.length} chars, starts with: ${response.substring(0, 50)}`);
 
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
@@ -293,9 +307,12 @@ export class ComplaintParserService {
           temperature: 0.1,
         }
       });
-      const response = result.text || "";
+      const rawResponse = result.text || "";
       
-      console.log(`[ComplaintParser] Full parse response: ${response.length} chars`);
+      console.log(`[ComplaintParser] Full parse response: ${rawResponse.length} chars`);
+
+      // Strip markdown code fences if present
+      const response = stripMarkdownCodeFences(rawResponse);
 
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
