@@ -397,21 +397,33 @@ export class ComplaintParserService {
     const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 100000) + "\n---";
 
     try {
+      console.log(`[ComplaintParser] Sending ${fullPrompt.length} chars to AI (doc: ${documentText.length} chars)`);
+      
       const result = await ai.models.generateContent({
         model: "gemini-2.0-flash",
         contents: fullPrompt,
       });
       const response = result.text || "";
+      
+      console.log(`[ComplaintParser] Received response: ${response.length} chars`);
+      console.log(`[ComplaintParser] Response preview: ${response.substring(0, 1000)}`);
 
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.error("[ComplaintParser] Failed to extract JSON from response:", response.substring(0, 500));
+        console.error("[ComplaintParser] Failed to extract JSON from response:", response.substring(0, 2000));
         throw new Error("Failed to parse complaint response - no JSON found");
       }
 
+      console.log(`[ComplaintParser] JSON extracted: ${jsonMatch[0].length} chars`);
+      
       const parsed: ComplaintAnalysisResult = JSON.parse(jsonMatch[0]);
+      
+      console.log(`[ComplaintParser] Parsed causesOfAction count: ${parsed.causesOfAction?.length || 0}`);
+      if (parsed.causesOfAction && parsed.causesOfAction.length > 0) {
+        console.log(`[ComplaintParser] First claim: ${JSON.stringify(parsed.causesOfAction[0]).substring(0, 500)}`);
+      }
 
-      const claims = parsed.causesOfAction.map((claim) => ({
+      const claims = (parsed.causesOfAction || []).map((claim) => ({
         ...claim,
         searchTerms: (claim.searchTerms || []).map((term) => ({
           ...term,
