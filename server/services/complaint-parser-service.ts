@@ -227,7 +227,7 @@ export class ComplaintParserService {
         model: "gemini-2.0-flash",
         contents: fullPrompt,
         config: {
-          maxOutputTokens: 8192,
+          maxOutputTokens: 32768,
           temperature: 0.1,
         }
       });
@@ -303,7 +303,7 @@ export class ComplaintParserService {
         model: "gemini-2.0-flash",
         contents: fullPrompt,
         config: {
-          maxOutputTokens: 8192,
+          maxOutputTokens: 32768,
           temperature: 0.1,
         }
       });
