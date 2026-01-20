@@ -1,0 +1,247 @@
+# Boolean Search Terms by RFP
+
+Here are targeted Boolean search strings for each Request for Production. These are formatted for most major eDiscovery platforms (Relativity, Concordance, Summation, etc.):
+
+---
+
+## RFP 1 - Recruitment/Hiring of Wilmot as CEO
+
+**Primary Search:**
+```
+(Wilmot OR "David Wilmot") AND (recruit* OR hire OR hiring OR hired OR interview* OR vet* OR evaluat* OR candidate OR "executive search" OR headhunt* OR onboard*)
+```
+
+**Executive Search Firm Focus:**
+```
+("Flatiron Search" OR "Flatiron Search Partners" OR "executive search" OR recruiter OR headhunt*) AND (Wilmot OR CEO OR "chief executive")
+```
+
+**Internal Communications:**
+```
+(Wilmot OR "David Wilmot") AND (CEO OR "chief executive" OR leadership OR candidate OR offer OR compensat* OR salary OR equity)
+```
+
+---
+
+## RFP 2 - Wilmot Employment Documents
+
+**Primary Search:**
+```
+(Wilmot OR "David Wilmot") AND (employ* OR "offer letter" OR agreement OR contract OR compensat* OR bonus OR equity OR "stock option*" OR grant OR vest* OR "job description" OR duties OR responsibilit* OR salary OR benefits OR terms)
+```
+
+**Specific Document Types:**
+```
+(Wilmot OR "David Wilmot") AND ("employment agreement" OR "consulting agreement" OR "compensation plan" OR "bonus structure" OR "equity grant" OR "offer letter" OR "retention agreement" OR "severance")
+```
+
+---
+
+## RFP 3 - Wilmot's Prior Employment with Semper / Restrictive Covenants
+
+**Primary Search:**
+```
+(Wilmot OR "David Wilmot") AND (Semper OR "Semper Laser" OR "prior employ*" OR "former employ*" OR "previous employ*")
+```
+
+**Restrictive Covenant Focus:**
+```
+(Wilmot OR "David Wilmot") AND ("non-compete" OR noncompete OR "non-solicitation" OR nonsolicitation OR "non-disclosure" OR NDA OR confidential* OR "restrictive covenant" OR fiduciary OR "trade secret*" OR proprietary)
+```
+
+**Obligation/Duty Focus:**
+```
+(Wilmot OR "David Wilmot") AND (obligation* OR covenant* OR restrict* OR prohibit* OR duty OR duties OR agreement) AND (Semper OR "former" OR "prior" OR "previous")
+```
+
+---
+
+## RFP 4 - Wilmot's Job Title/Role/Duties at EWC
+
+**Primary Search:**
+```
+(Wilmot OR "David Wilmot") AND (title OR role OR duties OR responsibilit* OR position OR "job description" OR function* OR "report* to" OR scope OR authority)
+```
+
+**Organizational Chart/Structure:**
+```
+(Wilmot OR "David Wilmot" OR CEO OR "chief executive") AND ("org chart" OR "organization* chart" OR structure OR hierarchy OR "reporting structure" OR "management team")
+```
+
+---
+
+## RFP 5 - Business Lines/Products/Services Wilmot Supervised
+
+**Primary Search:**
+```
+(Wilmot OR "David Wilmot") AND (supervis* OR strateg* OR operat* OR oversight OR manage* OR direct* OR lead* OR control*) AND (business OR product* OR service* OR division OR unit OR segment OR line)
+```
+
+**Business Line Specific:**
+```
+(Wilmot OR "David Wilmot" OR CEO) AND ("business line" OR "product line" OR "service line" OR "business unit" OR division OR segment OR vertical OR offering*)
+```
+
+---
+
+## RFP 6 - Measures to Prevent Use/Disclosure of Semper Information
+
+**Primary Search:**
+```
+(Semper OR "Semper Laser") AND (confidential* OR proprietary OR "trade secret*" OR protect* OR prevent* OR safeguard* OR security OR measure* OR policy OR procedure*)
+```
+
+**Information Security Focus:**
+```
+(Semper OR "trade secret*" OR confidential* OR proprietary) AND (screen* OR wall OR firewall OR restrict* OR access OR protocol* OR training OR acknowledge* OR certif*)
+```
+
+**Policy/Procedure Focus:**
+```
+("information security" OR "data protection" OR "confidential* information" OR "proprietary information") AND (policy OR procedure* OR protocol* OR guideline* OR measure* OR safeguard*)
+```
+
+---
+
+## RFP 7 - Communications with Semper's Customers/Clients/Vendors
+
+**Primary Search:**
+```
+(Semper OR "Semper Laser") AND (customer* OR client* OR vendor* OR supplier* OR partner* OR account*)
+```
+
+**Business Development Focus:**
+```
+(customer* OR client* OR vendor* OR prospect* OR lead* OR account*) AND (Semper OR "Semper Laser" OR solicit* OR contact* OR outreach OR pitch* OR proposal*)
+```
+
+**Date-Restricted (post-Wilmot hire):**
+```
+(customer* OR client* OR vendor*) w/25 (Semper OR competitor* OR "laser" OR "hair removal")
+```
+
+---
+
+## RFP 8 - Financial Benefit/Competitive Gain Since Wilmot's Hire
+
+**Primary Search:**
+```
+(Wilmot OR "David Wilmot") AND (revenue OR profit* OR growth OR gain* OR benefit* OR performance OR financial* OR results OR increase* OR expansion OR market share)
+```
+
+**Competitive Advantage Focus:**
+```
+(competitive OR advantage OR gain* OR benefit* OR impact*) AND (Wilmot OR hire OR CEO OR "new leadership" OR "since" OR growth OR expansion)
+```
+
+**Market/Business Metrics:**
+```
+("market expansion" OR "revenue increase" OR "market share" OR "competitive gain" OR "financial benefit" OR "business growth" OR ROI OR KPI*) AND (Wilmot OR 2024 OR 2025)
+```
+
+---
+
+## RFP 9 - Communications Between EWC and Wilmot re: Semper (Nov 1, 2024 - Present)
+
+**Primary Search:**
+```
+(Wilmot OR "David Wilmot") AND (Semper OR "Semper Laser")
+```
+
+**Expanded Semper Topics:**
+```
+(Wilmot OR "David Wilmot") AND (Semper OR "Semper Laser") AND (business OR operat* OR financ* OR employ* OR investor* OR M&A OR merger* OR acqui* OR deal* OR transaction*)
+```
+
+**M&A / Investor Focus:**
+```
+(Semper OR "Semper Laser") AND (investor* OR M&A OR merger* OR acquisition* OR "due diligence" OR valuation OR buyer* OR seller* OR transaction* OR deal*)
+```
+
+---
+
+## RFP 10 - Laser Hair Removal Services Decision/Offering
+
+**Primary Search:**
+```
+("laser hair removal" OR "laser hair" OR "hair removal" OR LHR) AND (plan* OR strategy OR decision OR launch* OR offer* OR add* OR introduc* OR roll* OR implement* OR start*)
+```
+
+**Business Planning Focus:**
+```
+("laser hair removal" OR "laser hair" OR LHR) AND ("business plan" OR "financial model" OR "market analy*" OR "marketing strateg*" OR "vendor list" OR pricing OR forecast* OR projection* OR budget*)
+```
+
+**Internal Discussion:**
+```
+("laser" OR "hair removal" OR LHR) AND (service* OR offering* OR expansion OR "new service" OR "add service" OR diversif*)
+```
+
+---
+
+## RFP 11 - Laser Hair Removal Website Addition/Removal (April 2025)
+
+**Primary Search:**
+```
+(website OR "web site" OR site OR online OR webpage OR "web page") AND ("laser hair removal" OR "laser hair" OR LHR OR laser)
+```
+
+**Content Changes:**
+```
+(website OR "web site" OR webpage) AND (add* OR remov* OR delet* OR updat* OR chang* OR edit* OR publish* OR unpublish* OR "take down" OR launch*)
+```
+
+**April 2025 Specific:**
+```
+(website OR "web site" OR online OR digital) AND (laser OR "hair removal") AND (April OR "04/2025" OR "4/2025")
+```
+
+---
+
+## RFP 12 - Documents from Wilmot Originating from Semper
+
+**Primary Search:**
+```
+(Wilmot OR "David Wilmot") AND (Semper OR "Semper Laser") AND (document* OR file* OR record* OR material* OR information OR data)
+```
+
+**Confidential/Trade Secret Focus:**
+```
+(Semper OR "Semper Laser") AND (confidential* OR "trade secret*" OR proprietary OR "business information" OR formula* OR process* OR method* OR customer list* OR pricing*)
+```
+
+**Document Origin/Transfer:**
+```
+(Semper OR "Semper Laser") AND (provid* OR receiv* OR transfer* OR bring* OR shar* OR forward* OR sent OR email* OR download* OR copy OR copies)
+```
+
+---
+
+## RFP 13 - EWC / North Castle Corporate Relationship
+
+**Primary Search:**
+```
+("North Castle" OR "North Castle Partners") AND (EWC OR "EWC Growth") AND (agreement OR relationship OR control* OR ownership OR govern* OR manage*)
+```
+
+**Corporate Governance Focus:**
+```
+("North Castle" OR NCP) AND ("operating agreement" OR "shareholder agreement" OR "management agreement" OR "management services" OR "investment agreement" OR "LLC agreement" OR bylaws OR charter)
+```
+
+**Control/Influence Focus:**
+```
+("North Castle" OR "North Castle Partners") AND (control* OR influence* OR direct* OR approv* OR veto OR consent OR govern* OR board OR voting OR decision*)
+```
+
+---
+
+## General Tips for Implementation
+
+1. **Adjust proximity operators** based on your platform (w/n, /n, NEAR, etc.)
+2. **Date restrictions** should be applied at the platform level for RFP 9 (Nov 1, 2024 - present) and RFP 11 (April 2025)
+3. **Run iteratively** - start with narrower searches, then expand if yield is too low
+4. **Combine with custodian filters** - particularly Wilmot's custodian file for RFPs 1-5, 9, 12
+5. **Consider synonym expansion** for your specific platform's capabilities
+
+Want me to export this to a spreadsheet or document format for easier use in your review platform?
