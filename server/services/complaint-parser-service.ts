@@ -20,6 +20,7 @@ export interface FactualAllegation {
   paragraphRef: string;
   allegation: string;
   relevantTo: string;
+  supportsElement?: string;
 }
 
 export interface LegalElement {
@@ -55,26 +56,22 @@ export interface SearchTerm {
 export interface CaseFundamentals {
   plaintiffs: PartyInfo[];
   defendants: PartyInfo[];
-  dateRange: {
-    earliest: string;
-    latest: string;
-    keyDates: { date: string; event: string }[];
-  };
+  keyDates: { date: string; event: string }[];
   monetaryFigures: { amount: string; description: string }[];
-  referencedDocuments: { name: string; type: string }[];
-  caseSpecificTerminology: string[];
+  referencedDocuments: string[];
+  caseTerminology: string[];
 }
 
 export interface PartyInfo {
   name: string;
-  type: string;
+  type?: string;
   aliases: string[];
   keyIndividuals: string[];
 }
 
 export interface PrivilegeSearchTerm {
   id: string;
-  privilegeType: "attorney_client" | "work_product";
+  privilegeType?: "attorney_client" | "work_product";
   term: string;
   rationale: string;
   enabled: boolean;
@@ -95,66 +92,114 @@ export interface ComplaintAnalysisResult {
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY! });
 
-const complaintAnalysisPrompt = `Analyze this legal complaint and extract causes of action with Boolean search terms.
+const complaintAnalysisPrompt = `You are a litigation associate analyzing a complaint to create a document search strategy.
 
-INSTRUCTIONS:
-1. Extract each cause of action (claim) from the complaint
-2. For each claim, generate Boolean search terms to find relevant documents
-3. Use actual party names, dates, and terms from the complaint - NOT generic terms
-4. Return ONLY valid JSON - no markdown, no explanation
+## TASK 1: EXTRACT CASE SPECIFICS
 
-REQUIRED JSON FORMAT:
+From this complaint, extract:
+- **Parties**: All plaintiffs, defendants, and individuals named (include job titles, aliases)
+- **Dates**: Every date mentioned (contract dates, breach dates, deadlines, notice dates)
+- **Money**: All dollar amounts (contract value, damages claimed, payments)
+- **Documents**: Every contract, agreement, or communication referenced by name
+- **Terminology**: Project names, product names, defined terms, code names used
+
+## TASK 2: ANALYZE EACH CAUSE OF ACTION
+
+For each claim:
+1. Identify the cause of action and which defendants it targets
+2. Extract the SPECIFIC factual allegations (quote the complaint, cite paragraph numbers)
+3. List the legal elements required to prove this claim
+4. Map which allegations support which elements
+5. Note gaps where allegations are thin
+6. Anticipate likely defenses
+
+## TASK 3: GENERATE BOOLEAN SEARCH TERMS
+
+CRITICAL RULE: Every search term MUST include case-specific identifiers (actual names, dates, amounts, project names) from this complaint. NO generic searches like "contract AND breach."
+
+For each cause of action, create searches for:
+
+**A. Party Searches** - Use actual names with variations:
+- Full name, initials, reversed order, common misspellings
+- Example: ("John Martinez" OR "J. Martinez" OR "Martinez, John" OR "J Martinez")
+
+**B. Document Searches** - Use exact document names from complaint:
+- Example: ("Master Services Agreement" OR "MSA") AND (TechCorp OR Acme)
+
+**C. Subject Searches** - Use complaint's actual terminology:
+- Example: ("Alpha Platform" OR "Alpha Project") AND (deliver* OR delay* OR status)
+
+**D. Date Searches** - Use specific dates in multiple formats:
+- Example: ("December 31" OR "12/31/23" OR "Dec 31" OR "Q4 2023") W/15 (deadline OR deliver*)
+
+**E. Financial Searches** - Use actual amounts:
+- Example: ("$2.4 million" OR "$2,400,000" OR "2.4M") OR (payment* OR invoice*) W/10 TechCorp
+
+**F. Communication Searches** - Party names + issue terms:
+- Example: (Martinez) AND (concern* OR problem* OR delay*) AND (Alpha OR deliver*)
+
+Boolean syntax: AND, OR, NOT, "exact phrase", W/n (within n words), * (wildcard)
+
+Create both HIGH PRECISION (narrow, specific) and HIGH RECALL (broader) variants for key searches.
+
+## TASK 4: PRIVILEGE TERMS
+
+Generate privilege searches specific to this case using any attorneys, law firms, or legal departments mentioned.
+
+## TASK 5: CUSTODIANS
+
+Recommend whose documents to search based on individuals named in the complaint.
+
+## OUTPUT FORMAT
+
+Return ONLY valid JSON (no markdown, no explanation):
 {
   "caseFundamentals": {
-    "plaintiffs": [{"name": "actual name", "type": "Individual/Company", "aliases": [], "keyIndividuals": []}],
-    "defendants": [{"name": "actual name", "type": "Individual/Company", "aliases": [], "keyIndividuals": []}],
-    "dateRange": {"earliest": "YYYY-MM-DD", "latest": "YYYY-MM-DD", "keyDates": []},
-    "monetaryFigures": [],
-    "referencedDocuments": [],
-    "caseSpecificTerminology": []
+    "plaintiffs": [{"name": "", "aliases": [], "keyIndividuals": []}],
+    "defendants": [{"name": "", "aliases": [], "keyIndividuals": []}],
+    "keyDates": [{"date": "YYYY-MM-DD", "event": ""}],
+    "monetaryFigures": [{"amount": "", "description": ""}],
+    "referencedDocuments": [""],
+    "caseTerminology": [""]
   },
   "causesOfAction": [
     {
       "claimNumber": 1,
-      "claimTitle": "Exact title from complaint (e.g., 'Count I: Breach of Contract')",
-      "causeOfAction": "Legal theory (e.g., 'Breach of Contract')",
-      "statutoryBasis": "citation if any",
-      "againstDefendants": ["Defendant Name"],
-      "factualAllegations": [
-        {"paragraphRef": "¶ XX", "allegation": "Quote from complaint", "relevantTo": "element"}
-      ],
-      "legalElements": [
-        {
-          "number": 1,
-          "element": "Element name",
-          "mustProve": "What plaintiff must prove",
-          "supportingFacts": "Facts alleged",
-          "strength": "strong",
-          "gaps": "What's missing",
-          "searchTerms": [
-            {"id": "1", "term": "(\"Defendant Name\" OR \"D. Name\") AND (contract OR agreement)", "category": "Party", "targetElement": "Existence of contract", "precision": "high", "recall": "medium", "rationale": "Find documents with defendant name and contract terms", "enabled": true, "aiGenerated": true}
-          ]
-        }
-      ],
-      "anticipatedDefenses": [],
+      "claimTitle": "",
+      "causeOfAction": "",
+      "againstDefendants": [""],
+      "factualAllegations": [{"paragraphRef": "¶XX", "allegation": "", "supportsElement": ""}],
+      "legalElements": [{"element": "", "supportingFacts": "", "strength": "strong|moderate|weak", "gaps": ""}],
+      "anticipatedDefenses": [{"defense": "", "documentsToFind": ""}],
       "searchTerms": [
-        {"id": "2", "term": "\"Plaintiff Name\" AND \"Defendant Name\" AND (breach OR violat*)", "category": "Core", "targetElement": "Overall claim", "precision": "medium", "recall": "high", "rationale": "Find all documents discussing the alleged breach", "enabled": true, "aiGenerated": true}
-      ],
-      "combinedBoolean": "Combined search string for this claim"
+        {
+          "id": "",
+          "category": "Party|Document|Subject|Date|Financial|Communication",
+          "targetElement": "",
+          "term": "BOOLEAN STRING WITH CASE-SPECIFIC IDENTIFIERS",
+          "precision": "high|medium|low",
+          "rationale": "Why relevant to THIS case",
+          "enabled": true,
+          "aiGenerated": true
+        }
+      ]
     }
   ],
-  "privilegeSearchTerms": [],
-  "recommendedCustodians": {"priority": [], "secondary": []}
+  "privilegeSearchTerms": [{"id": "", "term": "", "rationale": "", "enabled": true, "aiGenerated": true}],
+  "recommendedCustodians": {"priority": [{"name": "", "role": "", "relevance": ""}], "secondary": []}
 }
 
-CRITICAL RULES:
-1. USE ACTUAL NAMES from complaint (e.g., "Smith" not "Plaintiff")
-2. Include name variations: "John Smith" OR "J. Smith" OR "Smith"
-3. Include date variations where relevant
-4. Each claim MUST have at least 3 search terms
-5. Return ONLY the JSON object - no other text
+## RULES
+1. QUOTE the complaint - use its exact language
+2. Every search term needs case-specific identifiers (names, dates, amounts, project names)
+3. Include name variations and misspellings
+4. Include date format variations (1/15/24, January 15, Jan 15)
+5. Do not hallucinate - only use facts from the complaint
+6. Note what's missing, don't invent facts
 
-COMPLAINT TEXT:
+Analyze this complaint:
+
+---
 `;
 
 export class ComplaintParserService {
@@ -163,7 +208,7 @@ export class ComplaintParserService {
       throw new Error("Gemini API key not configured");
     }
 
-    const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 80000);
+    const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 80000) + "\n---";
 
     try {
       console.log(`[ComplaintParser] Sending ${fullPrompt.length} chars to AI (doc: ${documentText.length} chars)`);
@@ -202,15 +247,23 @@ export class ComplaintParserService {
           ...term,
           id: nanoid(),
         })),
-        legalElements: (claim.legalElements || []).map((element) => ({
+        legalElements: (claim.legalElements || []).map((element, idx) => ({
           ...element,
+          number: element.number || idx + 1,
+          mustProve: element.mustProve || element.element || "",
           searchTerms: (element.searchTerms || []).map((term) => ({
             ...term,
             id: nanoid(),
           })),
         })),
-        factualAllegations: claim.factualAllegations || [],
-        anticipatedDefenses: claim.anticipatedDefenses || [],
+        factualAllegations: (claim.factualAllegations || []).map((fa) => ({
+          ...fa,
+          relevantTo: fa.relevantTo || fa.supportsElement || "",
+        })),
+        anticipatedDefenses: (claim.anticipatedDefenses || []).map((def) => ({
+          ...def,
+          likelihood: def.likelihood || "medium",
+        })),
         againstDefendants: claim.againstDefendants || [],
         combinedBoolean: claim.combinedBoolean || "",
       }));
@@ -227,7 +280,7 @@ export class ComplaintParserService {
       throw new Error("Gemini API key not configured");
     }
 
-    const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 80000);
+    const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 80000) + "\n---";
 
     try {
       console.log(`[ComplaintParser] Full parse: Sending ${fullPrompt.length} chars to AI`);
@@ -260,15 +313,23 @@ export class ComplaintParserService {
           ...term,
           id: nanoid(),
         })),
-        legalElements: (claim.legalElements || []).map((element) => ({
+        legalElements: (claim.legalElements || []).map((element, idx) => ({
           ...element,
+          number: element.number || idx + 1,
+          mustProve: element.mustProve || element.element || "",
           searchTerms: (element.searchTerms || []).map((term) => ({
             ...term,
             id: nanoid(),
           })),
         })),
-        factualAllegations: claim.factualAllegations || [],
-        anticipatedDefenses: claim.anticipatedDefenses || [],
+        factualAllegations: (claim.factualAllegations || []).map((fa) => ({
+          ...fa,
+          relevantTo: fa.relevantTo || fa.supportsElement || "",
+        })),
+        anticipatedDefenses: (claim.anticipatedDefenses || []).map((def) => ({
+          ...def,
+          likelihood: def.likelihood || "medium",
+        })),
         againstDefendants: claim.againstDefendants || [],
         combinedBoolean: claim.combinedBoolean || "",
       }));
