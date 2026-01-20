@@ -73,6 +73,111 @@ function stripMarkdownCodeFences(text: string): string {
   return cleaned.trim();
 }
 
+/**
+ * Extract a balanced JSON structure starting from a given index.
+ * Returns the extracted JSON string and its end position, or null if extraction fails.
+ */
+function extractBalancedJson(text: string, startIndex: number, openChar: string, closeChar: string): { json: string; endIndex: number } | null {
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      continue;
+    }
+    
+    if (!inString) {
+      if (char === openChar) {
+        depth++;
+      } else if (char === closeChar) {
+        depth--;
+        if (depth === 0) {
+          return { json: text.substring(startIndex, i + 1), endIndex: i + 1 };
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Extract the first valid JSON object from a string.
+ * Tries multiple candidates until finding one that parses successfully.
+ * This handles cases where AI prepends text with braces before the actual JSON.
+ */
+function extractFirstJsonObject(text: string): string | null {
+  let searchStart = 0;
+  
+  while (searchStart < text.length) {
+    const startIndex = text.indexOf('{', searchStart);
+    if (startIndex === -1) break;
+    
+    const result = extractBalancedJson(text, startIndex, '{', '}');
+    if (result) {
+      // Try to parse to verify it's valid JSON
+      try {
+        JSON.parse(result.json);
+        console.log(`[RFPParser] Found valid JSON object at index ${startIndex}, length ${result.json.length}`);
+        return result.json;
+      } catch (e) {
+        // This balanced extraction wasn't valid JSON, try next candidate
+        console.log(`[RFPParser] Balanced extraction at ${startIndex} wasn't valid JSON, trying next...`);
+        searchStart = startIndex + 1;
+      }
+    } else {
+      // Couldn't extract balanced structure, try next opening brace
+      searchStart = startIndex + 1;
+    }
+  }
+  
+  console.error("[RFPParser] No valid JSON object found in response");
+  return null;
+}
+
+/**
+ * Extract the first valid JSON array from a string.
+ * Tries multiple candidates until finding one that parses successfully.
+ */
+function extractFirstJsonArray(text: string): string | null {
+  let searchStart = 0;
+  
+  while (searchStart < text.length) {
+    const startIndex = text.indexOf('[', searchStart);
+    if (startIndex === -1) break;
+    
+    const result = extractBalancedJson(text, startIndex, '[', ']');
+    if (result) {
+      try {
+        JSON.parse(result.json);
+        console.log(`[RFPParser] Found valid JSON array at index ${startIndex}, length ${result.json.length}`);
+        return result.json;
+      } catch (e) {
+        searchStart = startIndex + 1;
+      }
+    } else {
+      searchStart = startIndex + 1;
+    }
+  }
+  
+  console.error("[RFPParser] No valid JSON array found in response");
+  return null;
+}
+
 const rfpAnalysisPrompt = `You are a litigation associate analyzing a Request for Production (RFP) document to create search terms that will find responsive documents.
 
 ## TASK 1: EXTRACT CASE CONTEXT
@@ -249,13 +354,14 @@ export class RFPParserService {
 
       // Strip markdown code fences if present
       const response = stripMarkdownCodeFences(rawResponse);
-      console.log(`[RFPParser] After cleanup: ${response.length} chars, starts with: ${response.substring(0, 50)}`);
+      console.log(`[RFPParser] After cleanup: ${response.length} chars, starts with: ${response.substring(0, 100)}`);
 
-      // Try to parse as full analysis result first
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
+      // Try to parse as full analysis result first (object format)
+      const jsonObject = extractFirstJsonObject(response);
+      if (jsonObject) {
         try {
-          const parsed: RFPAnalysisResult = JSON.parse(jsonMatch[0]);
+          console.log(`[RFPParser] Extracted JSON object: ${jsonObject.length} chars`);
+          const parsed: RFPAnalysisResult = JSON.parse(jsonObject);
           console.log(`[RFPParser] Parsed ${parsed.rfpRequests?.length || 0} RFP requests`);
           
           // Return the rfpRequests array with proper IDs
@@ -270,17 +376,19 @@ export class RFPParserService {
           }));
         } catch (parseErr) {
           console.error("[RFPParser] Failed to parse as object:", parseErr);
+          console.error("[RFPParser] JSON object preview:", jsonObject.substring(0, 500));
         }
       }
 
       // Fallback to array format
-      const arrayMatch = response.match(/\[[\s\S]*\]/);
-      if (!arrayMatch) {
+      const jsonArray = extractFirstJsonArray(response);
+      if (!jsonArray) {
         console.error("[RFPParser] Failed to extract JSON from response:", response.substring(0, 2000));
         throw new Error("Failed to parse RFP response - no JSON found");
       }
 
-      const parsed: ParsedRFP[] = JSON.parse(arrayMatch[0]);
+      console.log(`[RFPParser] Extracted JSON array: ${jsonArray.length} chars`);
+      const parsed: ParsedRFP[] = JSON.parse(jsonArray);
       console.log(`[RFPParser] Parsed ${parsed.length} RFP requests (array format)`);
 
       return parsed.map((rfp) => ({
@@ -319,17 +427,20 @@ export class RFPParserService {
       const rawResponse = result.text || "";
       
       console.log(`[RFPParser] Full parse response: ${rawResponse.length} chars`);
+      console.log(`[RFPParser] Full parse preview: ${rawResponse.substring(0, 500)}`);
 
       // Strip markdown code fences if present
       const response = stripMarkdownCodeFences(rawResponse);
+      console.log(`[RFPParser] Full parse after cleanup: ${response.length} chars, starts with: ${response.substring(0, 100)}`);
 
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
+      const jsonObject = extractFirstJsonObject(response);
+      if (!jsonObject) {
         console.error("[RFPParser] Failed to extract JSON from response:", response.substring(0, 2000));
         throw new Error("Failed to parse RFP response - no JSON found");
       }
 
-      const parsed: RFPAnalysisResult = JSON.parse(jsonMatch[0]);
+      console.log(`[RFPParser] Full parse extracted JSON: ${jsonObject.length} chars`);
+      const parsed: RFPAnalysisResult = JSON.parse(jsonObject);
       console.log(`[RFPParser] Full parse: ${parsed.rfpRequests?.length || 0} requests`);
 
       // Add IDs to all items
