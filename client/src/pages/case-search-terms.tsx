@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileUp,
@@ -39,6 +40,9 @@ import {
   Edit,
   Check,
   X,
+  Plus,
+  Code,
+  Pencil,
 } from "lucide-react";
 
 interface SearchTerm {
@@ -627,7 +631,12 @@ function SearchTermSetCard({ set, caseId }: { set: SearchTermSet; caseId: string
 function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: string }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [editingTerms, setEditingTerms] = useState(false);
+  const [editingCombined, setEditingCombined] = useState(false);
   const [localTerms, setLocalTerms] = useState<SearchTerm[]>(item.searchTerms);
+  const [combinedQuery, setCombinedQuery] = useState(item.combinedBooleanString || "");
+  const [editingTermId, setEditingTermId] = useState<string | null>(null);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [newTerm, setNewTerm] = useState<{ term: string; rationale: string; type: SearchTerm["type"] }>({ term: "", rationale: "", type: "boolean" });
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -652,23 +661,19 @@ function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: st
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (terms: SearchTerm[]) => {
+    mutationFn: async (payload: { searchTerms: SearchTerm[]; combinedBooleanString: string }) => {
       const response = await apiRequest(
         "PATCH",
         `/api/cases/${caseId}/search-term-sets/${item.searchTermSetId}/items/${item.id}`,
-        {
-          searchTerms: terms,
-          combinedBooleanString: terms
-            .filter((t) => t.enabled)
-            .map((t) => `(${t.term})`)
-            .join(" OR "),
-        }
+        payload
       );
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId] });
       setEditingTerms(false);
+      setEditingCombined(false);
+      setEditingTermId(null);
       toast({ title: "Search terms updated" });
     },
   });
@@ -677,6 +682,66 @@ function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: st
     setLocalTerms((prev) =>
       prev.map((t) => (t.id === termId ? { ...t, enabled: !t.enabled } : t))
     );
+  };
+
+  const updateTermText = (termId: string, newText: string) => {
+    setLocalTerms((prev) =>
+      prev.map((t) => (t.id === termId ? { ...t, term: newText } : t))
+    );
+  };
+
+  const updateTermRationale = (termId: string, newRationale: string) => {
+    setLocalTerms((prev) =>
+      prev.map((t) => (t.id === termId ? { ...t, rationale: newRationale } : t))
+    );
+  };
+
+  const updateTermType = (termId: string, newType: SearchTerm["type"]) => {
+    setLocalTerms((prev) =>
+      prev.map((t) => (t.id === termId ? { ...t, type: newType } : t))
+    );
+  };
+
+  const deleteTerm = (termId: string) => {
+    setLocalTerms((prev) => prev.filter((t) => t.id !== termId));
+  };
+
+  const addNewTerm = () => {
+    if (!newTerm.term.trim()) return;
+    const id = `custom-${Date.now()}`;
+    setLocalTerms((prev) => [
+      ...prev,
+      {
+        id,
+        term: newTerm.term.trim(),
+        type: newTerm.type,
+        enabled: true,
+        aiGenerated: false,
+        rationale: newTerm.rationale.trim() || undefined,
+      },
+    ]);
+    setNewTerm({ term: "", rationale: "", type: "boolean" });
+    setShowAddDialog(false);
+  };
+
+  const handleSave = () => {
+    const combined = localTerms
+      .filter((t) => t.enabled)
+      .map((t) => `(${t.term})`)
+      .join(" OR ");
+    updateMutation.mutate({ searchTerms: localTerms, combinedBooleanString: combined });
+  };
+
+  const handleSaveCombined = () => {
+    updateMutation.mutate({ searchTerms: localTerms, combinedBooleanString: combinedQuery });
+  };
+
+  const handleCancel = () => {
+    setLocalTerms(item.searchTerms);
+    setCombinedQuery(item.combinedBooleanString || "");
+    setEditingTerms(false);
+    setEditingCombined(false);
+    setEditingTermId(null);
   };
 
   const statusIcon = () => {
@@ -718,7 +783,7 @@ function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: st
               {statusIcon()}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
-              {item.searchTerms.filter((t) => t.enabled).length} of {item.searchTerms.length} terms
+              {localTerms.filter((t) => t.enabled).length} of {localTerms.length} terms
               enabled
               {item.documentsMatched > 0 && ` • ${item.documentsMatched} docs matched`}
             </div>
@@ -746,64 +811,216 @@ function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: st
           <div className="text-sm text-muted-foreground">{item.summary || item.fullText}</div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h5 className="text-sm font-medium">Search Terms</h5>
-              {editingTerms ? (
-                <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setLocalTerms(item.searchTerms);
-                      setEditingTerms(false);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => updateMutation.mutate(localTerms)}
-                    disabled={updateMutation.isPending}
-                  >
-                    {updateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
-                  </Button>
-                </div>
-              ) : (
-                <Button size="sm" variant="ghost" onClick={() => setEditingTerms(true)}>
-                  <Edit className="h-3 w-3 mr-1" />
-                  Edit
-                </Button>
-              )}
+              <div className="flex gap-1">
+                {(editingTerms || editingCombined) ? (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={handleCancel}>
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={editingCombined ? handleSaveCombined : handleSave}
+                      disabled={updateMutation.isPending}
+                    >
+                      {updateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingTerms(true)} data-testid="button-edit-terms">
+                      <Edit className="h-3 w-3 mr-1" />
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingCombined(true)} data-testid="button-edit-combined">
+                      <Code className="h-3 w-3 mr-1" />
+                      Edit Query
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-1">
-              {localTerms.map((term) => (
-                <div
-                  key={term.id}
-                  className={`flex items-start gap-2 p-2 rounded text-sm ${
-                    term.enabled ? "bg-muted/50" : "bg-muted/20 opacity-60"
-                  }`}
-                >
-                  <Checkbox
-                    checked={term.enabled}
-                    onCheckedChange={() => editingTerms && toggleTerm(term.id)}
-                    disabled={!editingTerms}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <code className="text-xs break-all">{term.term}</code>
-                    {term.rationale && (
-                      <div className="text-xs text-muted-foreground mt-1">{term.rationale}</div>
-                    )}
+            {editingCombined ? (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">
+                  Edit the combined Boolean query directly (used for document search)
+                </Label>
+                <Textarea
+                  value={combinedQuery}
+                  onChange={(e) => setCombinedQuery(e.target.value)}
+                  className="font-mono text-xs min-h-[100px]"
+                  placeholder="Enter Boolean query: (term1 OR term2) AND term3"
+                  data-testid="textarea-combined-query"
+                />
+              </div>
+            ) : (
+              <>
+                {editingTerms && (
+                  <div className="flex gap-2 pb-2">
+                    <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+                      <DialogTrigger asChild>
+                        <Button size="sm" variant="outline" data-testid="button-add-term">
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add Term
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add Search Term</DialogTitle>
+                          <DialogDescription>
+                            Add a new Boolean search term to this request
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="new-term">Search Query</Label>
+                            <Textarea
+                              id="new-term"
+                              value={newTerm.term}
+                              onChange={(e) => setNewTerm({ ...newTerm, term: e.target.value })}
+                              placeholder='e.g., ("contract" OR "agreement") AND (breach OR violation)'
+                              className="font-mono text-sm"
+                              data-testid="input-new-term"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="new-type">Term Type</Label>
+                            <Select
+                              value={newTerm.type}
+                              onValueChange={(val) => setNewTerm({ ...newTerm, type: val as SearchTerm["type"] })}
+                            >
+                              <SelectTrigger data-testid="select-new-type">
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="boolean">Boolean (AND/OR)</SelectItem>
+                                <SelectItem value="phrase">Phrase (exact match)</SelectItem>
+                                <SelectItem value="proximity">Proximity (w/n)</SelectItem>
+                                <SelectItem value="wildcard">Wildcard (*/?)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label htmlFor="new-rationale">Rationale (optional)</Label>
+                            <Input
+                              id="new-rationale"
+                              value={newTerm.rationale}
+                              onChange={(e) => setNewTerm({ ...newTerm, rationale: e.target.value })}
+                              placeholder="Describe what this term captures"
+                              data-testid="input-new-rationale"
+                            />
+                          </div>
+                          <Button onClick={addNewTerm} className="w-full" data-testid="button-confirm-add-term">
+                            Add Term
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
-                  {term.aiGenerated && (
-                    <Badge variant="outline" className="text-[10px]">
-                      AI
-                    </Badge>
-                  )}
+                )}
+
+                <div className="space-y-1">
+                  {localTerms.map((term) => (
+                    <div
+                      key={term.id}
+                      className={`flex items-start gap-2 p-2 rounded text-sm ${
+                        term.enabled ? "bg-muted/50" : "bg-muted/20 opacity-60"
+                      }`}
+                    >
+                      <Checkbox
+                        checked={term.enabled}
+                        onCheckedChange={() => editingTerms && toggleTerm(term.id)}
+                        disabled={!editingTerms}
+                        className="mt-0.5"
+                        data-testid={`checkbox-term-${term.id}`}
+                      />
+                      <div className="flex-1 space-y-1">
+                        {editingTerms && editingTermId === term.id ? (
+                          <div className="space-y-2">
+                            <Textarea
+                              value={term.term}
+                              onChange={(e) => updateTermText(term.id, e.target.value)}
+                              className="font-mono text-xs min-h-[60px]"
+                              data-testid={`textarea-edit-term-${term.id}`}
+                            />
+                            <div className="flex gap-2 items-center">
+                              <Label className="text-xs shrink-0">Type:</Label>
+                              <Select
+                                value={term.type}
+                                onValueChange={(val) => updateTermType(term.id, val as SearchTerm["type"])}
+                              >
+                                <SelectTrigger className="h-7 text-xs" data-testid={`select-edit-type-${term.id}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="boolean">Boolean</SelectItem>
+                                  <SelectItem value="phrase">Phrase</SelectItem>
+                                  <SelectItem value="proximity">Proximity</SelectItem>
+                                  <SelectItem value="wildcard">Wildcard</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <Input
+                              value={term.rationale || ""}
+                              onChange={(e) => updateTermRationale(term.id, e.target.value)}
+                              placeholder="Rationale (optional)"
+                              className="text-xs"
+                              data-testid={`input-edit-rationale-${term.id}`}
+                            />
+                            <Button size="sm" variant="ghost" onClick={() => setEditingTermId(null)}>
+                              Done
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <code className="text-xs break-all">{term.term}</code>
+                              <Badge variant="outline" className="text-[9px] shrink-0">
+                                {term.type || "boolean"}
+                              </Badge>
+                            </div>
+                            {term.rationale && (
+                              <div className="text-xs text-muted-foreground">{term.rationale}</div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {term.aiGenerated && (
+                          <Badge variant="outline" className="text-[10px]">
+                            AI
+                          </Badge>
+                        )}
+                        {editingTerms && editingTermId !== term.id && (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => setEditingTermId(term.id)}
+                              data-testid={`button-inline-edit-${term.id}`}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 text-destructive"
+                              onClick={() => deleteTerm(term.id)}
+                              data-testid={`button-delete-term-${term.id}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}
