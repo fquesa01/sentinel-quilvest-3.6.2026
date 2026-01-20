@@ -528,17 +528,26 @@ async function processComplaintDocument(setId: string, documentText: string) {
 
     // Create search term items for each claim
     for (const claim of parsedClaims) {
+      // Build fullText from factual allegations if not provided directly
+      const fullText = claim.fullText || 
+        (claim.factualAllegations && claim.factualAllegations.length > 0 
+          ? claim.factualAllegations.map(a => `${a.paragraphRef}: ${a.allegation}`).join('\n')
+          : `${claim.claimTitle || claim.causeOfAction} - Claim ${claim.claimNumber}`);
+      
+      // Use claimTitle or causeOfAction as summary
+      const summary = claim.summary || claim.claimTitle || claim.causeOfAction || `Claim ${claim.claimNumber}`;
+
       await db.insert(searchTermItems).values({
         id: nanoid(),
         searchTermSetId: setId,
         itemNumber: claim.claimNumber,
         itemType: "complaint_claim",
-        fullText: claim.fullText,
-        summary: claim.summary,
+        fullText: fullText,
+        summary: summary,
         causeOfAction: claim.causeOfAction,
         legalElements: claim.legalElements,
         searchTerms: claim.searchTerms,
-        combinedBooleanString: claim.combinedBoolean,
+        combinedBooleanString: claim.combinedBoolean || "",
       });
     }
 
