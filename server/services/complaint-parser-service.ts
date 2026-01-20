@@ -95,297 +95,66 @@ export interface ComplaintAnalysisResult {
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY! });
 
-const complaintAnalysisPrompt = `You are a senior litigation associate conducting pre-discovery analysis. Thoroughly analyze this complaint and create a comprehensive, case-specific document search strategy.
+const complaintAnalysisPrompt = `Analyze this legal complaint and extract causes of action with Boolean search terms.
 
-## PHASE 1: EXTRACT CASE FUNDAMENTALS
+INSTRUCTIONS:
+1. Extract each cause of action (claim) from the complaint
+2. For each claim, generate Boolean search terms to find relevant documents
+3. Use actual party names, dates, and terms from the complaint - NOT generic terms
+4. Return ONLY valid JSON - no markdown, no explanation
 
-### 1.1 Parties & People
-Extract from the complaint:
-- All plaintiff(s): Full legal names, corporate form, DBAs/aliases
-- All defendant(s): Full legal names, corporate form, DBAs/aliases  
-- Every individual mentioned by name: Their role, title, which party they're associated with
-- Any third parties: Witnesses, agents, vendors, affiliates, subsidiaries
-
-### 1.2 Critical Dates
-Extract EVERY date mentioned:
-- Contract execution dates
-- Alleged breach dates
-- Notice dates
-- Termination dates
-- Deadline dates
-- Payment due dates
-- The overall time period of the dispute
-
-### 1.3 Monetary Figures
-Extract ALL dollar amounts:
-- Contract values
-- Claimed damages
-- Specific payment amounts
-- Lost revenue figures
-- Any financial figures referenced
-
-### 1.4 Documents Referenced
-List every document mentioned or quoted:
-- Contracts by name (e.g., "Master Services Agreement", "Employment Agreement")
-- Specific communications referenced
-- Exhibits attached or referenced
-- Any document the complaint quotes from
-
-### 1.5 Specific Terminology
-Identify case-specific terms:
-- Project names or code names
-- Product names
-- Internal terminology used
-- Defined terms from contracts
-- Industry jargon specific to this dispute
-
----
-
-## PHASE 2: ANALYZE EACH CAUSE OF ACTION
-
-For EACH cause of action in the complaint:
-
-### 2.1 Identification
-- Claim number as stated
-- Exact title as stated in the complaint
-- Legal theory (breach of contract, negligence, fraud, etc.)
-- Statutory citation if any
-- Which defendant(s) this claim targets
-
-### 2.2 Factual Allegations
-Extract the SPECIFIC factual allegations that support this claim:
-- Quote or closely paraphrase each relevant paragraph
-- Note paragraph numbers (¶) for reference
-- Do NOT generalize - use the complaint's actual language
-
-### 2.3 Legal Elements
-For the applicable jurisdiction's law, list what must be proven:
-- Each required element
-- Which specific factual allegations support each element
-- Assessment: Is the support strong, moderate, or weak?
-- Gaps: What facts are missing or thin?
-
-### 2.4 Anticipated Defenses  
-Based on the allegations, what defenses will defendant likely raise?
-- Affirmative defenses (statute of limitations, waiver, estoppel, etc.)
-- Factual disputes (what will defendant contest?)
-- What documents might support defendant's version?
-
----
-
-## PHASE 3: GENERATE CASE-SPECIFIC BOOLEAN SEARCH TERMS
-
-CRITICAL: Every search term MUST use actual names, dates, amounts, and terminology FROM THIS COMPLAINT. No generic searches.
-
-### Search Term Categories:
-
-**CATEGORY A: Party & People Searches**
-Use actual names from the complaint with variations:
-- Full name, first initial + last name, last name only
-- Common misspellings and OCR errors
-- Job titles mentioned
-- Email address patterns if inferable
-Example: ("John Martinez" OR "J. Martinez" OR "J Martinez" OR "Martinez, John" OR CEO W/3 TechCorp)
-
-**CATEGORY B: Document Searches**
-Target specific documents referenced in the complaint:
-- Use exact document names from the complaint
-- Include common abbreviations
-- Include document types
-Example: ("Master Services Agreement" OR MSA OR "Services Agreement") AND (TechCorp OR Acme)
-
-**CATEGORY C: Subject Matter Searches**
-Use the complaint's actual terminology:
-- Project names, product names, code names
-- Specific contract provisions referenced
-- Issues described in the complaint's language
-Example: ("Alpha Platform" OR "Alpha Project" OR "Project Alpha") AND (deliver* OR status OR delay* OR schedul*)
-
-**CATEGORY D: Date-Bounded Searches**
-Combine subjects with specific dates from the complaint:
-- Use multiple date formats (1/15/24, January 15, Jan 15, 15-Jan)
-- Quarter references (Q4, Q1, "fourth quarter")
-- Year references where appropriate
-Example: (deliver* OR deadline OR launch) W/15 ("December 31" OR "12/31/23" OR "Dec 31" OR "year end" OR "Q4 2023")
-
-**CATEGORY E: Communication Searches**
-Find discussions about the disputed issues:
-- Combine party names with issue terms
-- Look for problem/concern language
-- Target negotiation and dispute communications
-Example: (Martinez OR "John Martinez") AND (concern* OR problem* OR issue* OR delay* OR discuss*)
-
-**CATEGORY F: Financial/Damages Searches**
-Target damages evidence using actual figures:
-- Use exact dollar amounts from complaint
-- Include payment/invoice terminology
-- Financial impact language
-Example: ("$2.4 million" OR "$2,400,000" OR "2.4M" OR "contract price") OR (invoice* OR payment* OR outstanding) W/10 (TechCorp OR Alpha OR MSA)
-
-**CATEGORY G: Timeline & Milestone Searches**  
-Find schedule and deadline documents:
-- Use specific milestones mentioned
-- Deadline and schedule language
-- Delay and extension discussions
-Example: (milestone OR deliverable OR "phase 1" OR "phase 2") AND (Alpha OR TechCorp) AND (date OR deadline OR schedule OR delay*)
-
-### Boolean Syntax:
-- AND: Both required → contract AND breach
-- OR: Either matches → (agreement OR contract)  
-- NOT: Exclude → contract NOT employment
-- "Quotes": Exact phrase → "material breach"
-- Parentheses: Grouping → (Smith OR Jones) AND contract
-- *Wildcard: Word endings → terminat* matches terminate, termination, terminated
-- W/n: Within n words → breach W/10 contract
-- P/n: Within n paragraphs → breach P/2 damages
-
-### Quality Requirements:
-1. EVERY search must include at least one case-specific identifier (name, date, project name, dollar amount)
-2. Create BOTH narrow (high precision) and broad (high recall) versions
-3. Consider common misspellings for key names
-4. Consider multiple date formats
-5. Use the exact terminology from the complaint
-
----
-
-## PHASE 4: PRIVILEGE IDENTIFICATION
-
-Based on what the complaint reveals:
-- Are attorneys mentioned? Generate name searches.
-- Is legal advice referenced? Generate context searches.
-- Are there joint defense or common interest implications?
-
-Generate privilege search terms specific to this case, not generic "attorney OR lawyer" searches.
-
----
-
-## PHASE 5: CUSTODIAN RECOMMENDATIONS
-
-Based on individuals in the complaint:
-- Priority custodians: People directly named in allegations
-- Secondary custodians: Supervisors, assistants, department heads likely to have relevant documents
-
----
-
-## OUTPUT FORMAT
-
-Return valid JSON only (no markdown code blocks):
-
+REQUIRED JSON FORMAT:
 {
   "caseFundamentals": {
-    "plaintiffs": [{"name": "", "type": "", "aliases": [], "keyIndividuals": []}],
-    "defendants": [{"name": "", "type": "", "aliases": [], "keyIndividuals": []}],
-    "dateRange": {
-      "earliest": "YYYY-MM-DD",
-      "latest": "YYYY-MM-DD",
-      "keyDates": [{"date": "", "event": ""}]
-    },
-    "monetaryFigures": [{"amount": "", "description": ""}],
-    "referencedDocuments": [{"name": "", "type": ""}],
-    "caseSpecificTerminology": ["term1", "term2"]
+    "plaintiffs": [{"name": "actual name", "type": "Individual/Company", "aliases": [], "keyIndividuals": []}],
+    "defendants": [{"name": "actual name", "type": "Individual/Company", "aliases": [], "keyIndividuals": []}],
+    "dateRange": {"earliest": "YYYY-MM-DD", "latest": "YYYY-MM-DD", "keyDates": []},
+    "monetaryFigures": [],
+    "referencedDocuments": [],
+    "caseSpecificTerminology": []
   },
-  
   "causesOfAction": [
     {
       "claimNumber": 1,
-      "claimTitle": "Exact title from complaint",
-      "causeOfAction": "Legal theory name",
-      "statutoryBasis": "Citation if any",
-      "againstDefendants": ["Defendant names"],
-      
+      "claimTitle": "Exact title from complaint (e.g., 'Count I: Breach of Contract')",
+      "causeOfAction": "Legal theory (e.g., 'Breach of Contract')",
+      "statutoryBasis": "citation if any",
+      "againstDefendants": ["Defendant Name"],
       "factualAllegations": [
-        {
-          "paragraphRef": "¶ XX",
-          "allegation": "Exact or close paraphrase from complaint",
-          "relevantTo": "Which element this supports"
-        }
+        {"paragraphRef": "¶ XX", "allegation": "Quote from complaint", "relevantTo": "element"}
       ],
-      
       "legalElements": [
         {
           "number": 1,
           "element": "Element name",
-          "mustProve": "What this element requires",
-          "supportingFacts": "Which allegations support this",
+          "mustProve": "What plaintiff must prove",
+          "supportingFacts": "Facts alleged",
           "strength": "strong",
           "gaps": "What's missing",
           "searchTerms": [
-            {
-              "id": "unique-id",
-              "category": "Party",
-              "targetElement": "Which element this addresses",
-              "term": "THE BOOLEAN SEARCH STRING",
-              "precision": "high",
-              "recall": "medium", 
-              "rationale": "Why this search is relevant",
-              "enabled": true,
-              "aiGenerated": true
-            }
+            {"id": "1", "term": "(\"Defendant Name\" OR \"D. Name\") AND (contract OR agreement)", "category": "Party", "targetElement": "Existence of contract", "precision": "high", "recall": "medium", "rationale": "Find documents with defendant name and contract terms", "enabled": true, "aiGenerated": true}
           ]
         }
       ],
-      
-      "anticipatedDefenses": [
-        {
-          "defense": "Defense name",
-          "likelihood": "high",
-          "documentsToFind": "What to search for"
-        }
-      ],
-      
+      "anticipatedDefenses": [],
       "searchTerms": [
-        {
-          "id": "unique-id",
-          "category": "Document",
-          "targetElement": "Overall claim",
-          "term": "THE BOOLEAN SEARCH STRING",
-          "precision": "medium",
-          "recall": "high", 
-          "rationale": "Why this search is relevant to THIS SPECIFIC CASE",
-          "enabled": true,
-          "aiGenerated": true
-        }
+        {"id": "2", "term": "\"Plaintiff Name\" AND \"Defendant Name\" AND (breach OR violat*)", "category": "Core", "targetElement": "Overall claim", "precision": "medium", "recall": "high", "rationale": "Find all documents discussing the alleged breach", "enabled": true, "aiGenerated": true}
       ],
-      
-      "combinedBoolean": "All search terms combined for this claim"
+      "combinedBoolean": "Combined search string for this claim"
     }
   ],
-  
-  "privilegeSearchTerms": [
-    {
-      "id": "unique-id",
-      "privilegeType": "attorney_client",
-      "term": "Boolean search string specific to this case",
-      "rationale": "Why this applies to this case",
-      "enabled": true,
-      "aiGenerated": true
-    }
-  ],
-  
-  "recommendedCustodians": {
-    "priority": [{"name": "", "role": "", "relevance": ""}],
-    "secondary": [{"name": "", "role": "", "relevance": ""}]
-  }
+  "privilegeSearchTerms": [],
+  "recommendedCustodians": {"priority": [], "secondary": []}
 }
 
----
+CRITICAL RULES:
+1. USE ACTUAL NAMES from complaint (e.g., "Smith" not "Plaintiff")
+2. Include name variations: "John Smith" OR "J. Smith" OR "Smith"
+3. Include date variations where relevant
+4. Each claim MUST have at least 3 search terms
+5. Return ONLY the JSON object - no other text
 
-## CRITICAL REMINDERS
-
-1. USE THE ACTUAL COMPLAINT LANGUAGE - not generic legal terms
-2. EVERY SEARCH TERM must include case-specific identifiers
-3. EXTRACT REAL NAMES, DATES, AMOUNTS - do not generalize
-4. QUOTE THE COMPLAINT when describing allegations
-5. CREATE VARIATIONS for names (misspellings, initials, titles)
-6. CREATE VARIATIONS for dates (multiple formats)
-7. DO NOT HALLUCINATE - only use facts from the complaint
-8. NOTE GAPS where the complaint is thin on facts
-
----
-
-Now analyze this complaint:
-
----
+COMPLAINT TEXT:
 `;
 
 export class ComplaintParserService {
@@ -394,7 +163,7 @@ export class ComplaintParserService {
       throw new Error("Gemini API key not configured");
     }
 
-    const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 100000) + "\n---";
+    const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 80000);
 
     try {
       console.log(`[ComplaintParser] Sending ${fullPrompt.length} chars to AI (doc: ${documentText.length} chars)`);
@@ -402,11 +171,15 @@ export class ComplaintParserService {
       const result = await ai.models.generateContent({
         model: "gemini-2.0-flash",
         contents: fullPrompt,
+        config: {
+          maxOutputTokens: 8192,
+          temperature: 0.1,
+        }
       });
       const response = result.text || "";
       
       console.log(`[ComplaintParser] Received response: ${response.length} chars`);
-      console.log(`[ComplaintParser] Response preview: ${response.substring(0, 1000)}`);
+      console.log(`[ComplaintParser] Response preview: ${response.substring(0, 500)}`);
 
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
@@ -454,24 +227,34 @@ export class ComplaintParserService {
       throw new Error("Gemini API key not configured");
     }
 
-    const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 100000) + "\n---";
+    const fullPrompt = complaintAnalysisPrompt + documentText.substring(0, 80000);
 
     try {
+      console.log(`[ComplaintParser] Full parse: Sending ${fullPrompt.length} chars to AI`);
+      
       const result = await ai.models.generateContent({
         model: "gemini-2.0-flash",
         contents: fullPrompt,
+        config: {
+          maxOutputTokens: 8192,
+          temperature: 0.1,
+        }
       });
       const response = result.text || "";
+      
+      console.log(`[ComplaintParser] Full parse response: ${response.length} chars`);
 
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.error("[ComplaintParser] Failed to extract JSON from response:", response.substring(0, 500));
+        console.error("[ComplaintParser] Failed to extract JSON from response:", response.substring(0, 2000));
         throw new Error("Failed to parse complaint response - no JSON found");
       }
 
       const parsed: ComplaintAnalysisResult = JSON.parse(jsonMatch[0]);
+      
+      console.log(`[ComplaintParser] Full parse causesOfAction count: ${parsed.causesOfAction?.length || 0}`);
 
-      parsed.causesOfAction = parsed.causesOfAction.map((claim) => ({
+      parsed.causesOfAction = (parsed.causesOfAction || []).map((claim) => ({
         ...claim,
         searchTerms: (claim.searchTerms || []).map((term) => ({
           ...term,
@@ -495,20 +278,12 @@ export class ComplaintParserService {
         id: nanoid(),
       }));
 
-      parsed.recommendedCustodians = parsed.recommendedCustodians || { priority: [], secondary: [] };
-      parsed.caseFundamentals = parsed.caseFundamentals || {
-        plaintiffs: [],
-        defendants: [],
-        dateRange: { earliest: "", latest: "", keyDates: [] },
-        monetaryFigures: [],
-        referencedDocuments: [],
-        caseSpecificTerminology: [],
-      };
-
       return parsed;
     } catch (error) {
-      console.error("[ComplaintParser] Error parsing complaint:", error);
+      console.error("[ComplaintParser] Error in full parse:", error);
       throw error;
     }
   }
 }
+
+export const complaintParserService = new ComplaintParserService();
