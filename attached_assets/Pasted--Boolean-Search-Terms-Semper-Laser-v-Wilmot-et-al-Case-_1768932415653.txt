@@ -1,0 +1,674 @@
+# Boolean Search Terms - Semper Laser v. Wilmot et al.
+## Case No. 2025-008273-CA-01
+
+Based on the Verified Amended Complaint, I've organized search strings to identify documents supporting or contradicting the allegations and elements of each cause of action.
+
+---
+
+# PART I: CORE FACTUAL ALLEGATIONS
+
+## A. Wilmot's Employment & Access to Confidential Information
+
+**Employment Timeline & Role:**
+```
+(Wilmot OR "David Wilmot") AND (COO OR "chief operating" OR CEO OR "chief executive" OR hire* OR promot* OR employ* OR position OR title OR role)
+```
+
+**Access to Confidential Information:**
+```
+(Wilmot OR "David Wilmot") AND (confidential* OR proprietary OR "trade secret*" OR sensitive OR restrict* OR classif*) AND (access OR view* OR review* OR receiv* OR obtain* OR possess*)
+```
+
+**M&A / Investment Knowledge:**
+```
+(Wilmot OR "David Wilmot") AND (M&A OR merger* OR acqui* OR "due diligence" OR investor* OR "quality of earnings" OR valuation OR "DC Advisory" OR buyer* OR transaction* OR "strategic alternative*")
+```
+
+---
+
+## B. The Non-Compete & Confidentiality Agreement
+
+**Agreement Existence & Terms:**
+```
+(Wilmot OR "David Wilmot") AND ("non-compete" OR noncompete OR "non-disclosure" OR NDA OR "confidentiality agreement" OR "restrictive covenant*" OR "non-solicitation")
+```
+
+**12-Month Non-Compete Period:**
+```
+(Wilmot OR "David Wilmot") AND ("12 month*" OR "twelve month*" OR "1 year" OR "one year") AND (compet* OR restrict* OR prohibit* OR covenant*)
+```
+
+**50-Mile Radius Restriction:**
+```
+("50 mile*" OR "fifty mile*" OR radius OR geographic* OR territor*) AND (compet* OR restrict* OR location* OR Semper)
+```
+
+**24-Month Non-Solicitation:**
+```
+("24 month*" OR "twenty-four month*" OR "2 year*" OR "two year*") AND (solicit* OR employ* OR hire* OR recruit* OR client* OR customer*)
+```
+
+---
+
+## C. North Castle NDA & Due Diligence
+
+**NDA Execution & Terms:**
+```
+("North Castle" OR NCP) AND (NDA OR "non-disclosure" OR confidential* OR agreement) AND (Semper OR "Project Venus")
+```
+
+**18-Month Employee Non-Solicitation:**
+```
+("North Castle" OR NCP) AND ("18 month*" OR "eighteen month*") AND (solicit* OR employ* OR hire* OR recruit* OR officer* OR employee*)
+```
+
+**Confidential Information Received:**
+```
+("North Castle" OR NCP) AND (Semper OR "Project Venus") AND (confidential* OR proprietary OR "due diligence" OR financ* OR strateg* OR operation* OR pricing OR customer* OR expansion)
+```
+
+**DC Advisory / Investment Process:**
+```
+("DC Advisory" OR "investment bank*" OR advisor*) AND (Semper OR "North Castle" OR transaction* OR M&A OR merger* OR acqui* OR buyer* OR bidder*)
+```
+
+---
+
+## D. Wilmot's Hiring by EWC / North Castle
+
+**Recruitment & Interview Process:**
+```
+(Wilmot OR "David Wilmot") AND (EWC OR "EWC Growth" OR "North Castle") AND (interview* OR recruit* OR hire* OR offer* OR candidate* OR position* OR CEO)
+```
+
+**Leslie Fuda Involvement:**
+```
+("Leslie Fuda" OR Fuda) AND (Wilmot OR "David Wilmot" OR interview* OR hire* OR recruit* OR CEO OR candidate*)
+```
+
+**Flatiron Search Partners:**
+```
+("Flatiron Search" OR "Flatiron Search Partners" OR "executive search" OR headhunt* OR recruiter*) AND (Wilmot OR "David Wilmot" OR EWC OR CEO)
+```
+
+**December 2024 Offer:**
+```
+(Wilmot OR "David Wilmot") AND (offer* OR accept* OR agree* OR commit*) AND (EWC OR "EWC Growth" OR "North Castle") AND (December OR "12/2024" OR "Dec 2024")
+```
+
+**January 2025 Start Date:**
+```
+(Wilmot OR "David Wilmot") AND (start* OR begin* OR commence* OR join*) AND (EWC OR "EWC Growth") AND (January OR "1/2025" OR "Jan 2025" OR "1/20/2025")
+```
+
+---
+
+## E. Dual Employment / Overlap Period
+
+**Simultaneous CEO Roles:**
+```
+(Wilmot OR "David Wilmot") AND (Semper AND EWC) AND (CEO OR "chief executive" OR dual OR both OR simultan* OR overlap* OR concurren*)
+```
+
+**Continued Semper Employment:**
+```
+(Wilmot OR "David Wilmot") AND (Semper) AND (continu* OR remain* OR stay* OR ongoing) AND (CEO OR employ* OR duties OR role)
+```
+
+**March 2025 Resignation:**
+```
+(Wilmot OR "David Wilmot") AND (resign* OR depart* OR leav* OR terminat* OR "step down" OR transition*) AND (Semper) AND (March OR "3/2025" OR "Mar 2025" OR "3/26/2025")
+```
+
+**"Personal Challenges" Resignation:**
+```
+(Wilmot OR "David Wilmot") AND ("personal challenge*" OR "personal reason*" OR family OR California OR "move back")
+```
+
+**Extension Negotiations (March 2025):**
+```
+(Wilmot OR "David Wilmot") AND (Semper) AND (extension OR contract* OR renegotiat* OR "90 day*" OR consult* OR transition*) AND (March OR "3/2025")
+```
+
+---
+
+## F. EWC Laser Hair Removal Expansion
+
+**Laser Hair Removal Launch:**
+```
+(EWC OR "EWC Growth") AND ("laser hair removal" OR "laser hair" OR LHR OR laser) AND (launch* OR add* OR expand* OR introduc* OR offer* OR service* OR announc*)
+```
+
+**April 2025 Website Changes:**
+```
+(EWC OR "EWC Growth") AND (website OR "web site" OR online OR webpage) AND ("laser hair removal" OR laser) AND (April OR "4/2025" OR "Apr 2025")
+```
+
+**Website Removal:**
+```
+(EWC OR "EWC Growth") AND (website OR "web site") AND (remov* OR delet* OR "take down" OR unpublish*) AND (laser OR "hair removal")
+```
+
+**New York Locations:**
+```
+(EWC OR "EWC Growth") AND ("laser hair removal" OR LHR) AND ("New York" OR NYC OR Manhattan OR Yonkers OR "First Avenue" OR "75th" OR Columbus)
+```
+
+---
+
+## G. Retention of Company Property
+
+**Laptops / Devices:**
+```
+(Wilmot OR "David Wilmot") AND (laptop* OR computer* OR device* OR equipment* OR property) AND (retain* OR keep* OR possess* OR return* OR Semper)
+```
+
+**Five Laptops:**
+```
+(laptop* OR computer* OR device*) AND (five OR "5") AND (Semper OR confidential* OR company OR return*)
+```
+
+---
+
+## H. Disparagement / Communications with Investors
+
+**Investor Communications:**
+```
+(Wilmot OR "David Wilmot") AND (investor* OR lender* OR shareholder* OR stakeholder*) AND (Semper) AND (contact* OR call* OR communicat* OR discuss* OR inform* OR disclose*)
+```
+
+**Disparagement:**
+```
+(Wilmot OR "David Wilmot") AND (disparag* OR defam* OR criticiz* OR negative* OR harm* OR damage*) AND (Semper OR investor* OR lender* OR reputation)
+```
+
+**Financial Information Disclosure:**
+```
+(Wilmot OR "David Wilmot") AND (financ* OR revenue* OR EBITDA OR profit* OR loss* OR debt*) AND (investor* OR lender*) AND (disclose* OR reveal* OR share* OR divulge*)
+```
+
+---
+
+# PART II: CAUSES OF ACTION - ELEMENT-SPECIFIC SEARCHES
+
+---
+
+## COUNT III: FUTSA - MISAPPROPRIATION OF TRADE SECRETS
+**Elements: (1) Trade secret exists; (2) Misappropriation; (3) Damages**
+
+### Element 1: Trade Secret Existence
+
+**Customer/Client Lists:**
+```
+(Semper) AND ("customer list*" OR "client list*" OR customer* OR client*) AND (confidential* OR proprietary OR secret* OR protect*)
+```
+
+**Supplier/Vendor Information:**
+```
+(Semper) AND (supplier* OR vendor* OR distributor*) AND (list* OR relationship* OR contact* OR pricing* OR terms* OR confidential*)
+```
+
+**Pricing Strategies:**
+```
+(Semper) AND (pricing OR price* OR rate* OR cost* OR margin* OR discount*) AND (strateg* OR structure* OR model* OR confidential* OR proprietary)
+```
+
+**Expansion Plans:**
+```
+(Semper) AND (expansion* OR growth* OR "new location*" OR "new store*" OR "new market*" OR geographic*) AND (plan* OR strateg* OR analys* OR confidential*)
+```
+
+**Laser Equipment / Methods:**
+```
+(Semper) AND (laser* OR equipment* OR machine* OR device* OR method* OR technique* OR process*) AND (proprietary OR confidential* OR "trade secret*" OR cost* OR supplier*)
+```
+
+**Store Layouts / Designs:**
+```
+(Semper) AND ("floor plan*" OR layout* OR design* OR "store design*" OR buildout* OR specification*)
+```
+
+**Marketing / Sales Strategies:**
+```
+(Semper) AND (marketing OR advertis* OR "social media" OR sales OR "go-to-market") AND (strateg* OR plan* OR campaign* OR confidential*)
+```
+
+### Element 2: Misappropriation
+
+**Acquisition of Trade Secrets:**
+```
+(Wilmot OR "David Wilmot") AND (Semper) AND (acquir* OR obtain* OR access* OR learn* OR discover*) AND (confidential* OR "trade secret*" OR proprietary)
+```
+
+**Disclosure to EWC/North Castle:**
+```
+(Wilmot OR "David Wilmot") AND (EWC OR "North Castle" OR competitor*) AND (disclos* OR share* OR provid* OR transfer* OR communicat* OR reveal*) AND (Semper OR confidential* OR proprietary OR "trade secret*")
+```
+
+**Use of Trade Secrets:**
+```
+(EWC OR "EWC Growth" OR "North Castle") AND (Semper) AND (use* OR utiliz* OR implement* OR apply* OR leverage* OR exploit*) AND (information OR method* OR strateg* OR pricing OR customer* OR supplier*)
+```
+
+### Element 3: Reasonable Measures to Protect
+
+**Confidentiality Agreements:**
+```
+(Semper) AND (confidential* OR NDA OR "non-disclosure" OR "non-compete") AND (employee* OR agreement* OR policy* OR require* OR sign*)
+```
+
+**Access Restrictions:**
+```
+(Semper) AND (access OR restrict* OR limit* OR control* OR permission* OR clearance*) AND (confidential* OR information OR data OR system*)
+```
+
+---
+
+## COUNT IV: BREACH OF CONTRACT (Wilmot - Non-Compete)
+**Elements: (1) Valid contract; (2) Material breach; (3) Damages**
+
+### Element 1: Valid Contract
+
+**Contract Execution:**
+```
+(Wilmot OR "David Wilmot") AND (sign* OR execut* OR agree* OR acknowledg*) AND ("non-compete" OR "confidentiality agreement" OR "employment agreement" OR "3/1/2023")
+```
+
+**Consideration:**
+```
+(Wilmot OR "David Wilmot") AND (Semper) AND (employ* OR compensat* OR salary OR position* OR promot*) AND (consideration OR exchange OR offer*)
+```
+
+### Element 2: Material Breach - Section 1.1 (Non-Competition)
+
+**Competition with Semper:**
+```
+(Wilmot OR "David Wilmot") AND (EWC OR "EWC Growth") AND (compet* OR rival* OR same OR similar) AND (business OR service* OR market* OR industry* OR "laser hair removal")
+```
+
+**Direct Competitor Status:**
+```
+(EWC OR "EWC Growth") AND (Semper) AND (compet* OR rival* OR "same market*" OR "same service*" OR "direct compet*" OR "laser hair removal")
+```
+
+**Locations Within 50 Miles:**
+```
+(EWC OR "EWC Growth") AND (Semper) AND (location* OR store* OR facilit* OR office*) AND (mile* OR distance* OR proximity* OR near* OR overlap*)
+```
+
+**Employment as Officer/Director:**
+```
+(Wilmot OR "David Wilmot") AND (EWC OR "EWC Growth") AND (CEO OR "chief executive" OR officer* OR director* OR employee* OR position*)
+```
+
+### Element 2: Material Breach - Section 1.4 (Non-Disclosure)
+
+**Divulging Confidential Information:**
+```
+(Wilmot OR "David Wilmot") AND (divulge* OR disclose* OR reveal* OR share* OR communicat*) AND (confidential* OR proprietary OR "trade secret*") AND (EWC OR "North Castle" OR competitor* OR "third party")
+```
+
+**Use to Detriment of Semper:**
+```
+(Wilmot OR "David Wilmot") AND (detriment* OR harm* OR damage* OR injur*) AND (Semper) AND (information OR knowledge OR secret*)
+```
+
+**Benefit to Others:**
+```
+(Wilmot OR "David Wilmot") AND (benefit* OR advantage* OR assist* OR help*) AND (EWC OR "North Castle" OR competitor*) AND (information OR knowledge OR confidential*)
+```
+
+### Element 2: Material Breach - Section 1.5 (Non-Solicitation)
+
+**Employee Solicitation:**
+```
+(Wilmot OR "David Wilmot") AND (solicit* OR recruit* OR hire* OR poach* OR lure* OR entice*) AND (Semper) AND (employee* OR staff* OR personnel* OR worker*)
+```
+
+**Client/Customer Solicitation:**
+```
+(Wilmot OR "David Wilmot") AND (solicit* OR contact* OR approach* OR pitch*) AND (Semper) AND (client* OR customer* OR account* OR prospect*)
+```
+
+---
+
+## COUNT V: FLORIDA DECEPTIVE AND UNFAIR TRADE PRACTICES ACT
+**Elements: (1) Deceptive/unfair act; (2) In trade or commerce; (3) Damages**
+
+**Unfair Competition:**
+```
+(EWC OR "North Castle" OR Wilmot) AND ("unfair compet*" OR "unfair trade" OR "deceptive practice*" OR misappropriat*)
+```
+
+**Competitive Advantage Through Misappropriation:**
+```
+(EWC OR "North Castle") AND (advantage* OR benefit* OR gain*) AND (Semper) AND (confidential* OR proprietary OR "trade secret*" OR misappropriat*)
+```
+
+---
+
+## COUNT VI: BREACH OF FIDUCIARY DUTY (Wilmot)
+**Elements: (1) Fiduciary relationship; (2) Breach; (3) Damages**
+
+### Element 1: Fiduciary Relationship
+
+**Officer Status:**
+```
+(Wilmot OR "David Wilmot") AND (Semper) AND (CEO OR COO OR "chief executive" OR "chief operating" OR officer* OR executive* OR fiduciar*)
+```
+
+### Element 2: Breach
+
+**Duty of Loyalty:**
+```
+(Wilmot OR "David Wilmot") AND (loyalty OR "self-dealing" OR "conflict of interest" OR "personal gain" OR "own benefit") AND (Semper OR EWC)
+```
+
+**Duty of Care:**
+```
+(Wilmot OR "David Wilmot") AND (care OR diligence OR prudent* OR reasonable*) AND (Semper OR decision* OR manage*)
+```
+
+**Duty of Good Faith:**
+```
+(Wilmot OR "David Wilmot") AND ("good faith" OR honest* OR fair* OR candid* OR forthright*) AND (Semper)
+```
+
+**Duty of Confidentiality:**
+```
+(Wilmot OR "David Wilmot") AND (confidential* OR protect* OR safeguard*) AND (Semper) AND (information OR data OR secret*)
+```
+
+**Duty of Disclosure:**
+```
+(Wilmot OR "David Wilmot") AND (disclos* OR inform* OR reveal* OR notif*) AND (Semper OR board OR investor*) AND (EWC OR "North Castle" OR offer* OR position* OR opportunit*)
+```
+
+**Self-Dealing / Personal Gain:**
+```
+(Wilmot OR "David Wilmot") AND ("self-dealing" OR "personal gain" OR "own interest*" OR "personal benefit*" OR "pecuniary gain")
+```
+
+**Secret Negotiations:**
+```
+(Wilmot OR "David Wilmot") AND (secret* OR hidden OR conceal* OR undisclosed) AND (negotiat* OR discuss* OR communicat* OR offer*) AND (EWC OR "North Castle")
+```
+
+---
+
+## COUNT VII: BREACH OF CONTRACT (North Castle - NDA)
+**Elements: (1) Valid contract; (2) Material breach; (3) Damages**
+
+### Element 1: Valid Contract - NDA
+
+**NDA Execution:**
+```
+("North Castle" OR NCP OR "Jon Canarick") AND (NDA OR "non-disclosure" OR agreement) AND (Semper OR "Project Venus") AND (sign* OR execut* OR "July 30" OR "7/30/2024")
+```
+
+### Element 2: Material Breach - Non-Solicitation Provision
+
+**Solicitation of Wilmot:**
+```
+("North Castle" OR NCP OR "Leslie Fuda" OR EWC) AND (Wilmot OR "David Wilmot") AND (solicit* OR recruit* OR hire* OR offer* OR employ* OR approach* OR contact* OR entice*)
+```
+
+**Violation of 18-Month Period:**
+```
+("North Castle" OR NCP) AND ("18 month*" OR "eighteen month*") AND (Wilmot OR solicit* OR employ* OR officer*)
+```
+
+**Affiliate Actions (EWC):**
+```
+("North Castle" OR NCP) AND (EWC OR "EWC Growth" OR affiliate*) AND (solicit* OR hire* OR employ* OR Wilmot)
+```
+
+### Element 2: Material Breach - Confidential Information Misuse
+
+**Improper Use of Confidential Information:**
+```
+("North Castle" OR NCP) AND (Semper) AND (confidential* OR proprietary) AND (use* OR utiliz* OR exploit* OR leverage*) NOT (evaluat* OR "due diligence" OR transaction*)
+```
+
+**Use for Purposes Other Than Transaction Evaluation:**
+```
+("North Castle" OR NCP) AND (Semper OR confidential*) AND (compet* OR "laser hair removal" OR EWC OR expansion* OR market entry)
+```
+
+---
+
+## COUNTS VIII, IX, X: TORTIOUS INTERFERENCE WITH BUSINESS RELATIONSHIP
+**Elements: (1) Business relationship existed; (2) Knowledge of relationship; (3) Intentional interference; (4) Damages**
+
+### Element 1: Business Relationships
+
+**Semper-Wilmot Relationship:**
+```
+(Semper) AND (Wilmot OR "David Wilmot") AND (employ* OR agreement* OR contract* OR CEO OR relationship*)
+```
+
+**Semper-Customer Relationships:**
+```
+(Semper) AND (customer* OR client*) AND (relationship* OR contract* OR account* OR longstanding* OR loyal*)
+```
+
+**Semper-Investor/Lender Relationships:**
+```
+(Semper) AND (investor* OR lender* OR financ* OR bank* OR creditor*) AND (relationship* OR agreement* OR term* OR covenant*)
+```
+
+**M&A Relationships:**
+```
+(Semper) AND (M&A OR merger* OR acqui* OR buyer* OR "strategic partner*" OR "potential transaction*" OR "DC Advisory")
+```
+
+### Element 2: Knowledge of Relationships
+
+**North Castle Knowledge:**
+```
+("North Castle" OR NCP) AND (Semper) AND (aware* OR knew OR knowledge OR understand*) AND (relationship* OR customer* OR employee* OR Wilmot OR investor* OR M&A)
+```
+
+**EWC Knowledge:**
+```
+(EWC OR "EWC Growth") AND (Semper) AND (aware* OR knew OR knowledge) AND (Wilmot OR "non-compete" OR agreement* OR relationship*)
+```
+
+### Element 3: Intentional Interference
+
+**Intentional Conduct:**
+```
+("North Castle" OR EWC OR Wilmot) AND (intent* OR deliberate* OR knowing* OR purpose* OR willful*) AND (interfer* OR disrupt* OR undermine* OR damage*)
+```
+
+**Interference with M&A:**
+```
+("North Castle" OR EWC OR Wilmot) AND (M&A OR merger* OR acqui* OR transaction* OR deal*) AND (interfer* OR disrupt* OR prevent* OR derail* OR sabotag*)
+```
+
+**Steering Customers/Opportunities:**
+```
+(Wilmot OR "David Wilmot") AND (steer* OR divert* OR redirect* OR channel*) AND (customer* OR client* OR opportunit* OR business*) AND (EWC)
+```
+
+---
+
+## COUNT XI: CIVIL CONSPIRACY TO COMMIT FRAUD
+**Elements: (1) Agreement to participate in wrongful conduct; (2) Overt act in furtherance; (3) Damages**
+
+### Element 1: Agreement/Conspiracy
+
+**Joint Planning:**
+```
+(Wilmot OR "David Wilmot") AND ("North Castle" OR EWC) AND (plan* OR coordinat* OR conspir* OR agree* OR scheme* OR arrang*) AND (hire* OR employ* OR breach* OR compet*)
+```
+
+**Concealment Agreement:**
+```
+(Wilmot OR "David Wilmot" OR "North Castle" OR EWC) AND (conceal* OR hide* OR secret* OR undisclosed) AND (negotiat* OR offer* OR employ* OR position*)
+```
+
+### Element 2: Overt Acts
+
+**Fraudulent Concealment:**
+```
+(Wilmot OR "David Wilmot") AND (conceal* OR hide* OR fail* to disclos* OR misrepresent*) AND (Semper OR board OR investor*) AND (EWC OR "North Castle" OR offer* OR position* OR negotiat*)
+```
+
+**False Representations:**
+```
+(Wilmot OR "David Wilmot") AND (false* OR misrepresent* OR mislead* OR deceiv*) AND (Semper OR board OR investor* OR "personal challenge*" OR resignation*)
+```
+
+**North Castle False Assurances:**
+```
+("North Castle" OR NCP) AND (assur* OR represent* OR promis* OR commit*) AND (Semper) AND (confidential* OR "due diligence" OR transaction* OR use*)
+```
+
+**Joint Planning Calls:**
+```
+(Wilmot OR "David Wilmot") AND (EWC OR "North Castle") AND (call* OR meeting* OR discuss* OR plan* OR coordinat*) AND (2024 OR "November" OR "December")
+```
+
+### Element 3: Reliance/Damages
+
+**Semper's Reliance:**
+```
+(Semper) AND (rel* OR trust* OR believ* OR depend*) AND (Wilmot OR "North Castle") AND (good faith OR loyal* OR honest* OR commit*)
+```
+
+**Forgoing Alternatives:**
+```
+(Semper) AND (forego* OR abandon* OR reject* OR "pass on") AND (investor* OR buyer* OR alternative* OR option* OR opportunit*)
+```
+
+---
+
+# PART III: DAMAGES & HARM
+
+## A. Competitive Harm
+
+**Market Share Loss:**
+```
+(Semper) AND ("market share" OR market* OR position* OR competitiv*) AND (loss* OR declin* OR reduc* OR harm* OR damage*)
+```
+
+**Lost Customers:**
+```
+(Semper) AND (customer* OR client*) AND (lost OR lose* OR divert* OR defect* OR churn* OR leav*)
+```
+
+**Lost Revenue/Profits:**
+```
+(Semper) AND (revenue* OR profit* OR income* OR earning* OR sales*) AND (lost OR loss* OR declin* OR reduc* OR damage*)
+```
+
+## B. M&A Damages
+
+**Valuation Impact:**
+```
+(Semper) AND (valuation OR value OR worth OR multiple*) AND (decreas* OR declin* OR reduc* OR impact* OR damage* OR harm*)
+```
+
+**Failed M&A:**
+```
+(Semper) AND (M&A OR merger* OR acqui* OR transaction* OR deal*) AND (fail* OR collaps* OR terminat* OR unable OR "did not" OR cancel*)
+```
+
+## C. Remediation Costs
+
+**Protective Measures:**
+```
+(Semper) AND (protect* OR remediat* OR rebuild* OR recover*) AND (cost* OR expense* OR invest* OR spend*)
+```
+
+---
+
+# PART IV: DEFENSES (Documents That May Contradict Allegations)
+
+## A. Non-Compete Enforceability
+
+**Overbreadth / Unreasonableness:**
+```
+("non-compete" OR noncompete OR "restrictive covenant*") AND (overbroad* OR unreasonable* OR unenforceable* OR void* OR invalid* OR excessive*)
+```
+
+**Geographic Scope Issues:**
+```
+("50 mile*" OR "fifty mile*" OR radius OR geographic*) AND (unreasonable* OR overbroad* OR excessive* OR unenforceable*)
+```
+
+**Temporal Scope Issues:**
+```
+("12 month*" OR "24 month*" OR duration* OR period*) AND (unreasonable* OR excessive* OR overbroad*)
+```
+
+## B. Lack of Competition / Different Markets
+
+**Different Services:**
+```
+(EWC OR "EWC Growth") AND (Semper) AND (different* OR distinct* OR separate*) AND (service* OR market* OR business* OR customer*)
+```
+
+**Non-Overlapping Locations:**
+```
+(EWC OR "EWC Growth") AND (Semper) AND (location* OR geographic*) AND (different* OR separate* OR "no overlap" OR distinct*)
+```
+
+## C. Independent Development
+
+**EWC Prior Plans:**
+```
+(EWC OR "EWC Growth") AND ("laser hair removal" OR laser) AND (plan* OR consider* OR evaluat* OR develop*) NOT Wilmot
+```
+
+**Independent Decision:**
+```
+(EWC OR "EWC Growth") AND ("laser hair removal") AND (independent* OR own OR internal* OR "without" OR prior*)
+```
+
+## D. Consent / Waiver
+
+**Semper Knowledge/Consent:**
+```
+(Semper) AND (consent* OR approv* OR aware* OR knew OR knowledge OR waiv*) AND (Wilmot OR EWC OR "North Castle" OR compet*)
+```
+
+## E. Public Information
+
+**Publicly Available Information:**
+```
+(Semper) AND (public* OR "generally known" OR "not confidential" OR "not secret" OR "common knowledge" OR industry*)
+```
+
+---
+
+# Implementation Notes
+
+**Date Restrictions to Apply:**
+- North Castle NDA: July 30, 2024
+- Wilmot Interview/Recruitment: November 2024
+- EWC Offer: December 22, 2024
+- Wilmot EWC Start: January 20, 2025
+- Wilmot Public Announcement: February 2025
+- Wilmot Resignation: March 26, 2025
+- EWC Website Laser Addition: April 2025
+
+**Key Custodians:**
+- David Wilmot
+- Leslie Fuda (North Castle VP)
+- Chip Baird (North Castle/EWC Chairman)
+- Jon Canarick (North Castle Managing Partner)
+- Marcos Peixoto (Semper CEO)
+- Patrick Stinus (Semper CFO)
+- Jamie Haber (Flatiron Search Partners)
+- DC Advisory personnel
+
+**Suggested Search Prioritization:**
+1. Run Party/Entity searches first (Wilmot, North Castle, EWC, Semper)
+2. Layer in date restrictions for specific time periods
+3. Apply custodian filters
+4. Run cause-of-action-specific searches
+5. Run defense-related searches
+
+Would you like me to export this to a spreadsheet or document format for your review platform?
