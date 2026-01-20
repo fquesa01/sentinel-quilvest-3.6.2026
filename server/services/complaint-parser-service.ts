@@ -102,6 +102,153 @@ function stripMarkdownCodeFences(text: string): string {
   return cleaned.trim();
 }
 
+/**
+ * Counts bracket balance in a JSON string.
+ */
+function countBrackets(str: string): { braces: number; brackets: number; inString: boolean } {
+  let braceCount = 0;
+  let bracketCount = 0;
+  let inString = false;
+  let escaped = false;
+  
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    if (escaped) { escaped = false; continue; }
+    if (char === '\\') { escaped = true; continue; }
+    if (char === '"') { inString = !inString; continue; }
+    if (!inString) {
+      if (char === '{') braceCount++;
+      else if (char === '}') braceCount--;
+      else if (char === '[') bracketCount++;
+      else if (char === ']') bracketCount--;
+    }
+  }
+  return { braces: braceCount, brackets: bracketCount, inString };
+}
+
+/**
+ * Finds valid cut points in JSON string (positions after complete elements).
+ * These are positions after: }, ], or complete strings (as values)
+ */
+function findValidCutPoints(str: string): number[] {
+  const cutPoints: number[] = [];
+  let inString = false;
+  let escaped = false;
+  let depth = 0;
+  
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    if (escaped) { escaped = false; continue; }
+    if (char === '\\') { escaped = true; continue; }
+    
+    if (char === '"') {
+      inString = !inString;
+      if (!inString) {
+        // Just closed a string - potential cut point
+        cutPoints.push(i + 1);
+      }
+      continue;
+    }
+    
+    if (!inString) {
+      if (char === '{' || char === '[') depth++;
+      else if (char === '}' || char === ']') {
+        depth--;
+        cutPoints.push(i + 1);
+      }
+    }
+  }
+  return cutPoints;
+}
+
+/**
+ * Attempts to repair truncated JSON by finding the last valid structure point.
+ * Uses binary search on cut points to find the longest valid prefix.
+ */
+function repairTruncatedJson(jsonStr: string): string {
+  console.log(`[JSONRepair] Starting repair of ${jsonStr.length} chars`);
+  
+  const { braces, brackets, inString } = countBrackets(jsonStr);
+  
+  // If balanced, no repair needed
+  if (braces === 0 && brackets === 0 && !inString) {
+    return jsonStr;
+  }
+  
+  console.log(`[JSONRepair] Detected truncation: braces=${braces}, brackets=${brackets}, inString=${inString}`);
+  
+  // Find valid cut points
+  const cutPoints = findValidCutPoints(jsonStr);
+  
+  // Try from the end, working backwards until we find a point that can be closed
+  for (let i = cutPoints.length - 1; i >= 0; i--) {
+    const cutPos = cutPoints[i];
+    let candidate = jsonStr.substring(0, cutPos);
+    
+    // Remove trailing comma if present
+    candidate = candidate.replace(/,\s*$/, '');
+    
+    // Count remaining brackets
+    const counts = countBrackets(candidate);
+    
+    // Skip if inside a string
+    if (counts.inString) continue;
+    
+    // Skip if brackets are negative (more closes than opens - shouldn't happen)
+    if (counts.braces < 0 || counts.brackets < 0) continue;
+    
+    // Try to close remaining brackets/braces
+    let repaired = candidate;
+    for (let j = 0; j < counts.brackets; j++) repaired += ']';
+    for (let j = 0; j < counts.braces; j++) repaired += '}';
+    
+    // Try parsing
+    try {
+      JSON.parse(repaired);
+      console.log(`[JSONRepair] Found valid repair at position ${cutPos}: ${jsonStr.length} -> ${repaired.length} chars`);
+      return repaired;
+    } catch {
+      // Try next cut point
+      continue;
+    }
+  }
+  
+  // Fallback: just try to close brackets from the end
+  console.log(`[JSONRepair] No valid cut point found, attempting simple bracket closure`);
+  let repaired = jsonStr;
+  
+  // Remove trailing incomplete content
+  repaired = repaired.replace(/,\s*"[^"]*"?\s*:?[^,}\]]*$/, '');
+  repaired = repaired.replace(/,\s*$/, '');
+  
+  const finalCounts = countBrackets(repaired);
+  if (finalCounts.inString) repaired += '"';
+  for (let j = 0; j < finalCounts.brackets; j++) repaired += ']';
+  for (let j = 0; j < finalCounts.braces; j++) repaired += '}';
+  
+  console.log(`[JSONRepair] Fallback repair: ${jsonStr.length} -> ${repaired.length} chars`);
+  return repaired;
+}
+
+/**
+ * Safely parses JSON with repair fallback for truncated responses.
+ */
+function safeParseJson<T>(jsonStr: string): T {
+  try {
+    return JSON.parse(jsonStr);
+  } catch (firstError) {
+    console.log(`[JSONRepair] Initial parse failed, attempting repair...`);
+    const repaired = repairTruncatedJson(jsonStr);
+    try {
+      return JSON.parse(repaired);
+    } catch (secondError) {
+      console.error(`[JSONRepair] Repair failed. Original error:`, firstError);
+      console.error(`[JSONRepair] Repaired string ends with:`, repaired.substring(repaired.length - 200));
+      throw firstError;
+    }
+  }
+}
+
 const complaintAnalysisPrompt = `You are an elite litigation partner at a top law firm analyzing a complaint to create a comprehensive document search strategy for eDiscovery. Your goal is to generate EXHAUSTIVE Boolean search terms that will surface all relevant documents to prove the case.
 
 ## YOUR APPROACH: TWO-PART STRUCTURE
@@ -241,7 +388,7 @@ For each Count/Claim in the complaint:
 
 ## TASK 3: GENERATE COMPREHENSIVE BOOLEAN SEARCH TERMS
 
-Generate 30-50+ search terms organized into logical categories. For each major topic area, create multiple search term variants.
+Generate 15-25 high-impact search terms organized into logical categories. Quality over quantity - focus on the most important search terms.
 
 **Categories to cover:**
 A. Employment/Engagement (timeline, role, responsibilities, access)
@@ -303,7 +450,7 @@ Return ONLY valid JSON (no markdown code fences, no explanation):
               "targetElement": "Element 1: Trade Secret Existence",
               "precision": "high|medium|low",
               "recall": "high|medium|low",
-              "rationale": "Detailed explanation of what this search captures and why",
+              "rationale": "Brief - what this searches for",
               "enabled": true,
               "aiGenerated": true
             }
@@ -320,7 +467,7 @@ Return ONLY valid JSON (no markdown code fences, no explanation):
           "targetElement": "Which claim element this supports",
           "precision": "high|medium|low",
           "recall": "high|medium|low",
-          "rationale": "Detailed explanation: what documents this captures and why it matters",
+          "rationale": "Brief - what documents this targets",
           "enabled": true,
           "aiGenerated": true
         }
@@ -333,16 +480,15 @@ Return ONLY valid JSON (no markdown code fences, no explanation):
 }
 
 ## CRITICAL RULES
-1. Generate MANY search terms (30-50+) - be comprehensive, not sparse
+1. Generate 15-25 high-impact search terms - quality over quantity
 2. Every search term MUST include case-specific identifiers (actual party names, dates, amounts)
 3. Use wildcards liberally (* for truncation)
 4. Include name variations and alternate spellings
 5. Include date format variations (1/15/24, January 15, Jan 15, "1/15/2024")
-6. Create multiple search variants per topic (broad recall + focused precision)
+6. Keep rationales BRIEF (1 sentence max) - just state what the search targets
 7. Group search terms logically by theme and by claim element
-8. Provide detailed rationales explaining what each search captures
-9. Do not hallucinate - only use facts stated in the complaint
-10. Quote the complaint's exact language where possible
+8. Do not hallucinate - only use facts stated in the complaint
+9. Keep the JSON output COMPACT - avoid verbose descriptions
 
 Analyze this complaint and generate comprehensive search terms:
 
@@ -361,10 +507,10 @@ export class ComplaintParserService {
       console.log(`[ComplaintParser] Sending ${fullPrompt.length} chars to AI (doc: ${documentText.length} chars)`);
       
       const result = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: fullPrompt,
         config: {
-          maxOutputTokens: 32768,
+          maxOutputTokens: 65536,
           temperature: 0.1,
         }
       });
@@ -385,7 +531,7 @@ export class ComplaintParserService {
 
       console.log(`[ComplaintParser] JSON extracted: ${jsonMatch[0].length} chars`);
       
-      const parsed: ComplaintAnalysisResult = JSON.parse(jsonMatch[0]);
+      const parsed: ComplaintAnalysisResult = safeParseJson<ComplaintAnalysisResult>(jsonMatch[0]);
       
       console.log(`[ComplaintParser] Parsed causesOfAction count: ${parsed.causesOfAction?.length || 0}`);
       if (parsed.causesOfAction && parsed.causesOfAction.length > 0) {
@@ -437,10 +583,10 @@ export class ComplaintParserService {
       console.log(`[ComplaintParser] Full parse: Sending ${fullPrompt.length} chars to AI`);
       
       const result = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: fullPrompt,
         config: {
-          maxOutputTokens: 32768,
+          maxOutputTokens: 65536,
           temperature: 0.1,
         }
       });
@@ -457,7 +603,7 @@ export class ComplaintParserService {
         throw new Error("Failed to parse complaint response - no JSON found");
       }
 
-      const parsed: ComplaintAnalysisResult = JSON.parse(jsonMatch[0]);
+      const parsed: ComplaintAnalysisResult = safeParseJson<ComplaintAnalysisResult>(jsonMatch[0]);
       
       console.log(`[ComplaintParser] Full parse causesOfAction count: ${parsed.causesOfAction?.length || 0}`);
 
