@@ -101,6 +101,7 @@ export function registerSearchTermsRoutes(app: Express) {
             name: name || `RFP Analysis - ${file.originalname}`,
             description,
             generationStatus: "processing",
+            generationProgress: 0,
             createdBy: userId,
           })
           .returning();
@@ -176,6 +177,7 @@ export function registerSearchTermsRoutes(app: Express) {
             name: name || `Complaint Analysis - ${file.originalname}`,
             description,
             generationStatus: "processing",
+            generationProgress: 0,
             createdBy: userId,
           })
           .returning();
@@ -450,6 +452,14 @@ export function registerSearchTermsRoutes(app: Express) {
   });
 }
 
+// Helper function to update progress
+async function updateProgress(setId: string, progress: number) {
+  await db
+    .update(searchTermSets)
+    .set({ generationProgress: progress, updatedAt: new Date() })
+    .where(eq(searchTermSets.id, setId));
+}
+
 // Async processing functions
 async function processRFPDocument(setId: string, documentText: string) {
   const rfpService = new RFPParserService();
@@ -458,8 +468,13 @@ async function processRFPDocument(setId: string, documentText: string) {
   try {
     console.log(`[SearchTerms] Processing RFP document for set ${setId}`);
 
-    // Parse the RFP
+    // Stage 1: Starting AI analysis (10%)
+    await updateProgress(setId, 10);
+
+    // Parse the RFP (10-70%)
+    await updateProgress(setId, 20);
     const parsedRFPs = await rfpService.parseRFPDocument(documentText);
+    await updateProgress(setId, 70);
     
     // Log warning if no RFP requests were parsed - this indicates a parsing failure
     if (parsedRFPs.length === 0) {
@@ -468,6 +483,9 @@ async function processRFPDocument(setId: string, documentText: string) {
       console.log(`[SearchTerms] Successfully parsed ${parsedRFPs.length} RFP requests for set ${setId}`);
     }
 
+    // Stage 3: Saving parsed results (70-90%)
+    await updateProgress(setId, 75);
+    
     // Create search term items for each RFP request
     for (const rfp of parsedRFPs) {
       await db.insert(searchTermItems).values({
@@ -481,6 +499,8 @@ async function processRFPDocument(setId: string, documentText: string) {
         combinedBooleanString: rfp.combinedBoolean,
       });
     }
+
+    await updateProgress(setId, 85);
 
     // Also add privilege search terms
     const privilegeTerms = privilegeService.generatePrivilegeSearchTerms();
@@ -499,11 +519,15 @@ async function processRFPDocument(setId: string, documentText: string) {
       });
     }
 
+    // Stage 4: Completing (90-100%)
+    await updateProgress(setId, 95);
+
     // Update set status
     await db
       .update(searchTermSets)
       .set({
         generationStatus: "completed",
+        generationProgress: 100,
         totalRequests: parsedRFPs.length + privilegeTerms.categories.length,
         updatedAt: new Date(),
       })
@@ -530,8 +554,16 @@ async function processComplaintDocument(setId: string, documentText: string) {
   try {
     console.log(`[SearchTerms] Processing complaint document for set ${setId}`);
 
-    // Parse the complaint
+    // Stage 1: Starting AI analysis (10%)
+    await updateProgress(setId, 10);
+
+    // Parse the complaint (10-70%)
+    await updateProgress(setId, 20);
     const parsedClaims = await complaintService.parseComplaint(documentText);
+    await updateProgress(setId, 70);
+
+    // Stage 3: Saving parsed results (70-90%)
+    await updateProgress(setId, 75);
 
     // Create search term items for each claim
     for (const claim of parsedClaims) {
@@ -558,6 +590,8 @@ async function processComplaintDocument(setId: string, documentText: string) {
       });
     }
 
+    await updateProgress(setId, 85);
+
     // Also add privilege search terms
     const privilegeTerms = privilegeService.generatePrivilegeSearchTerms();
     for (let i = 0; i < privilegeTerms.categories.length; i++) {
@@ -575,11 +609,15 @@ async function processComplaintDocument(setId: string, documentText: string) {
       });
     }
 
+    // Stage 4: Completing (90-100%)
+    await updateProgress(setId, 95);
+
     // Update set status
     await db
       .update(searchTermSets)
       .set({
         generationStatus: "completed",
+        generationProgress: 100,
         totalRequests: parsedClaims.length + privilegeTerms.categories.length,
         updatedAt: new Date(),
       })
@@ -592,6 +630,7 @@ async function processComplaintDocument(setId: string, documentText: string) {
       .update(searchTermSets)
       .set({
         generationStatus: "failed",
+        generationProgress: 0,
         generationError: error.message,
         updatedAt: new Date(),
       })

@@ -79,6 +79,7 @@ interface SearchTermSet {
   name: string;
   description?: string;
   generationStatus: string;
+  generationProgress?: number;
   generationError?: string;
   totalRequests?: number;
   documentsTagged?: number;
@@ -94,16 +95,32 @@ export default function CaseSearchTermsPage() {
 
   const { data: rfpSets, isLoading: rfpLoading } = useQuery<{ data: SearchTermSet[] }>({
     queryKey: ["/api/cases", caseId, "search-term-sets", "rfp"],
-    queryFn: () =>
-      fetch(`/api/cases/${caseId}/search-term-sets?sourceType=rfp`).then((r) => r.json()),
+    queryFn: async () => {
+      const res = await fetch(`/api/cases/${caseId}/search-term-sets?sourceType=rfp`, { credentials: "include" });
+      return res.json();
+    },
     enabled: !!caseId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data?.data) return false;
+      const hasProcessing = data.data.some((s) => s.generationStatus === "processing");
+      return hasProcessing ? 2000 : false;
+    },
   });
 
   const { data: complaintSets, isLoading: complaintLoading } = useQuery<{ data: SearchTermSet[] }>({
     queryKey: ["/api/cases", caseId, "search-term-sets", "complaint"],
-    queryFn: () =>
-      fetch(`/api/cases/${caseId}/search-term-sets?sourceType=complaint`).then((r) => r.json()),
+    queryFn: async () => {
+      const res = await fetch(`/api/cases/${caseId}/search-term-sets?sourceType=complaint`, { credentials: "include" });
+      return res.json();
+    },
     enabled: !!caseId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data?.data) return false;
+      const hasProcessing = data.data.some((s) => s.generationStatus === "processing");
+      return hasProcessing ? 2000 : false;
+    },
   });
 
   return (
@@ -492,22 +509,23 @@ function SearchTermSetCard({ set, caseId }: { set: SearchTermSet; caseId: string
   const statusBadge = () => {
     switch (set.generationStatus) {
       case "processing":
+        const progress = set.generationProgress || 0;
         return (
-          <Badge variant="outline" className="bg-amber-50 text-amber-700">
+          <Badge variant="outline" className="bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
             <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-            Processing
+            {progress > 0 ? `${progress}%` : "Processing"}
           </Badge>
         );
       case "completed":
         return (
-          <Badge variant="outline" className="bg-green-50 text-green-700">
+          <Badge variant="outline" className="bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400">
             <Check className="h-3 w-3 mr-1" />
             Ready
           </Badge>
         );
       case "failed":
         return (
-          <Badge variant="outline" className="bg-red-50 text-red-700">
+          <Badge variant="outline" className="bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400">
             <X className="h-3 w-3 mr-1" />
             Failed
           </Badge>
