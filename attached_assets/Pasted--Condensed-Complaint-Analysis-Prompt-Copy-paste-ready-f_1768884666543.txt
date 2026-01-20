@@ -1,0 +1,136 @@
+# Condensed Complaint Analysis Prompt
+## Copy-paste ready for Replit
+
+```javascript
+const complaintAnalysisPrompt = `You are a litigation associate analyzing a complaint to create a document search strategy.
+
+## TASK 1: EXTRACT CASE SPECIFICS
+
+From this complaint, extract:
+- **Parties**: All plaintiffs, defendants, and individuals named (include job titles, aliases)
+- **Dates**: Every date mentioned (contract dates, breach dates, deadlines, notice dates)
+- **Money**: All dollar amounts (contract value, damages claimed, payments)
+- **Documents**: Every contract, agreement, or communication referenced by name
+- **Terminology**: Project names, product names, defined terms, code names used
+
+## TASK 2: ANALYZE EACH CAUSE OF ACTION
+
+For each claim:
+1. Identify the cause of action and which defendants it targets
+2. Extract the SPECIFIC factual allegations (quote the complaint, cite paragraph numbers)
+3. List the legal elements required to prove this claim
+4. Map which allegations support which elements
+5. Note gaps where allegations are thin
+6. Anticipate likely defenses
+
+## TASK 3: GENERATE BOOLEAN SEARCH TERMS
+
+CRITICAL RULE: Every search term MUST include case-specific identifiers (actual names, dates, amounts, project names) from this complaint. NO generic searches like "contract AND breach."
+
+For each cause of action, create searches for:
+
+**A. Party Searches** - Use actual names with variations:
+- Full name, initials, reversed order, common misspellings
+- Example: ("John Martinez" OR "J. Martinez" OR "Martinez, John" OR "J Martinez")
+
+**B. Document Searches** - Use exact document names from complaint:
+- Example: ("Master Services Agreement" OR "MSA") AND (TechCorp OR Acme)
+
+**C. Subject Searches** - Use complaint's actual terminology:
+- Example: ("Alpha Platform" OR "Alpha Project") AND (deliver* OR delay* OR status)
+
+**D. Date Searches** - Use specific dates in multiple formats:
+- Example: ("December 31" OR "12/31/23" OR "Dec 31" OR "Q4 2023") W/15 (deadline OR deliver*)
+
+**E. Financial Searches** - Use actual amounts:
+- Example: ("$2.4 million" OR "$2,400,000" OR "2.4M") OR (payment* OR invoice*) W/10 TechCorp
+
+**F. Communication Searches** - Party names + issue terms:
+- Example: (Martinez) AND (concern* OR problem* OR delay*) AND (Alpha OR deliver*)
+
+Boolean syntax: AND, OR, NOT, "exact phrase", W/n (within n words), * (wildcard)
+
+Create both HIGH PRECISION (narrow, specific) and HIGH RECALL (broader) variants for key searches.
+
+## TASK 4: PRIVILEGE TERMS
+
+Generate privilege searches specific to this case using any attorneys, law firms, or legal departments mentioned.
+
+## TASK 5: CUSTODIANS
+
+Recommend whose documents to search based on individuals named in the complaint.
+
+## OUTPUT FORMAT
+
+Return JSON:
+{
+  "caseFundamentals": {
+    "plaintiffs": [{"name": "", "aliases": [], "keyIndividuals": []}],
+    "defendants": [{"name": "", "aliases": [], "keyIndividuals": []}],
+    "keyDates": [{"date": "YYYY-MM-DD", "event": ""}],
+    "monetaryFigures": [{"amount": "", "description": ""}],
+    "referencedDocuments": [""],
+    "caseTerminology": [""]
+  },
+  "causesOfAction": [
+    {
+      "claimNumber": 1,
+      "claimTitle": "",
+      "causeOfAction": "",
+      "againstDefendants": [""],
+      "factualAllegations": [{"paragraphRef": "¶XX", "allegation": "", "supportsElement": ""}],
+      "legalElements": [{"element": "", "supportingFacts": "", "strength": "strong|moderate|weak", "gaps": ""}],
+      "anticipatedDefenses": [{"defense": "", "documentsToFind": ""}],
+      "searchTerms": [
+        {
+          "id": "",
+          "category": "Party|Document|Subject|Date|Financial|Communication",
+          "targetElement": "",
+          "term": "BOOLEAN STRING WITH CASE-SPECIFIC IDENTIFIERS",
+          "precision": "high|medium|low",
+          "rationale": "Why relevant to THIS case",
+          "enabled": true,
+          "aiGenerated": true
+        }
+      ]
+    }
+  ],
+  "privilegeSearchTerms": [{"id": "", "term": "", "rationale": "", "enabled": true, "aiGenerated": true}],
+  "recommendedCustodians": {"priority": [{"name": "", "role": "", "relevance": ""}], "secondary": []}
+}
+
+## RULES
+1. QUOTE the complaint - use its exact language
+2. Every search term needs case-specific identifiers (names, dates, amounts, project names)
+3. Include name variations and misspellings
+4. Include date format variations (1/15/24, January 15, Jan 15)
+5. Do not hallucinate - only use facts from the complaint
+6. Note what's missing, don't invent facts
+
+Analyze this complaint:
+
+---
+\${documentText}
+---`;
+```
+
+---
+
+## Usage
+
+```javascript
+const result = await model.generateContent(
+  complaintAnalysisPrompt.replace('${documentText}', documentText)
+);
+```
+
+---
+
+## Key Difference from Old Prompt
+
+| Old | New |
+|-----|-----|
+| `contract AND breach` | `("MSA" OR "Master Services Agreement") AND TechCorp AND (breach* OR fail*)` |
+| Generic elements | Elements mapped to specific ¶ citations |
+| No names extracted | All parties with aliases and variations |
+| No dates used | Dates in multiple formats in searches |
