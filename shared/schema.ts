@@ -11403,6 +11403,7 @@ export const searchTermSets = pgTable("search_term_sets", {
   name: text("name").notNull(),
   description: text("description"),
   generationStatus: searchTermGenerationStatusEnum("generation_status").default("pending"),
+  generationProgress: integer("generation_progress").default(0),
   generationError: text("generation_error"),
   totalRequests: integer("total_requests").default(0),
   lastExecutedAt: timestamp("last_executed_at"),
