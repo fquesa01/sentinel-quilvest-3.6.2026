@@ -68,7 +68,7 @@ Return the full extracted text, preserving paragraph structure. Do NOT summarize
         ]
       }],
       config: {
-        maxOutputTokens: 8192,
+        maxOutputTokens: 32768,
       }
     });
     
