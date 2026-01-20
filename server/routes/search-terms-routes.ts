@@ -460,6 +460,13 @@ async function processRFPDocument(setId: string, documentText: string) {
 
     // Parse the RFP
     const parsedRFPs = await rfpService.parseRFPDocument(documentText);
+    
+    // Log warning if no RFP requests were parsed - this indicates a parsing failure
+    if (parsedRFPs.length === 0) {
+      console.warn(`[SearchTerms] WARNING: 0 RFP requests parsed for set ${setId}. Only privilege categories will be added.`);
+    } else {
+      console.log(`[SearchTerms] Successfully parsed ${parsedRFPs.length} RFP requests for set ${setId}`);
+    }
 
     // Create search term items for each RFP request
     for (const rfp of parsedRFPs) {

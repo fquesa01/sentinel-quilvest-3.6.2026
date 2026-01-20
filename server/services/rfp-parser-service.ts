@@ -166,6 +166,43 @@ function extractFirstJsonObject(text: string): string | null {
 }
 
 /**
+ * Extract embedded RFP request objects from a string.
+ * Looks for JSON objects that have requestNumber and searchTerms fields.
+ * This is a fallback when the outer JSON structure is corrupted/truncated.
+ */
+function extractEmbeddedRFPObjects(text: string): ParsedRFP[] {
+  const rfpObjects: ParsedRFP[] = [];
+  let searchStart = 0;
+  
+  while (searchStart < text.length) {
+    const startIndex = text.indexOf('{', searchStart);
+    if (startIndex === -1) break;
+    
+    const result = extractBalancedJson(text, startIndex, '{', '}');
+    if (result) {
+      try {
+        const obj = JSON.parse(result.json);
+        // Check if this looks like an RFP request object
+        if (obj.requestNumber !== undefined && obj.searchTerms && Array.isArray(obj.searchTerms)) {
+          console.log(`[RFPParser] Found embedded RFP request ${obj.requestNumber} at index ${startIndex}`);
+          rfpObjects.push(obj as ParsedRFP);
+        }
+        searchStart = result.endIndex;
+      } catch (e) {
+        searchStart = startIndex + 1;
+      }
+    } else {
+      searchStart = startIndex + 1;
+    }
+  }
+  
+  // Sort by request number
+  rfpObjects.sort((a, b) => a.requestNumber - b.requestNumber);
+  
+  return rfpObjects;
+}
+
+/**
  * Extract the first valid JSON array from a string.
  * Tries multiple candidates until finding one that parses successfully.
  */
@@ -322,7 +359,7 @@ export class RFPParserService {
         model: "gemini-2.0-flash",
         contents: fullPrompt,
         config: {
-          maxOutputTokens: 8192,
+          maxOutputTokens: 32768,  // Increased for large RFP documents with many requests
           temperature: 0.1,
         }
       });
@@ -343,42 +380,64 @@ export class RFPParserService {
           const parsed: RFPAnalysisResult = JSON.parse(jsonObject);
           console.log(`[RFPParser] Parsed ${parsed.rfpRequests?.length || 0} RFP requests`);
           
-          // Return the rfpRequests array with proper IDs
-          return (parsed.rfpRequests || []).map((rfp) => ({
-            ...rfp,
-            combinedBoolean: rfp.combinedBoolean || (rfp as any).combinedBooleanString || "",
-            searchTerms: (rfp.searchTerms || []).map((term) => ({
-              ...term,
-              id: nanoid(),
-              type: term.type || "boolean",
-            })),
-          }));
+          // Validate that we actually got RFP requests
+          if (parsed.rfpRequests && parsed.rfpRequests.length > 0) {
+            // Return the rfpRequests array with proper IDs
+            return parsed.rfpRequests.map((rfp) => ({
+              ...rfp,
+              combinedBoolean: rfp.combinedBoolean || (rfp as any).combinedBooleanString || "",
+              searchTerms: (rfp.searchTerms || []).map((term) => ({
+                ...term,
+                id: nanoid(),
+                type: term.type || "boolean",
+              })),
+            }));
+          } else {
+            console.warn("[RFPParser] Parsed object has no rfpRequests, trying embedded extraction...");
+          }
         } catch (parseErr) {
           console.error("[RFPParser] Failed to parse as object:", parseErr);
           console.error("[RFPParser] JSON object preview:", jsonObject.substring(0, 500));
         }
       }
 
-      // Fallback to array format
-      const jsonArray = extractFirstJsonArray(response);
-      if (!jsonArray) {
-        console.error("[RFPParser] Failed to extract JSON from response:", response.substring(0, 2000));
-        throw new Error("Failed to parse RFP response - no JSON found");
+      // Fallback: Try to extract individual RFP request objects embedded in the response
+      // This handles cases where the outer JSON structure is corrupted/truncated
+      console.log("[RFPParser] Attempting to extract embedded RFP request objects...");
+      const embeddedRFPs = extractEmbeddedRFPObjects(response);
+      if (embeddedRFPs.length > 0) {
+        console.log(`[RFPParser] Extracted ${embeddedRFPs.length} embedded RFP requests`);
+        return embeddedRFPs.map((rfp) => ({
+          ...rfp,
+          combinedBoolean: rfp.combinedBoolean || (rfp as any).combinedBooleanString || "",
+          searchTerms: (rfp.searchTerms || []).map((term) => ({
+            ...term,
+            id: nanoid(),
+            type: term.type || "boolean",
+          })),
+        }));
       }
 
-      console.log(`[RFPParser] Extracted JSON array: ${jsonArray.length} chars`);
-      const parsed: ParsedRFP[] = JSON.parse(jsonArray);
-      console.log(`[RFPParser] Parsed ${parsed.length} RFP requests (array format)`);
+      // Last fallback: Try array format
+      const jsonArray = extractFirstJsonArray(response);
+      if (jsonArray) {
+        console.log(`[RFPParser] Extracted JSON array: ${jsonArray.length} chars`);
+        const parsed: ParsedRFP[] = JSON.parse(jsonArray);
+        console.log(`[RFPParser] Parsed ${parsed.length} RFP requests (array format)`);
 
-      return parsed.map((rfp) => ({
-        ...rfp,
-        combinedBoolean: rfp.combinedBoolean || (rfp as any).combinedBooleanString || "",
-        searchTerms: (rfp.searchTerms || []).map((term) => ({
-          ...term,
-          id: nanoid(),
-          type: term.type || "boolean",
-        })),
-      }));
+        return parsed.map((rfp) => ({
+          ...rfp,
+          combinedBoolean: rfp.combinedBoolean || (rfp as any).combinedBooleanString || "",
+          searchTerms: (rfp.searchTerms || []).map((term) => ({
+            ...term,
+            id: nanoid(),
+            type: term.type || "boolean",
+          })),
+        }));
+      }
+      
+      console.error("[RFPParser] Failed to extract JSON from response:", response.substring(0, 2000));
+      throw new Error("Failed to parse RFP response - no JSON found");
     } catch (error) {
       console.error("[RFPParser] Error parsing RFP document:", error);
       throw error;
@@ -399,7 +458,7 @@ export class RFPParserService {
         model: "gemini-2.0-flash",
         contents: fullPrompt,
         config: {
-          maxOutputTokens: 8192,
+          maxOutputTokens: 32768,  // Increased for large RFP documents with many requests
           temperature: 0.1,
         }
       });
