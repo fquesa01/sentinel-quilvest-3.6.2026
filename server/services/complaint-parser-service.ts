@@ -102,67 +102,171 @@ function stripMarkdownCodeFences(text: string): string {
   return cleaned.trim();
 }
 
-const complaintAnalysisPrompt = `You are a litigation associate analyzing a complaint to create a document search strategy.
+const complaintAnalysisPrompt = `You are an elite litigation partner at a top law firm analyzing a complaint to create a comprehensive document search strategy for eDiscovery. Your goal is to generate EXHAUSTIVE Boolean search terms that will surface all relevant documents to prove the case.
 
-## TASK 1: EXTRACT CASE SPECIFICS
+## YOUR APPROACH: TWO-PART STRUCTURE
+
+### PART I: CORE FACTUAL ALLEGATIONS
+Organize search terms by THEMATIC CATEGORIES based on the complaint's narrative:
+- Employment/Engagement timeline
+- Contractual agreements (non-compete, NDA, confidentiality)
+- Due diligence / M&A processes
+- Hiring/recruitment of key individuals
+- Overlapping employment/conflicts
+- Competitive activity
+- Retention of company property
+- Communications with third parties
+
+### PART II: ELEMENT-SPECIFIC SEARCHES BY CAUSE OF ACTION
+For each Count/Claim, create targeted searches for each legal element that must be proven.
+
+## SEARCH TERM GENERATION RULES
+
+### 1. USE WILDCARDS LIBERALLY
+- compet* (matches compete, competition, competitor, competitive)
+- employ* (matches employ, employed, employee, employment, employer)
+- recruit* (matches recruit, recruited, recruiting, recruitment, recruiter)
+- communicat* (matches communicate, communication, communications)
+
+### 2. INCLUDE ALL NAME VARIATIONS
+- ("David Wilmot" OR "Wilmot" OR "D. Wilmot" OR "Dave Wilmot")
+- ("EWC Growth" OR "EWC Growth Holdings" OR EWC)
+- ("North Castle" OR "North Castle Partners" OR NCP)
+
+### 3. INCLUDE DATE VARIATIONS
+- (December OR "12/2024" OR "Dec 2024" OR "December 2024")
+- ("January 20" OR "1/20/2025" OR "Jan 20" OR "1/20")
+
+### 4. USE PROXIMITY OPERATORS
+- (internal W/5 communication*) - words within 5 positions
+- (laser W/3 "hair removal") - close proximity matching
+
+### 5. CREATE MULTIPLE SEARCH TERMS PER TOPIC
+For each important topic, create 3-5 search terms with different approaches:
+- Broad recall search (captures more, may have noise)
+- Focused precision search (narrower, more relevant)
+- Communication-focused search (emails/messages about topic)
+- Document-focused search (formal documents)
+
+## EXAMPLE OUTPUT QUALITY
+
+For an employment/non-compete case, you would generate:
+
+**Employment Timeline & Role:**
+\`\`\`
+(Wilmot OR "David Wilmot") AND (COO OR "chief operating" OR CEO OR "chief executive" OR hire* OR promot* OR employ* OR position OR title OR role)
+\`\`\`
+
+**Access to Confidential Information:**
+\`\`\`
+(Wilmot OR "David Wilmot") AND (confidential* OR proprietary OR "trade secret*" OR sensitive OR restrict*) AND (access OR view* OR review* OR receiv* OR obtain* OR possess*)
+\`\`\`
+
+**Non-Compete Agreement Terms:**
+\`\`\`
+(Wilmot OR "David Wilmot") AND ("non-compete" OR noncompete OR "non-disclosure" OR NDA OR "confidentiality agreement" OR "restrictive covenant*" OR "non-solicitation")
+\`\`\`
+
+**12-Month Non-Compete Period:**
+\`\`\`
+(Wilmot OR "David Wilmot") AND ("12 month*" OR "twelve month*" OR "1 year" OR "one year") AND (compet* OR restrict* OR prohibit* OR covenant*)
+\`\`\`
+
+**Recruitment & Interview Process:**
+\`\`\`
+(Wilmot OR "David Wilmot") AND (EWC OR "EWC Growth" OR "North Castle") AND (interview* OR recruit* OR hire* OR offer* OR candidate* OR position* OR CEO)
+\`\`\`
+
+**Executive Search Firm Involvement:**
+\`\`\`
+("Flatiron Search" OR "Flatiron Search Partners" OR "executive search" OR headhunt* OR recruiter*) AND (Wilmot OR "David Wilmot" OR EWC OR CEO)
+\`\`\`
+
+**Dual Employment / Overlap:**
+\`\`\`
+(Wilmot OR "David Wilmot") AND (Semper AND EWC) AND (CEO OR "chief executive" OR dual OR both OR simultan* OR overlap* OR concurren*)
+\`\`\`
+
+**Competitive Service Launch:**
+\`\`\`
+(EWC OR "EWC Growth") AND ("laser hair removal" OR "laser hair" OR LHR OR laser) AND (launch* OR add* OR expand* OR introduc* OR offer* OR service* OR announc*)
+\`\`\`
+
+### For Trade Secret Claims (Element-Specific):
+
+**Element 1 - Trade Secret Existence:**
+\`\`\`
+(Semper) AND ("customer list*" OR "client list*" OR customer* OR client*) AND (confidential* OR proprietary OR secret* OR protect*)
+\`\`\`
+
+\`\`\`
+(Semper) AND (pricing OR price* OR rate* OR cost* OR margin* OR discount*) AND (strateg* OR structure* OR model* OR confidential* OR proprietary)
+\`\`\`
+
+**Element 2 - Misappropriation:**
+\`\`\`
+(Wilmot OR "David Wilmot") AND (EWC OR "North Castle" OR competitor*) AND (disclos* OR share* OR provid* OR transfer* OR communicat* OR reveal*) AND (Semper OR confidential* OR proprietary OR "trade secret*")
+\`\`\`
+
+### For Breach of Contract Claims:
+
+**Valid Contract Execution:**
+\`\`\`
+(Wilmot OR "David Wilmot") AND (sign* OR execut* OR agree* OR acknowledg*) AND ("non-compete" OR "confidentiality agreement" OR "employment agreement")
+\`\`\`
+
+**Competition with Plaintiff:**
+\`\`\`
+(EWC OR "EWC Growth") AND (Semper) AND (compet* OR rival* OR "same market*" OR "same service*" OR "direct compet*" OR "laser hair removal")
+\`\`\`
+
+## TASK 1: EXTRACT CASE FUNDAMENTALS
 
 From this complaint, extract:
-- **Parties**: All plaintiffs, defendants, and individuals named (include job titles, aliases)
-- **Dates**: Every date mentioned (contract dates, breach dates, deadlines, notice dates)
-- **Money**: All dollar amounts (contract value, damages claimed, payments)
-- **Documents**: Every contract, agreement, or communication referenced by name
-- **Terminology**: Project names, product names, defined terms, code names used
+- **Parties**: All plaintiffs, defendants, and named individuals (include job titles, aliases, variations)
+- **Dates**: Every date mentioned with context (contract dates, breach dates, employment dates, deadlines)
+- **Money**: All dollar amounts and financial figures
+- **Documents**: Every contract, agreement, or document referenced by name
+- **Terminology**: Project names, product names, defined terms, code names, service names
 
 ## TASK 2: ANALYZE EACH CAUSE OF ACTION
 
-For each claim:
-1. Identify the cause of action and which defendants it targets
-2. Extract the SPECIFIC factual allegations (quote the complaint, cite paragraph numbers)
-3. List the legal elements required to prove this claim
-4. Map which allegations support which elements
+For each Count/Claim in the complaint:
+1. Identify the cause of action and statutory basis
+2. List which defendants it targets
+3. Extract key factual allegations (cite paragraph numbers)
+4. List the legal elements required to prove this claim
 5. Note gaps where allegations are thin
 6. Anticipate likely defenses
 
-## TASK 3: GENERATE BOOLEAN SEARCH TERMS
+## TASK 3: GENERATE COMPREHENSIVE BOOLEAN SEARCH TERMS
 
-CRITICAL RULE: Every search term MUST include case-specific identifiers (actual names, dates, amounts, project names) from this complaint. NO generic searches like "contract AND breach."
+Generate 30-50+ search terms organized into logical categories. For each major topic area, create multiple search term variants.
 
-For each cause of action, create searches for:
-
-**A. Party Searches** - Use actual names with variations:
-- Full name, initials, reversed order, common misspellings
-- Example: ("John Martinez" OR "J. Martinez" OR "Martinez, John" OR "J Martinez")
-
-**B. Document Searches** - Use exact document names from complaint:
-- Example: ("Master Services Agreement" OR "MSA") AND (TechCorp OR Acme)
-
-**C. Subject Searches** - Use complaint's actual terminology:
-- Example: ("Alpha Platform" OR "Alpha Project") AND (deliver* OR delay* OR status)
-
-**D. Date Searches** - Use specific dates in multiple formats:
-- Example: ("December 31" OR "12/31/23" OR "Dec 31" OR "Q4 2023") W/15 (deadline OR deliver*)
-
-**E. Financial Searches** - Use actual amounts:
-- Example: ("$2.4 million" OR "$2,400,000" OR "2.4M") OR (payment* OR invoice*) W/10 TechCorp
-
-**F. Communication Searches** - Party names + issue terms:
-- Example: (Martinez) AND (concern* OR problem* OR delay*) AND (Alpha OR deliver*)
-
-Boolean syntax: AND, OR, NOT, "exact phrase", W/n (within n words), * (wildcard)
-
-Create both HIGH PRECISION (narrow, specific) and HIGH RECALL (broader) variants for key searches.
+**Categories to cover:**
+A. Employment/Engagement (timeline, role, responsibilities, access)
+B. Contractual Terms (non-compete, NDA, confidentiality, solicitation restrictions)
+C. Due Diligence/M&A (if applicable - investor contacts, valuations, strategic alternatives)
+D. Recruitment/Hiring (interview process, search firms, offers, start dates)
+E. Overlapping/Dual Employment (simultaneous roles, conflicts, transitions)
+F. Competitive Activity (competing business, similar services, market overlap)
+G. Property/Equipment (devices, laptops, documents retained)
+H. Third-Party Communications (investors, clients, vendors, disparagement)
+I. Trade Secret Elements (existence, protection measures, misappropriation, use)
+J. Contract Breach Elements (valid contract, material breach, damages)
+K. Fiduciary Duty Elements (relationship, loyalty, self-dealing)
 
 ## TASK 4: PRIVILEGE TERMS
 
-Generate privilege searches specific to this case using any attorneys, law firms, or legal departments mentioned.
+Generate privilege searches using any attorneys, law firms, or legal departments mentioned in the complaint.
 
 ## TASK 5: CUSTODIANS
 
-Recommend whose documents to search based on individuals named in the complaint.
+Recommend key custodians based on individuals named, with priority and secondary lists.
 
 ## OUTPUT FORMAT
 
-Return ONLY valid JSON (no markdown, no explanation):
+Return ONLY valid JSON (no markdown code fences, no explanation):
 {
   "caseFundamentals": {
     "plaintiffs": [{"name": "", "aliases": [], "keyIndividuals": []}],
@@ -175,39 +279,72 @@ Return ONLY valid JSON (no markdown, no explanation):
   "causesOfAction": [
     {
       "claimNumber": 1,
-      "claimTitle": "",
-      "causeOfAction": "",
-      "againstDefendants": [""],
-      "factualAllegations": [{"paragraphRef": "¶XX", "allegation": "", "supportsElement": ""}],
-      "legalElements": [{"element": "", "supportingFacts": "", "strength": "strong|moderate|weak", "gaps": ""}],
-      "anticipatedDefenses": [{"defense": "", "documentsToFind": ""}],
+      "claimTitle": "Descriptive title for the claim",
+      "causeOfAction": "Legal cause of action name",
+      "statutoryBasis": "Statute or common law basis",
+      "againstDefendants": ["Defendant 1", "Defendant 2"],
+      "summary": "Brief narrative summary of the claim",
+      "factualAllegations": [{"paragraphRef": "¶XX", "allegation": "Quote from complaint", "supportsElement": "Which element this supports"}],
+      "legalElements": [
+        {
+          "number": 1,
+          "element": "Element name",
+          "description": "What must be proven",
+          "mustProve": "Specific proof required",
+          "supportingFacts": "Facts from complaint supporting this",
+          "strength": "strong|moderate|weak",
+          "gaps": "What's missing or weak",
+          "searchTerms": [
+            {
+              "id": "",
+              "term": "BOOLEAN SEARCH STRING",
+              "type": "boolean",
+              "category": "Element-specific",
+              "targetElement": "Element 1: Trade Secret Existence",
+              "precision": "high|medium|low",
+              "recall": "high|medium|low",
+              "rationale": "Detailed explanation of what this search captures and why",
+              "enabled": true,
+              "aiGenerated": true
+            }
+          ]
+        }
+      ],
+      "anticipatedDefenses": [{"defense": "", "likelihood": "high|medium|low", "documentsToFind": ""}],
       "searchTerms": [
         {
           "id": "",
-          "category": "Party|Document|Subject|Date|Financial|Communication",
-          "targetElement": "",
-          "term": "BOOLEAN STRING WITH CASE-SPECIFIC IDENTIFIERS",
+          "term": "BOOLEAN SEARCH STRING WITH WILDCARDS AND VARIATIONS",
+          "type": "boolean|phrase|proximity|wildcard",
+          "category": "Employment|Contract|Competition|Communication|Trade Secret|etc",
+          "targetElement": "Which claim element this supports",
           "precision": "high|medium|low",
-          "rationale": "Why relevant to THIS case",
+          "recall": "high|medium|low",
+          "rationale": "Detailed explanation: what documents this captures and why it matters",
           "enabled": true,
           "aiGenerated": true
         }
-      ]
+      ],
+      "combinedBoolean": "All search terms combined with OR for comprehensive search"
     }
   ],
-  "privilegeSearchTerms": [{"id": "", "term": "", "rationale": "", "enabled": true, "aiGenerated": true}],
-  "recommendedCustodians": {"priority": [{"name": "", "role": "", "relevance": ""}], "secondary": []}
+  "privilegeSearchTerms": [{"id": "", "privilegeType": "attorney_client|work_product", "term": "", "rationale": "", "enabled": true, "aiGenerated": true}],
+  "recommendedCustodians": {"priority": [{"name": "", "role": "", "relevance": ""}], "secondary": [{"name": "", "role": "", "relevance": ""}]}
 }
 
-## RULES
-1. QUOTE the complaint - use its exact language
-2. Every search term needs case-specific identifiers (names, dates, amounts, project names)
-3. Include name variations and misspellings
-4. Include date format variations (1/15/24, January 15, Jan 15)
-5. Do not hallucinate - only use facts from the complaint
-6. Note what's missing, don't invent facts
+## CRITICAL RULES
+1. Generate MANY search terms (30-50+) - be comprehensive, not sparse
+2. Every search term MUST include case-specific identifiers (actual party names, dates, amounts)
+3. Use wildcards liberally (* for truncation)
+4. Include name variations and alternate spellings
+5. Include date format variations (1/15/24, January 15, Jan 15, "1/15/2024")
+6. Create multiple search variants per topic (broad recall + focused precision)
+7. Group search terms logically by theme and by claim element
+8. Provide detailed rationales explaining what each search captures
+9. Do not hallucinate - only use facts stated in the complaint
+10. Quote the complaint's exact language where possible
 
-Analyze this complaint:
+Analyze this complaint and generate comprehensive search terms:
 
 ---
 `;
