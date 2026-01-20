@@ -116,12 +116,14 @@ function extractBalancedJson(text: string, startIndex: number, openChar: string,
 }
 
 /**
- * Extract the first valid JSON object from a string.
- * Tries multiple candidates until finding one that parses successfully.
- * This handles cases where AI prepends text with braces before the actual JSON.
+ * Extract the LARGEST valid JSON object from a string.
+ * Finds all valid JSON objects and returns the one with the most content.
+ * This handles cases where AI returns nested objects and we need the outer one.
  */
 function extractFirstJsonObject(text: string): string | null {
   let searchStart = 0;
+  let largestJson: string | null = null;
+  let largestLength = 0;
   
   while (searchStart < text.length) {
     const startIndex = text.indexOf('{', searchStart);
@@ -133,7 +135,16 @@ function extractFirstJsonObject(text: string): string | null {
       try {
         JSON.parse(result.json);
         console.log(`[RFPParser] Found valid JSON object at index ${startIndex}, length ${result.json.length}`);
-        return result.json;
+        
+        // Keep track of the largest valid JSON we find
+        if (result.json.length > largestLength) {
+          largestJson = result.json;
+          largestLength = result.json.length;
+          console.log(`[RFPParser] New largest JSON: ${largestLength} chars`);
+        }
+        
+        // Move past this object to look for more
+        searchStart = result.endIndex;
       } catch (e) {
         // This balanced extraction wasn't valid JSON, try next candidate
         console.log(`[RFPParser] Balanced extraction at ${startIndex} wasn't valid JSON, trying next...`);
@@ -143,6 +154,11 @@ function extractFirstJsonObject(text: string): string | null {
       // Couldn't extract balanced structure, try next opening brace
       searchStart = startIndex + 1;
     }
+  }
+  
+  if (largestJson) {
+    console.log(`[RFPParser] Returning largest valid JSON: ${largestLength} chars`);
+    return largestJson;
   }
   
   console.error("[RFPParser] No valid JSON object found in response");
@@ -178,150 +194,113 @@ function extractFirstJsonArray(text: string): string | null {
   return null;
 }
 
-const rfpAnalysisPrompt = `You are a litigation associate analyzing a Request for Production (RFP) document to create search terms that will find responsive documents.
+const rfpAnalysisPrompt = `You are an expert eDiscovery consultant and litigation support specialist with extensive experience in Relativity, Concordance, Summation, and other major document review platforms. Your task is to generate comprehensive Boolean search strings for document review and tagging.
 
-## TASK 1: EXTRACT CASE CONTEXT
+**INPUT:** I will provide you with discovery requests (Requests for Production, Interrogatories, or Document Requests) from litigation.
 
-From the RFP document, extract:
-- **Case name and number**
-- **Parties**: Plaintiff(s), Defendant(s), and the party responding to these RFPs
-- **Key individuals**: People mentioned by name (with titles/roles)
-- **Key dates**: Any date ranges or specific dates referenced
-- **Third parties**: Vendors, customers, affiliates, search firms, etc. mentioned
-- **Core dispute**: What is this case about based on the requests?
+**OUTPUT:** For each discovery request, create:
 
-## TASK 2: PARSE EACH RFP REQUEST
+1. **Primary Search String** - A broad Boolean query capturing the core subject matter
+2. **Focused/Specific Search Strings** - 2-3 narrower queries targeting specific document types, topics, or angles within the request
+3. Use proper Boolean syntax:
+   - AND, OR, NOT operators (capitalized)
+   - Wildcards (*) for root word expansion (e.g., employ* catches employ, employee, employment, employer)
+   - Quotation marks for exact phrases (e.g., "trade secret")
+   - Parentheses for grouping
+   - Proximity operators where useful (note: w/n format)
+4. Consider all named parties, individuals, and entities mentioned
+5. Include synonyms and alternative phrasings for key concepts
+6. Account for common document types relevant to each request
 
-For each numbered Request for Production:
-1. Extract the COMPLETE text of the request
-2. Identify the specific document types being requested
-3. Identify the subject matter/topics covered
-4. Identify any time period specified
-5. Identify specific people, entities, or transactions targeted
-6. Note key phrases and terminology used in the request
-
-## TASK 3: GENERATE BOOLEAN SEARCH TERMS FOR EACH RFP
-
-CRITICAL RULE: Every search term MUST use case-specific identifiers (actual party names, people names, dates, document types, terminology) from this RFP. NO generic searches.
-
-For each RFP request, generate searches targeting:
-
-**A. Document Type Searches** - Target the specific document types requested:
-- Use exact document names from the RFP (e.g., "employment agreement", "offer letter")
-- Include variations and abbreviations
-- Example: ("employment agreement" OR "offer letter" OR "compensation plan" OR "equity grant" OR "bonus" W/5 (plan OR structure))
-
-**B. Person/Entity Searches** - Use actual names from the RFP:
-- Full name, initials, last name only, common misspellings
-- Combine with document types or subjects
-- Example: (Wilmot OR "David Wilmot" OR "D. Wilmot") AND (hire* OR recruit* OR offer OR employment OR compensation)
-
-**C. Subject Matter Searches** - Use the RFP's actual terminology:
-- Key concepts and topics from the request
-- Industry-specific terms mentioned
-- Example: ("laser hair removal" OR "laser service*" OR LHR) AND (launch* OR offer* OR add* OR business W/3 plan)
-
-**D. Time-Bounded Searches** - Use specific dates/periods from RFP:
-- Multiple date formats
-- Combine with subject matter
-- Example: ("November 2024" OR "Nov 2024" OR "11/2024" OR "Q4 2024") AND (Semper OR Wilmot OR "trade secret" OR confidential*)
-
-**E. Relationship/Transaction Searches** - Target specific relationships:
-- Between parties mentioned
-- With third parties (customers, vendors, etc.)
-- Example: (EWC OR "EWC Growth") AND (Semper W/10 (customer* OR client* OR vendor* OR supplier*))
-
-**F. Confidentiality/Restrictive Covenant Searches** (when applicable):
-- Non-compete, non-solicitation, confidentiality terms
-- Trade secret references
-- Example: ("non-compete" OR "noncompete" OR "non-solicitation" OR "restrictive covenant" OR "confidential* agreement") AND (Wilmot OR Semper)
-
-Boolean syntax: AND, OR, NOT, "exact phrase", W/n (within n words), * (wildcard)
-
-Create both NARROW (high precision) and BROAD (high recall) variants for important requests.
-
-## TASK 4: IDENTIFY PRIVILEGE-SENSITIVE REQUESTS
-
-Flag any RFP requests likely to implicate privileged documents and suggest privilege search terms specific to those requests.
+**STYLE:**
+- Platform-agnostic syntax compatible with major eDiscovery tools
+- Practical, ready-to-use strings requiring minimal modification
+- Balance between precision (avoiding false positives) and recall (capturing relevant documents)
 
 ## OUTPUT FORMAT
 
-Return ONLY valid JSON (no markdown, no explanation):
+Return ONLY valid JSON with NO markdown code fences, NO explanation text before or after:
+
 {
   "caseContext": {
-    "caseName": "",
-    "caseNumber": "",
-    "plaintiff": "",
-    "defendant": "",
-    "respondingParty": "",
-    "keyIndividuals": [{"name": "", "role": ""}],
-    "keyDates": [{"date": "", "significance": ""}],
-    "thirdParties": [""],
-    "coreDispute": ""
+    "caseName": "Case name from document caption",
+    "caseNumber": "Case number if present",
+    "plaintiff": "Plaintiff name(s)",
+    "defendant": "Defendant name(s)",
+    "respondingParty": "Party responding to these RFPs",
+    "keyIndividuals": [{"name": "Person Name", "role": "Title or Role"}],
+    "keyDates": [{"date": "Date or range", "significance": "What happened"}],
+    "thirdParties": ["Company or person names"],
+    "coreDispute": "Brief description of case subject matter"
   },
   "rfpRequests": [
     {
       "requestNumber": 1,
-      "fullText": "Complete text of the RFP request",
-      "summary": "One-sentence summary of what's being requested",
-      "documentTypesRequested": [""],
-      "subjectMatter": [""],
-      "timePeriod": "",
-      "targetedEntities": [""],
-      "keyTerminology": [""],
-      "privilegeLikelihood": "high|medium|low",
+      "fullText": "Complete verbatim text of the RFP request",
+      "summary": "One-sentence summary of what is being requested",
+      "documentTypesRequested": ["emails", "contracts", "agreements"],
+      "subjectMatter": ["employment", "compensation"],
+      "timePeriod": "Date range if specified",
+      "targetedEntities": ["Names of people or companies targeted"],
+      "keyTerminology": ["Key phrases from the request"],
+      "privilegeLikelihood": "high",
       "searchTerms": [
         {
-          "id": "",
-          "category": "DocumentType|Person|Subject|Date|Relationship|Confidentiality",
-          "term": "BOOLEAN STRING WITH CASE-SPECIFIC IDENTIFIERS",
-          "precision": "high|medium|low",
-          "recall": "high|medium|low",
-          "rationale": "Why this search addresses this specific RFP request",
+          "id": "st1",
+          "category": "Primary",
+          "term": "(Party1 OR Party2) AND (keyword1 OR keyword2)",
+          "precision": "medium",
+          "recall": "high",
+          "rationale": "Broad search to capture all documents relating to this request",
+          "enabled": true,
+          "aiGenerated": true
+        },
+        {
+          "id": "st2",
+          "category": "DocumentType",
+          "term": "(\"employment agreement\" OR \"offer letter\" OR contract*) AND (PersonName)",
+          "precision": "high",
+          "recall": "medium",
+          "rationale": "Focused on specific document types mentioned in request",
+          "enabled": true,
+          "aiGenerated": true
+        },
+        {
+          "id": "st3",
+          "category": "Person",
+          "term": "(\"John Smith\" OR \"J. Smith\" OR Smith) AND (employ* OR hire* OR compensation)",
+          "precision": "high",
+          "recall": "medium",
+          "rationale": "Name variations for key individual",
           "enabled": true,
           "aiGenerated": true
         }
       ],
-      "combinedBooleanString": "All enabled terms combined with OR"
+      "combinedBoolean": "(term1) OR (term2) OR (term3)"
     }
   ],
   "privilegeSearchTerms": [
     {
-      "id": "",
-      "relatedRfpNumbers": [1, 3],
-      "term": "",
-      "rationale": "",
+      "id": "priv1",
+      "relatedRfpNumbers": [1, 2],
+      "term": "(attorney* OR counsel OR \"legal advice\" OR privileged) AND (TopicFromRFP)",
+      "rationale": "Identifies potentially privileged communications",
       "enabled": true,
       "aiGenerated": true
     }
   ],
   "suggestedCustodians": [
-    {"name": "", "role": "", "relevantToRfpNumbers": [1, 2, 3]}
+    {"name": "Person Name", "role": "Title", "relevantToRfpNumbers": [1, 2, 3]}
   ]
 }
 
-## RULES
-1. Use EXACT terminology from each RFP request
-2. Every search term needs case-specific identifiers (names, dates, document types from this case)
-3. Include name variations and common misspellings
-4. Include date format variations
-5. Create separate search term sets for EACH RFP request
-6. Tag which RFP number each search term addresses
-7. Consider what document types would actually contain the requested information
-
-## EXAMPLE
-
-For RFP: "All Documents relating to Wilmot's employment with you, including but not limited to, all offer letters, employment agreements, consulting agreements, compensation plans, bonus structures, equity grant agreements, and job descriptions"
-
-Generate:
-- (Wilmot OR "David Wilmot") AND ("offer letter" OR "employment agreement" OR "consulting agreement")
-- (Wilmot OR "David Wilmot") AND (compensation OR salary OR bonus OR equity OR "stock option" OR grant)
-- (Wilmot OR "David Wilmot") AND ("job description" OR JD OR role OR duties OR responsibilities)
-- (CEO OR "Chief Executive") AND (offer OR hire* OR recruit* OR compensation OR agreement) AND (EWC OR "EWC Growth")
-
-NOT generic searches like:
-- employment AND agreement (too broad, not case-specific)
-- compensation AND documents (doesn't use actual names)
+## CRITICAL RULES
+1. Return ONLY the JSON object - no markdown, no backticks, no explanation
+2. Every search term MUST include case-specific names, entities, or terminology from the actual RFP
+3. Include name variations (full name, initials, last name only)
+4. Include date format variations when dates are mentioned
+5. Generate 2-4 search terms per RFP request (Primary + Focused variants)
+6. The combinedBoolean field should join all enabled search terms with OR
 
 Analyze this RFP document:
 
