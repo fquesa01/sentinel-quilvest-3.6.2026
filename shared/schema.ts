@@ -11578,3 +11578,252 @@ export interface LegalElement {
   description: string;
   searchTerms: SearchTerm[];
 }
+
+// ============================================
+// CAUSE OF ACTION CHECKLIST SYSTEM
+// ============================================
+
+// Enums for Checklist
+export const elementStrengthEnum = pgEnum("element_strength", [
+  "not_evaluated",
+  "strong",
+  "moderate",
+  "weak",
+  "critical_gap",
+]);
+
+export const elementSourceEnum = pgEnum("element_source", [
+  "template",
+  "ai_generated",
+  "manual",
+]);
+
+export const evidenceClassificationEnum = pgEnum("evidence_classification", [
+  "supporting",
+  "contradicting",
+  "neutral",
+]);
+
+export const evidenceDocumentTypeEnum = pgEnum("evidence_document_type", [
+  "evidence_item",
+  "email",
+  "court_filing",
+  "deposition",
+  "exhibit",
+  "interview_transcript",
+  "external_document",
+  "communication",
+  "data_room_document",
+]);
+
+// Causes of Action - Extracted from complaint analysis
+export const causesOfAction = pgTable("causes_of_action", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id")
+    .references(() => cases.id, { onDelete: "cascade" })
+    .notNull(),
+  searchTermSetId: varchar("search_term_set_id")
+    .references(() => searchTermSets.id, { onDelete: "set null" }),
+  searchTermItemId: varchar("search_term_item_id")
+    .references(() => searchTermItems.id, { onDelete: "set null" }),
+  claimNumber: integer("claim_number").notNull(),
+  claimType: text("claim_type").notNull(),
+  claimName: text("claim_name").notNull(),
+  jurisdiction: text("jurisdiction"),
+  statutoryBasis: text("statutory_basis"),
+  fullText: text("full_text"),
+  overallStrength: integer("overall_strength").default(0),
+  aiConfidence: real("ai_confidence"),
+  isVerified: boolean("is_verified").default(false),
+  verifiedBy: varchar("verified_by").references(() => users.id),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+});
+
+// Case Elements - Legal elements required to prove each cause of action
+export const caseElements = pgTable("case_elements", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id")
+    .references(() => cases.id, { onDelete: "cascade" })
+    .notNull(),
+  causeOfActionId: varchar("cause_of_action_id")
+    .references(() => causesOfAction.id, { onDelete: "cascade" })
+    .notNull(),
+  elementNumber: integer("element_number").notNull(),
+  elementName: text("element_name").notNull(),
+  elementDescription: text("element_description").notNull(),
+  legalStandard: text("legal_standard"),
+  statutoryReference: text("statutory_reference"),
+  mustProve: text("must_prove"),
+  supportingFacts: text("supporting_facts"),
+  gaps: text("gaps"),
+  commonChallenges: jsonb("common_challenges"),
+  typicalEvidence: jsonb("typical_evidence"),
+  suggestedSearchTerms: jsonb("suggested_search_terms"),
+  strengthAssessment: elementStrengthEnum("strength_assessment").default("not_evaluated"),
+  attorneyNotes: text("attorney_notes"),
+  source: elementSourceEnum("source").default("ai_generated"),
+  aiConfidence: real("ai_confidence"),
+  isVerified: boolean("is_verified").default(false),
+  verifiedBy: varchar("verified_by").references(() => users.id),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Element Search Terms - Links search terms to elements
+export const elementSearchTerms = pgTable("element_search_terms", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  elementId: varchar("element_id")
+    .references(() => caseElements.id, { onDelete: "cascade" })
+    .notNull(),
+  searchTermItemId: varchar("search_term_item_id")
+    .references(() => searchTermItems.id, { onDelete: "cascade" }),
+  searchTermText: text("search_term_text"),
+  isPrimary: boolean("is_primary").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Element Evidence - Evidence linked to elements
+export const elementEvidence = pgTable("element_evidence", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  elementId: varchar("element_id")
+    .references(() => caseElements.id, { onDelete: "cascade" })
+    .notNull(),
+  documentType: evidenceDocumentTypeEnum("document_type").notNull(),
+  documentId: varchar("document_id"),
+  externalReference: text("external_reference"),
+  documentTitle: text("document_title"),
+  documentDate: timestamp("document_date"),
+  evidenceClassification: evidenceClassificationEnum("evidence_classification").notNull(),
+  relevanceScore: real("relevance_score"),
+  excerpt: text("excerpt"),
+  excerptLocation: text("excerpt_location"),
+  aiSuggested: boolean("ai_suggested").default(false),
+  aiConfidence: real("ai_confidence"),
+  aiReasoning: text("ai_reasoning"),
+  isVerified: boolean("is_verified").default(false),
+  verifiedBy: varchar("verified_by").references(() => users.id),
+  verifiedAt: timestamp("verified_at"),
+  isKeyEvidence: boolean("is_key_evidence").default(false),
+  attorneyNotes: text("attorney_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+});
+
+// Relations for Cause of Action Checklist
+export const causesOfActionRelations = relations(causesOfAction, ({ one, many }) => ({
+  case: one(cases, {
+    fields: [causesOfAction.caseId],
+    references: [cases.id],
+  }),
+  searchTermSet: one(searchTermSets, {
+    fields: [causesOfAction.searchTermSetId],
+    references: [searchTermSets.id],
+  }),
+  searchTermItem: one(searchTermItems, {
+    fields: [causesOfAction.searchTermItemId],
+    references: [searchTermItems.id],
+  }),
+  createdByUser: one(users, {
+    fields: [causesOfAction.createdBy],
+    references: [users.id],
+  }),
+  verifiedByUser: one(users, {
+    fields: [causesOfAction.verifiedBy],
+    references: [users.id],
+  }),
+  elements: many(caseElements),
+}));
+
+export const caseElementsRelations = relations(caseElements, ({ one, many }) => ({
+  case: one(cases, {
+    fields: [caseElements.caseId],
+    references: [cases.id],
+  }),
+  causeOfAction: one(causesOfAction, {
+    fields: [caseElements.causeOfActionId],
+    references: [causesOfAction.id],
+  }),
+  verifiedByUser: one(users, {
+    fields: [caseElements.verifiedBy],
+    references: [users.id],
+  }),
+  searchTermLinks: many(elementSearchTerms),
+  evidence: many(elementEvidence),
+}));
+
+export const elementSearchTermsRelations = relations(elementSearchTerms, ({ one }) => ({
+  element: one(caseElements, {
+    fields: [elementSearchTerms.elementId],
+    references: [caseElements.id],
+  }),
+  searchTermItem: one(searchTermItems, {
+    fields: [elementSearchTerms.searchTermItemId],
+    references: [searchTermItems.id],
+  }),
+}));
+
+export const elementEvidenceRelations = relations(elementEvidence, ({ one }) => ({
+  element: one(caseElements, {
+    fields: [elementEvidence.elementId],
+    references: [caseElements.id],
+  }),
+  verifiedByUser: one(users, {
+    fields: [elementEvidence.verifiedBy],
+    references: [users.id],
+  }),
+  createdByUser: one(users, {
+    fields: [elementEvidence.createdBy],
+    references: [users.id],
+  }),
+}));
+
+// Types for Cause of Action Checklist
+export type CauseOfAction = typeof causesOfAction.$inferSelect;
+export type InsertCauseOfAction = typeof causesOfAction.$inferInsert;
+export type CaseElement = typeof caseElements.$inferSelect;
+export type InsertCaseElement = typeof caseElements.$inferInsert;
+export type ElementSearchTerm = typeof elementSearchTerms.$inferSelect;
+export type InsertElementSearchTerm = typeof elementSearchTerms.$inferInsert;
+export type ElementEvidence = typeof elementEvidence.$inferSelect;
+export type InsertElementEvidence = typeof elementEvidence.$inferInsert;
+
+// Checklist view interfaces
+export interface CauseOfActionChecklist {
+  id: string;
+  caseId: string;
+  claimNumber: number;
+  claimType: string;
+  claimName: string;
+  jurisdiction?: string;
+  statutoryBasis?: string;
+  overallStrength: number;
+  elements: CaseElementWithEvidence[];
+  elementsSatisfied: number;
+  elementsTotal: number;
+  criticalGaps: number;
+}
+
+export interface CaseElementWithEvidence extends CaseElement {
+  searchTermLinks?: ElementSearchTerm[];
+  supportingEvidence?: ElementEvidence[];
+  contradictingEvidence?: ElementEvidence[];
+  neutralEvidence?: ElementEvidence[];
+  evidenceCounts: {
+    supporting: number;
+    contradicting: number;
+    neutral: number;
+  };
+}
