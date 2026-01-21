@@ -681,7 +681,7 @@ export function registerSearchTermsRoutes(app: Express) {
       const isRFP = set.sourceType === "rfp";
       worksheet.columns = [
         { header: isRFP ? "RFP Number" : "Claim Number", key: "number", width: 15 },
-        { header: isRFP ? "RFP Summary" : "Cause of Action", key: "summary", width: 60 },
+        { header: isRFP ? "RFP Request" : "Cause of Action", key: "text", width: 60 },
         { header: "Search Terms", key: "searchTerms", width: 80 },
       ];
 
@@ -702,7 +702,8 @@ export function registerSearchTermsRoutes(app: Express) {
 
         worksheet.addRow({
           number: isRFP ? `Request ${item.itemNumber}` : `Claim ${item.itemNumber}`,
-          summary: isRFP ? (item.summary || item.fullText) : (item.causeOfAction || item.summary || item.fullText),
+          // For RFP: use fullText (original request), for complaints: use causeOfAction or summary
+          text: isRFP ? item.fullText : (item.causeOfAction || item.summary || item.fullText),
           searchTerms: termsText || item.combinedBooleanString || "",
         });
       });
