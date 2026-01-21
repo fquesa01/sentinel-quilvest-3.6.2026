@@ -226,6 +226,68 @@ export function registerSearchTermsRoutes(app: Express) {
     }
   );
 
+  // POST /api/cases/:caseId/search-term-sets/analyze-pleading - Analyze an existing court pleading
+  app.post(
+    "/api/cases/:caseId/search-term-sets/analyze-pleading",
+    isAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const { caseId } = req.params;
+        const { pleadingId, name, description } = req.body;
+        const userId = (req as any).user?.claims?.sub;
+
+        if (!pleadingId) {
+          return res.status(400).json({ success: false, error: "No pleading ID provided" });
+        }
+
+        // Fetch the court pleading
+        const [pleading] = await db
+          .select()
+          .from(courtPleadings)
+          .where(and(eq(courtPleadings.id, pleadingId), eq(courtPleadings.caseId, caseId)));
+
+        if (!pleading) {
+          return res.status(404).json({ success: false, error: "Court pleading not found" });
+        }
+
+        const documentText = pleading.extractedText;
+
+        if (!documentText || documentText.length < 50) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "No extracted text available for this document. Please try re-extracting the text first." 
+          });
+        }
+
+        // Create the search term set
+        const [set] = await db
+          .insert(searchTermSets)
+          .values({
+            id: nanoid(),
+            caseId,
+            sourceType: "complaint",
+            sourceDocumentName: pleading.title || pleading.fileName,
+            name: name || `Complaint Analysis - ${pleading.title || pleading.fileName}`,
+            description,
+            generationStatus: "processing",
+            generationProgress: 0,
+            createdBy: userId,
+          })
+          .returning();
+
+        // Process asynchronously using the already extracted text
+        processComplaintDocument(set.id, documentText).catch((err) => {
+          console.error("[SearchTerms] Async complaint processing failed:", err);
+        });
+
+        res.json({ success: true, data: set });
+      } catch (error) {
+        console.error("[SearchTerms] Error analyzing pleading:", error);
+        res.status(500).json({ success: false, error: "Failed to analyze pleading" });
+      }
+    }
+  );
+
   // GET /api/cases/:caseId/search-term-sets/:setId/items - Get items for a search term set
   app.get("/api/cases/:caseId/search-term-sets/:setId/items", isAuthenticated, async (req: Request, res: Response) => {
     try {
