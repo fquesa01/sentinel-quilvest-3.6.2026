@@ -43,9 +43,7 @@ import {
   Plus,
   Code,
   Pencil,
-  ClipboardList,
 } from "lucide-react";
-import { CaseChecklistTab } from "@/components/case-checklist/CaseChecklistTab";
 
 interface SearchTerm {
   id: string;
@@ -181,14 +179,6 @@ export default function CaseSearchTermsPage() {
                 <Search className="h-4 w-4 mr-2" />
                 Custom Search
               </TabsTrigger>
-              <TabsTrigger
-                value="checklist"
-                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
-                data-testid="tab-case-checklist"
-              >
-                <ClipboardList className="h-4 w-4 mr-2" />
-                Case Checklist
-              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -214,10 +204,6 @@ export default function CaseSearchTermsPage() {
 
           <TabsContent value="custom" className="flex-1 overflow-auto p-6 m-0">
             <CustomSearchTab caseId={caseId!} />
-          </TabsContent>
-
-          <TabsContent value="checklist" className="flex-1 overflow-auto p-6 m-0">
-            <CaseChecklistTab caseId={caseId!} />
           </TabsContent>
         </Tabs>
       </div>

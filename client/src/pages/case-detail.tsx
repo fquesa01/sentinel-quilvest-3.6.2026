@@ -59,6 +59,7 @@ import { SendAIInterviewDialog } from "@/components/case-detail/send-ai-intervie
 import { AddPartyDialog } from "@/components/case-detail/add-party-dialog";
 import { ScheduleLiveInterviewDialog } from "@/components/case-detail/schedule-live-interview-dialog";
 import CaseSearchTermsPage from "@/pages/case-search-terms";
+import { CaseChecklistTab } from "@/components/case-checklist/CaseChecklistTab";
 
 export default function CaseDetail() {
   const [, params] = useRoute("/cases/:id");
@@ -574,6 +575,7 @@ export default function CaseDetail() {
             <TabsTrigger value="recordings" data-testid="tab-recordings">Recordings</TabsTrigger>
             <TabsTrigger value="production" data-testid="tab-production">Production</TabsTrigger>
             <TabsTrigger value="search-terms" data-testid="tab-search-terms">Search Terms</TabsTrigger>
+            <TabsTrigger value="case-checklist" data-testid="tab-case-checklist">Case Checklist</TabsTrigger>
           </TabsList>
 
           <div className="mt-6">
@@ -712,6 +714,9 @@ export default function CaseDetail() {
             </TabsContent>
             <TabsContent value="search-terms" className="mt-0">
               <CaseSearchTermsPage />
+            </TabsContent>
+            <TabsContent value="case-checklist" className="mt-0">
+              <CaseChecklistTab caseId={caseId!} />
             </TabsContent>
           </div>
         </Tabs>
