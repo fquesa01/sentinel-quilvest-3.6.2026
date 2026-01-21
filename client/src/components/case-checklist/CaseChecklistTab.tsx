@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -43,6 +44,7 @@ import {
   Sparkles,
   Users,
   UserCheck,
+  Upload,
 } from "lucide-react";
 
 interface CauseOfAction {
@@ -128,9 +130,11 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
   const [expandedElements, setExpandedElements] = useState<Set<string>>(new Set());
   const [selectedElement, setSelectedElement] = useState<CaseElement | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isFindingDocs, setIsFindingDocs] = useState(false);
   const [suggestedDocs, setSuggestedDocs] = useState<DocumentSuggestion[]>([]);
   const [showSuggestionsDialog, setShowSuggestionsDialog] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: causesOfAction, isLoading } = useQuery<CauseOfAction[]>({
     queryKey: ["/api/cases", caseId, "checklist"],
@@ -159,6 +163,57 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       toast({ title: "Generation Failed", description: error.message, variant: "destructive" });
     },
   });
+
+  const uploadAndGenerateMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("pleadingType", "complaint");
+      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+      formData.append("filingParty", "plaintiff");
+      formData.append("filingStatus", "court_filing");
+      
+      const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      
+      if (!uploadRes.ok) {
+        throw new Error("Failed to upload document");
+      }
+      
+      const uploadedDoc = await uploadRes.json();
+      
+      // Now generate checklist from the uploaded document
+      return apiRequest("POST", `/api/cases/${caseId}/checklist/generate`, {
+        sourceDocumentId: uploadedDoc.id,
+        sourceDocumentType: "court_filing",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "checklist"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/court-pleadings", caseId] });
+      toast({ title: "Document Uploaded & Analyzed", description: "Causes of action and elements extracted successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setIsUploading(true);
+      uploadAndGenerateMutation.mutate(file, {
+        onSettled: () => setIsUploading(false),
+      });
+    }
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
   const updateStrengthMutation = useMutation({
     mutationFn: async ({ elementId, strength }: { elementId: string; strength: string }) => {
@@ -276,6 +331,12 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
     }
   };
 
+  // Show all court docket documents for selection
+  const courtDocuments = useMemo(() => {
+    return courtPleadings || [];
+  }, [courtPleadings]);
+
+  // Separate complaints/petitions for prominent display
   const complaints = useMemo(() => {
     return (courtPleadings || []).filter(
       (p: any) => p.pleadingType === "complaint" || p.pleadingType === "petition"
@@ -333,50 +394,126 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileUp className="h-5 w-5" />
-              Generate Checklist from Complaint
+              Generate Checklist from Document
             </CardTitle>
             <CardDescription>
-              Select a complaint or petition to extract causes of action and required legal elements
+              Upload a document or select from court docket to extract causes of action and required legal elements
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {complaints.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No complaints found. Upload a complaint in the Court Docket tab first.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <Select
-                  onValueChange={(docId) => {
-                    setIsGenerating(true);
-                    generateChecklistMutation.mutate(docId, {
-                      onSettled: () => setIsGenerating(false),
-                    });
-                  }}
-                  disabled={isGenerating}
-                >
-                  <SelectTrigger className="w-full max-w-md" data-testid="select-complaint">
-                    <SelectValue placeholder="Select a complaint to analyze..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {complaints.map((doc: any) => (
-                      <SelectItem key={doc.id} value={doc.id}>
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          {doc.title}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {isGenerating && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Analyzing complaint and extracting legal elements...
+            <div className="space-y-6">
+              {/* Upload Option */}
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Upload a New Document</p>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.txt"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    data-testid="input-file-upload"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading || isGenerating}
+                    data-testid="btn-upload-document"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Uploading & Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload Document
+                      </>
+                    )}
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    PDF, Word, or text files
+                  </span>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="flex items-center gap-4">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-sm text-muted-foreground">or</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+
+              {/* Select from Court Docket */}
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Select from Court Docket</p>
+                {courtDocuments.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    No documents in court docket. Upload a document above or add files in the Court Docket tab.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    <Select
+                      onValueChange={(docId) => {
+                        setIsGenerating(true);
+                        generateChecklistMutation.mutate(docId, {
+                          onSettled: () => setIsGenerating(false),
+                        });
+                      }}
+                      disabled={isGenerating || isUploading}
+                    >
+                      <SelectTrigger className="w-full max-w-md" data-testid="select-document">
+                        <SelectValue placeholder="Select a document to analyze..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {complaints.length > 0 && (
+                          <>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                              Complaints & Petitions
+                            </div>
+                            {complaints.map((doc: any) => (
+                              <SelectItem key={doc.id} value={doc.id}>
+                                <div className="flex items-center gap-2">
+                                  <Scale className="h-4 w-4 text-primary" />
+                                  {doc.title}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                        {courtDocuments.filter((d: any) => d.pleadingType !== "complaint" && d.pleadingType !== "petition").length > 0 && (
+                          <>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-1">
+                              Other Documents
+                            </div>
+                            {courtDocuments
+                              .filter((d: any) => d.pleadingType !== "complaint" && d.pleadingType !== "petition")
+                              .map((doc: any) => (
+                                <SelectItem key={doc.id} value={doc.id}>
+                                  <div className="flex items-center gap-2">
+                                    <FileText className="h-4 w-4" />
+                                    {doc.title}
+                                    <Badge variant="outline" className="ml-2 text-xs">
+                                      {doc.pleadingType}
+                                    </Badge>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {isGenerating && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Analyzing document and extracting legal elements...
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
       )}
