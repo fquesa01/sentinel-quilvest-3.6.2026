@@ -2662,6 +2662,7 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
                           <DocumentCoding 
                             entityType="communication" 
                             entityId={currentDoc.id}
+                            caseId={effectiveCaseId || undefined}
                             currentIndex={currentIndex}
                             totalCount={displayedCommunications?.length || 0}
                             onNavigate={navigateDoc}

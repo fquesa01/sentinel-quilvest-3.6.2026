@@ -562,11 +562,32 @@ export function registerSearchTermsRoutes(app: Express) {
             ? "discovery_response"
             : "case_proving";
 
-          const tagName = item.isPrivilegeCategory
-            ? item.summary || "Privilege"
-            : item.itemType === "rfp_request"
-            ? `RFP-${item.itemNumber}`
-            : `Claim-${item.itemNumber}`;
+          // Generate RFP-style tag name with number and short summary
+          // Format: "RFP 1 Hiring of Wilmot" or "Claim 1 Breach of Contract"
+          const generateShortSummary = (text: string | null, maxWords: number = 5): string => {
+            if (!text) return "";
+            // Clean up and take first few meaningful words
+            const cleaned = text
+              .replace(/^(all\s+)?documents?\s+(and\s+)?communications?\s+(relating\s+to\s+)?/i, "")
+              .replace(/including\s+but\s+not\s+limited\s+to.*/i, "")
+              .replace(/[,;:]/g, " ")
+              .trim();
+            const words = cleaned.split(/\s+/).filter(w => w.length > 0);
+            return words.slice(0, maxWords).join(" ");
+          };
+
+          let tagName: string;
+          if (item.isPrivilegeCategory) {
+            tagName = item.summary || "Privilege";
+          } else if (item.itemType === "rfp_request") {
+            // RFP format: "RFP 1 Hiring of Wilmot"
+            const shortSummary = generateShortSummary(item.summary || item.fullText);
+            tagName = shortSummary ? `RFP ${item.itemNumber} ${shortSummary}` : `RFP ${item.itemNumber}`;
+          } else {
+            // Claim format: "Claim 1 Breach of Contract"
+            const shortSummary = generateShortSummary(item.summary || item.causeOfAction);
+            tagName = shortSummary ? `Claim ${item.itemNumber} ${shortSummary}` : `Claim ${item.itemNumber}`;
+          }
 
           const result = await searchService.executeAndTagDocuments(
             caseId,
@@ -649,6 +670,28 @@ export function registerSearchTermsRoutes(app: Express) {
     } catch (error) {
       console.error("[SearchTerms] Error fetching tags:", error);
       res.status(500).json({ success: false, error: "Failed to fetch document tags" });
+    }
+  });
+
+  // GET /api/cases/:caseId/documents/:documentId/search-tags - Get search tags for a specific document
+  app.get("/api/cases/:caseId/documents/:documentId/search-tags", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { caseId, documentId } = req.params;
+
+      const tags = await db
+        .select()
+        .from(documentSearchTags)
+        .where(
+          and(
+            eq(documentSearchTags.caseId, caseId),
+            eq(documentSearchTags.documentId, documentId)
+          )
+        );
+
+      res.json({ success: true, data: tags });
+    } catch (error) {
+      console.error("[SearchTerms] Error fetching document search tags:", error);
+      res.status(500).json({ success: false, error: "Failed to fetch document search tags" });
     }
   });
 

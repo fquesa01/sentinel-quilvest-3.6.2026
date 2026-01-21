@@ -45,9 +45,23 @@ interface DocumentTag {
   tag: Tag;
 }
 
+interface SearchTag {
+  id: string;
+  caseId: string;
+  documentId: string;
+  tagName: string;
+  tagCategory: string | null;
+  tagColor: string | null;
+  confidenceScore: number | null;
+  matchedTerms: string[] | null;
+  matchSnippets: any | null;
+  createdAt: string;
+}
+
 interface DocumentCodingProps {
   entityType: "communication" | "case" | "alert" | "interview";
   entityId: string;
+  caseId?: string;
   initialNotes?: string;
   onNotesChange?: (notes: string) => void;
   currentIndex?: number;
@@ -60,6 +74,7 @@ interface DocumentCodingProps {
 export function DocumentCoding({ 
   entityType, 
   entityId, 
+  caseId,
   initialNotes = "", 
   onNotesChange,
   currentIndex,
@@ -96,6 +111,20 @@ export function DocumentCoding({
       return response.json();
     },
   });
+
+  // Fetch RFP/search tags for this document (from search term execution)
+  const { data: searchTagsData } = useQuery<{ success: boolean; data: SearchTag[] }>({
+    queryKey: ["/api/cases", caseId, "documents", entityId, "search-tags"],
+    queryFn: async () => {
+      if (!caseId) return { success: false, data: [] };
+      const response = await fetch(`/api/cases/${caseId}/documents/${entityId}/search-tags`);
+      if (!response.ok) return { success: false, data: [] };
+      return response.json();
+    },
+    enabled: !!caseId && entityType === "communication",
+  });
+
+  const searchTags = searchTagsData?.data || [];
 
   // Fetch all available tags
   const { data: allTags = [], isLoading: isLoadingTags } = useQuery<Tag[]>({
@@ -378,6 +407,36 @@ export function DocumentCoding({
                   >
                     <X className="w-3 h-3" />
                   </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* RFP Search Tags - Auto-applied from search term execution */}
+        {searchTags.length > 0 && (
+          <div className="space-y-3" data-testid="rfp-search-tags">
+            <Label className="text-sm font-semibold flex items-center gap-2">
+              <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
+                Auto
+              </Badge>
+              RFP Responsive Tags
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {searchTags.map((st) => (
+                <div
+                  key={st.id}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-300"
+                  title={st.matchedTerms?.join(", ") || "Matched via search terms"}
+                  data-testid={`rfp-tag-${st.tagName.replace(/\s+/g, "-").toLowerCase()}`}
+                >
+                  <TagIcon className="w-3 h-3" />
+                  <span className="font-medium text-sm">{st.tagName}</span>
+                  {st.confidenceScore && (
+                    <Badge variant="secondary" className="text-xs py-0 px-1">
+                      {st.confidenceScore}%
+                    </Badge>
+                  )}
                 </div>
               ))}
             </div>
