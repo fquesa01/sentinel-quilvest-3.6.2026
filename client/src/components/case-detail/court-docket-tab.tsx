@@ -123,8 +123,10 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
     filingDate: "",
     filingParty: "plaintiff",
     filingStatus: "court_filing",
-    file: null as File | null,
+    files: [] as File[],
   });
+  
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; fileName: string }>({ current: 0, total: 0, fileName: "" });
   
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -180,19 +182,9 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "court-pleadings"] });
-      setIsUploadOpen(false);
-      setUploadForm({ pleadingType: "other", filingDate: "", filingParty: "plaintiff", filingStatus: "court_filing", file: null });
-      toast({
-        title: "Document Added to Docket",
-        description: "The filing has been added and indexed for AI search.",
-      });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Upload Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: () => {
+      // Error handling done in batch handler, no individual toasts
     },
   });
 
@@ -240,9 +232,10 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
 
   const reextractMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest("POST", `/api/court-pleadings/${id}/reextract`);
+      const res = await apiRequest("POST", `/api/court-pleadings/${id}/reextract`);
+      return res.json() as Promise<{ success: boolean; extractedLength: number; message: string }>;
     },
-    onSuccess: (data: { success: boolean; extractedLength: number; message: string }) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "court-pleadings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/court-pleadings", previewId, "preview"] });
       toast({
@@ -260,27 +253,68 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
   });
 
   const handleUpload = async () => {
-    if (!uploadForm.file) {
+    if (uploadForm.files.length === 0) {
       toast({
-        title: "Missing File",
-        description: "Please select a file to upload.",
+        title: "Missing Files",
+        description: "Please select at least one file to upload.",
         variant: "destructive",
       });
       return;
     }
 
     setUploading(true);
+    const total = uploadForm.files.length;
+    let successCount = 0;
+    let failCount = 0;
+    
     try {
-      const formData = new FormData();
-      formData.append("file", uploadForm.file);
-      formData.append("pleadingType", uploadForm.pleadingType);
-      formData.append("filingParty", uploadForm.filingParty);
-      formData.append("filingStatus", uploadForm.filingStatus);
-      if (uploadForm.filingDate) formData.append("filingDate", uploadForm.filingDate);
+      for (let i = 0; i < uploadForm.files.length; i++) {
+        const file = uploadForm.files[i];
+        setUploadProgress({ current: i + 1, total, fileName: file.name });
+        
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("pleadingType", uploadForm.pleadingType);
+        formData.append("filingParty", uploadForm.filingParty);
+        formData.append("filingStatus", uploadForm.filingStatus);
+        if (uploadForm.filingDate) formData.append("filingDate", uploadForm.filingDate);
 
-      await uploadMutation.mutateAsync(formData);
+        try {
+          await uploadMutation.mutateAsync(formData);
+          successCount++;
+        } catch {
+          failCount++;
+        }
+      }
+      
+      if (successCount > 0) {
+        // Only close dialog if at least one upload succeeded
+        setIsUploadOpen(false);
+        setUploadForm({ pleadingType: "other", filingDate: "", filingParty: "plaintiff", filingStatus: "court_filing", files: [] });
+        
+        if (failCount === 0) {
+          toast({
+            title: `${successCount} Document${successCount > 1 ? 's' : ''} Added`,
+            description: "All filings have been added and indexed for AI search.",
+          });
+        } else {
+          toast({
+            title: "Upload Completed with Errors",
+            description: `${successCount} succeeded, ${failCount} failed. You can retry the failed files.`,
+            variant: "destructive",
+          });
+        }
+      } else {
+        // All files failed - keep dialog open for retry
+        toast({
+          title: "Upload Failed",
+          description: "All files failed to upload. Please check the files and try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setUploading(false);
+      setUploadProgress({ current: 0, total: 0, fileName: "" });
     }
   };
 
@@ -570,15 +604,37 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Document File *</label>
+              <label className="text-sm font-medium">Document Files * (Select multiple)</label>
               <Input
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
-                onChange={(e) => setUploadForm({ ...uploadForm, file: e.target.files?.[0] || null })}
+                multiple
+                onChange={(e) => setUploadForm({ ...uploadForm, files: e.target.files ? Array.from(e.target.files) : [] })}
                 data-testid="input-docket-file"
               />
+              {uploadForm.files.length > 0 && (
+                <div className="max-h-32 overflow-y-auto rounded border p-2 space-y-1">
+                  {uploadForm.files.map((file, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate flex-1">{file.name}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 p-1"
+                        onClick={() => setUploadForm({ ...uploadForm, files: uploadForm.files.filter((_, i) => i !== idx) })}
+                        data-testid={`button-remove-file-${idx}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
-                The document headline will be automatically extracted as the title
+                {uploadForm.files.length === 0 
+                  ? "Select one or more files to upload. Document titles will be auto-extracted."
+                  : `${uploadForm.files.length} file${uploadForm.files.length > 1 ? 's' : ''} selected`}
               </p>
             </div>
 
@@ -652,23 +708,27 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsUploadOpen(false)}>
+            <Button variant="outline" onClick={() => setIsUploadOpen(false)} disabled={uploading}>
               Cancel
             </Button>
             <Button
               onClick={handleUpload}
-              disabled={uploading || !uploadForm.file}
+              disabled={uploading || uploadForm.files.length === 0}
               data-testid="button-submit-docket-entry"
             >
               {uploading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Uploading...
+                  {uploadProgress.total > 1 
+                    ? `Uploading ${uploadProgress.current}/${uploadProgress.total}...`
+                    : "Uploading..."}
                 </>
               ) : (
                 <>
                   <Upload className="h-4 w-4 mr-2" />
-                  Add to Docket
+                  {uploadForm.files.length > 1 
+                    ? `Add ${uploadForm.files.length} Files`
+                    : "Add to Docket"}
                 </>
               )}
             </Button>
