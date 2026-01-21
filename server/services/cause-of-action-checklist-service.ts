@@ -167,6 +167,133 @@ export class CauseOfActionChecklistService {
     }
   }
 
+  async generateChecklistFromDocument(
+    caseId: string,
+    sourceDocumentId: string,
+    sourceDocumentType: string,
+    userId?: string
+  ): Promise<GenerateChecklistResult> {
+    try {
+      const [pleading] = await db
+        .select()
+        .from(courtPleadings)
+        .where(eq(courtPleadings.id, sourceDocumentId));
+
+      if (!pleading) {
+        return { causesOfAction: [], elements: [], success: false, error: "Court pleading not found" };
+      }
+
+      const documentText = pleading.extractedText || "";
+      
+      if (!documentText || documentText.length < 100) {
+        return { causesOfAction: [], elements: [], success: false, error: "Document has insufficient text for analysis" };
+      }
+
+      const prompt = `Analyze this legal complaint document and extract all causes of action with their required legal elements.
+
+DOCUMENT TEXT:
+${documentText.substring(0, 15000)}
+
+Return a JSON object with the following structure:
+{
+  "causes_of_action": [
+    {
+      "name": "Breach of Contract",
+      "type": "contract", 
+      "statute": "Common Law" or specific statute citation,
+      "elements": [
+        {
+          "name": "Existence of Valid Contract",
+          "description": "A valid contract must have existed between plaintiff and defendant",
+          "legal_standard": "The plaintiff must prove by preponderance of evidence that a valid and enforceable contract existed"
+        }
+      ]
+    }
+  ]
+}
+
+CAUSE OF ACTION TYPES (use one of): contract, tort, statutory, constitutional, equitable, criminal, administrative
+
+Focus on identifying:
+1. Each distinct cause of action or claim
+2. The required legal elements for each cause of action
+3. Applicable statutes or common law basis
+4. The legal standard/burden for each element
+
+Return ONLY valid JSON, no markdown formatting.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: prompt,
+      });
+
+      const text = response.text || "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      
+      if (!jsonMatch) {
+        return { causesOfAction: [], elements: [], success: false, error: "Failed to parse AI response" };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const createdCausesOfAction: CauseOfAction[] = [];
+      const createdElements: CaseElement[] = [];
+
+      for (let i = 0; i < parsed.causes_of_action.length; i++) {
+        const coaData = parsed.causes_of_action[i];
+
+        const [insertedCoa] = await db
+          .insert(causesOfAction)
+          .values({
+            caseId,
+            claimNumber: i + 1,
+            claimName: coaData.name,
+            claimType: coaData.type || "tort",
+            statutoryBasis: coaData.statute,
+            createdBy: userId,
+          })
+          .returning();
+
+        createdCausesOfAction.push(insertedCoa);
+
+        if (coaData.elements && Array.isArray(coaData.elements)) {
+          for (let j = 0; j < coaData.elements.length; j++) {
+            const elemData = coaData.elements[j];
+            
+            const [insertedElement] = await db
+              .insert(caseElements)
+              .values({
+                caseId,
+                causeOfActionId: insertedCoa.id,
+                elementNumber: j + 1,
+                elementName: elemData.name,
+                elementDescription: elemData.description || "",
+                legalStandard: elemData.legal_standard,
+                strengthAssessment: "not_evaluated",
+                createdBy: userId,
+              })
+              .returning();
+
+            createdElements.push(insertedElement);
+          }
+        }
+      }
+
+      return { 
+        causesOfAction: createdCausesOfAction, 
+        elements: createdElements, 
+        success: true 
+      };
+    } catch (error) {
+      console.error("[ChecklistService] Error generating checklist from document:", error);
+      return { 
+        causesOfAction: [], 
+        elements: [], 
+        success: false, 
+        error: String(error) 
+      };
+    }
+  }
+
   async getCausesOfActionForCase(caseId: string): Promise<CauseOfActionChecklist[]> {
     const coas = await db
       .select()

@@ -13,10 +13,11 @@ export function registerChecklistRoutes(app: Express) {
     try {
       const { caseId } = req.params;
       const checklists = await checklistService.getCausesOfActionForCase(caseId);
-      res.json({ success: true, checklists });
+      // Return array directly for frontend compatibility
+      res.json(checklists || []);
     } catch (error) {
       console.error("[Checklist] Error getting checklist:", error);
-      res.status(500).json({ success: false, error: "Failed to get checklist" });
+      res.status(500).json([]);
     }
   });
 
@@ -32,15 +33,37 @@ export function registerChecklistRoutes(app: Express) {
     }
   });
 
-  // POST /api/cases/:caseId/checklist/generate - Generate checklist from search term set
+  // POST /api/cases/:caseId/checklist/generate - Generate checklist from complaint document
   app.post("/api/cases/:caseId/checklist/generate", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { caseId } = req.params;
-      const { searchTermSetId } = req.body;
+      const { sourceDocumentId, sourceDocumentType, searchTermSetId } = req.body;
       const userId = (req.user as any)?.id;
 
+      // Support both modes: document-based or search term set based
+      if (sourceDocumentId && sourceDocumentType === "court_filing") {
+        // Generate directly from complaint document
+        const result = await checklistService.generateChecklistFromDocument(
+          caseId,
+          sourceDocumentId,
+          sourceDocumentType,
+          userId
+        );
+
+        if (!result.success) {
+          return res.status(400).json({ success: false, error: result.error });
+        }
+
+        // Return consistent format for both generation modes
+        return res.json({ 
+          success: true, 
+          causesOfAction: result.causesOfAction,
+          elementsCreated: result.elements.length,
+        });
+      }
+
       if (!searchTermSetId) {
-        return res.status(400).json({ success: false, error: "searchTermSetId is required" });
+        return res.status(400).json({ success: false, error: "sourceDocumentId or searchTermSetId is required" });
       }
 
       const result = await checklistService.generateChecklistFromSearchTermSet(
@@ -303,4 +326,97 @@ export function registerChecklistRoutes(app: Express) {
       res.status(500).json({ success: false, error: "Failed to add suggestion" });
     }
   });
+
+  // ========== FRONTEND-COMPATIBLE ROUTES ==========
+  // These routes match what the frontend expects
+
+  // PATCH /api/checklist/elements/:elementId/strength - Update element strength (frontend format)
+  app.patch("/api/checklist/elements/:elementId/strength", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { elementId } = req.params;
+      const { strengthAssessment } = req.body;
+
+      const updated = await checklistService.updateElement(elementId, { strengthAssessment });
+
+      if (!updated) {
+        return res.status(404).json({ error: "Element not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("[Checklist] Error updating element strength:", error);
+      res.status(500).json({ error: "Failed to update element strength" });
+    }
+  });
+
+  // POST /api/checklist/elements/:elementId/evidence - Add evidence (frontend format)
+  app.post("/api/checklist/elements/:elementId/evidence", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { elementId } = req.params;
+      const userId = (req.user as any)?.id;
+      const { documentId, documentType, documentTitle, evidenceClassification, excerpt, attorneyNotes, confidenceScore, aiGenerated } = req.body;
+
+      const evidence = await checklistService.addEvidenceToElement(
+        elementId,
+        {
+          documentType,
+          documentId,
+          documentTitle: documentTitle || "Document",
+          evidenceClassification: evidenceClassification || "neutral",
+          excerpt,
+          attorneyNotes,
+          isKeyEvidence: false,
+        },
+        userId
+      );
+
+      // Update with AI-specific fields if provided
+      if (evidence && (confidenceScore !== undefined || aiGenerated !== undefined)) {
+        await db
+          .update(elementEvidence)
+          .set({
+            confidenceScore,
+            aiGenerated: aiGenerated || false,
+          })
+          .where(eq(elementEvidence.id, evidence.id));
+      }
+
+      res.json(evidence);
+    } catch (error) {
+      console.error("[Checklist] Error adding evidence:", error);
+      res.status(500).json({ error: "Failed to add evidence" });
+    }
+  });
+
+  // DELETE /api/checklist/evidence/:evidenceId - Remove evidence (frontend format)
+  app.delete("/api/checklist/evidence/:evidenceId", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { evidenceId } = req.params;
+      await checklistService.removeEvidence(evidenceId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[Checklist] Error removing evidence:", error);
+      res.status(500).json({ error: "Failed to remove evidence" });
+    }
+  });
+
+  // GET /api/checklist/elements/:elementId/suggestions - Get document suggestions (frontend format)
+  app.get("/api/checklist/elements/:elementId/suggestions", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { elementId } = req.params;
+      const { caseId } = req.query;
+
+      if (!caseId) {
+        return res.status(400).json({ error: "caseId query parameter is required" });
+      }
+
+      const suggestions = await checklistService.findRelatedDocuments(caseId as string, elementId);
+      res.json(suggestions);
+    } catch (error) {
+      console.error("[Checklist] Error getting suggestions:", error);
+      res.status(500).json([]);
+    }
+  });
+
+  console.log("[Checklist] Routes registered");
 }
