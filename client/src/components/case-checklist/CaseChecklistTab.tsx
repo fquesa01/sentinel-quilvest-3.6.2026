@@ -238,6 +238,46 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
     },
   });
 
+  // Upload amended complaint and regenerate (replaces existing checklist)
+  const uploadAndRegenerateMutation = useMutation({
+    mutationFn: async (file: File) => {
+      // First upload the file
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("pleadingType", "amended_complaint");
+      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+      formData.append("filingParty", "plaintiff");
+      formData.append("filingStatus", "court_filing");
+      
+      const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      
+      if (!uploadRes.ok) {
+        throw new Error("Failed to upload document");
+      }
+      
+      const uploadedDoc = await uploadRes.json();
+      
+      // Now regenerate checklist (deletes old, creates new)
+      return apiRequest("POST", `/api/cases/${caseId}/checklist/regenerate`, {
+        sourceDocumentId: uploadedDoc.id,
+        sourceDocumentType: "court_filing",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "checklist"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/court-pleadings", caseId] });
+      toast({ title: "Amended Complaint Uploaded", description: "Checklist regenerated with updated search terms." });
+      setShowRegenerateDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const updateStrengthMutation = useMutation({
     mutationFn: async ({ elementId, strength }: { elementId: string; strength: string }) => {
       return apiRequest("PATCH", `/api/checklist/elements/${elementId}/strength`, {
@@ -552,44 +592,93 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
                   Regenerate with Search Terms
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>Regenerate Checklist</DialogTitle>
                   <DialogDescription>
-                    Select a complaint document to regenerate the checklist with updated fact-specific boolean search terms for each element.
+                    Upload an amended complaint or select an existing document to regenerate the checklist with fact-specific boolean search terms.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
-                  {complaints.length > 0 ? (
-                    <Select
-                      onValueChange={(docId) => {
-                        setIsRegenerating(true);
-                        regenerateChecklistMutation.mutate(docId, {
-                          onSettled: () => setIsRegenerating(false),
-                        });
+                  {/* Upload New Complaint Option */}
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Upload Amended Complaint</p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setIsRegenerating(true);
+                          uploadAndRegenerateMutation.mutate(file, {
+                            onSettled: () => {
+                              setIsRegenerating(false);
+                            },
+                          });
+                        }
+                        if (fileInputRef.current) {
+                          fileInputRef.current.value = "";
+                        }
                       }}
+                      className="hidden"
+                      data-testid="input-regenerate-upload"
+                    />
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => fileInputRef.current?.click()}
                       disabled={isRegenerating}
+                      data-testid="btn-upload-amended-complaint"
                     >
-                      <SelectTrigger data-testid="select-regenerate-document">
-                        <SelectValue placeholder="Select complaint document..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {complaints.map((doc: any) => (
-                          <SelectItem key={doc.id} value={doc.id}>
-                            {doc.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No complaint documents found. Upload a complaint in the Court Docket tab first.
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload New Complaint
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      PDF, Word, or text files
                     </p>
+                  </div>
+
+                  {/* Divider */}
+                  {complaints.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1 h-px bg-border" />
+                        <span className="text-sm text-muted-foreground">or</span>
+                        <div className="flex-1 h-px bg-border" />
+                      </div>
+
+                      {/* Select Existing Document */}
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">Use Existing Document</p>
+                        <Select
+                          onValueChange={(docId) => {
+                            setIsRegenerating(true);
+                            regenerateChecklistMutation.mutate(docId, {
+                              onSettled: () => setIsRegenerating(false),
+                            });
+                          }}
+                          disabled={isRegenerating}
+                        >
+                          <SelectTrigger data-testid="select-regenerate-document">
+                            <SelectValue placeholder="Select complaint document..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {complaints.map((doc: any) => (
+                              <SelectItem key={doc.id} value={doc.id}>
+                                {doc.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
                   )}
+
                   {isRegenerating && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Regenerating checklist with search terms...
+                      Uploading & regenerating checklist...
                     </div>
                   )}
                 </div>
