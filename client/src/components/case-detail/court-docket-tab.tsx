@@ -24,6 +24,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 
@@ -442,9 +443,16 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
                     ) : (
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        <span className="font-medium truncate max-w-[400px]" title={pleading.title}>
-                          {pleading.title}
-                        </span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="font-medium line-clamp-2 cursor-help" data-testid={`text-title-${pleading.id}`}>
+                              {pleading.title}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-[400px] text-wrap">
+                            <p>{pleading.title}</p>
+                          </TooltipContent>
+                        </Tooltip>
                         {pleading.isIndexed && (
                           <Badge variant="outline" className="text-xs text-green-600 border-green-600 flex-shrink-0">
                             Indexed
