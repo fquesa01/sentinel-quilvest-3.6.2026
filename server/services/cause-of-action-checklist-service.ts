@@ -189,16 +189,22 @@ export class CauseOfActionChecklistService {
         return { causesOfAction: [], elements: [], success: false, error: "Document has insufficient text for analysis" };
       }
 
-      const prompt = `Analyze this legal complaint document and extract all causes of action with their required legal elements. For each element, generate FACT-SPECIFIC boolean search terms based on the actual parties, dates, events, and facts mentioned in this complaint.
+      // Use more of the document text for large complaints - Gemini 2.0 Flash supports large context
+      const maxDocLength = 80000; // ~20k tokens, safe for Gemini 2.0 Flash
+      const docTextToAnalyze = documentText.substring(0, maxDocLength);
+      
+      const prompt = `Analyze this ENTIRE legal complaint document and extract ALL causes of action with their required legal elements. This is a critical task - you MUST identify EVERY cause of action mentioned anywhere in the document.
+
+IMPORTANT: Legal complaints often list causes of action throughout the document with headings like "COUNT I", "COUNT II", "FIRST CAUSE OF ACTION", "SECOND CAUSE OF ACTION", etc. You MUST scan the ENTIRE document to find ALL of them.
 
 DOCUMENT TEXT:
-${documentText.substring(0, 15000)}
+${docTextToAnalyze}
 
 Return a JSON object with the following structure:
 {
   "causes_of_action": [
     {
-      "name": "Breach of Contract",
+      "name": "Breach of Non-Compete Agreement (Defendant Name)",
       "type": "contract", 
       "statute": "Common Law" or specific statute citation,
       "elements": [
@@ -216,6 +222,22 @@ Return a JSON object with the following structure:
   ]
 }
 
+CRITICAL REQUIREMENTS:
+1. You MUST identify EVERY cause of action in the document - look for "COUNT", "CAUSE OF ACTION", claim headings
+2. If the complaint has claims against multiple defendants, create SEPARATE causes of action for each defendant
+3. Common causes of action to look for include:
+   - Breach of Contract (Non-Compete, Non-Solicitation, Non-Disclosure, Employment Agreement)
+   - Breach of Fiduciary Duty
+   - Tortious Interference
+   - Trade Secret Misappropriation
+   - Unjust Enrichment
+   - Fraud/Fraudulent Inducement
+   - Conversion
+   - Civil Conspiracy
+   - Unfair Competition
+   - Declaratory Judgment
+4. Include the defendant name in the cause of action name when claims are against specific defendants
+
 IMPORTANT INSTRUCTIONS FOR SEARCH TERMS:
 1. Each element MUST have 2-4 boolean search terms
 2. Search terms MUST be FACT-SPECIFIC to this complaint - include actual:
@@ -231,13 +253,6 @@ IMPORTANT INSTRUCTIONS FOR SEARCH TERMS:
 5. Each search term should help find documents relevant to proving/disproving that specific element
 
 CAUSE OF ACTION TYPES (use one of): contract, tort, statutory, constitutional, equitable, criminal, administrative
-
-Focus on identifying:
-1. Each distinct cause of action or claim
-2. The required legal elements for each cause of action
-3. Applicable statutes or common law basis
-4. The legal standard/burden for each element
-5. FACT-SPECIFIC boolean search terms for each element
 
 Return ONLY valid JSON, no markdown formatting.`;
 
