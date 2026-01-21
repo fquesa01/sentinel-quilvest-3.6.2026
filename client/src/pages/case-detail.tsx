@@ -97,11 +97,50 @@ export default function CaseDetail() {
   
   const [activeTab, setActiveTab] = useState(getInitialTab);
   
+  // Two-level navigation: category mapping
+  const categoryTabs = {
+    "case-info": ["overview", "docket", "parties", "timeline"],
+    "discovery": ["evidence", "interviews", "production", "search-terms"],
+    "analysis": ["findings", "case-checklist"],
+  };
+  
+  const tabLabels: Record<string, string> = {
+    "overview": "Overview",
+    "docket": "Court Docket",
+    "parties": "Parties",
+    "timeline": "Timeline",
+    "evidence": "Evidence",
+    "interviews": "Interviews",
+    "production": "Production",
+    "search-terms": "Search Terms",
+    "findings": "Findings",
+    "case-checklist": "Checklist",
+  };
+  
+  // Determine category from active tab
+  const getCategoryFromTab = (tab: string): "case-info" | "discovery" | "analysis" => {
+    if (categoryTabs["case-info"].includes(tab)) return "case-info";
+    if (categoryTabs["discovery"].includes(tab)) return "discovery";
+    if (categoryTabs["analysis"].includes(tab)) return "analysis";
+    return "case-info";
+  };
+  
+  const [activeCategory, setActiveCategory] = useState<"case-info" | "discovery" | "analysis">(
+    getCategoryFromTab(getInitialTab())
+  );
+  
+  // When category changes, switch to first tab in that category
+  const handleCategoryChange = (category: "case-info" | "discovery" | "analysis") => {
+    setActiveCategory(category);
+    setActiveTab(categoryTabs[category][0]);
+  };
+  
   // React to URL parameter changes - update active tab when filters change
   useEffect(() => {
     const newTab = getInitialTab();
     if (urlParams.filterPerson || urlParams.filterKeyword || urlParams.tab) {
       setActiveTab(newTab);
+      setActiveCategory(getCategoryFromTab(newTab));
     }
   }, [urlParams.filterPerson, urlParams.filterKeyword, urlParams.tab]);
   
@@ -541,34 +580,66 @@ export default function CaseDetail() {
           />
         </div>
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full stagger-4">
-          <TabsList className="w-full justify-start flex-wrap h-auto" data-testid="tabs-case-war-room">
-            <TabsTrigger value="overview" data-testid="tab-overview">
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="docket" data-testid="tab-docket">
-              Court Docket
-            </TabsTrigger>
-            <TabsTrigger value="evidence" data-testid="tab-evidence">
-              Evidence
-            </TabsTrigger>
-            <TabsTrigger value="parties" data-testid="tab-parties">
-              Parties & Custodians
-            </TabsTrigger>
-            <TabsTrigger value="interviews" data-testid="tab-interviews">
-              Interviews & Recordings
-            </TabsTrigger>
-            <TabsTrigger value="timeline" data-testid="tab-timeline">
-              Timeline & Correspondence
-            </TabsTrigger>
-            <TabsTrigger value="findings" data-testid="tab-findings">
-              Findings
-            </TabsTrigger>
-            <TabsTrigger value="production" data-testid="tab-production">Production</TabsTrigger>
-            <TabsTrigger value="search-terms" data-testid="tab-search-terms">Search Terms</TabsTrigger>
-            <TabsTrigger value="case-checklist" data-testid="tab-case-checklist">Case Checklist</TabsTrigger>
-          </TabsList>
+        {/* Two-Level Navigation */}
+        <Tabs value={activeTab} onValueChange={(tab) => {
+          setActiveTab(tab);
+          setActiveCategory(getCategoryFromTab(tab));
+        }} className="w-full stagger-4">
+          <div className="flex items-center gap-1 border-b pb-2" data-testid="tabs-case-war-room">
+            {/* Category Pills */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleCategoryChange("case-info")}
+                className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors ${
+                  activeCategory === "case-info"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid="category-case-info"
+              >
+                Case Info
+              </button>
+              <button
+                onClick={() => handleCategoryChange("discovery")}
+                className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors ${
+                  activeCategory === "discovery"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid="category-discovery"
+              >
+                Discovery
+              </button>
+              <button
+                onClick={() => handleCategoryChange("analysis")}
+                className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors ${
+                  activeCategory === "analysis"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid="category-analysis"
+              >
+                Analysis
+              </button>
+            </div>
+            
+            {/* Vertical Divider */}
+            <div className="h-6 w-px bg-border mx-2" />
+            
+            {/* Sub-tabs for current category */}
+            <TabsList className="h-auto bg-transparent p-0 gap-1">
+              {categoryTabs[activeCategory].map((tab) => (
+                <TabsTrigger
+                  key={tab}
+                  value={tab}
+                  className="data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+                  data-testid={`tab-${tab}`}
+                >
+                  {tabLabels[tab]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
           <div className="mt-6">
             <TabsContent value="overview" className="mt-0">
@@ -589,10 +660,10 @@ export default function CaseDetail() {
                 onRegenerateAnalysis={handleRegenerateAnalysis}
                 onSaveDescription={handleSaveDescription}
                 onSaveAIAnalysis={handleSaveAIAnalysis}
-                onViewAllDocSets={() => setActiveTab("evidence")}
-                onViewAllParties={() => setActiveTab("parties")}
-                onViewAllInterviews={() => setActiveTab("interviews")}
-                onViewAllAlerts={() => setActiveTab("overview")}
+                onViewAllDocSets={() => { setActiveTab("evidence"); setActiveCategory("discovery"); }}
+                onViewAllParties={() => { setActiveTab("parties"); setActiveCategory("case-info"); }}
+                onViewAllInterviews={() => { setActiveTab("interviews"); setActiveCategory("discovery"); }}
+                onViewAllAlerts={() => { setActiveTab("overview"); setActiveCategory("case-info"); }}
               />
             </TabsContent>
 
