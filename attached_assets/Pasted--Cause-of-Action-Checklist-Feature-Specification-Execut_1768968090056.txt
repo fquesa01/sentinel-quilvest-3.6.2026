@@ -1,0 +1,1328 @@
+# Cause of Action Checklist - Feature Specification
+
+## Executive Summary
+
+The Cause of Action Checklist transforms Sentinel's existing search term generation into a complete **element-by-element litigation preparation system**. By mapping evidence to specific legal elements—and classifying that evidence as supporting or contradicting—attorneys can visually assess case strength, identify gaps, and prepare for adversary arguments.
+
+---
+
+## The Problem This Solves
+
+Every litigable claim consists of discrete **legal elements** that must be proven (for plaintiffs) or defeated (for defendants). Experienced litigators build trial binders organized around this structure. But for small firms:
+
+- **Element identification** requires research (what are the elements of Florida trade secret misappropriation?)
+- **Evidence mapping** is manual and error-prone
+- **Gap analysis** is done mentally by senior partners
+- **Adversary preparation** (anticipating the other side's arguments) is often neglected
+
+Sentinel automates this entire workflow while keeping attorneys in control.
+
+---
+
+## User Experience Vision
+
+### Navigation Path
+```
+Case → Search Terms Tab → [Existing: Discovery Response | Prove Your Case | Privilege Log | Custom Search]
+                                                ↓
+                              New Sub-Tab: "Case Checklist"
+```
+
+### The Checklist View
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Case Checklist                                              [Plaintiff ▼]  │
+│  Semper Laser Holdings v. Wilmot, EWC, North Castle Partners                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │ Claim 3: Misappropriation of Trade Secrets (F.S. § 688.002)         │   │
+│  │ Status: ████████░░ 80% Elements Supported    [Expand All] [Export]  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─ Element 1: Existence of a Trade Secret ─────────────── ✓ Strong ───┐   │
+│  │                                                                      │   │
+│  │  Legal Standard:                                                     │   │
+│  │  Information that derives independent economic value from not        │   │
+│  │  being generally known and is subject to reasonable secrecy efforts. │   │
+│  │                                                                      │   │
+│  │  Search Terms (3 active):                        [Edit] [+ Add Term] │   │
+│  │  • "trade secret*" OR "proprietary" OR "confidential"... [View]     │   │
+│  │  • "customer list*" OR "pricing" OR "formula*"...        [View]     │   │
+│  │                                                                      │   │
+│  │  ┌─ Supporting Evidence (7 documents) ──────────────────────────┐   │   │
+│  │  │                                                               │   │
+│  │  │  📄 Confidentiality Agreement - Wilmot (2019)     ★ Key      │   │   │
+│  │  │     "Employee agrees all customer lists, pricing..."          │   │   │
+│  │  │     [View Document] [Remove] [Move to Contradicting]          │   │   │
+│  │  │                                                               │   │   │
+│  │  │  📧 Email: Wilmot → Chen, Re: Customer Data (03/15/2024)     │   │   │
+│  │  │     "These numbers are highly confidential - don't share"     │   │   │
+│  │  │     [View Document] [Remove] [Move to Contradicting]          │   │   │
+│  │  │                                                               │   │   │
+│  │  │  [+ Add Evidence Manually]  [Find Related Documents]          │   │   │
+│  │  └───────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                      │   │
+│  │  ┌─ Contradicting Evidence (2 documents) ⚠️ ────────────────────┐   │   │
+│  │  │                                                               │   │   │
+│  │  │  📄 Deposition: Industry Expert (p. 47-52)                   │   │   │
+│  │  │     "This type of customer data is commonly known in the..."  │   │   │
+│  │  │     Attorney Note: "Counter with Restatement §757 standards"  │   │   │
+│  │  │     [View Document] [Remove] [Move to Supporting]             │   │   │
+│  │  │                                                               │   │   │
+│  │  │  [+ Add Evidence Manually]                                    │   │   │
+│  │  └───────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                      │   │
+│  │  Attorney Assessment: [Strong ▼]  Notes: [Click to add notes]       │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─ Element 2: Misappropriation ──────────────────────── ⚠️ Weak ─────┐   │
+│  │  ...                                                                │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Perspective Toggle
+
+The same data, different framing:
+
+| Plaintiff View | Defendant View |
+|---------------|----------------|
+| "Supporting Evidence" = What proves our case | "Contradicting Evidence" = What defeats their case |
+| "Contradicting Evidence" = What we must address | "Supporting Evidence" = What they'll use against us |
+| Strength = How provable is this element? | Weakness = How vulnerable is this element? |
+
+The toggle simply relabels sections and inverts the strength indicators—the underlying evidence database is identical.
+
+---
+
+## Data Architecture
+
+### Database Schema
+
+```sql
+-- Legal elements library (grows over time)
+CREATE TABLE element_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    claim_type VARCHAR(100) NOT NULL,           -- e.g., "trade_secret_misappropriation"
+    jurisdiction VARCHAR(50),                    -- e.g., "FL", "federal", NULL for universal
+    element_number INTEGER NOT NULL,
+    element_name VARCHAR(200) NOT NULL,
+    element_description TEXT NOT NULL,          -- Legal standard language
+    statutory_reference VARCHAR(200),           -- e.g., "F.S. § 688.002(4)"
+    common_search_patterns JSONB,               -- Suggested search terms
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(claim_type, jurisdiction, element_number)
+);
+
+-- Case-specific elements (copied from templates, then customized)
+CREATE TABLE case_elements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES cases(id),
+    cause_of_action_id UUID NOT NULL REFERENCES causes_of_action(id),
+    element_number INTEGER NOT NULL,
+    element_name VARCHAR(200) NOT NULL,
+    element_description TEXT NOT NULL,
+    statutory_reference VARCHAR(200),
+    
+    -- Attorney assessments
+    strength_assessment VARCHAR(20) CHECK (strength_assessment IN 
+        ('not_evaluated', 'strong', 'moderate', 'weak', 'critical_gap')),
+    attorney_notes TEXT,
+    
+    -- Metadata
+    source VARCHAR(20) DEFAULT 'ai_generated' CHECK (source IN 
+        ('template', 'ai_generated', 'manual')),
+    ai_confidence DECIMAL(3,2),
+    is_verified BOOLEAN DEFAULT FALSE,
+    verified_by UUID REFERENCES users(id),
+    verified_at TIMESTAMPTZ,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    UNIQUE(cause_of_action_id, element_number)
+);
+
+-- Links search terms to elements
+CREATE TABLE element_search_terms (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    element_id UUID NOT NULL REFERENCES case_elements(id),
+    search_term_id UUID NOT NULL REFERENCES search_terms(id),
+    is_primary BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(element_id, search_term_id)
+);
+
+-- Evidence linked to elements
+CREATE TABLE element_evidence (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    element_id UUID NOT NULL REFERENCES case_elements(id),
+    
+    -- Document reference (flexible to handle different sources)
+    document_type VARCHAR(50) NOT NULL CHECK (document_type IN 
+        ('evidence_item', 'email', 'court_filing', 'deposition', 
+         'exhibit', 'interview_transcript', 'external_document')),
+    document_id UUID,                           -- FK to appropriate table
+    external_reference VARCHAR(500),            -- For documents not in system
+    
+    -- Classification
+    evidence_classification VARCHAR(20) NOT NULL CHECK (evidence_classification IN 
+        ('supporting', 'contradicting', 'neutral')),
+    relevance_score DECIMAL(3,2),              -- 0.00 to 1.00
+    
+    -- Key excerpt
+    excerpt TEXT,
+    excerpt_location VARCHAR(200),              -- e.g., "Page 47, Lines 3-15"
+    
+    -- AI vs Human
+    ai_suggested BOOLEAN DEFAULT FALSE,
+    ai_confidence DECIMAL(3,2),
+    ai_reasoning TEXT,
+    
+    -- Attorney input
+    is_verified BOOLEAN DEFAULT FALSE,
+    verified_by UUID REFERENCES users(id),
+    verified_at TIMESTAMPTZ,
+    is_key_evidence BOOLEAN DEFAULT FALSE,     -- Starred/highlighted
+    attorney_notes TEXT,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by UUID REFERENCES users(id),
+    
+    UNIQUE(element_id, document_type, document_id)
+);
+
+-- Audit trail for evidence changes
+CREATE TABLE element_evidence_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    element_evidence_id UUID NOT NULL,
+    action VARCHAR(20) NOT NULL CHECK (action IN 
+        ('created', 'classification_changed', 'verified', 'removed', 'note_added')),
+    old_value JSONB,
+    new_value JSONB,
+    changed_by UUID REFERENCES users(id),
+    changed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for performance
+CREATE INDEX idx_element_evidence_element ON element_evidence(element_id);
+CREATE INDEX idx_element_evidence_classification ON element_evidence(evidence_classification);
+CREATE INDEX idx_case_elements_case ON case_elements(case_id);
+CREATE INDEX idx_case_elements_coa ON case_elements(cause_of_action_id);
+```
+
+### TypeScript Types
+
+```typescript
+// Element template from library
+interface ElementTemplate {
+  id: string;
+  claimType: string;
+  jurisdiction: string | null;
+  elementNumber: number;
+  elementName: string;
+  elementDescription: string;
+  statutoryReference?: string;
+  commonSearchPatterns?: string[];
+}
+
+// Case-specific element
+interface CaseElement {
+  id: string;
+  caseId: string;
+  causeOfActionId: string;
+  elementNumber: number;
+  elementName: string;
+  elementDescription: string;
+  statutoryReference?: string;
+  
+  // Assessment
+  strengthAssessment: 'not_evaluated' | 'strong' | 'moderate' | 'weak' | 'critical_gap';
+  attorneyNotes?: string;
+  
+  // Provenance
+  source: 'template' | 'ai_generated' | 'manual';
+  aiConfidence?: number;
+  isVerified: boolean;
+  verifiedBy?: string;
+  verifiedAt?: Date;
+  
+  // Computed/joined
+  searchTerms?: ElementSearchTerm[];
+  supportingEvidence?: ElementEvidence[];
+  contradictingEvidence?: ElementEvidence[];
+  evidenceCounts?: {
+    supporting: number;
+    contradicting: number;
+    neutral: number;
+  };
+}
+
+// Evidence linked to element
+interface ElementEvidence {
+  id: string;
+  elementId: string;
+  
+  documentType: 'evidence_item' | 'email' | 'court_filing' | 'deposition' | 
+                'exhibit' | 'interview_transcript' | 'external_document';
+  documentId?: string;
+  externalReference?: string;
+  
+  evidenceClassification: 'supporting' | 'contradicting' | 'neutral';
+  relevanceScore?: number;
+  
+  excerpt?: string;
+  excerptLocation?: string;
+  
+  aiSuggested: boolean;
+  aiConfidence?: number;
+  aiReasoning?: string;
+  
+  isVerified: boolean;
+  verifiedBy?: string;
+  verifiedAt?: Date;
+  isKeyEvidence: boolean;
+  attorneyNotes?: string;
+  
+  // Joined document details
+  document?: {
+    title: string;
+    type: string;
+    date?: Date;
+    parties?: string[];
+  };
+}
+
+// Search term linked to element
+interface ElementSearchTerm {
+  id: string;
+  elementId: string;
+  searchTermId: string;
+  isPrimary: boolean;
+  
+  // Joined search term details
+  searchTerm?: {
+    query: string;
+    hitCount?: number;
+    lastExecuted?: Date;
+  };
+}
+
+// Full cause of action with elements (for checklist view)
+interface CauseOfActionChecklist {
+  id: string;
+  caseId: string;
+  claimNumber: number;
+  claimType: string;
+  claimName: string;
+  jurisdiction: string;
+  statutoryBasis?: string;
+  
+  elements: CaseElement[];
+  
+  // Computed metrics
+  overallStrength: number; // 0-100%
+  elementsSatisfied: number;
+  elementsTotal: number;
+  criticalGaps: number;
+  contradictingEvidenceCount: number;
+}
+```
+
+---
+
+## API Endpoints
+
+```typescript
+// ============================================
+// ELEMENT MANAGEMENT
+// ============================================
+
+// Get all elements for a cause of action (main checklist view)
+GET /api/cases/:caseId/causes-of-action/:coaId/elements
+Response: {
+  causeOfAction: CauseOfActionChecklist;
+  perspective: 'plaintiff' | 'defendant';
+}
+
+// Generate elements using AI (from complaint + claim type)
+POST /api/cases/:caseId/causes-of-action/:coaId/elements/generate
+Body: {
+  jurisdiction: string;
+  claimType: string;
+  complaintText?: string;      // Relevant paragraphs
+  statutoryReference?: string;
+}
+Response: {
+  elements: CaseElement[];
+  confidence: number;
+  suggestedSearchTerms: { elementId: string; terms: string[] }[];
+}
+
+// Update element (attorney assessment, notes)
+PATCH /api/cases/:caseId/elements/:elementId
+Body: {
+  strengthAssessment?: string;
+  attorneyNotes?: string;
+  elementName?: string;        // Allow customization
+  elementDescription?: string;
+}
+
+// Verify element (attorney confirms AI-generated element is correct)
+POST /api/cases/:caseId/elements/:elementId/verify
+
+// Add manual element
+POST /api/cases/:caseId/causes-of-action/:coaId/elements
+Body: {
+  elementNumber: number;
+  elementName: string;
+  elementDescription: string;
+  statutoryReference?: string;
+}
+
+// Reorder elements
+PUT /api/cases/:caseId/causes-of-action/:coaId/elements/reorder
+Body: {
+  elementOrder: string[];  // Array of element IDs in new order
+}
+
+// ============================================
+// ELEMENT SEARCH TERMS
+// ============================================
+
+// Link existing search term to element
+POST /api/cases/:caseId/elements/:elementId/search-terms
+Body: {
+  searchTermId: string;
+  isPrimary: boolean;
+}
+
+// Unlink search term from element
+DELETE /api/cases/:caseId/elements/:elementId/search-terms/:linkId
+
+// Generate suggested search terms for element
+POST /api/cases/:caseId/elements/:elementId/search-terms/suggest
+Response: {
+  suggestions: {
+    query: string;
+    rationale: string;
+    confidence: number;
+  }[];
+}
+
+// ============================================
+// ELEMENT EVIDENCE
+// ============================================
+
+// Get all evidence for an element
+GET /api/cases/:caseId/elements/:elementId/evidence
+Query: {
+  classification?: 'supporting' | 'contradicting' | 'neutral';
+  verified?: boolean;
+  keyOnly?: boolean;
+}
+
+// Add evidence to element
+POST /api/cases/:caseId/elements/:elementId/evidence
+Body: {
+  documentType: string;
+  documentId?: string;
+  externalReference?: string;
+  evidenceClassification: string;
+  excerpt?: string;
+  excerptLocation?: string;
+  attorneyNotes?: string;
+  isKeyEvidence?: boolean;
+}
+
+// Update evidence (change classification, add notes, mark as key)
+PATCH /api/cases/:caseId/elements/:elementId/evidence/:evidenceId
+Body: {
+  evidenceClassification?: string;
+  attorneyNotes?: string;
+  isKeyEvidence?: boolean;
+}
+
+// Verify AI-suggested evidence
+POST /api/cases/:caseId/elements/:elementId/evidence/:evidenceId/verify
+
+// Remove evidence from element
+DELETE /api/cases/:caseId/elements/:elementId/evidence/:evidenceId
+
+// AI: Analyze documents and suggest evidence mappings
+POST /api/cases/:caseId/elements/:elementId/evidence/analyze
+Body: {
+  documentIds?: string[];      // Specific documents, or...
+  searchTermId?: string;       // ...all hits from a search term
+  analyzeAll?: boolean;        // ...or all case documents
+}
+Response: {
+  suggestions: {
+    documentId: string;
+    documentType: string;
+    classification: 'supporting' | 'contradicting' | 'neutral';
+    confidence: number;
+    excerpt: string;
+    excerptLocation: string;
+    reasoning: string;
+  }[];
+}
+
+// ============================================
+// CHECKLIST ANALYTICS
+// ============================================
+
+// Get case strength summary
+GET /api/cases/:caseId/checklist/summary
+Response: {
+  claims: {
+    id: string;
+    name: string;
+    strength: number;
+    elementsSatisfied: number;
+    elementsTotal: number;
+    criticalGaps: number;
+    strongestElements: string[];
+    weakestElements: string[];
+  }[];
+  overallCaseStrength: number;
+  criticalGapsTotal: number;
+  unverifiedEvidenceCount: number;
+}
+
+// Export checklist to document
+POST /api/cases/:caseId/checklist/export
+Body: {
+  format: 'docx' | 'pdf';
+  perspective: 'plaintiff' | 'defendant';
+  includeEvidence: boolean;
+  includeSearchTerms: boolean;
+  includeNotes: boolean;
+}
+Response: {
+  downloadUrl: string;
+}
+```
+
+---
+
+## AI Integration
+
+### Element Generation Prompt
+
+```typescript
+const generateElementsPrompt = (params: {
+  claimType: string;
+  jurisdiction: string;
+  statutoryReference?: string;
+  complaintParagraphs?: string;
+}) => `
+You are a legal research assistant helping identify the elements required to prove 
+a cause of action in litigation.
+
+Claim Type: ${params.claimType}
+Jurisdiction: ${params.jurisdiction}
+${params.statutoryReference ? `Statutory Reference: ${params.statutoryReference}` : ''}
+
+${params.complaintParagraphs ? `
+Relevant paragraphs from the complaint:
+"""
+${params.complaintParagraphs}
+"""
+` : ''}
+
+Provide the legal elements required to establish this claim. For each element:
+1. A concise name (e.g., "Existence of Trade Secret")
+2. The legal standard that must be met
+3. The statutory or case law basis
+4. Common types of evidence that prove this element
+5. Common defenses or ways this element is typically challenged
+
+Respond in JSON format:
+{
+  "elements": [
+    {
+      "elementNumber": 1,
+      "elementName": "...",
+      "legalStandard": "...",
+      "statutoryBasis": "...",
+      "typicalEvidence": ["...", "..."],
+      "commonChallenges": ["...", "..."],
+      "suggestedSearchTerms": ["...", "..."]
+    }
+  ],
+  "jurisdictionNotes": "...",
+  "confidence": 0.95
+}
+`;
+```
+
+### Evidence Classification Prompt
+
+```typescript
+const classifyEvidencePrompt = (params: {
+  elementName: string;
+  elementDescription: string;
+  documentExcerpt: string;
+  documentContext: string;
+}) => `
+You are analyzing evidence for litigation. Determine whether this document 
+supports, contradicts, or is neutral to a specific legal element.
+
+LEGAL ELEMENT:
+Name: ${params.elementName}
+Standard: ${params.elementDescription}
+
+DOCUMENT EXCERPT:
+"""
+${params.documentExcerpt}
+"""
+
+Document Context: ${params.documentContext}
+
+Analyze whether this document:
+- SUPPORTS this element (provides evidence that the element is satisfied)
+- CONTRADICTS this element (provides evidence against the element)
+- NEUTRAL (relevant to the case but doesn't directly affect this element)
+
+Respond in JSON:
+{
+  "classification": "supporting" | "contradicting" | "neutral",
+  "confidence": 0.85,
+  "reasoning": "Brief explanation of why this classification...",
+  "keyExcerpt": "The most relevant quote from the document...",
+  "excerptLocation": "Page X, Paragraph Y"
+}
+`;
+```
+
+---
+
+## React Components
+
+### Main Checklist View
+
+```tsx
+// components/case-checklist/CaseChecklist.tsx
+
+interface CaseChecklistProps {
+  caseId: string;
+  causeOfActionId: string;
+}
+
+export function CaseChecklist({ caseId, causeOfActionId }: CaseChecklistProps) {
+  const [perspective, setPerspective] = useState<'plaintiff' | 'defendant'>('plaintiff');
+  const { data, isLoading } = useCauseOfActionChecklist(caseId, causeOfActionId);
+  
+  if (isLoading) return <ChecklistSkeleton />;
+  
+  const { causeOfAction } = data;
+  
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">
+            {causeOfAction.claimName}
+          </h2>
+          <p className="text-sm text-gray-500">
+            {causeOfAction.statutoryBasis}
+          </p>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <PerspectiveToggle 
+            value={perspective} 
+            onChange={setPerspective} 
+          />
+          
+          <StrengthIndicator 
+            strength={causeOfAction.overallStrength}
+            satisfied={causeOfAction.elementsSatisfied}
+            total={causeOfAction.elementsTotal}
+          />
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleExport('docx')}>
+                Export to Word
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExpandAll()}>
+                Expand All Elements
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleRegenerateElements()}>
+                Regenerate Elements (AI)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      
+      {/* Critical Gaps Alert */}
+      {causeOfAction.criticalGaps > 0 && (
+        <Alert variant="warning">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            {causeOfAction.criticalGaps} element(s) have critical evidence gaps.
+          </AlertDescription>
+        </Alert>
+      )}
+      
+      {/* Elements List */}
+      <div className="space-y-4">
+        {causeOfAction.elements.map((element) => (
+          <ElementCard
+            key={element.id}
+            element={element}
+            perspective={perspective}
+            caseId={caseId}
+          />
+        ))}
+      </div>
+      
+      {/* Add Element Button */}
+      <Button variant="outline" onClick={() => setShowAddElement(true)}>
+        <Plus className="h-4 w-4 mr-2" />
+        Add Element
+      </Button>
+    </div>
+  );
+}
+```
+
+### Element Card Component
+
+```tsx
+// components/case-checklist/ElementCard.tsx
+
+interface ElementCardProps {
+  element: CaseElement;
+  perspective: 'plaintiff' | 'defendant';
+  caseId: string;
+}
+
+export function ElementCard({ element, perspective, caseId }: ElementCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showAddEvidence, setShowAddEvidence] = useState(false);
+  
+  // Flip labels based on perspective
+  const supportingLabel = perspective === 'plaintiff' 
+    ? 'Supporting Evidence' 
+    : 'Evidence Against (Their Support)';
+  const contradictingLabel = perspective === 'plaintiff'
+    ? 'Contradicting Evidence (Prepare For)'
+    : 'Evidence For Us (Their Weaknesses)';
+  
+  return (
+    <Card className={cn(
+      "border-l-4",
+      element.strengthAssessment === 'strong' && "border-l-green-500",
+      element.strengthAssessment === 'moderate' && "border-l-yellow-500",
+      element.strengthAssessment === 'weak' && "border-l-orange-500",
+      element.strengthAssessment === 'critical_gap' && "border-l-red-500",
+      element.strengthAssessment === 'not_evaluated' && "border-l-gray-300",
+    )}>
+      <CardHeader 
+        className="cursor-pointer" 
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-500">
+              Element {element.elementNumber}
+            </span>
+            <h3 className="font-semibold">{element.elementName}</h3>
+            
+            {!element.isVerified && element.source === 'ai_generated' && (
+              <Badge variant="outline" className="text-xs">
+                <Sparkles className="h-3 w-3 mr-1" />
+                AI Generated
+              </Badge>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <span className="text-green-600">
+                {element.evidenceCounts?.supporting || 0} supporting
+              </span>
+              <span>•</span>
+              <span className="text-red-600">
+                {element.evidenceCounts?.contradicting || 0} contradicting
+              </span>
+            </div>
+            
+            <StrengthBadge assessment={element.strengthAssessment} />
+            
+            <ChevronDown className={cn(
+              "h-5 w-5 transition-transform",
+              isExpanded && "rotate-180"
+            )} />
+          </div>
+        </div>
+      </CardHeader>
+      
+      {isExpanded && (
+        <CardContent className="space-y-6">
+          {/* Legal Standard */}
+          <div>
+            <h4 className="text-sm font-medium text-gray-500 mb-1">
+              Legal Standard
+            </h4>
+            <p className="text-sm">
+              {element.elementDescription}
+            </p>
+            {element.statutoryReference && (
+              <p className="text-xs text-gray-400 mt-1">
+                {element.statutoryReference}
+              </p>
+            )}
+          </div>
+          
+          {/* Search Terms */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-500">
+                Search Terms ({element.searchTerms?.length || 0})
+              </h4>
+              <Button variant="ghost" size="sm">
+                <Plus className="h-3 w-3 mr-1" />
+                Link Term
+              </Button>
+            </div>
+            
+            {element.searchTerms?.length > 0 ? (
+              <div className="space-y-2">
+                {element.searchTerms.map((term) => (
+                  <SearchTermPill 
+                    key={term.id} 
+                    term={term}
+                    onRemove={() => handleUnlinkTerm(term.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">
+                No search terms linked to this element.
+              </p>
+            )}
+          </div>
+          
+          {/* Supporting Evidence */}
+          <EvidenceSection
+            title={supportingLabel}
+            evidence={element.supportingEvidence || []}
+            classification="supporting"
+            elementId={element.id}
+            caseId={caseId}
+            emptyMessage="No supporting evidence linked yet."
+            onAddEvidence={() => setShowAddEvidence(true)}
+          />
+          
+          {/* Contradicting Evidence */}
+          <EvidenceSection
+            title={contradictingLabel}
+            evidence={element.contradictingEvidence || []}
+            classification="contradicting"
+            elementId={element.id}
+            caseId={caseId}
+            emptyMessage="No contradicting evidence identified."
+            onAddEvidence={() => setShowAddEvidence(true)}
+            showWarning={element.contradictingEvidence?.length > 0}
+          />
+          
+          {/* Attorney Assessment */}
+          <div className="border-t pt-4">
+            <div className="flex items-center gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-500">
+                  Assessment
+                </label>
+                <Select 
+                  value={element.strengthAssessment}
+                  onValueChange={(value) => handleUpdateAssessment(value)}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="strong">Strong</SelectItem>
+                    <SelectItem value="moderate">Moderate</SelectItem>
+                    <SelectItem value="weak">Weak</SelectItem>
+                    <SelectItem value="critical_gap">Critical Gap</SelectItem>
+                    <SelectItem value="not_evaluated">Not Evaluated</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex-1">
+                <label className="text-sm font-medium text-gray-500">
+                  Notes
+                </label>
+                <Textarea
+                  value={element.attorneyNotes || ''}
+                  onChange={(e) => handleUpdateNotes(e.target.value)}
+                  placeholder="Add notes about this element..."
+                  rows={2}
+                />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+```
+
+### Evidence Section Component
+
+```tsx
+// components/case-checklist/EvidenceSection.tsx
+
+interface EvidenceSectionProps {
+  title: string;
+  evidence: ElementEvidence[];
+  classification: 'supporting' | 'contradicting';
+  elementId: string;
+  caseId: string;
+  emptyMessage: string;
+  onAddEvidence: () => void;
+  showWarning?: boolean;
+}
+
+export function EvidenceSection({
+  title,
+  evidence,
+  classification,
+  elementId,
+  caseId,
+  emptyMessage,
+  onAddEvidence,
+  showWarning = false,
+}: EvidenceSectionProps) {
+  const keyEvidence = evidence.filter(e => e.isKeyEvidence);
+  const otherEvidence = evidence.filter(e => !e.isKeyEvidence);
+  
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <h4 className={cn(
+            "text-sm font-medium",
+            classification === 'supporting' ? "text-green-700" : "text-red-700"
+          )}>
+            {title} ({evidence.length})
+          </h4>
+          {showWarning && (
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+          )}
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => handleAnalyzeDocuments()}
+          >
+            <Sparkles className="h-3 w-3 mr-1" />
+            Find Related
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onAddEvidence}>
+            <Plus className="h-3 w-3 mr-1" />
+            Add
+          </Button>
+        </div>
+      </div>
+      
+      <div className={cn(
+        "rounded-lg border p-3",
+        classification === 'supporting' ? "bg-green-50/50" : "bg-red-50/50"
+      )}>
+        {evidence.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-2">
+            {emptyMessage}
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {/* Key Evidence First */}
+            {keyEvidence.map((item) => (
+              <EvidenceCard 
+                key={item.id} 
+                evidence={item}
+                isKey={true}
+                onUpdate={handleUpdateEvidence}
+                onRemove={handleRemoveEvidence}
+              />
+            ))}
+            
+            {/* Other Evidence */}
+            {otherEvidence.map((item) => (
+              <EvidenceCard 
+                key={item.id} 
+                evidence={item}
+                isKey={false}
+                onUpdate={handleUpdateEvidence}
+                onRemove={handleRemoveEvidence}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+### Evidence Card Component
+
+```tsx
+// components/case-checklist/EvidenceCard.tsx
+
+interface EvidenceCardProps {
+  evidence: ElementEvidence;
+  isKey: boolean;
+  onUpdate: (id: string, updates: Partial<ElementEvidence>) => void;
+  onRemove: (id: string) => void;
+}
+
+export function EvidenceCard({ evidence, isKey, onUpdate, onRemove }: EvidenceCardProps) {
+  const [showNotes, setShowNotes] = useState(false);
+  
+  const documentIcon = {
+    evidence_item: FileText,
+    email: Mail,
+    court_filing: Scale,
+    deposition: Users,
+    exhibit: Paperclip,
+    interview_transcript: Mic,
+    external_document: ExternalLink,
+  }[evidence.documentType];
+  
+  const Icon = documentIcon || FileText;
+  
+  return (
+    <div className={cn(
+      "flex items-start gap-3 p-2 rounded-md hover:bg-white/50 transition-colors",
+      isKey && "bg-white shadow-sm border"
+    )}>
+      <Icon className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+      
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium truncate">
+            {evidence.document?.title || evidence.externalReference}
+          </span>
+          
+          {isKey && (
+            <Badge variant="default" className="text-xs bg-amber-100 text-amber-800">
+              <Star className="h-2.5 w-2.5 mr-1 fill-current" />
+              Key
+            </Badge>
+          )}
+          
+          {!evidence.isVerified && evidence.aiSuggested && (
+            <Badge variant="outline" className="text-xs">
+              AI Suggested
+            </Badge>
+          )}
+        </div>
+        
+        {evidence.excerpt && (
+          <p className="text-xs text-gray-500 mt-1 line-clamp-2 italic">
+            "{evidence.excerpt}"
+          </p>
+        )}
+        
+        {evidence.excerptLocation && (
+          <p className="text-xs text-gray-400 mt-0.5">
+            {evidence.excerptLocation}
+          </p>
+        )}
+        
+        {evidence.attorneyNotes && (
+          <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
+            <strong>Note:</strong> {evidence.attorneyNotes}
+          </div>
+        )}
+      </div>
+      
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+            <MoreHorizontal className="h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => handleViewDocument(evidence)}>
+            <Eye className="h-3 w-3 mr-2" />
+            View Document
+          </DropdownMenuItem>
+          
+          {!evidence.isVerified && evidence.aiSuggested && (
+            <DropdownMenuItem onClick={() => onUpdate(evidence.id, { isVerified: true })}>
+              <Check className="h-3 w-3 mr-2" />
+              Verify
+            </DropdownMenuItem>
+          )}
+          
+          <DropdownMenuItem 
+            onClick={() => onUpdate(evidence.id, { isKeyEvidence: !isKey })}
+          >
+            <Star className="h-3 w-3 mr-2" />
+            {isKey ? 'Unmark as Key' : 'Mark as Key'}
+          </DropdownMenuItem>
+          
+          <DropdownMenuItem onClick={() => setShowNotes(true)}>
+            <MessageSquare className="h-3 w-3 mr-2" />
+            Add Note
+          </DropdownMenuItem>
+          
+          <DropdownMenuSeparator />
+          
+          <DropdownMenuItem 
+            onClick={() => handleMoveToOther(evidence)}
+          >
+            <ArrowRightLeft className="h-3 w-3 mr-2" />
+            Move to {evidence.evidenceClassification === 'supporting' 
+              ? 'Contradicting' 
+              : 'Supporting'}
+          </DropdownMenuItem>
+          
+          <DropdownMenuItem 
+            onClick={() => onRemove(evidence.id)}
+            className="text-red-600"
+          >
+            <Trash2 className="h-3 w-3 mr-2" />
+            Remove
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+```
+
+---
+
+## Integration Points
+
+### 1. Search Terms Integration
+
+The existing "Prove Your Case" search terms should automatically link to elements:
+
+```typescript
+// When generating search terms for a claim, also create element links
+async function generateSearchTermsWithElements(
+  caseId: string,
+  causeOfActionId: string,
+  complaintText: string
+) {
+  // 1. Generate elements (if not already done)
+  const elements = await generateElements(causeOfActionId);
+  
+  // 2. Generate search terms (existing logic)
+  const searchTerms = await generateSearchTerms(causeOfActionId, complaintText);
+  
+  // 3. AI: Match search terms to elements
+  for (const term of searchTerms) {
+    const matchedElements = await matchTermToElements(term, elements);
+    for (const elementId of matchedElements) {
+      await linkSearchTermToElement(term.id, elementId);
+    }
+  }
+  
+  return { elements, searchTerms };
+}
+```
+
+### 2. Document Analysis Integration
+
+When documents hit on search terms, they should be analyzed for element relevance:
+
+```typescript
+// After executing a search
+async function processSearchResults(
+  searchTermId: string,
+  hitDocuments: Document[]
+) {
+  // Get elements linked to this search term
+  const linkedElements = await getElementsForSearchTerm(searchTermId);
+  
+  // For each element, analyze documents for relevance
+  for (const element of linkedElements) {
+    const suggestions = await analyzeDocumentsForElement(
+      element,
+      hitDocuments
+    );
+    
+    // Store suggestions for attorney review
+    await storeEvidenceSuggestions(element.id, suggestions);
+  }
+}
+```
+
+### 3. Evidence Tab Integration
+
+Evidence items should show which elements they're linked to:
+
+```typescript
+// In evidence item detail view
+interface EvidenceItemDetail {
+  // ... existing fields
+  linkedElements: {
+    elementId: string;
+    elementName: string;
+    causeOfAction: string;
+    classification: 'supporting' | 'contradicting' | 'neutral';
+  }[];
+}
+```
+
+### 4. Timeline Integration
+
+Element evidence should be viewable chronologically:
+
+```typescript
+// Timeline event enhanced with element context
+interface TimelineEvent {
+  // ... existing fields
+  elementRelevance?: {
+    elementId: string;
+    elementName: string;
+    classification: 'supporting' | 'contradicting';
+  }[];
+}
+```
+
+---
+
+## Export Functionality
+
+### Word Document Export
+
+```typescript
+// Generate a professional litigation checklist document
+async function exportChecklistToWord(
+  caseId: string,
+  options: ExportOptions
+): Promise<Buffer> {
+  const checklist = await getFullChecklist(caseId);
+  
+  const doc = new Document({
+    sections: [{
+      children: [
+        // Title
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          children: [new TextRun({
+            text: `${options.perspective === 'plaintiff' ? "Plaintiff's" : "Defendant's"} Case Checklist`,
+            bold: true,
+          })]
+        }),
+        
+        // Case caption
+        new Paragraph({
+          children: [new TextRun({
+            text: checklist.caseName,
+            italics: true,
+          })]
+        }),
+        
+        // For each cause of action
+        ...checklist.causesOfAction.flatMap(coa => [
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({
+              text: `${coa.claimNumber}. ${coa.claimName}`,
+              bold: true,
+            })]
+          }),
+          
+          // Strength summary
+          new Paragraph({
+            children: [new TextRun({
+              text: `Overall Strength: ${coa.overallStrength}% (${coa.elementsSatisfied}/${coa.elementsTotal} elements satisfied)`,
+            })]
+          }),
+          
+          // Elements
+          ...coa.elements.flatMap(element => generateElementSection(element, options))
+        ])
+      ]
+    }]
+  });
+  
+  return await Packer.toBuffer(doc);
+}
+```
+
+---
+
+## Implementation Phases
+
+### Phase 1: Core Infrastructure (Week 1-2)
+- Database schema and migrations
+- Element template library (start with 10 common claim types)
+- Basic CRUD API endpoints
+- AI element generation from complaint
+
+### Phase 2: Checklist UI (Week 2-3)
+- Main checklist view component
+- Element cards with expand/collapse
+- Evidence sections (supporting/contradicting)
+- Perspective toggle (plaintiff/defendant)
+- Strength assessment inputs
+
+### Phase 3: Evidence Linking (Week 3-4)
+- Manual evidence linking
+- AI evidence suggestion/classification
+- Integration with existing search term hits
+- Evidence cards with excerpts and notes
+
+### Phase 4: Integration & Polish (Week 4-5)
+- Search term ↔ element linking
+- Cross-references in Evidence tab
+- Timeline integration
+- Export to Word/PDF
+
+### Phase 5: Intelligence Features (Future)
+- Auto-suggestions as new documents are added
+- Gap analysis alerts
+- Case strength trending over time
+- Element template contributions from user base
+
+---
+
+## Success Metrics
+
+1. **Adoption**: % of active cases using checklist feature
+2. **Completeness**: Average % of elements with linked evidence
+3. **Verification Rate**: % of AI suggestions verified by attorneys
+4. **Time Savings**: Reduction in case preparation time (survey-based)
+5. **Export Usage**: Number of checklist exports generated
+
+---
+
+## Open Questions for Discussion
+
+1. **Element Library Seeding**: Should we start with a comprehensive library, or build it organically from AI generations + attorney corrections?
+
+2. **Confidence Thresholds**: What AI confidence level should trigger automatic evidence linking vs. requiring attorney review?
+
+3. **Collaboration**: Should multiple attorneys be able to work on the same checklist simultaneously?
+
+4. **Version History**: Should we track historical versions of element assessments for trial preparation review?
+
+5. **Privilege Integration**: How does this interact with the Privilege Log tab? Should privileged documents be automatically excluded from evidence suggestions?
