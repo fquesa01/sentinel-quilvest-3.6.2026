@@ -87,6 +87,60 @@ export function registerChecklistRoutes(app: Express) {
     }
   });
 
+  // POST /api/cases/:caseId/checklist/regenerate - Delete existing checklist and regenerate from document
+  app.post("/api/cases/:caseId/checklist/regenerate", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { caseId } = req.params;
+      const { sourceDocumentId, sourceDocumentType } = req.body;
+      const userId = (req.user as any)?.id;
+
+      if (!sourceDocumentId || !sourceDocumentType) {
+        return res.status(400).json({ success: false, error: "sourceDocumentId and sourceDocumentType are required" });
+      }
+
+      // Delete existing causes of action and their elements for this case
+      const existingCauses = await db.select().from(causesOfAction).where(eq(causesOfAction.caseId, caseId));
+      
+      for (const cause of existingCauses) {
+        // Get elements for this cause
+        const elements = await db.select().from(caseElements).where(eq(caseElements.causeOfActionId, cause.id));
+        
+        // Delete evidence linked to each element
+        for (const element of elements) {
+          await db.delete(elementEvidence).where(eq(elementEvidence.elementId, element.id));
+        }
+        
+        // Delete elements
+        await db.delete(caseElements).where(eq(caseElements.causeOfActionId, cause.id));
+      }
+      
+      // Delete causes of action
+      await db.delete(causesOfAction).where(eq(causesOfAction.caseId, caseId));
+
+      // Now regenerate from the document
+      const result = await checklistService.generateChecklistFromDocument(
+        caseId,
+        sourceDocumentId,
+        sourceDocumentType,
+        userId
+      );
+
+      if (!result.success) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+
+      res.json({ 
+        success: true, 
+        causesOfAction: result.causesOfAction,
+        elementsCreated: result.elements.length,
+        message: "Checklist regenerated with updated search terms"
+      });
+    } catch (error) {
+      console.error("[Checklist] Error regenerating checklist:", error);
+      res.status(500).json({ success: false, error: "Failed to regenerate checklist" });
+    }
+  });
+
   // GET /api/cases/:caseId/causes-of-action/:coaId - Get single cause of action with elements
   app.get("/api/cases/:caseId/causes-of-action/:coaId", isAuthenticated, async (req: Request, res: Response) => {
     try {

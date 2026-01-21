@@ -21,6 +21,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -45,6 +46,7 @@ import {
   Users,
   UserCheck,
   Upload,
+  RefreshCw,
 } from "lucide-react";
 
 interface CauseOfAction {
@@ -215,6 +217,26 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       fileInputRef.current.value = "";
     }
   };
+
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
+  
+  const regenerateChecklistMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      return apiRequest("POST", `/api/cases/${caseId}/checklist/regenerate`, {
+        sourceDocumentId: documentId,
+        sourceDocumentType: "court_filing",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "checklist"] });
+      toast({ title: "Checklist Regenerated", description: "Updated with fact-specific search terms for each element." });
+      setShowRegenerateDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Regeneration Failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const updateStrengthMutation = useMutation({
     mutationFn: async ({ elementId, strength }: { elementId: string; strength: string }) => {
@@ -521,6 +543,60 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
 
       {causesOfAction && causesOfAction.length > 0 && (
         <div className="space-y-4">
+          {/* Regenerate Button */}
+          <div className="flex justify-end">
+            <Dialog open={showRegenerateDialog} onOpenChange={setShowRegenerateDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="btn-regenerate-checklist">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Regenerate with Search Terms
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Regenerate Checklist</DialogTitle>
+                  <DialogDescription>
+                    Select a complaint document to regenerate the checklist with updated fact-specific boolean search terms for each element.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  {complaints.length > 0 ? (
+                    <Select
+                      onValueChange={(docId) => {
+                        setIsRegenerating(true);
+                        regenerateChecklistMutation.mutate(docId, {
+                          onSettled: () => setIsRegenerating(false),
+                        });
+                      }}
+                      disabled={isRegenerating}
+                    >
+                      <SelectTrigger data-testid="select-regenerate-document">
+                        <SelectValue placeholder="Select complaint document..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {complaints.map((doc: any) => (
+                          <SelectItem key={doc.id} value={doc.id}>
+                            {doc.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No complaint documents found. Upload a complaint in the Court Docket tab first.
+                    </p>
+                  )}
+                  {isRegenerating && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Regenerating checklist with search terms...
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
           {causesOfAction.map((coa) => (
             <Card key={coa.id} data-testid={`coa-card-${coa.id}`}>
               <Collapsible
