@@ -41,13 +41,21 @@ import {
   FileText,
   Plus,
   Eye,
+  EyeOff,
   Trash2,
   Sparkles,
   Users,
   UserCheck,
   Upload,
   RefreshCw,
+  Download,
+  Pencil,
+  Save,
+  X,
+  StickyNote,
+  Paperclip,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
 interface CauseOfAction {
   id: string;
@@ -78,6 +86,8 @@ interface CaseElement {
   contradictingEvidence?: ElementEvidence[];
   neutralEvidence?: ElementEvidence[];
   searchTermLinks?: ElementSearchTerm[];
+  handwrittenNotes?: string;
+  showSearchTerms?: boolean;
   evidenceCounts?: {
     supporting: number;
     contradicting: number;
@@ -283,6 +293,16 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       return apiRequest("PATCH", `/api/checklist/elements/${elementId}/strength`, {
         strengthAssessment: strength,
       });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "checklist"] });
+    },
+  });
+
+  const updateElementMutation = useMutation({
+    mutationFn: async (data: { elementId: string; [key: string]: any }) => {
+      const { elementId, ...updates } = data;
+      return apiRequest("PATCH", `/api/cases/${caseId}/elements/${elementId}`, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "checklist"] });
@@ -583,8 +603,21 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
 
       {causesOfAction && causesOfAction.length > 0 && (
         <div className="space-y-4">
-          {/* Regenerate Button */}
-          <div className="flex justify-end">
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-2">
+            {/* Export to Excel Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                window.open(`/api/cases/${caseId}/checklist/export`, "_blank");
+              }}
+              data-testid="btn-export-checklist"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export to Excel
+            </Button>
+            
             <Dialog open={showRegenerateDialog} onOpenChange={setShowRegenerateDialog}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm" data-testid="btn-regenerate-checklist">
@@ -725,6 +758,7 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
                         <ElementCard
                           key={element.id}
                           element={element}
+                          caseId={caseId}
                           perspective={perspective}
                           isExpanded={expandedElements.has(element.id)}
                           onToggle={() => toggleElement(element.id)}
@@ -733,6 +767,9 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
                           }
                           onFindDocs={() => findDocumentSuggestions(element)}
                           onRemoveEvidence={(evidenceId) => removeEvidenceMutation.mutate(evidenceId)}
+                          onUpdateElement={(updates) => 
+                            updateElementMutation.mutate({ elementId: element.id, ...updates })
+                          }
                           getStrengthIcon={getStrengthIcon}
                           getStrengthLabel={getStrengthLabel}
                           getClassificationBadge={getClassificationBadge}
@@ -838,12 +875,14 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
 
 interface ElementCardProps {
   element: CaseElement;
+  caseId: string;
   perspective: "plaintiff" | "defendant";
   isExpanded: boolean;
   onToggle: () => void;
   onStrengthChange: (strength: string) => void;
   onFindDocs: () => void;
   onRemoveEvidence: (evidenceId: string) => void;
+  onUpdateElement: (updates: Partial<CaseElement>) => void;
   getStrengthIcon: (strength: string) => JSX.Element;
   getStrengthLabel: (strength: string) => string;
   getClassificationBadge: (classification: string) => JSX.Element;
@@ -851,22 +890,114 @@ interface ElementCardProps {
 
 function ElementCard({
   element,
+  caseId,
   perspective,
   isExpanded,
   onToggle,
   onStrengthChange,
   onFindDocs,
   onRemoveEvidence,
+  onUpdateElement,
   getStrengthIcon,
   getStrengthLabel,
   getClassificationBadge,
 }: ElementCardProps) {
+  const [showSearchTerms, setShowSearchTerms] = useState(element.showSearchTerms !== false);
+  const [editingSearchTerms, setEditingSearchTerms] = useState(false);
+  const [localSearchTerms, setLocalSearchTerms] = useState<string[]>(
+    Array.isArray(element.suggestedSearchTerms) ? element.suggestedSearchTerms : []
+  );
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [localNotes, setLocalNotes] = useState(element.handwrittenNotes || "");
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const handleDocumentUpload = async (file: File) => {
+    setIsUploading(true);
+    try {
+      // Upload the file to court pleadings (which stores the document)
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("pleadingType", "exhibit");
+      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+      formData.append("filingParty", "plaintiff");
+      formData.append("filingStatus", "draft");
+      
+      const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      
+      if (!uploadRes.ok) {
+        throw new Error("Failed to upload document");
+      }
+      
+      const uploadResult = await uploadRes.json();
+      
+      // The API returns { success: true, pleading: {...} } format
+      const pleading = uploadResult.pleading || uploadResult;
+      
+      if (!pleading?.id) {
+        throw new Error("Upload response did not include document ID");
+      }
+      
+      // Now link this document as evidence to the element
+      await apiRequest("POST", `/api/checklist/elements/${element.id}/evidence`, {
+        documentType: "exhibit",
+        documentId: pleading.id,
+        documentTitle: pleading.title || file.name,
+        evidenceClassification: "supporting",
+      });
+      
+      // Refresh the checklist data
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "checklist"] });
+      
+      toast({ 
+        title: "Document Attached", 
+        description: `${file.name} has been uploaded and linked to this element.` 
+      });
+    } catch (error) {
+      toast({ 
+        title: "Upload Failed", 
+        description: "Could not upload document. Please try again.", 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const supportingEvidence = element.supportingEvidence || [];
   const contradictingEvidence = element.contradictingEvidence || [];
   const neutralEvidence = element.neutralEvidence || [];
   const allEvidence = [...supportingEvidence, ...contradictingEvidence, ...neutralEvidence];
 
   const perspectiveLabel = perspective === "plaintiff" ? "Elements to Prove" : "Elements to Defend";
+
+  const hasSearchTerms = (element.suggestedSearchTerms && Array.isArray(element.suggestedSearchTerms) && element.suggestedSearchTerms.length > 0) || 
+    (element.searchTermLinks && element.searchTermLinks.length > 0);
+
+  const handleToggleSearchTerms = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newValue = !showSearchTerms;
+    setShowSearchTerms(newValue);
+    onUpdateElement({ showSearchTerms: newValue });
+  };
+
+  const handleSaveSearchTerms = () => {
+    onUpdateElement({ suggestedSearchTerms: localSearchTerms });
+    setEditingSearchTerms(false);
+    toast({ title: "Search terms updated" });
+  };
+
+  const handleSaveNotes = () => {
+    onUpdateElement({ handwrittenNotes: localNotes });
+    setEditingNotes(false);
+    toast({ title: "Notes saved" });
+  };
 
   return (
     <div
@@ -888,6 +1019,12 @@ function ElementCard({
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {element.handwrittenNotes && (
+                <Badge variant="outline" className="text-xs">
+                  <StickyNote className="h-3 w-3 mr-1" />
+                  Has Notes
+                </Badge>
+              )}
               {supportingEvidence.length > 0 && (
                 <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
                   {supportingEvidence.length} supporting
@@ -902,38 +1039,130 @@ function ElementCard({
           </div>
         </CollapsibleTrigger>
         
-        {/* Search Terms - Always visible under element name */}
-        {(element.suggestedSearchTerms && Array.isArray(element.suggestedSearchTerms) && element.suggestedSearchTerms.length > 0) || 
-         (element.searchTermLinks && element.searchTermLinks.length > 0) ? (
+        {/* Search Terms Section - With Toggle & Edit */}
+        {hasSearchTerms && showSearchTerms && (
           <div className="px-4 pb-3 border-t bg-muted/30">
             <div className="flex items-start gap-2 pt-2">
               <Search className="h-3 w-3 text-muted-foreground mt-1 flex-shrink-0" />
               <div className="space-y-1.5 flex-1">
-                {element.suggestedSearchTerms && Array.isArray(element.suggestedSearchTerms) && element.suggestedSearchTerms.length > 0 ? (
-                  element.suggestedSearchTerms.map((term: string, idx: number) => (
-                    <div 
-                      key={idx} 
-                      className="text-xs font-mono bg-background rounded px-2 py-1 border text-muted-foreground break-all"
-                      data-testid={`search-term-${element.id}-${idx}`}
-                    >
-                      {term}
+                {editingSearchTerms ? (
+                  <div className="space-y-2">
+                    {localSearchTerms.map((term, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <Input
+                          value={term}
+                          onChange={(e) => {
+                            const updated = [...localSearchTerms];
+                            updated[idx] = e.target.value;
+                            setLocalSearchTerms(updated);
+                          }}
+                          className="text-xs font-mono h-7"
+                          data-testid={`input-search-term-${element.id}-${idx}`}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => {
+                            setLocalSearchTerms(localSearchTerms.filter((_, i) => i !== idx));
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLocalSearchTerms([...localSearchTerms, ""])}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Term
+                      </Button>
+                      <Button size="sm" onClick={handleSaveSearchTerms}>
+                        <Save className="h-3 w-3 mr-1" />
+                        Save
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        setLocalSearchTerms(Array.isArray(element.suggestedSearchTerms) ? element.suggestedSearchTerms : []);
+                        setEditingSearchTerms(false);
+                      }}>
+                        <X className="h-3 w-3 mr-1" />
+                        Cancel
+                      </Button>
                     </div>
-                  ))
+                  </div>
                 ) : (
-                  element.searchTermLinks?.map((link: any) => (
-                    <div 
-                      key={link.id} 
-                      className="text-xs font-mono bg-background rounded px-2 py-1 border text-muted-foreground break-all"
-                      data-testid={`search-term-link-${link.id}`}
-                    >
-                      {link.searchTermText}
-                    </div>
-                  ))
+                  <>
+                    {element.suggestedSearchTerms && Array.isArray(element.suggestedSearchTerms) && element.suggestedSearchTerms.length > 0 ? (
+                      element.suggestedSearchTerms.map((term: string, idx: number) => (
+                        <div 
+                          key={idx} 
+                          className="text-xs font-mono bg-background rounded px-2 py-1 border text-muted-foreground break-all"
+                          data-testid={`search-term-${element.id}-${idx}`}
+                        >
+                          {term}
+                        </div>
+                      ))
+                    ) : (
+                      element.searchTermLinks?.map((link: any) => (
+                        <div 
+                          key={link.id} 
+                          className="text-xs font-mono bg-background rounded px-2 py-1 border text-muted-foreground break-all"
+                          data-testid={`search-term-link-${link.id}`}
+                        >
+                          {link.searchTermText}
+                        </div>
+                      ))
+                    )}
+                  </>
                 )}
               </div>
+              {!editingSearchTerms && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingSearchTerms(true);
+                    }}
+                    data-testid={`btn-edit-search-terms-${element.id}`}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={handleToggleSearchTerms}
+                    data-testid={`btn-hide-search-terms-${element.id}`}
+                  >
+                    <EyeOff className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
-        ) : null}
+        )}
+        
+        {/* Show search terms toggle when hidden */}
+        {hasSearchTerms && !showSearchTerms && (
+          <div className="px-4 pb-2 border-t bg-muted/30">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground"
+              onClick={handleToggleSearchTerms}
+              data-testid={`btn-show-search-terms-${element.id}`}
+            >
+              <Eye className="h-3 w-3 mr-1" />
+              Show Search Terms
+            </Button>
+          </div>
+        )}
 
         <CollapsibleContent>
           <div className="px-4 pb-4 space-y-4 border-t pt-4">
@@ -1027,6 +1256,111 @@ function ElementCard({
                 />
               </TabsContent>
             </Tabs>
+
+            {/* Notes Section */}
+            <div className="border rounded-md p-3 bg-muted/20">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <StickyNote className="h-4 w-4" />
+                  Trial Notes
+                </h4>
+                {!editingNotes && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingNotes(true)}
+                    data-testid={`btn-edit-notes-${element.id}`}
+                  >
+                    <Pencil className="h-3 w-3 mr-1" />
+                    {element.handwrittenNotes ? "Edit" : "Add Notes"}
+                  </Button>
+                )}
+              </div>
+              
+              {editingNotes ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={localNotes}
+                    onChange={(e) => setLocalNotes(e.target.value)}
+                    placeholder="Add your trial prep notes, witness questions, or evidence reminders..."
+                    className="min-h-[100px]"
+                    data-testid={`textarea-notes-${element.id}`}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={handleSaveNotes} data-testid={`btn-save-notes-${element.id}`}>
+                      <Save className="h-3 w-3 mr-1" />
+                      Save Notes
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setLocalNotes(element.handwrittenNotes || "");
+                        setEditingNotes(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : element.handwrittenNotes ? (
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {element.handwrittenNotes}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">
+                  No notes yet. Click "Add Notes" to add trial preparation notes.
+                </p>
+              )}
+            </div>
+
+            {/* Upload Supporting Documents */}
+            <div className="border rounded-md p-3 bg-muted/20">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Paperclip className="h-4 w-4" />
+                  Attach Documents
+                </h4>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    handleDocumentUpload(file);
+                  }
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = "";
+                  }
+                }}
+                data-testid={`input-upload-document-${element.id}`}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                data-testid={`btn-upload-document-${element.id}`}
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Document
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground mt-2">
+                Upload supporting documents, photos, or evidence to attach to this element
+              </p>
+            </div>
 
           </div>
         </CollapsibleContent>

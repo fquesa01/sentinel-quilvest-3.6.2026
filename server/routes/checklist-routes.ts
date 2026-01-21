@@ -162,13 +162,16 @@ export function registerChecklistRoutes(app: Express) {
   app.patch("/api/cases/:caseId/elements/:elementId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { elementId } = req.params;
-      const { strengthAssessment, attorneyNotes, elementName, elementDescription } = req.body;
+      const { strengthAssessment, attorneyNotes, elementName, elementDescription, handwrittenNotes, showSearchTerms, suggestedSearchTerms } = req.body;
 
       const updated = await checklistService.updateElement(elementId, {
         strengthAssessment,
         attorneyNotes,
         elementName,
         elementDescription,
+        handwrittenNotes,
+        showSearchTerms,
+        suggestedSearchTerms,
       });
 
       if (!updated) {
@@ -469,6 +472,112 @@ export function registerChecklistRoutes(app: Express) {
     } catch (error) {
       console.error("[Checklist] Error getting suggestions:", error);
       res.status(500).json([]);
+    }
+  });
+
+  // GET /api/cases/:caseId/checklist/export - Export checklist to Excel for trial prep
+  app.get("/api/cases/:caseId/checklist/export", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { caseId } = req.params;
+      const ExcelJS = require("exceljs");
+      
+      // Get all causes of action with elements
+      const checklists = await checklistService.getCausesOfActionForCase(caseId);
+      
+      if (!checklists || checklists.length === 0) {
+        return res.status(404).json({ error: "No checklist data found for this case" });
+      }
+
+      // Create workbook
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "Sentinel Counsel LLP";
+      workbook.created = new Date();
+
+      // Create worksheet
+      const worksheet = workbook.addWorksheet("Case Checklist", {
+        pageSetup: { fitToPage: true, orientation: "landscape" }
+      });
+
+      // Define columns for print-friendly layout
+      worksheet.columns = [
+        { header: "Cause of Action", key: "causeOfAction", width: 25 },
+        { header: "Element #", key: "elementNumber", width: 10 },
+        { header: "Element Name", key: "elementName", width: 30 },
+        { header: "Description", key: "description", width: 40 },
+        { header: "Legal Standard", key: "legalStandard", width: 35 },
+        { header: "Search Terms", key: "searchTerms", width: 40 },
+        { header: "Strength", key: "strength", width: 12 },
+        { header: "Supporting Evidence", key: "supporting", width: 15 },
+        { header: "Contradicting Evidence", key: "contradicting", width: 15 },
+        { header: "Notes", key: "notes", width: 50 },
+      ];
+
+      // Style header row
+      worksheet.getRow(1).font = { bold: true, size: 11 };
+      worksheet.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF1F2937" },
+      };
+      worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+      worksheet.getRow(1).alignment = { vertical: "middle", wrapText: true };
+
+      // Add data rows
+      for (const coa of checklists) {
+        const elements = coa.elements || [];
+        for (const element of elements) {
+          const searchTerms = Array.isArray(element.suggestedSearchTerms) 
+            ? element.suggestedSearchTerms.join("\n") 
+            : "";
+          
+          const supportingCount = element.supportingEvidence?.length || 0;
+          const contradictingCount = element.contradictingEvidence?.length || 0;
+
+          worksheet.addRow({
+            causeOfAction: coa.claimName,
+            elementNumber: element.elementNumber,
+            elementName: element.elementName,
+            description: element.elementDescription,
+            legalStandard: element.legalStandard || "",
+            searchTerms: searchTerms,
+            strength: element.strengthAssessment?.replace("_", " ") || "Not Evaluated",
+            supporting: supportingCount > 0 ? `${supportingCount} document(s)` : "",
+            contradicting: contradictingCount > 0 ? `${contradictingCount} document(s)` : "",
+            notes: element.handwrittenNotes || element.attorneyNotes || "",
+          });
+        }
+        
+        // Add empty row between causes of action for readability
+        worksheet.addRow({});
+      }
+
+      // Style all data rows
+      worksheet.eachRow((row: any, rowNumber: number) => {
+        if (rowNumber > 1) {
+          row.alignment = { vertical: "top", wrapText: true };
+          row.border = {
+            top: { style: "thin", color: { argb: "FFE5E7EB" } },
+            bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+          };
+        }
+      });
+
+      // Set response headers for Excel download
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="case-checklist-${caseId}.xlsx"`
+      );
+
+      // Write to response
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (error) {
+      console.error("[Checklist] Error exporting checklist:", error);
+      res.status(500).json({ error: "Failed to export checklist" });
     }
   });
 

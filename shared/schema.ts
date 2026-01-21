@@ -11669,6 +11669,8 @@ export const caseElements = pgTable("case_elements", {
   suggestedSearchTerms: jsonb("suggested_search_terms"),
   strengthAssessment: elementStrengthEnum("strength_assessment").default("not_evaluated"),
   attorneyNotes: text("attorney_notes"),
+  handwrittenNotes: text("handwritten_notes"),
+  showSearchTerms: boolean("show_search_terms").default(true),
   source: elementSourceEnum("source").default("ai_generated"),
   aiConfidence: real("ai_confidence"),
   isVerified: boolean("is_verified").default(false),

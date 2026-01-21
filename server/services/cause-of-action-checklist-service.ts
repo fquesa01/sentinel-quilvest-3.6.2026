@@ -506,6 +506,9 @@ Return ONLY valid JSON, no markdown formatting.`;
       attorneyNotes?: string;
       elementName?: string;
       elementDescription?: string;
+      handwrittenNotes?: string;
+      showSearchTerms?: boolean;
+      suggestedSearchTerms?: string[];
     }
   ): Promise<CaseElement | null> {
     const [updated] = await db
