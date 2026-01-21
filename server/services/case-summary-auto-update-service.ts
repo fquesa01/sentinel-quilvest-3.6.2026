@@ -1,7 +1,24 @@
 import { openai } from "../ai";
 import { db } from "../db";
 import * as schema from "@shared/schema";
-import { eq, desc, and, isNotNull, or } from "drizzle-orm";
+import { eq, desc, and, isNotNull, or, asc } from "drizzle-orm";
+
+function buildContextWithBudget(items: string[], budget: number): string {
+  let result = "";
+  let charsUsed = 0;
+  
+  for (const item of items) {
+    const entry = item + "\n\n";
+    if (charsUsed + entry.length <= budget) {
+      result += entry;
+      charsUsed += entry.length;
+    } else {
+      break;
+    }
+  }
+  
+  return result.trim();
+}
 
 interface DetectedLegalIssue {
   issue: string;
@@ -63,26 +80,40 @@ export async function triggerCaseSummaryUpdate(caseId: string, trigger: "recordi
       .where(eq(schema.interviews.caseId, caseId))
       .limit(10);
 
+    // Fetch Court Docket documents (court pleadings)
+    const courtPleadings = await db
+      .select()
+      .from(schema.courtPleadings)
+      .where(
+        and(
+          eq(schema.courtPleadings.caseId, caseId),
+          isNotNull(schema.courtPleadings.extractedText)
+        )
+      )
+      .orderBy(asc(schema.courtPleadings.filingDate))
+      .limit(30);
+
     const existingAnalysis = await db
       .select()
       .from(schema.caseAIAnalysis)
       .where(eq(schema.caseAIAnalysis.caseId, caseId))
       .limit(1);
 
-    const totalDocuments = communications.length + recordedStatements.length + interviews.length;
+    const totalDocuments = communications.length + recordedStatements.length + interviews.length + courtPleadings.length;
     
     if (totalDocuments === 0) {
       console.log(`[CaseSummaryAutoUpdate] No documents to analyze for case ${caseId}`);
       return null;
     }
 
-    console.log(`[CaseSummaryAutoUpdate] Analyzing ${communications.length} communications, ${recordedStatements.length} recordings, ${interviews.length} interviews`);
+    console.log(`[CaseSummaryAutoUpdate] Analyzing ${courtPleadings.length} court pleadings, ${communications.length} communications, ${recordedStatements.length} recordings, ${interviews.length} interviews`);
 
     const analysisResult = await generateIncrementalAnalysis(
       theCase,
       communications,
       recordedStatements,
       interviews,
+      courtPleadings,
       existingAnalysis[0] || null
     );
 
@@ -120,29 +151,80 @@ async function generateIncrementalAnalysis(
   communications: any[],
   recordedStatements: any[],
   interviews: any[],
+  courtPleadings: any[],
   existingAnalysis: any | null
 ): Promise<IncrementalAnalysisResult> {
   
-  const communicationsContext = communications.slice(0, 30).map((c, i) => 
-    `Email ${i + 1}: From ${c.sender} | Subject: ${c.subject || "No subject"} | Preview: ${(c.body || "").substring(0, 400)}...`
-  ).join("\n\n");
+  // Token budget: ~100k tokens available, allocate ~60k chars for all evidence (~15k tokens)
+  // Priority: Court pleadings first (primary legal documents), then others
+  const TOTAL_EVIDENCE_BUDGET = 60000; // characters
+  const COURT_PLEADINGS_BUDGET = 40000; // characters for court docs (priority)
+  const OTHER_SOURCES_BUDGET = 20000; // characters for communications, recordings, interviews
+  
+  // Court Docket documents are the primary source for litigation cases
+  // Prioritize complaints, then answers, then motions, then others
+  const prioritizedPleadings = [...courtPleadings].sort((a, b) => {
+    const priority: Record<string, number> = {
+      "complaint": 1, "answer": 2, "motion": 3, "brief": 4, "order": 5,
+      "discovery": 6, "judgment": 7, "other": 10
+    };
+    const aPriority = priority[a.pleadingType || "other"] || 10;
+    const bPriority = priority[b.pleadingType || "other"] || 10;
+    return aPriority - bPriority;
+  });
+  
+  // Build court pleadings context within budget
+  let courtPleadingsContext = "";
+  let courtCharsUsed = 0;
+  const maxCharsPerDoc = Math.min(4000, Math.floor(COURT_PLEADINGS_BUDGET / Math.max(prioritizedPleadings.length, 1)));
+  
+  for (const p of prioritizedPleadings) {
+    if (courtCharsUsed >= COURT_PLEADINGS_BUDGET) break;
+    
+    const textPreview = p.extractedText ? p.extractedText.substring(0, maxCharsPerDoc) : "No text extracted";
+    const filingDate = p.filingDate ? new Date(p.filingDate).toLocaleDateString() : "Unknown date";
+    const entry = `Document: ${p.title || p.fileName}
+Type: ${formatPleadingType(p.pleadingType)} | Filed: ${filingDate} | By: ${formatFilingParty(p.filingParty)}
+Content:
+${textPreview}${p.extractedText && p.extractedText.length > maxCharsPerDoc ? "\n[Truncated...]" : ""}
 
-  const recordingsContext = recordedStatements.map((r, i) => {
-    const transcriptPreview = r.transcriptText ? r.transcriptText.substring(0, 800) : "No transcript";
-    const summaryText = r.aiSummary || "No AI summary";
-    return `Recording ${i + 1}: ${r.title || "Untitled"} (${r.statementType}) by ${r.speakerName || "Unknown"}
-Transcript preview: ${transcriptPreview}...
-AI Summary: ${summaryText}`;
-  }).join("\n\n");
+---
 
-  const interviewsContext = interviews.map((i, idx) => {
-    const transcriptPreview = i.transcriptText ? i.transcriptText.substring(0, 500) : "No transcript";
-    const summaryText = i.aiSummaryText || "No AI summary";
-    return `Interview ${idx + 1}: ${i.intervieweeName} (${i.interviewType})
-Status: ${i.status}
-Transcript preview: ${transcriptPreview}...
-AI Summary: ${summaryText}`;
-  }).join("\n\n");
+`;
+    if (courtCharsUsed + entry.length <= COURT_PLEADINGS_BUDGET) {
+      courtPleadingsContext += entry;
+      courtCharsUsed += entry.length;
+    }
+  }
+
+  // Other sources share remaining budget
+  const otherSourcesBudget = OTHER_SOURCES_BUDGET;
+  const commBudget = Math.floor(otherSourcesBudget * 0.4);
+  const recordingBudget = Math.floor(otherSourcesBudget * 0.35);
+  const interviewBudget = Math.floor(otherSourcesBudget * 0.25);
+
+  const communicationsContext = buildContextWithBudget(
+    communications.slice(0, 20).map((c, i) => 
+      `Email ${i + 1}: From ${c.sender} | Subject: ${c.subject || "No subject"} | Preview: ${(c.body || "").substring(0, 300)}...`
+    ),
+    commBudget
+  );
+
+  const recordingsContext = buildContextWithBudget(
+    recordedStatements.map((r, i) => {
+      const transcriptPreview = r.transcriptText ? r.transcriptText.substring(0, 500) : "No transcript";
+      return `Recording ${i + 1}: ${r.title || "Untitled"} (${r.statementType}) by ${r.speakerName || "Unknown"} | Preview: ${transcriptPreview}...`;
+    }),
+    recordingBudget
+  );
+
+  const interviewsContext = buildContextWithBudget(
+    interviews.map((i, idx) => {
+      const transcriptPreview = i.transcriptText ? i.transcriptText.substring(0, 300) : "No transcript";
+      return `Interview ${idx + 1}: ${i.intervieweeName} (${i.interviewType}) | Preview: ${transcriptPreview}...`;
+    }),
+    interviewBudget
+  );
 
   const existingContext = existingAnalysis ? `
 **Previous AI Analysis (to be updated/enhanced):**
@@ -166,6 +248,12 @@ AI Summary: ${summaryText}`;
 ${existingContext}
 
 **EVIDENCE TO ANALYZE:**
+
+${courtPleadingsContext ? `**Court Docket / Legal Filings (${courtPleadings.length} documents):**
+These are the official court filings - complaints, motions, briefs, and other pleadings. Analyze these carefully to understand the legal claims, causes of action, parties, and timeline.
+
+${courtPleadingsContext}
+` : "No court filings available."}
 
 ${communicationsContext ? `**Communications (${communications.length} emails/messages):**
 ${communicationsContext}
@@ -230,6 +318,11 @@ ${interviewsContext}
 
 Format as valid JSON with these exact keys.`;
 
+  // Log prompt size for debugging
+  const promptLength = prompt.length;
+  const estimatedTokens = Math.ceil(promptLength / 4); // rough estimate: 1 token ~4 chars
+  console.log(`[CaseSummaryAutoUpdate] Prompt size: ${promptLength} chars (~${estimatedTokens} tokens)`);
+
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -281,4 +374,41 @@ export function formatMatterTypeDisplay(matterType: string | null): string {
   };
   
   return displayMap[matterType] || matterType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function formatPleadingType(type: string | null): string {
+  if (!type) return "Document";
+  
+  const displayMap: Record<string, string> = {
+    "complaint": "Complaint",
+    "answer": "Answer",
+    "motion": "Motion",
+    "brief": "Brief",
+    "order": "Court Order",
+    "discovery": "Discovery",
+    "subpoena": "Subpoena",
+    "notice": "Notice",
+    "stipulation": "Stipulation",
+    "judgment": "Judgment",
+    "appeal": "Appeal",
+    "exhibit": "Exhibit",
+    "affidavit": "Affidavit",
+    "declaration": "Declaration",
+    "other": "Other Filing",
+  };
+  
+  return displayMap[type] || type.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function formatFilingParty(party: string | null): string {
+  if (!party) return "Unknown";
+  
+  const displayMap: Record<string, string> = {
+    "plaintiff": "Plaintiff",
+    "defendant": "Defendant",
+    "court": "Court",
+    "third_party": "Third Party",
+  };
+  
+  return displayMap[party] || party.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 }
