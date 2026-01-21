@@ -11438,6 +11438,7 @@ export const searchTermItems = pgTable("search_term_items", {
   lastExecutedAt: timestamp("last_executed_at"),
   documentsMatched: integer("documents_matched").default(0),
   isPrivilegeCategory: boolean("is_privilege_category").default(false),
+  tagName: text("tag_name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

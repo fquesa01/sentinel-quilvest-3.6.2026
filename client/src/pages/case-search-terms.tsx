@@ -69,6 +69,7 @@ interface SearchTermItem {
   lastExecutedAt?: string;
   documentsMatched: number;
   isPrivilegeCategory: boolean;
+  tagName?: string;
 }
 
 interface SearchTermSet {
@@ -1014,8 +1015,24 @@ function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: st
   const [editingTermId, setEditingTermId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newTerm, setNewTerm] = useState<{ term: string; rationale: string; type: SearchTerm["type"] }>({ term: "", rationale: "", type: "boolean" });
+  const [editingTagName, setEditingTagName] = useState(false);
+  const [localTagName, setLocalTagName] = useState(item.tagName || "");
+  const [savedTagName, setSavedTagName] = useState<string | null>(item.tagName || null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // Generate default tag name if not set
+  const getDefaultTagName = () => {
+    if (item.itemType === "rfp_request") {
+      const summary = item.summary?.replace(/^all documents (and communications )?(relating|pertaining) to /i, "").trim() || "";
+      const words = summary.split(/\s+/).slice(0, 5).join(" ");
+      return `RFP ${item.itemNumber} ${words}`;
+    }
+    return `Claim ${item.itemNumber} ${item.causeOfAction || ""}`.trim();
+  };
+
+  // Use savedTagName (local state after edit) or item.tagName (from server) or generate default
+  const displayTagName = savedTagName || item.tagName || getDefaultTagName();
 
   const executeMutation = useMutation({
     mutationFn: async () => {
@@ -1054,6 +1071,37 @@ function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: st
       toast({ title: "Search terms updated" });
     },
   });
+
+  const updateTagNameMutation = useMutation({
+    mutationFn: async (newTagName: string) => {
+      const response = await apiRequest(
+        "PATCH",
+        `/api/cases/${caseId}/search-term-sets/${item.searchTermSetId}/items/${item.id}`,
+        { tagName: newTagName }
+      );
+      return response.json();
+    },
+    onSuccess: (_data, newTagName) => {
+      // Update local state immediately for instant feedback
+      setSavedTagName(newTagName);
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId] });
+      setEditingTagName(false);
+      toast({ title: "Tag name updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update tag name", variant: "destructive" });
+    },
+  });
+
+  const handleSaveTagName = () => {
+    const newName = localTagName.trim() || getDefaultTagName();
+    updateTagNameMutation.mutate(newName);
+  };
+
+  const handleCancelTagName = () => {
+    setLocalTagName(item.tagName || "");
+    setEditingTagName(false);
+  };
 
   const toggleTerm = (termId: string) => {
     setLocalTerms((prev) =>
@@ -1186,6 +1234,52 @@ function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: st
       {isExpanded && (
         <div className="px-3 pb-3 space-y-3 border-t pt-3">
           <div className="text-sm text-muted-foreground whitespace-pre-wrap">{item.fullText}</div>
+
+          {/* Tag Name Section */}
+          <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-700">
+              Tag
+            </Badge>
+            {editingTagName ? (
+              <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
+                <Input
+                  value={localTagName}
+                  onChange={(e) => setLocalTagName(e.target.value)}
+                  placeholder={getDefaultTagName()}
+                  className="h-7 text-sm flex-1"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveTagName();
+                    if (e.key === "Escape") handleCancelTagName();
+                  }}
+                  data-testid={`input-tag-name-${item.id}`}
+                />
+                <Button size="sm" variant="ghost" className="h-7 px-2" onClick={handleSaveTagName} disabled={updateTagNameMutation.isPending}>
+                  {updateTagNameMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 px-2" onClick={handleCancelTagName}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 flex-1">
+                <span className="text-sm font-medium">{displayTagName}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLocalTagName(item.tagName || "");
+                    setEditingTagName(true);
+                  }}
+                  data-testid={`button-edit-tag-${item.id}`}
+                >
+                  <Pencil className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+          </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">

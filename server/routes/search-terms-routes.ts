@@ -23,6 +23,23 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+// Helper function to generate RFP/Claim tag names
+function generateShortSummary(itemNumber: number, text: string | null, itemType: string = "rfp"): string {
+  const prefix = itemType === "rfp" ? "RFP" : "Claim";
+  if (!text) return `${prefix} ${itemNumber}`;
+  
+  // Clean up and take first few meaningful words
+  const cleaned = text
+    .replace(/^(all\s+)?documents?\s+(and\s+)?communications?\s+(relating|pertaining)\s+(to\s+)?/i, "")
+    .replace(/including\s+but\s+not\s+limited\s+to.*/i, "")
+    .replace(/[,;:]/g, " ")
+    .trim();
+  const words = cleaned.split(/\s+/).filter(w => w.length > 0);
+  const shortSummary = words.slice(0, 5).join(" ");
+  
+  return shortSummary ? `${prefix} ${itemNumber} ${shortSummary}` : `${prefix} ${itemNumber}`;
+}
+
 export function registerSearchTermsRoutes(app: Express) {
   console.log("[SearchTerms] Routes registered");
 
@@ -452,15 +469,17 @@ export function registerSearchTermsRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const { itemId } = req.params;
-        const { searchTerms, combinedBooleanString } = req.body;
+        const { searchTerms, combinedBooleanString, tagName } = req.body;
+
+        // Build update object with only provided fields
+        const updateData: Record<string, any> = { updatedAt: new Date() };
+        if (searchTerms !== undefined) updateData.searchTerms = searchTerms;
+        if (combinedBooleanString !== undefined) updateData.combinedBooleanString = combinedBooleanString;
+        if (tagName !== undefined) updateData.tagName = tagName;
 
         const [item] = await db
           .update(searchTermItems)
-          .set({
-            searchTerms,
-            combinedBooleanString,
-            updatedAt: new Date(),
-          })
+          .set(updateData)
           .where(eq(searchTermItems.id, itemId))
           .returning();
 
@@ -505,11 +524,17 @@ export function registerSearchTermsRoutes(app: Express) {
           ? "discovery_response"
           : "case_proving";
 
-        const tagName = item.isPrivilegeCategory
-          ? item.summary || "Privilege"
-          : item.itemType === "rfp_request"
-          ? `RFP-${item.itemNumber}`
-          : `Claim-${item.itemNumber}`;
+        // Use custom tagName if set, otherwise generate default
+        let tagName: string;
+        if (item.tagName) {
+          tagName = item.tagName;
+        } else if (item.isPrivilegeCategory) {
+          tagName = item.summary || "Privilege";
+        } else if (item.itemType === "rfp_request") {
+          tagName = generateShortSummary(item.itemNumber, item.summary || "", "rfp");
+        } else {
+          tagName = generateShortSummary(item.itemNumber, item.causeOfAction || item.summary, "claim");
+        }
 
         const result = await searchService.executeAndTagDocuments(
           caseId,
@@ -562,31 +587,19 @@ export function registerSearchTermsRoutes(app: Express) {
             ? "discovery_response"
             : "case_proving";
 
-          // Generate RFP-style tag name with number and short summary
-          // Format: "RFP 1 Hiring of Wilmot" or "Claim 1 Breach of Contract"
-          const generateShortSummary = (text: string | null, maxWords: number = 5): string => {
-            if (!text) return "";
-            // Clean up and take first few meaningful words
-            const cleaned = text
-              .replace(/^(all\s+)?documents?\s+(and\s+)?communications?\s+(relating\s+to\s+)?/i, "")
-              .replace(/including\s+but\s+not\s+limited\s+to.*/i, "")
-              .replace(/[,;:]/g, " ")
-              .trim();
-            const words = cleaned.split(/\s+/).filter(w => w.length > 0);
-            return words.slice(0, maxWords).join(" ");
-          };
-
+          // Use custom tagName if set, otherwise generate default
           let tagName: string;
-          if (item.isPrivilegeCategory) {
+          if (item.tagName) {
+            // Use the custom tag name set by user
+            tagName = item.tagName;
+          } else if (item.isPrivilegeCategory) {
             tagName = item.summary || "Privilege";
           } else if (item.itemType === "rfp_request") {
             // RFP format: "RFP 1 Hiring of Wilmot"
-            const shortSummary = generateShortSummary(item.summary || item.fullText);
-            tagName = shortSummary ? `RFP ${item.itemNumber} ${shortSummary}` : `RFP ${item.itemNumber}`;
+            tagName = generateShortSummary(item.itemNumber, item.summary || item.fullText, "rfp");
           } else {
             // Claim format: "Claim 1 Breach of Contract"
-            const shortSummary = generateShortSummary(item.summary || item.causeOfAction);
-            tagName = shortSummary ? `Claim ${item.itemNumber} ${shortSummary}` : `Claim ${item.itemNumber}`;
+            tagName = generateShortSummary(item.itemNumber, item.causeOfAction || item.summary, "claim");
           }
 
           const result = await searchService.executeAndTagDocuments(
