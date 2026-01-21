@@ -209,8 +209,35 @@ function DiscoveryResponseTab({
   isLoading: boolean;
 }) {
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [sourceMode, setSourceMode] = useState<"upload" | "existing">("upload");
+  const [selectedPleadingId, setSelectedPleadingId] = useState<string>("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // Fetch court pleadings for the case
+  const { data: pleadingsData, isLoading: pleadingsLoading } = useQuery<CourtPleading[]>({
+    queryKey: ["/api/cases", caseId, "court-pleadings"],
+    queryFn: async () => {
+      const res = await fetch(`/api/cases/${caseId}/court-pleadings`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch court pleadings");
+      const json = await res.json();
+      return Array.isArray(json) ? json : (json.data ?? []);
+    },
+    enabled: uploadOpen && !!caseId,
+  });
+  
+  const pleadings = pleadingsData ?? [];
+
+  // Sort pleadings: discovery documents first, then alphabetically
+  const sortedPleadings = [...pleadings].sort((a, b) => {
+    const aIsDiscovery = a.pleadingType === "discovery";
+    const bIsDiscovery = b.pleadingType === "discovery";
+    if (aIsDiscovery && !bIsDiscovery) return -1;
+    if (!aIsDiscovery && bIsDiscovery) return 1;
+    return (a.title || "").localeCompare(b.title || "");
+  });
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
@@ -224,10 +251,37 @@ function DiscoveryResponseTab({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "search-term-sets"] });
       setUploadOpen(false);
+      setSourceMode("upload");
+      setSelectedPleadingId("");
       toast({ title: "RFP uploaded", description: "AI is parsing the document..." });
     },
     onError: () => {
       toast({ title: "Upload failed", variant: "destructive" });
+    },
+  });
+
+  const analyzeExistingMutation = useMutation({
+    mutationFn: async (data: { pleadingId: string; name?: string; description?: string }) => {
+      const response = await fetch(`/api/cases/${caseId}/search-term-sets/analyze-pleading`, {
+        method: "POST",
+        body: JSON.stringify({ ...data, sourceType: "rfp" }),
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to analyze document");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "search-term-sets"] });
+      setUploadOpen(false);
+      setSourceMode("upload");
+      setSelectedPleadingId("");
+      toast({ title: "Analysis started", description: "AI is parsing the document..." });
+    },
+    onError: () => {
+      toast({ title: "Analysis failed", variant: "destructive" });
     },
   });
 
@@ -236,6 +290,29 @@ function DiscoveryResponseTab({
     const form = e.currentTarget;
     const formData = new FormData(form);
     uploadMutation.mutate(formData);
+  };
+
+  const handleAnalyzeExisting = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedPleadingId) {
+      toast({ title: "Please select a document", variant: "destructive" });
+      return;
+    }
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    analyzeExistingMutation.mutate({
+      pleadingId: selectedPleadingId,
+      name: formData.get("name") as string || undefined,
+      description: formData.get("description") as string || undefined,
+    });
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    setUploadOpen(open);
+    if (!open) {
+      setSourceMode("upload");
+      setSelectedPleadingId("");
+    }
   };
 
   if (isLoading) {
@@ -256,56 +333,145 @@ function DiscoveryResponseTab({
             Upload a Request for Production to generate Boolean search terms
           </p>
         </div>
-        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <Dialog open={uploadOpen} onOpenChange={handleDialogClose}>
           <DialogTrigger asChild>
             <Button data-testid="button-upload-rfp">
               <FileUp className="h-4 w-4 mr-2" />
               Upload RFP
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
-              <DialogTitle>Upload Request for Production</DialogTitle>
+              <DialogTitle>Add Request for Production</DialogTitle>
               <DialogDescription>
-                Upload a PDF, Word, or text file containing the RFP document
+                Upload a new document or select an existing one from the Court Docket
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleUpload} className="space-y-4">
-              <div>
-                <Label htmlFor="file">Document File</Label>
-                <Input
-                  id="file"
-                  name="file"
-                  type="file"
-                  accept=".pdf,.doc,.docx,.txt"
-                  required
-                  data-testid="input-rfp-file"
-                />
-              </div>
-              <div>
-                <Label htmlFor="name">Name (optional)</Label>
-                <Input id="name" name="name" placeholder="Analysis name" data-testid="input-rfp-name" />
-              </div>
-              <div>
-                <Label htmlFor="description">Description (optional)</Label>
-                <Textarea
-                  id="description"
-                  name="description"
-                  placeholder="Notes about this RFP"
-                  data-testid="input-rfp-description"
-                />
-              </div>
-              <Button type="submit" disabled={uploadMutation.isPending} className="w-full" data-testid="button-submit-rfp">
-                {uploadMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Upload & Analyze"
-                )}
-              </Button>
-            </form>
+            
+            {/* Source Mode Tabs */}
+            <Tabs value={sourceMode} onValueChange={(v) => setSourceMode(v as "upload" | "existing")} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="upload" data-testid="tab-rfp-upload-new">
+                  <FileUp className="h-4 w-4 mr-2" />
+                  Upload New
+                </TabsTrigger>
+                <TabsTrigger value="existing" data-testid="tab-rfp-select-existing">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Court Docket
+                </TabsTrigger>
+              </TabsList>
+              
+              {/* Upload New Tab */}
+              <TabsContent value="upload" className="mt-4">
+                <form onSubmit={handleUpload} className="space-y-4">
+                  <div>
+                    <Label htmlFor="file">Document File</Label>
+                    <Input
+                      id="file"
+                      name="file"
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt"
+                      required
+                      data-testid="input-rfp-file"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="name">Name (optional)</Label>
+                    <Input id="name" name="name" placeholder="Analysis name" data-testid="input-rfp-name" />
+                  </div>
+                  <div>
+                    <Label htmlFor="description">Description (optional)</Label>
+                    <Textarea
+                      id="description"
+                      name="description"
+                      placeholder="Notes about this RFP"
+                      data-testid="input-rfp-description"
+                    />
+                  </div>
+                  <Button type="submit" disabled={uploadMutation.isPending} className="w-full" data-testid="button-submit-rfp">
+                    {uploadMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      "Upload & Analyze"
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+              
+              {/* Select Existing Tab */}
+              <TabsContent value="existing" className="mt-4">
+                <form onSubmit={handleAnalyzeExisting} className="space-y-4">
+                  <div>
+                    <Label htmlFor="pleading-rfp">Select Document</Label>
+                    {pleadingsLoading ? (
+                      <div className="flex items-center gap-2 py-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-sm text-muted-foreground">Loading documents...</span>
+                      </div>
+                    ) : sortedPleadings.length === 0 ? (
+                      <div className="py-4 text-center text-sm text-muted-foreground">
+                        No documents in Court Docket. Upload a document first.
+                      </div>
+                    ) : (
+                      <Select value={selectedPleadingId} onValueChange={setSelectedPleadingId}>
+                        <SelectTrigger data-testid="select-rfp-existing-pleading">
+                          <SelectValue placeholder="Choose a document..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <ScrollArea className="max-h-[200px]">
+                            {sortedPleadings.map((pleading) => (
+                              <SelectItem 
+                                key={pleading.id} 
+                                value={pleading.id}
+                                data-testid={`option-rfp-pleading-${pleading.id}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-xs shrink-0">
+                                    {pleading.pleadingType}
+                                  </Badge>
+                                  <span className="truncate">{pleading.title}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </ScrollArea>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="name-existing-rfp">Name (optional)</Label>
+                    <Input id="name-existing-rfp" name="name" placeholder="Analysis name" data-testid="input-rfp-existing-name" />
+                  </div>
+                  <div>
+                    <Label htmlFor="description-existing-rfp">Description (optional)</Label>
+                    <Textarea
+                      id="description-existing-rfp"
+                      name="description"
+                      placeholder="Notes about this RFP"
+                      data-testid="input-rfp-existing-description"
+                    />
+                  </div>
+                  <Button 
+                    type="submit" 
+                    disabled={analyzeExistingMutation.isPending || !selectedPleadingId || sortedPleadings.length === 0} 
+                    className="w-full" 
+                    data-testid="button-analyze-rfp-existing"
+                  >
+                    {analyzeExistingMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      "Analyze Document"
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
           </DialogContent>
         </Dialog>
       </div>

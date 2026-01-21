@@ -233,11 +233,16 @@ export function registerSearchTermsRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const { caseId } = req.params;
-        const { pleadingId, name, description } = req.body;
+        const { pleadingId, name, description, sourceType = "complaint" } = req.body;
         const userId = (req as any).user?.claims?.sub;
 
         if (!pleadingId) {
           return res.status(400).json({ success: false, error: "No pleading ID provided" });
+        }
+
+        // Validate sourceType
+        if (sourceType !== "complaint" && sourceType !== "rfp") {
+          return res.status(400).json({ success: false, error: "Invalid source type. Must be 'complaint' or 'rfp'" });
         }
 
         // Fetch the court pleading
@@ -259,15 +264,20 @@ export function registerSearchTermsRoutes(app: Express) {
           });
         }
 
+        // Generate appropriate name based on source type
+        const defaultName = sourceType === "rfp" 
+          ? `RFP Analysis - ${pleading.title || pleading.fileName}`
+          : `Complaint Analysis - ${pleading.title || pleading.fileName}`;
+
         // Create the search term set
         const [set] = await db
           .insert(searchTermSets)
           .values({
             id: nanoid(),
             caseId,
-            sourceType: "complaint",
+            sourceType,
             sourceDocumentName: pleading.title || pleading.fileName,
-            name: name || `Complaint Analysis - ${pleading.title || pleading.fileName}`,
+            name: name || defaultName,
             description,
             generationStatus: "processing",
             generationProgress: 0,
@@ -275,10 +285,16 @@ export function registerSearchTermsRoutes(app: Express) {
           })
           .returning();
 
-        // Process asynchronously using the already extracted text
-        processComplaintDocument(set.id, documentText).catch((err) => {
-          console.error("[SearchTerms] Async complaint processing failed:", err);
-        });
+        // Process asynchronously using the already extracted text based on source type
+        if (sourceType === "rfp") {
+          processRFPDocument(set.id, documentText).catch((err) => {
+            console.error("[SearchTerms] Async RFP processing failed:", err);
+          });
+        } else {
+          processComplaintDocument(set.id, documentText).catch((err) => {
+            console.error("[SearchTerms] Async complaint processing failed:", err);
+          });
+        }
 
         res.json({ success: true, data: set });
       } catch (error) {
