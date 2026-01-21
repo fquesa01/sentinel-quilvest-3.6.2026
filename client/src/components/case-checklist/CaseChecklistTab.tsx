@@ -71,6 +71,7 @@ interface CaseElement {
   elementDescription: string;
   legalStandard?: string;
   strengthAssessment: string;
+  suggestedSearchTerms?: string[];
   supportingEvidence?: ElementEvidence[];
   contradictingEvidence?: ElementEvidence[];
   neutralEvidence?: ElementEvidence[];
@@ -102,9 +103,9 @@ interface ElementEvidence {
 interface ElementSearchTerm {
   id: string;
   elementId: string;
-  searchTerm: string;
-  termType: string;
-  aiGenerated: boolean;
+  searchTermText?: string;
+  searchTermItemId?: string;
+  isPrimary?: boolean;
 }
 
 interface DocumentSuggestion {
@@ -735,6 +736,39 @@ function ElementCard({
             </div>
           </div>
         </CollapsibleTrigger>
+        
+        {/* Search Terms - Always visible under element name */}
+        {(element.suggestedSearchTerms && Array.isArray(element.suggestedSearchTerms) && element.suggestedSearchTerms.length > 0) || 
+         (element.searchTermLinks && element.searchTermLinks.length > 0) ? (
+          <div className="px-4 pb-3 border-t bg-muted/30">
+            <div className="flex items-start gap-2 pt-2">
+              <Search className="h-3 w-3 text-muted-foreground mt-1 flex-shrink-0" />
+              <div className="space-y-1.5 flex-1">
+                {element.suggestedSearchTerms && Array.isArray(element.suggestedSearchTerms) && element.suggestedSearchTerms.length > 0 ? (
+                  element.suggestedSearchTerms.map((term: string, idx: number) => (
+                    <div 
+                      key={idx} 
+                      className="text-xs font-mono bg-background rounded px-2 py-1 border text-muted-foreground break-all"
+                      data-testid={`search-term-${element.id}-${idx}`}
+                    >
+                      {term}
+                    </div>
+                  ))
+                ) : (
+                  element.searchTermLinks?.map((link: any) => (
+                    <div 
+                      key={link.id} 
+                      className="text-xs font-mono bg-background rounded px-2 py-1 border text-muted-foreground break-all"
+                      data-testid={`search-term-link-${link.id}`}
+                    >
+                      {link.searchTermText}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <CollapsibleContent>
           <div className="px-4 pb-4 space-y-4 border-t pt-4">
@@ -829,21 +863,6 @@ function ElementCard({
               </TabsContent>
             </Tabs>
 
-            {element.searchTermLinks && element.searchTermLinks.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium flex items-center gap-1 mb-2">
-                  <Search className="h-3 w-3" />
-                  Search Terms
-                </h4>
-                <div className="flex flex-wrap gap-1">
-                  {element.searchTermLinks.map((term: ElementSearchTerm) => (
-                    <Badge key={term.id} variant="outline" className="text-xs">
-                      {term.searchTerm}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </CollapsibleContent>
       </Collapsible>

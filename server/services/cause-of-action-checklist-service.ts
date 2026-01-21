@@ -189,7 +189,7 @@ export class CauseOfActionChecklistService {
         return { causesOfAction: [], elements: [], success: false, error: "Document has insufficient text for analysis" };
       }
 
-      const prompt = `Analyze this legal complaint document and extract all causes of action with their required legal elements.
+      const prompt = `Analyze this legal complaint document and extract all causes of action with their required legal elements. For each element, generate FACT-SPECIFIC boolean search terms based on the actual parties, dates, events, and facts mentioned in this complaint.
 
 DOCUMENT TEXT:
 ${documentText.substring(0, 15000)}
@@ -205,12 +205,30 @@ Return a JSON object with the following structure:
         {
           "name": "Existence of Valid Contract",
           "description": "A valid contract must have existed between plaintiff and defendant",
-          "legal_standard": "The plaintiff must prove by preponderance of evidence that a valid and enforceable contract existed"
+          "legal_standard": "The plaintiff must prove by preponderance of evidence that a valid and enforceable contract existed",
+          "search_terms": [
+            "(\"Non-Compete Agreement\" OR \"Employment Agreement\") AND (\"Semper Laser\" OR \"SLH\") AND (EWC OR \"Wilmot\")",
+            "(contract OR agreement) AND (sign* OR execut*) AND (\"January 2024\" OR \"2024\")"
+          ]
         }
       ]
     }
   ]
 }
+
+IMPORTANT INSTRUCTIONS FOR SEARCH TERMS:
+1. Each element MUST have 2-4 boolean search terms
+2. Search terms MUST be FACT-SPECIFIC to this complaint - include actual:
+   - Party names (plaintiffs, defendants, companies, individuals)
+   - Dates and time periods mentioned in the complaint
+   - Specific agreements, contracts, or documents referenced
+   - Locations, addresses, or jurisdictions
+   - Specific dollar amounts, percentages, or numbers
+   - Product names, service descriptions, or trade secrets
+   - Names of witnesses or other individuals
+3. Use proper boolean syntax: AND, OR, NOT, quotation marks for phrases, wildcards (*), parentheses for grouping
+4. DO NOT use generic terms like just "breach" or "contract" - always combine with specific facts from this complaint
+5. Each search term should help find documents relevant to proving/disproving that specific element
 
 CAUSE OF ACTION TYPES (use one of): contract, tort, statutory, constitutional, equitable, criminal, administrative
 
@@ -219,6 +237,7 @@ Focus on identifying:
 2. The required legal elements for each cause of action
 3. Applicable statutes or common law basis
 4. The legal standard/burden for each element
+5. FACT-SPECIFIC boolean search terms for each element
 
 Return ONLY valid JSON, no markdown formatting.`;
 
@@ -259,6 +278,9 @@ Return ONLY valid JSON, no markdown formatting.`;
           for (let j = 0; j < coaData.elements.length; j++) {
             const elemData = coaData.elements[j];
             
+            // Extract search terms from AI response
+            const searchTerms = elemData.search_terms || elemData.searchTerms || [];
+            
             const [insertedElement] = await db
               .insert(caseElements)
               .values({
@@ -268,12 +290,27 @@ Return ONLY valid JSON, no markdown formatting.`;
                 elementName: elemData.name,
                 elementDescription: elemData.description || "",
                 legalStandard: elemData.legal_standard,
+                suggestedSearchTerms: searchTerms,
                 strengthAssessment: "not_evaluated",
                 createdBy: userId,
               })
               .returning();
 
             createdElements.push(insertedElement);
+            
+            // Also store search terms in the elementSearchTerms table for querying
+            if (searchTerms && Array.isArray(searchTerms)) {
+              for (let k = 0; k < searchTerms.length; k++) {
+                const term = searchTerms[k];
+                if (term && typeof term === "string") {
+                  await db.insert(elementSearchTerms).values({
+                    elementId: insertedElement.id,
+                    searchTermText: term,
+                    isPrimary: k === 0, // First term is primary
+                  });
+                }
+              }
+            }
           }
         }
       }
