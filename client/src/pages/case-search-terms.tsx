@@ -43,6 +43,14 @@ import {
   Plus,
   Code,
   Pencil,
+  Upload,
+  FileSpreadsheet,
+  Users,
+  BarChart3,
+  Mail,
+  File,
+  Table,
+  FileBox,
 } from "lucide-react";
 
 interface SearchTerm {
@@ -180,6 +188,14 @@ export default function CaseSearchTermsPage() {
                 <Search className="h-4 w-4 mr-2" />
                 Custom Search
               </TabsTrigger>
+              <TabsTrigger
+                value="term-comparison"
+                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
+                data-testid="tab-term-comparison"
+              >
+                <Scale className="h-4 w-4 mr-2" />
+                Term Comparison
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -205,6 +221,10 @@ export default function CaseSearchTermsPage() {
 
           <TabsContent value="custom" className="flex-1 overflow-auto p-6 m-0">
             <CustomSearchTab caseId={caseId!} />
+          </TabsContent>
+
+          <TabsContent value="term-comparison" className="flex-1 overflow-auto p-6 m-0">
+            <TermComparisonTab caseId={caseId!} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1862,6 +1882,541 @@ function CustomSearchTab({ caseId }: { caseId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+interface OpposingCounselSet {
+  id: string;
+  caseId: string;
+  sourceType: string;
+  sourceDocumentName?: string;
+  name: string;
+  description?: string;
+  partyName?: string;
+  generationStatus: string;
+  generationProgress?: number;
+  generationError?: string;
+  totalRequests?: number;
+  documentsTagged?: number;
+  lastExecutedAt?: string;
+  createdAt: string;
+}
+
+interface TermComparisonResult {
+  termId: string;
+  term: string;
+  totalCount: number;
+  emailCount: number;
+  pdfCount: number;
+  wordCount: number;
+  excelCount: number;
+  otherCount: number;
+  executionStatus: string;
+  lastExecutedAt?: string;
+}
+
+function TermComparisonTab({ caseId }: { caseId: string }) {
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [partyName, setPartyName] = useState("");
+  const [uploadMode, setUploadMode] = useState<"file" | "text">("file");
+  const [manualTerms, setManualTerms] = useState("");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: opposingSets, isLoading: setsLoading } = useQuery<{ data: OpposingCounselSet[] }>({
+    queryKey: ["/api/cases", caseId, "search-term-sets", "opposing_counsel"],
+    queryFn: async () => {
+      const res = await fetch(`/api/cases/${caseId}/search-term-sets?sourceType=opposing_counsel`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!caseId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data?.data) return false;
+      const hasProcessing = data.data.some((s) => s.generationStatus === "processing");
+      return hasProcessing ? 2000 : false;
+    },
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const res = await fetch(`/api/cases/${caseId}/opposing-counsel-terms`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to upload");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "search-term-sets", "opposing_counsel"] });
+      setUploadOpen(false);
+      setPartyName("");
+      setManualTerms("");
+      toast({ title: "Terms uploaded", description: "Opposing counsel terms are being processed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleUploadSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    formData.append("partyName", partyName);
+    formData.append("uploadMode", uploadMode);
+    if (uploadMode === "text") {
+      formData.append("manualTerms", manualTerms);
+    }
+    uploadMutation.mutate(formData);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Opposing Counsel Term Comparison
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Upload search terms proposed by opposing counsel and compare hit counts across your document collection
+          </p>
+        </div>
+        <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-upload-opposing-terms">
+              <Upload className="h-4 w-4 mr-2" />
+              Import Terms
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Import Opposing Counsel Search Terms</DialogTitle>
+              <DialogDescription>
+                Upload a court filing, Excel spreadsheet, or paste terms directly
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleUploadSubmit} className="space-y-4">
+              <div>
+                <Label htmlFor="party-name">Party Name</Label>
+                <Input
+                  id="party-name"
+                  value={partyName}
+                  onChange={(e) => setPartyName(e.target.value)}
+                  placeholder="e.g., Plaintiff, Defendant, DOJ"
+                  data-testid="input-party-name"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={uploadMode === "file" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setUploadMode("file")}
+                  data-testid="button-mode-file"
+                >
+                  <FileUp className="h-4 w-4 mr-2" />
+                  Upload File
+                </Button>
+                <Button
+                  type="button"
+                  variant={uploadMode === "text" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setUploadMode("text")}
+                  data-testid="button-mode-text"
+                >
+                  <Code className="h-4 w-4 mr-2" />
+                  Paste Terms
+                </Button>
+              </div>
+
+              {uploadMode === "file" ? (
+                <div>
+                  <Label htmlFor="terms-file">Document with Search Terms</Label>
+                  <Input
+                    id="terms-file"
+                    name="file"
+                    type="file"
+                    accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt"
+                    data-testid="input-terms-file"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Supported: Court filings (PDF), Excel spreadsheets, Word documents, CSV, text files
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <Label htmlFor="manual-terms">Search Terms (one per line)</Label>
+                  <Textarea
+                    id="manual-terms"
+                    value={manualTerms}
+                    onChange={(e) => setManualTerms(e.target.value)}
+                    placeholder={'fraud OR misrepresent*\n"breach of contract"\ndefendant AND (negligence OR negligent)\n...'}
+                    rows={8}
+                    data-testid="input-manual-terms"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enter Boolean search terms, one per line
+                  </p>
+                </div>
+              )}
+
+              <Button type="submit" disabled={uploadMutation.isPending} className="w-full" data-testid="button-submit-opposing-terms">
+                {uploadMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Import & Analyze"
+                )}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {setsLoading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : opposingSets?.data?.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Scale className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="font-medium mb-2">No Opposing Counsel Terms Yet</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Import search terms from opposing counsel to compare hit counts and evaluate their discovery requests
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          {opposingSets?.data?.map((set) => (
+            <OpposingCounselSetCard key={set.id} set={set} caseId={caseId} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OpposingCounselSetCard({ set, caseId }: { set: OpposingCounselSet; caseId: string }) {
+  const [expanded, setExpanded] = useState(true);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: itemsData, isLoading: itemsLoading } = useQuery<{ data: SearchTermItem[] }>({
+    queryKey: ["/api/search-term-sets", set.id, "items"],
+    queryFn: async () => {
+      const res = await fetch(`/api/search-term-sets/${set.id}/items`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: expanded,
+  });
+
+  const { data: comparisonResults, isLoading: resultsLoading } = useQuery<{ data: TermComparisonResult[] }>({
+    queryKey: ["/api/search-term-sets", set.id, "comparison-results"],
+    queryFn: async () => {
+      const res = await fetch(`/api/search-term-sets/${set.id}/comparison-results`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: expanded && set.generationStatus === "completed",
+  });
+
+  const executeAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/search-term-sets/${set.id}/execute-all`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to execute search terms");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/search-term-sets", set.id, "comparison-results"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/search-term-sets", set.id, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "search-term-sets", "opposing_counsel"] });
+      toast({ title: "Search complete", description: "All search terms have been executed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Execution failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/search-term-sets/${set.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "search-term-sets", "opposing_counsel"] });
+      toast({ title: "Deleted", description: "Term set removed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const items = itemsData?.data || [];
+  const results = comparisonResults?.data || [];
+
+  const totalHits = results.reduce((sum, r) => sum + r.totalCount, 0);
+  const totalEmails = results.reduce((sum, r) => sum + r.emailCount, 0);
+  const totalPdfs = results.reduce((sum, r) => sum + r.pdfCount, 0);
+  const totalWords = results.reduce((sum, r) => sum + r.wordCount, 0);
+  const totalExcels = results.reduce((sum, r) => sum + r.excelCount, 0);
+  const totalOthers = results.reduce((sum, r) => sum + r.otherCount, 0);
+
+  return (
+    <Card data-testid={`opposing-set-card-${set.id}`}>
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover-elevate">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    {set.name}
+                    {set.generationStatus === "processing" && (
+                      <Badge variant="outline" className="ml-2">
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Processing
+                      </Badge>
+                    )}
+                    {set.generationStatus === "completed" && (
+                      <Badge variant="secondary" className="ml-2">
+                        {items.length} terms
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    {set.sourceDocumentName || "Manual entry"} 
+                    {set.lastExecutedAt && ` • Last run: ${new Date(set.lastExecutedAt).toLocaleDateString()}`}
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => executeAllMutation.mutate()}
+                  disabled={executeAllMutation.isPending || set.generationStatus !== "completed"}
+                  data-testid={`button-execute-all-${set.id}`}
+                >
+                  {executeAllMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-1" />
+                      Run All
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => deleteMutation.mutate()}
+                  disabled={deleteMutation.isPending}
+                  data-testid={`button-delete-set-${set.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <CardContent>
+            {set.generationStatus === "processing" && (
+              <div className="text-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+                <p className="text-sm text-muted-foreground">Extracting search terms from document...</p>
+                {set.generationProgress !== undefined && set.generationProgress > 0 && (
+                  <p className="text-sm font-medium mt-2">{set.generationProgress}% complete</p>
+                )}
+              </div>
+            )}
+
+            {set.generationStatus === "failed" && (
+              <div className="text-center py-8 text-destructive">
+                <X className="h-8 w-8 mx-auto mb-4" />
+                <p className="font-medium">Processing Failed</p>
+                <p className="text-sm">{set.generationError || "Unknown error"}</p>
+              </div>
+            )}
+
+            {set.generationStatus === "completed" && (
+              <div className="space-y-4">
+                {results.length > 0 && (
+                  <div className="grid grid-cols-6 gap-3 p-4 bg-muted/50 rounded-lg">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">{totalHits.toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">Total Hits</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xl font-semibold flex items-center justify-center gap-1">
+                        <Mail className="h-4 w-4" />
+                        {totalEmails.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Emails</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xl font-semibold flex items-center justify-center gap-1">
+                        <FileText className="h-4 w-4" />
+                        {totalPdfs.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">PDFs</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xl font-semibold flex items-center justify-center gap-1">
+                        <File className="h-4 w-4" />
+                        {totalWords.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Word</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xl font-semibold flex items-center justify-center gap-1">
+                        <Table className="h-4 w-4" />
+                        {totalExcels.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Excel</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xl font-semibold flex items-center justify-center gap-1">
+                        <FileBox className="h-4 w-4" />
+                        {totalOthers.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Other</div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="text-left p-3 font-medium">Search Term</th>
+                        <th className="text-right p-3 font-medium">Total</th>
+                        <th className="text-right p-3 font-medium">
+                          <span className="flex items-center justify-end gap-1">
+                            <Mail className="h-3 w-3" /> Emails
+                          </span>
+                        </th>
+                        <th className="text-right p-3 font-medium">
+                          <span className="flex items-center justify-end gap-1">
+                            <FileText className="h-3 w-3" /> PDFs
+                          </span>
+                        </th>
+                        <th className="text-right p-3 font-medium">
+                          <span className="flex items-center justify-end gap-1">
+                            <File className="h-3 w-3" /> Word
+                          </span>
+                        </th>
+                        <th className="text-right p-3 font-medium">
+                          <span className="flex items-center justify-end gap-1">
+                            <Table className="h-3 w-3" /> Excel
+                          </span>
+                        </th>
+                        <th className="text-right p-3 font-medium">
+                          <span className="flex items-center justify-end gap-1">
+                            <FileBox className="h-3 w-3" /> Other
+                          </span>
+                        </th>
+                        <th className="text-center p-3 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itemsLoading || resultsLoading ? (
+                        <tr>
+                          <td colSpan={8} className="p-4 text-center">
+                            <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+                          </td>
+                        </tr>
+                      ) : items.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="p-4 text-center text-muted-foreground">
+                            No terms extracted yet
+                          </td>
+                        </tr>
+                      ) : (
+                        items.map((item) => {
+                          const result = results.find((r) => r.termId === item.id);
+                          return (
+                            <tr key={item.id} className="border-t hover-elevate" data-testid={`term-row-${item.id}`}>
+                              <td className="p-3">
+                                <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                                  {item.combinedBooleanString || item.fullText}
+                                </code>
+                              </td>
+                              <td className="text-right p-3 font-medium">
+                                {result ? result.totalCount.toLocaleString() : "—"}
+                              </td>
+                              <td className="text-right p-3">
+                                {result ? result.emailCount.toLocaleString() : "—"}
+                              </td>
+                              <td className="text-right p-3">
+                                {result ? result.pdfCount.toLocaleString() : "—"}
+                              </td>
+                              <td className="text-right p-3">
+                                {result ? result.wordCount.toLocaleString() : "—"}
+                              </td>
+                              <td className="text-right p-3">
+                                {result ? result.excelCount.toLocaleString() : "—"}
+                              </td>
+                              <td className="text-right p-3">
+                                {result ? result.otherCount.toLocaleString() : "—"}
+                              </td>
+                              <td className="text-center p-3">
+                                {item.executionStatus === "completed" ? (
+                                  <Badge variant="secondary" className="bg-green-100 text-green-800">
+                                    <Check className="h-3 w-3 mr-1" />
+                                    Done
+                                  </Badge>
+                                ) : item.executionStatus === "running" ? (
+                                  <Badge variant="outline">
+                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                    Running
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline">Pending</Badge>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {results.length > 0 && (
+                  <div className="flex justify-end">
+                    <Button variant="outline" size="sm" data-testid={`button-export-results-${set.id}`}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Export to Excel
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
   );
 }
 

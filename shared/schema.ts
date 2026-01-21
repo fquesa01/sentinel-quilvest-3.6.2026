@@ -11334,7 +11334,8 @@ export const searchTermSourceTypeEnum = pgEnum("search_term_source_type", [
   "subpoena",
   "interrogatory",
   "manual",
-  "custom"
+  "custom",
+  "opposing_counsel"
 ]);
 
 export const searchTermItemTypeEnum = pgEnum("search_term_item_type", [
@@ -11343,7 +11344,8 @@ export const searchTermItemTypeEnum = pgEnum("search_term_item_type", [
   "privilege_category",
   "custom",
   "custom_search",
-  "reference_search"
+  "reference_search",
+  "opposing_counsel_term"
 ]);
 
 export const searchTermGenerationStatusEnum = pgEnum("search_term_generation_status", [
@@ -11364,7 +11366,8 @@ export const documentTagSourceEnum = pgEnum("document_tag_source", [
   "search_term",
   "ai_review",
   "manual",
-  "privilege_scan"
+  "privilege_scan",
+  "opposing_counsel"
 ]);
 
 export const documentTagReviewStatusEnum = pgEnum("document_tag_review_status", [

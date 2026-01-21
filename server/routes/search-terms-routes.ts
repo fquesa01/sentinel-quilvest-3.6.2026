@@ -795,6 +795,267 @@ export function registerSearchTermsRoutes(app: Express) {
       res.status(500).json({ success: false, error: "Failed to export search terms" });
     }
   });
+
+  // POST /api/cases/:caseId/opposing-counsel-terms - Upload opposing counsel search terms
+  app.post(
+    "/api/cases/:caseId/opposing-counsel-terms",
+    isAuthenticated,
+    upload.single("file"),
+    async (req: Request, res: Response) => {
+      try {
+        const { caseId } = req.params;
+        const { partyName, uploadMode, manualTerms } = req.body;
+        const user = req.user as any;
+
+        let terms: string[] = [];
+        let sourceDocumentName = "Manual Entry";
+
+        if (uploadMode === "text" && manualTerms) {
+          // Parse manual terms (one per line)
+          terms = manualTerms.split(/\n+/).map((t: string) => t.trim()).filter((t: string) => t.length > 2);
+          sourceDocumentName = "Manual Entry";
+        } else if (req.file) {
+          // Parse uploaded file
+          sourceDocumentName = req.file.originalname;
+          terms = await parseOpposingCounselTerms(
+            req.file.buffer,
+            req.file.mimetype,
+            req.file.originalname
+          );
+        }
+
+        if (terms.length === 0) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "No search terms could be extracted from the input" 
+          });
+        }
+
+        // Create search term set
+        const setId = nanoid();
+        const setName = partyName ? `${partyName} Proposed Terms` : "Opposing Counsel Terms";
+
+        await db.insert(searchTermSets).values({
+          id: setId,
+          caseId,
+          sourceType: "opposing_counsel",
+          sourceDocumentName,
+          name: setName,
+          description: `Search terms proposed by ${partyName || "opposing counsel"}`,
+          generationStatus: "completed",
+          generationProgress: 100,
+          totalRequests: terms.length,
+          createdBy: user?.id,
+        });
+
+        // Create search term items for each term
+        for (let i = 0; i < terms.length; i++) {
+          await db.insert(searchTermItems).values({
+            id: nanoid(),
+            searchTermSetId: setId,
+            itemNumber: i + 1,
+            itemType: "opposing_counsel_term",
+            fullText: terms[i],
+            combinedBooleanString: terms[i],
+            searchTerms: [{ id: nanoid(8), term: terms[i], type: "boolean", enabled: true, aiGenerated: false }],
+            executionStatus: "pending",
+          });
+        }
+
+        res.json({
+          success: true,
+          data: { id: setId, name: setName, termCount: terms.length },
+        });
+      } catch (error: any) {
+        console.error("[SearchTerms] Error uploading opposing counsel terms:", error);
+        res.status(500).json({ success: false, message: error.message || "Failed to upload terms" });
+      }
+    }
+  );
+
+  // GET /api/search-term-sets/:setId/comparison-results - Get comparison results with file type breakdown
+  app.get("/api/search-term-sets/:setId/comparison-results", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { setId } = req.params;
+
+      // Get all items for this set with their execution results
+      const items = await db
+        .select()
+        .from(searchTermItems)
+        .where(eq(searchTermItems.searchTermSetId, setId))
+        .orderBy(searchTermItems.itemNumber);
+
+      // For each item, calculate the file type breakdown
+      const results = await Promise.all(
+        items.map(async (item) => {
+          // Get the tagged documents for this search term item
+          const tags = await db
+            .select()
+            .from(documentSearchTags)
+            .where(eq(documentSearchTags.searchTermItemId, item.id));
+
+          // Get full document details to categorize by type
+          const { communications } = await import("@shared/schema");
+          const docIds = tags.map(t => t.documentId);
+          
+          let emailCount = 0;
+          let pdfCount = 0;
+          let wordCount = 0;
+          let excelCount = 0;
+          let otherCount = 0;
+
+          if (docIds.length > 0) {
+            for (const docId of docIds) {
+              const [doc] = await db
+                .select({
+                  communicationType: communications.communicationType,
+                  mimeType: communications.mimeType,
+                  fileExtension: communications.fileExtension,
+                })
+                .from(communications)
+                .where(eq(communications.id, docId))
+                .limit(1);
+
+              if (doc) {
+                const type = doc.communicationType?.toLowerCase() || "";
+                const ext = (doc.fileExtension || "").toLowerCase();
+                const mime = (doc.mimeType || "").toLowerCase();
+
+                if (type === "email" || type === "email_attachment" || mime.includes("message")) {
+                  emailCount++;
+                } else if (ext === ".pdf" || mime.includes("pdf")) {
+                  pdfCount++;
+                } else if (ext === ".docx" || ext === ".doc" || mime.includes("word")) {
+                  wordCount++;
+                } else if (ext === ".xlsx" || ext === ".xls" || ext === ".csv" || mime.includes("spreadsheet") || mime.includes("excel")) {
+                  excelCount++;
+                } else {
+                  otherCount++;
+                }
+              }
+            }
+          }
+
+          return {
+            termId: item.id,
+            term: item.combinedBooleanString || item.fullText,
+            totalCount: docIds.length,
+            emailCount,
+            pdfCount,
+            wordCount,
+            excelCount,
+            otherCount,
+            executionStatus: item.executionStatus,
+            lastExecutedAt: item.lastExecutedAt?.toISOString(),
+          };
+        })
+      );
+
+      res.json({ success: true, data: results });
+    } catch (error) {
+      console.error("[SearchTerms] Error fetching comparison results:", error);
+      res.status(500).json({ success: false, error: "Failed to fetch comparison results" });
+    }
+  });
+
+  // POST /api/search-term-sets/:setId/execute-all - Execute all search terms in a set
+  app.post("/api/search-term-sets/:setId/execute-all", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { setId } = req.params;
+
+      // Get all items for this set
+      const items = await db
+        .select()
+        .from(searchTermItems)
+        .where(eq(searchTermItems.searchTermSetId, setId))
+        .orderBy(searchTermItems.itemNumber);
+
+      // Get the case ID from the set
+      const [set] = await db.select().from(searchTermSets).where(eq(searchTermSets.id, setId));
+      if (!set) {
+        return res.status(404).json({ success: false, error: "Search term set not found" });
+      }
+
+      // Execute each search term
+      const booleanSearchService = new BooleanSearchService();
+      let totalMatched = 0;
+
+      for (const item of items) {
+        const searchQuery = item.combinedBooleanString || item.fullText;
+        
+        // Mark as running
+        await db
+          .update(searchTermItems)
+          .set({ executionStatus: "running" })
+          .where(eq(searchTermItems.id, item.id));
+
+        try {
+          // Execute the boolean search
+          const { results } = await booleanSearchService.searchDocuments(set.caseId, searchQuery);
+
+          // Clear existing tags for this specific item in this set
+          await db
+            .delete(documentSearchTags)
+            .where(and(
+              eq(documentSearchTags.searchTermItemId, item.id),
+              eq(documentSearchTags.caseId, set.caseId)
+            ));
+
+          // Create new tags for matched documents
+          const termDisplayName = `Term ${item.itemNumber}: ${(item.combinedBooleanString || item.fullText).slice(0, 40)}`;
+          for (const result of results) {
+            await db.insert(documentSearchTags).values({
+              caseId: set.caseId,
+              documentId: result.documentId,
+              searchTermItemId: item.id,
+              tagSource: "opposing_counsel",
+              tagName: termDisplayName,
+              tagCategory: "opposing_counsel_term",
+              tagColor: "#8B5CF6",
+              matchedTerms: result.matchedTerms || [],
+              confidenceScore: Math.round(result.score * 100),
+            });
+          }
+
+          // Update item status
+          await db
+            .update(searchTermItems)
+            .set({
+              executionStatus: "completed",
+              lastExecutedAt: new Date(),
+              documentsMatched: results.length,
+            })
+            .where(eq(searchTermItems.id, item.id));
+
+          totalMatched += results.length;
+        } catch (searchError: any) {
+          console.error(`[SearchTerms] Error executing term ${item.id}:`, searchError);
+          await db
+            .update(searchTermItems)
+            .set({ executionStatus: "failed" })
+            .where(eq(searchTermItems.id, item.id));
+        }
+      }
+
+      // Update the set's last executed timestamp
+      await db
+        .update(searchTermSets)
+        .set({
+          lastExecutedAt: new Date(),
+          documentsTagged: totalMatched,
+          updatedAt: new Date(),
+        })
+        .where(eq(searchTermSets.id, setId));
+
+      res.json({
+        success: true,
+        data: { termsExecuted: items.length, totalDocumentsMatched: totalMatched },
+      });
+    } catch (error) {
+      console.error("[SearchTerms] Error executing all terms:", error);
+      res.status(500).json({ success: false, error: "Failed to execute search terms" });
+    }
+  });
 }
 
 // Helper function to update progress
@@ -1257,4 +1518,102 @@ Return ONLY valid JSON.`;
       })
       .where(eq(searchTermSets.id, setId));
   }
+}
+
+// Helper to parse opposing counsel terms from various formats
+async function parseOpposingCounselTerms(
+  buffer: Buffer,
+  mimetype: string,
+  filename: string
+): Promise<string[]> {
+  const terms: string[] = [];
+  
+  // Excel file
+  if (mimetype.includes("spreadsheet") || mimetype.includes("excel") || filename.endsWith(".xlsx") || filename.endsWith(".xls") || filename.endsWith(".csv")) {
+    const workbook = new ExcelJS.Workbook();
+    if (filename.endsWith(".csv")) {
+      await workbook.csv.read(require("stream").Readable.from(buffer));
+    } else {
+      await workbook.xlsx.load(buffer);
+    }
+    
+    const worksheet = workbook.worksheets[0];
+    if (worksheet) {
+      worksheet.eachRow((row, rowNumber) => {
+        // Skip header row
+        if (rowNumber === 1) return;
+        // Get first non-empty cell as the search term
+        row.eachCell((cell) => {
+          const value = cell.value?.toString().trim();
+          if (value && value.length > 2 && !terms.includes(value)) {
+            terms.push(value);
+          }
+        });
+      });
+    }
+    return terms;
+  }
+  
+  // PDF file
+  if (mimetype === "application/pdf" || filename.endsWith(".pdf")) {
+    const text = await extractPdfTextWithFallback(buffer);
+    // Use AI to extract search terms from legal documents
+    return extractSearchTermsFromText(text);
+  }
+  
+  // Word document
+  if (mimetype.includes("word") || filename.endsWith(".docx") || filename.endsWith(".doc")) {
+    const result = await mammoth.extractRawText({ buffer });
+    return extractSearchTermsFromText(result.value);
+  }
+  
+  // Plain text
+  if (mimetype === "text/plain" || filename.endsWith(".txt")) {
+    const text = buffer.toString("utf8");
+    // Split by newlines and filter empty lines
+    return text.split(/\n+/).map(l => l.trim()).filter(l => l.length > 2);
+  }
+  
+  return terms;
+}
+
+// Extract boolean search terms from legal text using pattern matching
+function extractSearchTermsFromText(text: string): string[] {
+  const terms: string[] = [];
+  
+  // Look for numbered items with search terms
+  const numberedPattern = /(?:^\s*(?:\d+[.)\s]|[a-z][.)\s]|[-]\s*))([^\n]{10,200})/gim;
+  let match1;
+  while ((match1 = numberedPattern.exec(text)) !== null) {
+    const term = match1[1].trim();
+    // Check if it looks like a search term (contains operators or quotes)
+    if (term.includes(" AND ") || term.includes(" OR ") || 
+        term.includes("*") || term.includes('"') || term.includes("/")) {
+      if (!terms.includes(term)) {
+        terms.push(term.replace(/"/g, '"'));
+      }
+    }
+  }
+  
+  // Look for quoted phrases that might be search terms
+  const quotedPattern = /"([^"]{5,150})"/g;
+  let match2;
+  while ((match2 = quotedPattern.exec(text)) !== null) {
+    const term = `"${match2[1]}"`;
+    if (!terms.includes(term)) {
+      terms.push(term);
+    }
+  }
+  
+  // Look for explicit search term patterns
+  const searchPattern = /(?:search\s+term|query|boolean)[:\s]+([^\n]{10,200})/gi;
+  let match3;
+  while ((match3 = searchPattern.exec(text)) !== null) {
+    const term = match3[1].trim();
+    if (!terms.includes(term)) {
+      terms.push(term);
+    }
+  }
+  
+  return terms;
 }
