@@ -5,7 +5,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Shield, CheckCircle2, Video, FileText, Calendar, User, Mail as MailIcon } from "lucide-react";
+import { ArrowLeft, Shield, CheckCircle2, Video, FileText, Calendar, User, Mail as MailIcon, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +65,8 @@ import { AddPartyDialog } from "@/components/case-detail/add-party-dialog";
 import { ScheduleLiveInterviewDialog } from "@/components/case-detail/schedule-live-interview-dialog";
 import CaseSearchTermsPage from "@/pages/case-search-terms";
 import { CaseChecklistTab } from "@/components/case-checklist/CaseChecklistTab";
+import { AvaChat } from "@/components/ava-chat";
+import { Bot, Mic } from "lucide-react";
 
 export default function CaseDetail() {
   const [, params] = useRoute("/cases/:id");
@@ -117,6 +125,12 @@ export default function CaseDetail() {
     "case-checklist": "Checklist",
   };
   
+  const categoryLabels: Record<string, string> = {
+    "case-info": "Case Info",
+    "discovery": "Discovery",
+    "analysis": "Analysis",
+  };
+  
   // Determine category from active tab
   const getCategoryFromTab = (tab: string): "case-info" | "discovery" | "analysis" => {
     if (categoryTabs["case-info"].includes(tab)) return "case-info";
@@ -154,6 +168,7 @@ export default function CaseDetail() {
   } | null>(null);
   const [interviewDetailOpen, setInterviewDetailOpen] = useState(false);
   const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(null);
+  const [mobileEmmaOpen, setMobileEmmaOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -585,7 +600,8 @@ export default function CaseDetail() {
           setActiveTab(tab);
           setActiveCategory(getCategoryFromTab(tab));
         }} className="w-full stagger-4">
-          <div className="flex items-center gap-1 border-b pb-2" data-testid="tabs-case-war-room">
+          {/* Desktop Navigation - hidden on mobile */}
+          <div className="hidden md:flex items-center gap-1 border-b pb-2" data-testid="tabs-case-war-room">
             {/* Category Pills */}
             <div className="flex items-center gap-1">
               <button
@@ -639,6 +655,47 @@ export default function CaseDetail() {
                 </TabsTrigger>
               ))}
             </TabsList>
+          </div>
+          
+          {/* Mobile Navigation - visible on mobile only */}
+          <div className="md:hidden space-y-3" data-testid="tabs-case-war-room-mobile">
+            {/* Category Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-full justify-between min-h-11" data-testid="mobile-category-dropdown">
+                  <span className="font-medium">{categoryLabels[activeCategory]}</span>
+                  <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-[calc(100vw-2rem)]" align="start">
+                {(Object.keys(categoryTabs) as Array<"case-info" | "discovery" | "analysis">).map((category) => (
+                  <DropdownMenuItem
+                    key={category}
+                    onClick={() => handleCategoryChange(category)}
+                    className={`min-h-11 text-base ${activeCategory === category ? "bg-muted" : ""}`}
+                    data-testid={`mobile-category-${category}`}
+                  >
+                    {categoryLabels[category]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            {/* Scrollable Sub-tabs */}
+            <div className="overflow-x-auto -mx-4 px-4 pb-2">
+              <TabsList className="h-auto bg-transparent p-0 gap-2 inline-flex min-w-max">
+                {categoryTabs[activeCategory].map((tab) => (
+                  <TabsTrigger
+                    key={tab}
+                    value={tab}
+                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-4 py-2 text-sm font-medium rounded-full min-h-10 whitespace-nowrap"
+                    data-testid={`mobile-tab-${tab}`}
+                  >
+                    {tabLabels[tab]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
           </div>
 
           <div className="mt-6">
@@ -943,6 +1000,35 @@ export default function CaseDetail() {
             })()}
           </DialogContent>
         </Dialog>
+        
+        {/* Mobile Floating Emma Button - visible on mobile only */}
+        <div className="md:hidden fixed bottom-6 right-6 z-50">
+          <Button
+            size="lg"
+            className="h-14 w-14 rounded-full shadow-lg"
+            onClick={() => setMobileEmmaOpen(true)}
+            data-testid="mobile-emma-fab"
+            aria-label="Open Emma AI Assistant"
+          >
+            <Bot className="h-6 w-6" />
+          </Button>
+        </div>
+        
+        {/* Mobile Emma Chat Sheet */}
+        <AvaChat 
+          isOpen={mobileEmmaOpen}
+          onOpenChange={setMobileEmmaOpen}
+          triggerButton={false}
+          contextType="case"
+          contextId={caseId}
+          contextData={{ caseName: caseData?.title, caseNumber: caseData?.caseNumber }}
+          context={{
+            currentRoute: `/cases/${caseId}`,
+            currentCaseId: caseId,
+            currentCaseName: caseData?.title,
+            currentTab: activeTab,
+          }}
+        />
       </div>
     </div>
   );
