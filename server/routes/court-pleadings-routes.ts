@@ -6,6 +6,7 @@ import multer from "multer";
 import mammoth from "mammoth";
 import { extractPdfTextWithFallback } from "../services/pdf-extraction-service";
 import { indexDocument } from "../services/document-indexing-service";
+import { extractLegalDocumentMetadata, mapToValidPleadingType } from "../services/legal-document-parser-service";
 import { ObjectStorageService } from "../objectStorage";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -79,19 +80,39 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
         console.error("[CourtPleadings] Error extracting text:", extractError);
       }
       
-      // Auto-extract headline from document if title not provided
-      let finalTitle = title?.trim();
-      if (!finalTitle && extractedText) {
-        // Extract first meaningful line as headline
-        const lines = extractedText.split('\n').filter(line => line.trim().length > 10);
-        if (lines.length > 0) {
-          finalTitle = lines[0].trim().substring(0, 200);
-          console.log(`[CourtPleadings] Auto-extracted headline: ${finalTitle}`);
+      // Use AI to extract document metadata (title, filing date, type)
+      let aiMetadata = { title: null as string | null, filingDate: null as string | null, documentType: null as string | null };
+      if (extractedText && extractedText.length > 100) {
+        try {
+          console.log(`[CourtPleadings] Extracting metadata with AI from ${extractedText.length} chars...`);
+          aiMetadata = await extractLegalDocumentMetadata(extractedText, file.originalname);
+        } catch (aiError) {
+          console.error("[CourtPleadings] AI metadata extraction failed:", aiError);
         }
       }
       
+      // Use AI-extracted title, or fall back to provided title, or filename
+      let finalTitle = title?.trim();
+      if (!finalTitle && aiMetadata.title) {
+        finalTitle = aiMetadata.title;
+        console.log(`[CourtPleadings] AI-extracted title: ${finalTitle}`);
+      }
       if (!finalTitle) {
         finalTitle = file.originalname.replace(/\.[^/.]+$/, ""); // Use filename without extension
+      }
+      
+      // Use AI-extracted filing date if not provided by user
+      let finalFilingDate = filingDate;
+      if (!finalFilingDate && aiMetadata.filingDate) {
+        finalFilingDate = aiMetadata.filingDate;
+        console.log(`[CourtPleadings] AI-extracted filing date: ${finalFilingDate}`);
+      }
+      
+      // Use AI-extracted document type if not provided or is 'other'
+      let finalPleadingType = validatedType;
+      if ((!pleadingType || pleadingType === "other") && aiMetadata.documentType) {
+        finalPleadingType = mapToValidPleadingType(aiMetadata.documentType);
+        console.log(`[CourtPleadings] AI-extracted document type: ${finalPleadingType}`);
       }
       
       // Upload file to object storage
@@ -110,8 +131,8 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
       const [pleading] = await db.insert(courtPleadings).values({
         caseId,
         title: finalTitle,
-        pleadingType: validatedType,
-        filingDate: filingDate ? new Date(filingDate) : null,
+        pleadingType: finalPleadingType,
+        filingDate: finalFilingDate ? new Date(finalFilingDate) : null,
         filedBy: filedBy || null,
         filingParty: validatedFilingParty,
         filingStatus: validatedFilingStatus,
@@ -308,7 +329,7 @@ export function registerCourtPleadingsRoutes(app: Express, isAuthenticated: any)
             metadata: {
               documentType: `court_pleading_${pleading.pleadingType}`,
               subject: pleading.title,
-              date: pleading.filingDate || new Date().toISOString(),
+              date: pleading.filingDate ? (pleading.filingDate instanceof Date ? pleading.filingDate.toISOString() : pleading.filingDate) : new Date().toISOString(),
             }
           });
           console.log(`[CourtPleadings] Re-indexed pleading ${id} for RAG`);
