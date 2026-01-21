@@ -70,7 +70,6 @@ import { ConnectedSourcesPanel } from "./connected-sources-panel";
 import { SmartSearch } from "./smart-search";
 import { CaseNetworkGraph } from "./case-network-graph";
 import { EDiscoveryProcessingPanel } from "@/components/ediscovery/ediscovery-processing-panel";
-import { CourtPleadingsPanel } from "./CourtPleadingsPanel";
 import { Link, useLocation } from "wouter";
 
 interface Document {
@@ -444,9 +443,6 @@ export function EvidenceTab({ caseId, documents = [], isLoading, onViewDocument,
       
       {/* E-Discovery Processing Panel */}
       <EDiscoveryProcessingPanel caseId={caseId} />
-      
-      {/* Court Pleadings for AI Search */}
-      <CourtPleadingsPanel caseId={caseId} />
       
       {/* Quick Actions Bar */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
