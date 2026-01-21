@@ -51,7 +51,6 @@ import { EvidenceTab } from "@/components/case-detail/evidence-tab";
 import { PartiesTab } from "@/components/case-detail/parties-tab";
 import { CaseInterviewsSection } from "@/components/case-detail/case-interviews-section";
 import { TimelineTab } from "@/components/case-detail/timeline-tab";
-import { AnalyticsTab } from "@/components/case-detail/analytics-tab";
 import { FindingsTab } from "@/components/case-detail/findings-tab";
 import { RecordingsTab } from "@/components/case-detail/recordings-tab";
 import { ProductionCenter } from "@/components/ediscovery/production-center";
@@ -499,11 +498,6 @@ export default function CaseDetail() {
     pending: interviews.filter((i: any) => i.status === "pending" || i.status === "draft").length,
   };
 
-  // Analytics data (empty initially - can be populated via AI analysis generation)
-  const applicableLaws: any[] = [];
-  const riskMetrics: any[] = [];
-  const narrativeAnalysis: string | undefined = undefined;
-
   return (
     <div className="min-h-screen bg-background">
       <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
@@ -571,7 +565,6 @@ export default function CaseDetail() {
             <TabsTrigger value="findings" data-testid="tab-findings">
               Findings
             </TabsTrigger>
-            <TabsTrigger value="analytics" data-testid="tab-analytics">Applicable Law</TabsTrigger>
             <TabsTrigger value="recordings" data-testid="tab-recordings">Recordings</TabsTrigger>
             <TabsTrigger value="production" data-testid="tab-production">Production</TabsTrigger>
             <TabsTrigger value="search-terms" data-testid="tab-search-terms">Search Terms</TabsTrigger>
@@ -690,21 +683,6 @@ export default function CaseDetail() {
             </TabsContent>
             <TabsContent value="findings" className="mt-0">
               <FindingsTab caseId={caseId!} />
-            </TabsContent>
-            <TabsContent value="analytics" className="mt-0">
-              <AnalyticsTab
-                applicableLaws={applicableLaws}
-                riskMetrics={riskMetrics}
-                narrativeAnalysis={narrativeAnalysis}
-                isLoadingLaws={false}
-                isLoadingRisk={false}
-                onExportBoardSummary={() =>
-                  toast({ title: "Exporting", description: "Board summary PDF will be downloaded soon." })
-                }
-                onExportRegulatorBrief={() =>
-                  toast({ title: "Exporting", description: "Regulator brief will be downloaded soon." })
-                }
-              />
             </TabsContent>
             <TabsContent value="recordings" className="mt-0">
               <RecordingsTab caseId={caseId!} />
