@@ -924,6 +924,16 @@ function SearchTermSetCard({ set, caseId }: { set: SearchTermSet; caseId: string
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={() => {
+                    window.open(`/api/cases/${caseId}/search-term-sets/${set.id}/export`, "_blank");
+                  }}
+                  data-testid={`button-export-${set.id}`}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export to Excel
+                </Button>
+                <Button
+                  variant="outline"
                   size="icon"
                   onClick={() => {
                     queryClient.invalidateQueries({

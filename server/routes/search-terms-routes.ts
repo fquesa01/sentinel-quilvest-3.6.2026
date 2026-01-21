@@ -16,6 +16,7 @@ import { BooleanSearchService, SearchTerm } from "../services/boolean-search-ser
 import { extractPdfTextWithFallback } from "../services/pdf-extraction-service";
 import mammoth from "mammoth";
 import { nanoid } from "nanoid";
+import ExcelJS from "exceljs";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -526,6 +527,93 @@ export function registerSearchTermsRoutes(app: Express) {
     } catch (error) {
       console.error("[SearchTerms] Error fetching tags:", error);
       res.status(500).json({ success: false, error: "Failed to fetch document tags" });
+    }
+  });
+
+  // GET /api/cases/:caseId/search-term-sets/:setId/export - Export search terms to Excel
+  app.get("/api/cases/:caseId/search-term-sets/:setId/export", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { caseId, setId } = req.params;
+
+      // Get the search term set
+      const [set] = await db
+        .select()
+        .from(searchTermSets)
+        .where(and(eq(searchTermSets.id, setId), eq(searchTermSets.caseId, caseId)));
+
+      if (!set) {
+        return res.status(404).json({ success: false, error: "Search term set not found" });
+      }
+
+      // Get all items for this set
+      const items = await db
+        .select()
+        .from(searchTermItems)
+        .where(eq(searchTermItems.searchTermSetId, setId))
+        .orderBy(searchTermItems.itemNumber);
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Search Terms");
+
+      // Define columns based on source type
+      const isRFP = set.sourceType === "rfp";
+      worksheet.columns = [
+        { header: isRFP ? "RFP Number" : "Claim Number", key: "number", width: 15 },
+        { header: isRFP ? "RFP Summary" : "Cause of Action", key: "summary", width: 60 },
+        { header: "Search Terms", key: "searchTerms", width: 80 },
+      ];
+
+      // Style header row
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF1E3A5F" }, // Dark blue header
+      };
+      worksheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+
+      // Add rows
+      items.forEach((item) => {
+        const searchTermsArray = (item.searchTerms as any[]) || [];
+        const enabledTerms = searchTermsArray.filter((t: any) => t.enabled !== false);
+        const termsText = enabledTerms.map((t: any) => t.term).join("\n");
+
+        worksheet.addRow({
+          number: isRFP ? `Request ${item.itemNumber}` : `Claim ${item.itemNumber}`,
+          summary: isRFP ? (item.summary || item.fullText) : (item.causeOfAction || item.summary || item.fullText),
+          searchTerms: termsText || item.combinedBooleanString || "",
+        });
+      });
+
+      // Apply text wrapping and borders
+      worksheet.eachRow((row: any, rowNumber: number) => {
+        row.eachCell((cell: any) => {
+          cell.alignment = { wrapText: true, vertical: "top" };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+        if (rowNumber > 1) {
+          row.height = 50; // Give space for wrapped text
+        }
+      });
+
+      // Set response headers
+      const fileName = `search-terms-${set.name.replace(/[^a-zA-Z0-9]/g, "-")}.xlsx`;
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (error) {
+      console.error("[SearchTerms] Error exporting search terms:", error);
+      res.status(500).json({ success: false, error: "Failed to export search terms" });
     }
   });
 }
