@@ -557,7 +557,7 @@ export default function CaseDetail() {
               Parties & Custodians
             </TabsTrigger>
             <TabsTrigger value="interviews" data-testid="tab-interviews">
-              Interviews
+              Interviews & Recordings
             </TabsTrigger>
             <TabsTrigger value="timeline" data-testid="tab-timeline">
               Timeline & Correspondence
@@ -565,7 +565,6 @@ export default function CaseDetail() {
             <TabsTrigger value="findings" data-testid="tab-findings">
               Findings
             </TabsTrigger>
-            <TabsTrigger value="recordings" data-testid="tab-recordings">Recordings</TabsTrigger>
             <TabsTrigger value="production" data-testid="tab-production">Production</TabsTrigger>
             <TabsTrigger value="search-terms" data-testid="tab-search-terms">Search Terms</TabsTrigger>
             <TabsTrigger value="case-checklist" data-testid="tab-case-checklist">Case Checklist</TabsTrigger>
@@ -673,9 +672,12 @@ export default function CaseDetail() {
             </TabsContent>
 
             <TabsContent value="interviews" className="mt-0">
-              {caseData && (
-                <CaseInterviewsSection caseId={caseId!} caseData={caseData} />
-              )}
+              <div className="space-y-6">
+                {caseData && (
+                  <CaseInterviewsSection caseId={caseId!} caseData={caseData} />
+                )}
+                <RecordingsTab caseId={caseId!} />
+              </div>
             </TabsContent>
 
             <TabsContent value="timeline" className="mt-0">
@@ -683,9 +685,6 @@ export default function CaseDetail() {
             </TabsContent>
             <TabsContent value="findings" className="mt-0">
               <FindingsTab caseId={caseId!} />
-            </TabsContent>
-            <TabsContent value="recordings" className="mt-0">
-              <RecordingsTab caseId={caseId!} />
             </TabsContent>
             <TabsContent value="production" className="mt-0">
               <ProductionCenter caseId={caseId!} />
