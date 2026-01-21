@@ -22,6 +22,7 @@ async function extractTextFromDocx(buffer: Buffer): Promise<string> {
 async function extractTextFromPdfFallback(buffer: Buffer): Promise<string> {
   try {
     // pdf-parse v1.x exports a function as default
+    // @ts-ignore - pdf-parse doesn't have type definitions
     const pdfParse = (await import("pdf-parse")).default;
     const data = await pdfParse(buffer);
     return data.text.trim();
@@ -29,6 +30,77 @@ async function extractTextFromPdfFallback(buffer: Buffer): Promise<string> {
     console.error("PDF-parse extraction failed:", error.message);
     return '';
   }
+}
+
+/**
+ * Detects if extracted text appears to be garbled due to custom font encoding.
+ * Some PDFs (especially e-filed court documents) use custom font mappings where
+ * character codes don't match Unicode, resulting in text that looks like:
+ * "!"#$%&#'!(')!$#'*)($#+*(#$%&#&,&-&"$%#" or "&345675882"
+ */
+function isGarbledText(text: string): boolean {
+  if (!text || text.length < 100) return false;
+  
+  const sample = text.slice(0, 3000);
+  
+  // Count different character types
+  const letters = (sample.match(/[a-zA-Z]/g) || []).length;
+  const digits = (sample.match(/[0-9]/g) || []).length;
+  const specialChars = (sample.match(/[#$%^&@*<>{}|\\~`!'"();:,.\-+=\[\]]/g) || []).length;
+  const totalChars = sample.length;
+  
+  // Calculate ratios
+  const letterRatio = letters / totalChars;
+  const specialRatio = specialChars / totalChars;
+  const digitRatio = digits / totalChars;
+  
+  // Heuristic 1: Very high special character ratio (> 15% is suspicious)
+  const highSpecialChars = specialRatio > 0.15;
+  
+  // Heuristic 2: Check for common English words
+  const commonWords = ['the', 'and', 'for', 'that', 'this', 'with', 'are', 'was', 'from', 'have', 
+                       'has', 'been', 'will', 'shall', 'not', 'any', 'all', 'such', 'which', 'upon'];
+  const lowerSample = sample.toLowerCase();
+  let wordMatches = 0;
+  for (const word of commonWords) {
+    const regex = new RegExp(`\\b${word}\\b`, 'g');
+    wordMatches += (lowerSample.match(regex) || []).length;
+  }
+  const expectedWords = totalChars / 200;
+  const lowWordCount = wordMatches < expectedWords * 0.3;
+  
+  // Heuristic 3: Encoding artifacts - special chars between alphanumerics
+  const encodingArtifacts = (sample.match(/[A-Za-z0-9][#$%^&*@!'"(){}\[\]<>][A-Za-z0-9]/g) || []).length;
+  const artifactRatio = encodingArtifacts / (totalChars / 100);
+  const highArtifacts = artifactRatio > 1.5;
+  
+  // Heuristic 4: Consecutive special characters
+  const consecutiveSpecial = (sample.match(/[#$%^&*@!]{2,}/g) || []).length;
+  const hasConsecutiveSpecial = consecutiveSpecial > 3;
+  
+  // Heuristic 5: Low letter ratio (normal English is 70-85% letters)
+  const lowLetterRatio = letterRatio < 0.45;
+  
+  // Heuristic 6: Unusual digit sequences
+  const longDigitSequences = (sample.match(/[0-9]{4,}/g) || []).length;
+  const unusualDigits = longDigitSequences > 5 && digitRatio > 0.1;
+  
+  // Scoring system
+  let garbleScore = 0;
+  if (highSpecialChars) garbleScore += 2;
+  if (lowWordCount) garbleScore += 2;
+  if (highArtifacts) garbleScore += 2;
+  if (hasConsecutiveSpecial) garbleScore += 1;
+  if (lowLetterRatio) garbleScore += 2;
+  if (unusualDigits) garbleScore += 1;
+  
+  const isGarbled = garbleScore >= 4;
+  
+  if (garbleScore >= 2) {
+    console.log(`[OCR] Garble check: letterRatio=${letterRatio.toFixed(2)}, specialRatio=${specialRatio.toFixed(2)}, wordMatches=${wordMatches}/${Math.round(expectedWords)}, score=${garbleScore}, isGarbled=${isGarbled}`);
+  }
+  
+  return isGarbled;
 }
 
 export interface OCRResult {
@@ -271,6 +343,13 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
     
     // Handle PDF documents - try Gemini first, then fallback to pdf-parse
     const isPdf = fileType.includes('pdf');
+    
+    // Check if existing extractedText is garbled (custom font encoding issue)
+    const textIsGarbled = isPdf && extractedText && isGarbledText(extractedText);
+    if (textIsGarbled) {
+      console.log(`[OCR] Detected garbled text in PDF ${doc.fileName} - will use Gemini OCR`);
+      extractedText = ''; // Force re-extraction with Gemini
+    }
     
     if (isPdf && (!extractedText || extractedText.trim().length < 50)) {
       console.log(`[OCR] Processing PDF: ${doc.fileName}`);
