@@ -1163,7 +1163,7 @@ function SearchTermItemCard({ item, caseId }: { item: SearchTermItem; caseId: st
 
       {isExpanded && (
         <div className="px-3 pb-3 space-y-3 border-t pt-3">
-          <div className="text-sm text-muted-foreground">{item.summary || item.fullText}</div>
+          <div className="text-sm text-muted-foreground whitespace-pre-wrap">{item.fullText}</div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
