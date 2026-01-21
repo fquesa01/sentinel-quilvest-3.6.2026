@@ -739,7 +739,10 @@ export interface IStorage {
   // Tag Analytics operations (for Tagged Material view)
   getTagsWithDocumentCounts(caseId?: string): Promise<Array<Tag & { 
     documentCount: number; 
-    textSelectionCount: number; 
+    textSelectionCount: number;
+    custodianCount?: number;
+    earliestDate?: string;
+    latestDate?: string; 
     totalCount: number 
   }>>;
   getDocumentsForTag(tagId: string, caseId?: string): Promise<Array<Communication & { 
@@ -4820,7 +4823,10 @@ export class DatabaseStorage implements IStorage {
 
   async getTagsWithDocumentCounts(caseId?: string): Promise<Array<Tag & { 
     documentCount: number; 
-    textSelectionCount: number; 
+    textSelectionCount: number;
+    custodianCount?: number;
+    earliestDate?: string;
+    latestDate?: string; 
     totalCount: number 
   }>> {
     // Get all tags first
@@ -4880,17 +4886,73 @@ export class DatabaseStorage implements IStorage {
     const docCountMap = new Map(documentTagCounts.map(d => [d.tagId, Number(d.count)]));
     const textCountMap = new Map(textSelectionCounts.map(t => [t.tagId, Number(t.count)]));
     
-    // Merge counts with tags
-    return allTags.map(tag => {
-      const documentCount = docCountMap.get(tag.id) || 0;
-      const textSelectionCount = textCountMap.get(tag.id) || 0;
-      return {
-        ...tag,
-        documentCount,
-        textSelectionCount,
-        totalCount: documentCount + textSelectionCount,
-      };
-    }).filter(tag => tag.totalCount > 0) // Only return tags with at least one tagged document
+    
+    // For each tag with documents, get enhanced stats (custodian count, date range)
+    const enhancedResults = await Promise.all(
+      allTags.map(async tag => {
+        const documentCount = docCountMap.get(tag.id) || 0;
+        const textSelectionCount = textCountMap.get(tag.id) || 0;
+        const totalCount = documentCount + textSelectionCount;
+        
+        if (totalCount === 0) {
+          return {
+            ...tag,
+            documentCount,
+            textSelectionCount,
+            totalCount,
+            custodianCount: 0,
+            earliestDate: undefined,
+            latestDate: undefined,
+          };
+        }
+        
+        // Get documents for this tag to compute enhanced stats
+        let statsQuery;
+        if (caseId) {
+          statsQuery = await db
+            .select({
+              sender: communications.sender,
+              timestamp: communications.timestamp,
+            })
+            .from(documentTags)
+            .innerJoin(communications, eq(documentTags.entityId, communications.id))
+            .where(and(
+              eq(documentTags.tagId, tag.id),
+              eq(documentTags.entityType, 'communication'),
+              eq(communications.caseId, caseId)
+            ));
+        } else {
+          statsQuery = await db
+            .select({
+              sender: communications.sender,
+              timestamp: communications.timestamp,
+            })
+            .from(documentTags)
+            .innerJoin(communications, eq(documentTags.entityId, communications.id))
+            .where(and(
+              eq(documentTags.tagId, tag.id),
+              eq(documentTags.entityType, 'communication')
+            ));
+        }
+        
+        // Calculate unique custodians and date range
+        const uniqueSenders = new Set(statsQuery.map(d => d.sender?.toLowerCase()).filter(Boolean));
+        const dates = statsQuery.map(d => d.timestamp).filter((d): d is Date => d !== null);
+        
+        return {
+          ...tag,
+          documentCount,
+          textSelectionCount,
+          totalCount,
+          custodianCount: uniqueSenders.size,
+          earliestDate: dates.length > 0 ? new Date(Math.min(...dates.map(d => d.getTime()))).toISOString() : undefined,
+          latestDate: dates.length > 0 ? new Date(Math.max(...dates.map(d => d.getTime()))).toISOString() : undefined,
+        };
+      })
+    );
+    
+    return enhancedResults
+      .filter(tag => tag.totalCount > 0) // Only return tags with at least one tagged document
       .sort((a, b) => b.totalCount - a.totalCount); // Sort by most used first
   }
 

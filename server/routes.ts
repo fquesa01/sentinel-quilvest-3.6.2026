@@ -4701,6 +4701,127 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
     }
   });
 
+  // Export tagged documents to Excel with file type breakdown
+  app.get("/api/tags/:tagId/export-excel", isAuthenticated, async (req: any, res) => {
+    try {
+      const { tagId } = req.params;
+      const caseId = req.query.caseId as string | undefined;
+      
+      // Get tag info
+      const tagInfo = await db.select().from(schema.tags).where(eq(schema.tags.id, tagId)).limit(1);
+      if (!tagInfo.length) {
+        return res.status(404).json({ message: "Tag not found" });
+      }
+      const tag = tagInfo[0];
+      
+      // Get all documents for this tag
+      const documents = await storage.getDocumentsForTag(tagId, caseId);
+      
+      // Calculate file type breakdown
+      let emailCount = 0;
+      let pdfCount = 0;
+      let wordCount = 0;
+      let excelCount = 0;
+      let otherCount = 0;
+      
+      for (const doc of documents) {
+        const ext = (doc.fileExtension || '').toLowerCase();
+        const mime = (doc.mimeType || '').toLowerCase();
+        const type = (doc.communicationType || '').toLowerCase();
+        
+        if (type === 'email' || ext === '.eml' || ext === '.msg') {
+          emailCount++;
+        } else if (ext === '.pdf' || mime.includes('pdf')) {
+          pdfCount++;
+        } else if (ext === '.doc' || ext === '.docx' || mime.includes('word') || mime.includes('document')) {
+          wordCount++;
+        } else if (ext === '.xls' || ext === '.xlsx' || mime.includes('excel') || mime.includes('spreadsheet')) {
+          excelCount++;
+        } else {
+          otherCount++;
+        }
+      }
+      
+      const totalCount = documents.length;
+      
+      // Create Excel workbook
+      const ExcelJS = (await import('exceljs')).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Sentinel Counsel LLP';
+      workbook.created = new Date();
+      
+      const worksheet = workbook.addWorksheet('Tag Report');
+      
+      // Add headers
+      worksheet.columns = [
+        { header: 'Search Terms Applied', key: 'searchTerms', width: 40 },
+        { header: 'Total Files Responsive', key: 'total', width: 20 },
+        { header: 'Emails Responsive', key: 'emails', width: 20 },
+        { header: 'PDFs Responsive', key: 'pdfs', width: 20 },
+        { header: 'Word Docs Responsive', key: 'word', width: 20 },
+        { header: 'Excel Docs Responsive', key: 'excel', width: 20 },
+        { header: 'Other Docs Responsive', key: 'other', width: 20 },
+      ];
+      
+      // Style header row
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' }
+      };
+      
+      // Add data row
+      worksheet.addRow({
+        searchTerms: tag.name,
+        total: totalCount,
+        emails: emailCount,
+        pdfs: pdfCount,
+        word: wordCount,
+        excel: excelCount,
+        other: otherCount,
+      });
+      
+      // Add summary section
+      worksheet.addRow([]);
+      worksheet.addRow(['Document Details']);
+      worksheet.addRow(['Subject', 'Sender', 'Date', 'Type', 'File Extension']);
+      
+      const headerRow = worksheet.lastRow;
+      if (headerRow) {
+        headerRow.font = { bold: true };
+        headerRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE0E0E0' }
+        };
+      }
+      
+      // Add document details
+      for (const doc of documents) {
+        worksheet.addRow([
+          doc.subject || 'Untitled',
+          doc.sender || '',
+          doc.timestamp ? new Date(doc.timestamp).toLocaleDateString() : '',
+          doc.communicationType || 'Document',
+          doc.fileExtension || '',
+        ]);
+      }
+      
+      // Set response headers
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${tag.name.replace(/[^a-z0-9]/gi, "_")}_report.xlsx"`);
+      
+      // Write to response
+      await workbook.xlsx.write(res);
+      res.end();
+      
+    } catch (error: any) {
+      console.error("Error exporting tag to Excel:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Tag Usage Report - Get statistics on tag usage for a case
   app.get("/api/cases/:caseId/tags/usage-report", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
     try {

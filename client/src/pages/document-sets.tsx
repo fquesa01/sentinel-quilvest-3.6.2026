@@ -15,7 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { insertDocumentSetSchema, type DocumentSet, type Tag, type Communication } from "@shared/schema";
 import { z } from "zod";
-import { Plus, FolderOpen, FileText, Trash2, Edit, Tags, ArrowLeft, ExternalLink, Hash, FileCheck2, Briefcase } from "lucide-react";
+import { Plus, FolderOpen, FileText, Trash2, Edit, Tags, ArrowLeft, ExternalLink, Hash, FileCheck2, Briefcase, List, LayoutGrid, Grid3X3, Folder, Download, Calendar, Users, File } from "lucide-react";
 import { format } from "date-fns";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -29,11 +29,24 @@ const formSchema = insertDocumentSetSchema.omit({
 
 type FormData = z.infer<typeof formSchema>;
 
-// Type for tag with document counts
+// View mode types
+type ViewMode = "list" | "detailed" | "small-folder" | "large-folder";
+
+// Type for tag with document counts and stats
 type TagWithCounts = Tag & {
   documentCount: number;
   textSelectionCount: number;
   totalCount: number;
+  custodianCount?: number;
+  earliestDate?: string;
+  latestDate?: string;
+  fileTypeCounts?: {
+    emails: number;
+    pdfs: number;
+    word: number;
+    excel: number;
+    other: number;
+  };
 };
 
 // Type for tagged document
@@ -50,6 +63,7 @@ export default function DocumentSetsPage() {
   const [activeTab, setActiveTab] = useState<string>("manual");
   const [selectedTag, setSelectedTag] = useState<TagWithCounts | null>(null);
   const [selectedCaseFilter, setSelectedCaseFilter] = useState<string>("");
+  const [viewMode, setViewMode] = useState<ViewMode>("detailed");
 
   const { data: documentSets = [], isLoading } = useQuery<DocumentSet[]>({
     queryKey: ["/api/document-sets"],
@@ -230,6 +244,228 @@ export default function DocumentSetsPage() {
     }
   };
 
+  const handleDownloadExcelReport = async (tag: TagWithCounts) => {
+    try {
+      const response = await fetch(`/api/tags/${tag.id}/export-excel?caseId=${selectedCaseFilter}`);
+      if (!response.ok) throw new Error("Failed to generate report");
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${tag.name.replace(/[^a-z0-9]/gi, '_')}_report.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Report downloaded",
+        description: `Excel report for "${tag.name}" has been downloaded.`,
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Download failed",
+        description: "Could not generate the Excel report. Please try again.",
+      });
+    }
+  };
+
+  const renderViewToggle = () => (
+    <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+      <Button
+        variant={viewMode === "list" ? "secondary" : "ghost"}
+        size="sm"
+        onClick={() => setViewMode("list")}
+        data-testid="button-view-list"
+        className="h-8 px-2"
+      >
+        <List className="w-4 h-4" />
+      </Button>
+      <Button
+        variant={viewMode === "detailed" ? "secondary" : "ghost"}
+        size="sm"
+        onClick={() => setViewMode("detailed")}
+        data-testid="button-view-detailed"
+        className="h-8 px-2"
+      >
+        <LayoutGrid className="w-4 h-4" />
+      </Button>
+      <Button
+        variant={viewMode === "small-folder" ? "secondary" : "ghost"}
+        size="sm"
+        onClick={() => setViewMode("small-folder")}
+        data-testid="button-view-small-folder"
+        className="h-8 px-2"
+      >
+        <Grid3X3 className="w-4 h-4" />
+      </Button>
+      <Button
+        variant={viewMode === "large-folder" ? "secondary" : "ghost"}
+        size="sm"
+        onClick={() => setViewMode("large-folder")}
+        data-testid="button-view-large-folder"
+        className="h-8 px-2"
+      >
+        <Folder className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+
+  const renderFolderListView = (tags: TagWithCounts[]) => (
+    <div className="space-y-1">
+      {tags.map((tag) => (
+        <div 
+          key={tag.id}
+          className="flex items-center justify-between gap-4 p-3 rounded-lg hover-elevate cursor-pointer bg-card border"
+          onClick={() => setSelectedTag(tag)}
+          data-testid={`folder-list-${tag.id}`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <Folder className="w-5 h-5 text-primary shrink-0" style={{ color: tag.color || undefined }} />
+            <span className="font-medium truncate">{tag.name}</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-secondary">{tag.totalCount} files</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => { e.stopPropagation(); handleDownloadExcelReport(tag); }}
+              data-testid={`button-download-${tag.id}`}
+            >
+              <Download className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderFolderDetailedView = (tags: TagWithCounts[]) => (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {tags.map((tag) => (
+        <Card 
+          key={tag.id}
+          className="hover-elevate cursor-pointer"
+          onClick={() => setSelectedTag(tag)}
+          data-testid={`folder-detailed-${tag.id}`}
+        >
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Folder className="w-6 h-6 text-primary" style={{ color: tag.color || undefined }} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-semibold truncate">{tag.name}</h3>
+                  <p className="text-sm text-secondary">{tag.category || 'Uncategorized'}</p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); handleDownloadExcelReport(tag); }}
+                data-testid={`button-download-${tag.id}`}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Report
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="flex items-center gap-2">
+                <File className="w-4 h-4 text-tertiary" />
+                <span><strong>{tag.totalCount}</strong> files</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-tertiary" />
+                <span><strong>{tag.custodianCount ?? '—'}</strong> custodians</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-tertiary" />
+                <span>{tag.earliestDate ? format(new Date(tag.earliestDate), "MMM d, yyyy") : '—'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-tertiary" />
+                <span>{tag.latestDate ? format(new Date(tag.latestDate), "MMM d, yyyy") : '—'}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+
+  const renderFolderSmallView = (tags: TagWithCounts[]) => (
+    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+      {tags.map((tag) => (
+        <div
+          key={tag.id}
+          className="flex flex-col items-center gap-2 p-3 rounded-lg hover-elevate cursor-pointer"
+          onClick={() => setSelectedTag(tag)}
+          data-testid={`folder-small-${tag.id}`}
+        >
+          <div className="relative">
+            <Folder className="w-12 h-12" style={{ color: tag.color || '#3b82f6' }} />
+            <Badge variant="secondary" className="absolute -bottom-1 -right-2 text-xs px-1.5">
+              {tag.totalCount}
+            </Badge>
+          </div>
+          <span className="text-xs font-medium text-center truncate w-full">{tag.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderFolderLargeView = (tags: TagWithCounts[]) => (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+      {tags.map((tag) => (
+        <div
+          key={tag.id}
+          className="flex flex-col items-center gap-3 p-4 rounded-xl border bg-card hover-elevate cursor-pointer"
+          onClick={() => setSelectedTag(tag)}
+          data-testid={`folder-large-${tag.id}`}
+        >
+          <div className="relative">
+            <Folder className="w-20 h-20" style={{ color: tag.color || '#3b82f6' }} />
+            <Badge className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-sm px-2">
+              {tag.totalCount}
+            </Badge>
+          </div>
+          <div className="text-center w-full">
+            <h4 className="font-medium truncate">{tag.name}</h4>
+            <p className="text-xs text-secondary mt-1">{tag.category || 'Uncategorized'}</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full mt-1"
+            onClick={(e) => { e.stopPropagation(); handleDownloadExcelReport(tag); }}
+            data-testid={`button-download-${tag.id}`}
+          >
+            <Download className="w-3 h-3 mr-1" />
+            Export
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderFoldersByView = (tags: TagWithCounts[]) => {
+    switch (viewMode) {
+      case "list":
+        return renderFolderListView(tags);
+      case "detailed":
+        return renderFolderDetailedView(tags);
+      case "small-folder":
+        return renderFolderSmallView(tags);
+      case "large-folder":
+        return renderFolderLargeView(tags);
+      default:
+        return renderFolderDetailedView(tags);
+    }
+  };
+
   // Tagged Material content - either tag list or document drill-down
   const renderTaggedMaterialContent = () => {
     if (selectedTag) {
@@ -321,28 +557,31 @@ export default function DocumentSetsPage() {
     // Show tag list with counts - require case selection first
     return (
       <div className="space-y-6">
-        {/* Case selector */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-secondary">Select case:</span>
-            <Select value={selectedCaseFilter} onValueChange={setSelectedCaseFilter}>
-              <SelectTrigger className="w-[250px]" data-testid="select-case-filter">
-                <SelectValue placeholder="Choose a case..." />
-              </SelectTrigger>
-              <SelectContent>
-                {cases.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {selectedCaseFilter && (
-            <div className="text-sm text-secondary">
-              {tagsWithCounts.length} tag{tagsWithCounts.length !== 1 ? 's' : ''} with tagged documents
+        {/* Case selector and view toggle */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-secondary">Select case:</span>
+              <Select value={selectedCaseFilter} onValueChange={setSelectedCaseFilter}>
+                <SelectTrigger className="w-[250px]" data-testid="select-case-filter">
+                  <SelectValue placeholder="Choose a case..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {cases.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          )}
+            {selectedCaseFilter && (
+              <div className="text-sm text-secondary">
+                {tagsWithCounts.length} folder{tagsWithCounts.length !== 1 ? 's' : ''} with tagged documents
+              </div>
+            )}
+          </div>
+          {selectedCaseFilter && tagsWithCounts.length > 0 && renderViewToggle()}
         </div>
 
         {/* Show prompt to select case if none selected */}
@@ -357,7 +596,7 @@ export default function DocumentSetsPage() {
             </CardContent>
           </Card>
         ) : tagsLoading ? (
-          <div className="p-8 text-center text-secondary">Loading tags...</div>
+          <div className="p-8 text-center text-secondary">Loading folders...</div>
         ) : tagsWithCounts.length === 0 ? (
           <Card>
             <CardContent className="p-12 text-center">
@@ -380,48 +619,10 @@ export default function DocumentSetsPage() {
           <div className="space-y-6">
             {Object.entries(tagsByCategory).map(([category, categoryTags]) => (
               <div key={category}>
-                <h3 className="text-sm font-medium text-secondary mb-3 uppercase tracking-wide">
+                <h3 className="text-sm font-medium text-secondary mb-4 uppercase tracking-wide">
                   {category}
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {categoryTags.map((tag) => (
-                    <Card 
-                      key={tag.id} 
-                      className="hover-elevate cursor-pointer"
-                      onClick={() => setSelectedTag(tag)}
-                      data-testid={`card-tag-${tag.id}`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div 
-                              className="w-3 h-3 rounded-full shrink-0" 
-                              style={{ backgroundColor: tag.color || '#6b7280' }} 
-                            />
-                            <span className="font-medium truncate">{tag.name}</span>
-                          </div>
-                          <Badge variant="secondary" className="shrink-0">
-                            {tag.totalCount}
-                          </Badge>
-                        </div>
-                        <div className="mt-2 text-xs text-tertiary flex items-center gap-2 flex-wrap">
-                          {tag.documentCount > 0 && (
-                            <span className="flex items-center gap-1">
-                              <FileCheck2 className="w-3 h-3" />
-                              {tag.documentCount} doc{tag.documentCount !== 1 ? 's' : ''}
-                            </span>
-                          )}
-                          {tag.textSelectionCount > 0 && (
-                            <span className="flex items-center gap-1">
-                              <Hash className="w-3 h-3" />
-                              {tag.textSelectionCount} with selections
-                            </span>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+                {renderFoldersByView(categoryTags)}
               </div>
             ))}
           </div>
