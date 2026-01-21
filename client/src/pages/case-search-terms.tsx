@@ -171,6 +171,14 @@ export default function CaseSearchTermsPage() {
                 <Shield className="h-4 w-4 mr-2" />
                 Privilege Log
               </TabsTrigger>
+              <TabsTrigger
+                value="custom"
+                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
+                data-testid="tab-custom-search"
+              >
+                <Search className="h-4 w-4 mr-2" />
+                Custom Search
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -192,6 +200,10 @@ export default function CaseSearchTermsPage() {
 
           <TabsContent value="privilege" className="flex-1 overflow-auto p-6 m-0">
             <PrivilegeLogTab caseId={caseId!} />
+          </TabsContent>
+
+          <TabsContent value="custom" className="flex-1 overflow-auto p-6 m-0">
+            <CustomSearchTab caseId={caseId!} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1526,6 +1538,234 @@ function PrivilegeLogTab({ caseId }: { caseId: string }) {
             </table>
           </ScrollArea>
         </Card>
+      )}
+    </div>
+  );
+}
+
+function CustomSearchTab({ caseId }: { caseId: string }) {
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [searchObjective, setSearchObjective] = useState("");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  // Fetch custom search sets
+  const { data: customSets, isLoading: setsLoading } = useQuery<{ data: SearchTermSet[] }>({
+    queryKey: ["/api/cases", caseId, "search-term-sets", "custom"],
+    queryFn: async () => {
+      const res = await fetch(`/api/cases/${caseId}/search-term-sets?sourceType=custom`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!caseId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data?.data) return false;
+      return data.data.some((s) => s.generationStatus === "processing") ? 2000 : false;
+    },
+  });
+
+  // Create custom search mutation
+  const createMutation = useMutation({
+    mutationFn: async ({ title, searchObjective }: { title: string; searchObjective: string }) => {
+      const response = await apiRequest("POST", `/api/cases/${caseId}/search-term-sets/create-custom`, {
+        title,
+        searchObjective,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "search-term-sets", "custom"] });
+      toast({ title: "Custom search created", description: "AI is generating search terms..." });
+      setCreateDialogOpen(false);
+      setTitle("");
+      setSearchObjective("");
+    },
+    onError: () => {
+      toast({ title: "Failed to create search", variant: "destructive" });
+    },
+  });
+
+  // Upload reference document mutation
+  const uploadMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await fetch(`/api/cases/${caseId}/search-term-sets/upload-reference`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "search-term-sets", "custom"] });
+      toast({ title: "Document uploaded", description: "AI is analyzing for related materials..." });
+      setUploadDialogOpen(false);
+    },
+    onError: () => {
+      toast({ title: "Upload failed", variant: "destructive" });
+    },
+  });
+
+  const handleCreateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !searchObjective.trim()) {
+      toast({ title: "Please fill in all fields", variant: "destructive" });
+      return;
+    }
+    createMutation.mutate({ title, searchObjective });
+  };
+
+  const handleUploadSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const file = formData.get("file") as File;
+    if (!file || file.size === 0) {
+      toast({ title: "Please select a file", variant: "destructive" });
+      return;
+    }
+    uploadMutation.mutate(formData);
+  };
+
+  const sets = customSets?.data || [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Custom Search</h2>
+          <p className="text-sm text-muted-foreground">
+            Create custom searches by describing what you're looking for, or upload a document to find related materials
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-create-custom-search">
+                <Search className="h-4 w-4 mr-2" />
+                Create Search
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Custom Search</DialogTitle>
+                <DialogDescription>
+                  Describe what you're looking for and AI will generate Boolean search terms
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreateSubmit} className="space-y-4">
+                <div>
+                  <Label htmlFor="title">Search Title</Label>
+                  <Input
+                    id="title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g., CEO Communications"
+                    data-testid="input-custom-title"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="objective">What are you looking for?</Label>
+                  <Textarea
+                    id="objective"
+                    value={searchObjective}
+                    onChange={(e) => setSearchObjective(e.target.value)}
+                    placeholder="Describe what you want to find. Be specific about people, topics, date ranges, or types of documents. AI will generate comprehensive Boolean search terms."
+                    rows={5}
+                    data-testid="input-custom-objective"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Example: "All communications between executives about the merger, including emails, memos, and meeting notes from 2024"
+                  </p>
+                </div>
+                <Button type="submit" disabled={createMutation.isPending} className="w-full" data-testid="button-submit-custom-search">
+                  {createMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Generate Search Terms"
+                  )}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="button-upload-reference">
+                <FileUp className="h-4 w-4 mr-2" />
+                Find Related
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Find Related Documents</DialogTitle>
+                <DialogDescription>
+                  Upload a document and AI will generate search terms to find all mentions and related materials
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleUploadSubmit} className="space-y-4">
+                <div>
+                  <Label htmlFor="reference-file">Reference Document</Label>
+                  <Input
+                    id="reference-file"
+                    name="file"
+                    type="file"
+                    accept=".pdf,.docx,.doc,.txt"
+                    data-testid="input-reference-file"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Upload a contract, agreement, memo, or any document to find related communications and materials
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="reference-name">Name (optional)</Label>
+                  <Input
+                    id="reference-name"
+                    name="name"
+                    placeholder="Search name"
+                    data-testid="input-reference-name"
+                  />
+                </div>
+                <Button type="submit" disabled={uploadMutation.isPending} className="w-full" data-testid="button-submit-reference">
+                  {uploadMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    "Upload & Analyze"
+                  )}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {setsLoading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      ) : sets.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="font-medium mb-2">No Custom Searches Yet</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Create a custom search by describing what you're looking for, or upload a document to find related materials
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {sets.map((set) => (
+            <SearchTermSetCard key={set.id} set={set} caseId={caseId} />
+          ))}
+        </div>
       )}
     </div>
   );

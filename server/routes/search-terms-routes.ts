@@ -305,6 +305,128 @@ export function registerSearchTermsRoutes(app: Express) {
     }
   );
 
+  // POST /api/cases/:caseId/search-term-sets/create-custom - Create custom search from description
+  app.post(
+    "/api/cases/:caseId/search-term-sets/create-custom",
+    isAuthenticated,
+    async (req: Request, res: Response) => {
+      try {
+        const { caseId } = req.params;
+        const { title, description, searchObjective } = req.body;
+        const userId = (req as any).user?.claims?.sub;
+
+        if (!title || !searchObjective) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "Title and search objective are required" 
+          });
+        }
+
+        // Create the search term set
+        const [set] = await db
+          .insert(searchTermSets)
+          .values({
+            id: nanoid(),
+            caseId,
+            sourceType: "custom" as any,
+            sourceDocumentName: null,
+            name: title,
+            description: description || searchObjective,
+            generationStatus: "processing",
+            generationProgress: 0,
+            createdBy: userId,
+          })
+          .returning();
+
+        // Process asynchronously
+        processCustomSearch(set.id, title, searchObjective).catch((err) => {
+          console.error("[SearchTerms] Async custom search processing failed:", err);
+        });
+
+        res.json({ success: true, data: set });
+      } catch (error) {
+        console.error("[SearchTerms] Error creating custom search:", error);
+        res.status(500).json({ success: false, error: "Failed to create custom search" });
+      }
+    }
+  );
+
+  // POST /api/cases/:caseId/search-term-sets/upload-reference - Upload document to find related materials
+  app.post(
+    "/api/cases/:caseId/search-term-sets/upload-reference",
+    isAuthenticated,
+    upload.single("file"),
+    async (req: Request, res: Response) => {
+      try {
+        const { caseId } = req.params;
+        const { name, description } = req.body;
+        const file = req.file;
+        const userId = (req as any).user?.claims?.sub;
+
+        if (!file) {
+          return res.status(400).json({ success: false, error: "No file uploaded" });
+        }
+
+        // Create the search term set
+        const [set] = await db
+          .insert(searchTermSets)
+          .values({
+            id: nanoid(),
+            caseId,
+            sourceType: "custom" as any,
+            sourceDocumentName: file.originalname,
+            name: name || `Find Related - ${file.originalname}`,
+            description: description || "Find documents related to uploaded reference",
+            generationStatus: "processing",
+            generationProgress: 0,
+            createdBy: userId,
+          })
+          .returning();
+
+        // Extract text from the document
+        let documentText = "";
+        const mimeType = file.mimetype;
+
+        try {
+          if (mimeType === "application/pdf") {
+            documentText = await extractPdfTextWithFallback(file.buffer);
+          } else if (
+            mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+            mimeType === "application/msword"
+          ) {
+            const result = await mammoth.extractRawText({ buffer: file.buffer });
+            documentText = result.value;
+          } else if (mimeType === "text/plain") {
+            documentText = file.buffer.toString("utf-8");
+          }
+        } catch (extractError) {
+          console.error("[SearchTerms] Error extracting text:", extractError);
+        }
+
+        if (!documentText || documentText.length < 50) {
+          await db
+            .update(searchTermSets)
+            .set({
+              generationStatus: "failed",
+              generationError: "Could not extract text from document",
+            })
+            .where(eq(searchTermSets.id, set.id));
+          return res.status(400).json({ success: false, error: "Could not extract text from document" });
+        }
+
+        // Process asynchronously
+        processReferenceDocument(set.id, documentText, file.originalname).catch((err) => {
+          console.error("[SearchTerms] Async reference document processing failed:", err);
+        });
+
+        res.json({ success: true, data: set });
+      } catch (error) {
+        console.error("[SearchTerms] Error uploading reference document:", error);
+        res.status(500).json({ success: false, error: "Failed to upload reference document" });
+      }
+    }
+  );
+
   // GET /api/cases/:caseId/search-term-sets/:setId/items - Get items for a search term set
   app.get("/api/cases/:caseId/search-term-sets/:setId/items", isAuthenticated, async (req: Request, res: Response) => {
     try {
@@ -792,6 +914,282 @@ async function processComplaintDocument(setId: string, documentText: string) {
     console.log(`[SearchTerms] Complaint processing complete for set ${setId}`);
   } catch (error: any) {
     console.error(`[SearchTerms] Complaint processing failed for set ${setId}:`, error);
+    await db
+      .update(searchTermSets)
+      .set({
+        generationStatus: "failed",
+        generationProgress: 0,
+        generationError: error.message,
+        updatedAt: new Date(),
+      })
+      .where(eq(searchTermSets.id, setId));
+  }
+}
+
+// Process custom search from user description
+async function processCustomSearch(setId: string, title: string, searchObjective: string) {
+  try {
+    console.log(`[SearchTerms] Processing custom search for set ${setId}`);
+    await updateProgress(setId, 10);
+
+    // Use Google Gemini to generate search terms from the user's description
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error("GOOGLE_API_KEY not configured");
+    }
+
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+
+    await updateProgress(setId, 30);
+
+    const prompt = `You are a legal discovery expert. Generate comprehensive Boolean search terms for the following search objective.
+
+SEARCH TITLE: ${title}
+
+SEARCH OBJECTIVE:
+${searchObjective}
+
+Generate search terms that will help find relevant documents, communications, and materials related to this objective.
+
+Return your response as a JSON object with this structure:
+{
+  "searchItems": [
+    {
+      "itemNumber": 1,
+      "focus": "Brief description of what this search focuses on",
+      "searchTerms": [
+        {
+          "term": "Boolean search string using AND, OR, NOT operators and quotes for phrases",
+          "type": "boolean",
+          "rationale": "Why this term helps find relevant documents"
+        }
+      ],
+      "combinedBoolean": "Combined query joining all terms with OR"
+    }
+  ]
+}
+
+Create 2-4 search items covering different aspects of the objective. Each should have 3-5 search terms.
+Return ONLY valid JSON, no explanation or markdown.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { maxOutputTokens: 4096 },
+    });
+
+    await updateProgress(setId, 60);
+
+    const responseText = (response as any).text?.trim() || "";
+    let jsonStr = responseText;
+    if (jsonStr.startsWith("```json")) jsonStr = jsonStr.slice(7);
+    else if (jsonStr.startsWith("```")) jsonStr = jsonStr.slice(3);
+    if (jsonStr.endsWith("```")) jsonStr = jsonStr.slice(0, -3);
+    jsonStr = jsonStr.trim();
+
+    const parsed = JSON.parse(jsonStr);
+    const searchItems = parsed.searchItems || [];
+
+    await updateProgress(setId, 75);
+
+    // Create search term items
+    for (const item of searchItems) {
+      const formattedTerms = (item.searchTerms || []).map((t: any, idx: number) => ({
+        id: nanoid(8),
+        term: t.term,
+        type: t.type || "boolean",
+        enabled: true,
+        aiGenerated: true,
+        rationale: t.rationale,
+      }));
+
+      await db.insert(searchTermItems).values({
+        id: nanoid(),
+        searchTermSetId: setId,
+        itemNumber: item.itemNumber,
+        itemType: "custom_search",
+        fullText: searchObjective,
+        summary: item.focus,
+        searchTerms: formattedTerms,
+        combinedBooleanString: item.combinedBoolean,
+      });
+    }
+
+    await updateProgress(setId, 95);
+
+    await db
+      .update(searchTermSets)
+      .set({
+        generationStatus: "completed",
+        generationProgress: 100,
+        totalRequests: searchItems.length,
+        updatedAt: new Date(),
+      })
+      .where(eq(searchTermSets.id, setId));
+
+    console.log(`[SearchTerms] Custom search processing complete for set ${setId}`);
+  } catch (error: any) {
+    console.error(`[SearchTerms] Custom search processing failed for set ${setId}:`, error);
+    await db
+      .update(searchTermSets)
+      .set({
+        generationStatus: "failed",
+        generationProgress: 0,
+        generationError: error.message,
+        updatedAt: new Date(),
+      })
+      .where(eq(searchTermSets.id, setId));
+  }
+}
+
+// Process reference document to find related materials
+async function processReferenceDocument(setId: string, documentText: string, fileName: string) {
+  try {
+    console.log(`[SearchTerms] Processing reference document for set ${setId}`);
+    await updateProgress(setId, 10);
+
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error("GOOGLE_API_KEY not configured");
+    }
+
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+
+    await updateProgress(setId, 20);
+
+    // First, analyze the document to extract key entities
+    const analysisPrompt = `Analyze this document and extract key entities that would help find related documents.
+
+DOCUMENT: ${fileName}
+CONTENT (first 8000 chars):
+${documentText.slice(0, 8000)}
+
+Extract and return a JSON object:
+{
+  "documentType": "contract/agreement/memo/letter/email/report/other",
+  "documentTitle": "Title or subject of the document",
+  "parties": ["Names of people or companies mentioned"],
+  "keyDates": ["Important dates mentioned"],
+  "keyTopics": ["Main topics or subjects discussed"],
+  "references": ["Other documents or agreements referenced"],
+  "keyTerms": ["Important defined terms or concepts"]
+}
+
+Return ONLY valid JSON.`;
+
+    const analysisResponse = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: analysisPrompt }] }],
+      config: { maxOutputTokens: 2048 },
+    });
+
+    await updateProgress(setId, 40);
+
+    let analysisText = (analysisResponse as any).text?.trim() || "{}";
+    if (analysisText.startsWith("```json")) analysisText = analysisText.slice(7);
+    else if (analysisText.startsWith("```")) analysisText = analysisText.slice(3);
+    if (analysisText.endsWith("```")) analysisText = analysisText.slice(0, -3);
+    
+    const analysis = JSON.parse(analysisText.trim());
+
+    await updateProgress(setId, 50);
+
+    // Now generate search terms based on the analysis
+    const searchPrompt = `Generate Boolean search terms to find documents related to this document.
+
+DOCUMENT ANALYSIS:
+- Type: ${analysis.documentType || "unknown"}
+- Title: ${analysis.documentTitle || fileName}
+- Parties: ${(analysis.parties || []).join(", ") || "N/A"}
+- Key Topics: ${(analysis.keyTopics || []).join(", ") || "N/A"}
+- Referenced Documents: ${(analysis.references || []).join(", ") || "N/A"}
+- Key Terms: ${(analysis.keyTerms || []).join(", ") || "N/A"}
+
+Generate search terms in these categories:
+1. Direct References - Find mentions of this specific document
+2. Related Communications - Find emails/messages discussing this document or its parties
+3. Related Documents - Find similar or connected documents
+4. Follow-up Materials - Find documents that may have been created as a result
+
+Return JSON:
+{
+  "searchItems": [
+    {
+      "itemNumber": 1,
+      "category": "category name",
+      "focus": "What this search looks for",
+      "searchTerms": [
+        {
+          "term": "Boolean search string",
+          "type": "boolean",
+          "rationale": "Why this helps"
+        }
+      ],
+      "combinedBoolean": "Combined query"
+    }
+  ]
+}
+
+Return ONLY valid JSON.`;
+
+    const searchResponse = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: searchPrompt }] }],
+      config: { maxOutputTokens: 4096 },
+    });
+
+    await updateProgress(setId, 70);
+
+    let searchText = (searchResponse as any).text?.trim() || "";
+    if (searchText.startsWith("```json")) searchText = searchText.slice(7);
+    else if (searchText.startsWith("```")) searchText = searchText.slice(3);
+    if (searchText.endsWith("```")) searchText = searchText.slice(0, -3);
+
+    const searchData = JSON.parse(searchText.trim());
+    const searchItems = searchData.searchItems || [];
+
+    await updateProgress(setId, 85);
+
+    // Create search term items
+    for (const item of searchItems) {
+      const formattedTerms = (item.searchTerms || []).map((t: any) => ({
+        id: nanoid(8),
+        term: t.term,
+        type: t.type || "boolean",
+        enabled: true,
+        aiGenerated: true,
+        rationale: t.rationale,
+      }));
+
+      await db.insert(searchTermItems).values({
+        id: nanoid(),
+        searchTermSetId: setId,
+        itemNumber: item.itemNumber,
+        itemType: "reference_search",
+        fullText: `Find documents related to: ${analysis.documentTitle || fileName}`,
+        summary: `${item.category}: ${item.focus}`,
+        searchTerms: formattedTerms,
+        combinedBooleanString: item.combinedBoolean,
+      });
+    }
+
+    await updateProgress(setId, 95);
+
+    await db
+      .update(searchTermSets)
+      .set({
+        generationStatus: "completed",
+        generationProgress: 100,
+        totalRequests: searchItems.length,
+        updatedAt: new Date(),
+      })
+      .where(eq(searchTermSets.id, setId));
+
+    console.log(`[SearchTerms] Reference document processing complete for set ${setId}`);
+  } catch (error: any) {
+    console.error(`[SearchTerms] Reference document processing failed for set ${setId}:`, error);
     await db
       .update(searchTermSets)
       .set({

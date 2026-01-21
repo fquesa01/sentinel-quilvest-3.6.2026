@@ -11333,14 +11333,17 @@ export const searchTermSourceTypeEnum = pgEnum("search_term_source_type", [
   "complaint",
   "subpoena",
   "interrogatory",
-  "manual"
+  "manual",
+  "custom"
 ]);
 
 export const searchTermItemTypeEnum = pgEnum("search_term_item_type", [
   "rfp_request",
   "complaint_claim",
   "privilege_category",
-  "custom"
+  "custom",
+  "custom_search",
+  "reference_search"
 ]);
 
 export const searchTermGenerationStatusEnum = pgEnum("search_term_generation_status", [
