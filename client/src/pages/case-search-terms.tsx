@@ -154,8 +154,8 @@ export default function CaseSearchTermsPage() {
           onValueChange={setActiveTab}
           className="h-full flex flex-col"
         >
-          <div className="border-b px-6">
-            <TabsList className="bg-transparent h-12">
+          <div className="border-b px-6 overflow-x-auto">
+            <TabsList className="bg-transparent h-12 w-max min-w-full">
               <TabsTrigger
                 value="discovery"
                 className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
