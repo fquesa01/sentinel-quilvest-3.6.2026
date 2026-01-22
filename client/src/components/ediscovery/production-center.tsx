@@ -13,8 +13,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Package, FileOutput, Download, Eye, CheckCircle, XCircle, AlertTriangle, Plus, Tag, ShieldAlert, Calendar } from "lucide-react";
+import { Loader2, Package, FileOutput, Download, Eye, CheckCircle, XCircle, AlertTriangle, Plus, Tag, ShieldAlert, Calendar, BookOpen } from "lucide-react";
 import type { Tag as TagType, ProductionBatch, ProductionBatchDocument, ProductionBatchEvent } from "@shared/schema";
+import { ProductionRecordsLog } from "./production-records-log";
 
 interface ProductionCenterProps {
   caseId: string;
@@ -408,6 +409,10 @@ export function ProductionCenter({ caseId }: ProductionCenterProps) {
         <TabsList>
           <TabsTrigger value="batches" data-testid="tab-batches">Production Batches</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">Production History</TabsTrigger>
+          <TabsTrigger value="records" data-testid="tab-records" className="gap-2">
+            <BookOpen className="h-4 w-4" />
+            Records Log
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="batches" className="mt-6">
@@ -585,6 +590,10 @@ export function ProductionCenter({ caseId }: ProductionCenterProps) {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="records" className="mt-6">
+          <ProductionRecordsLog caseId={caseId} />
         </TabsContent>
       </Tabs>
 
