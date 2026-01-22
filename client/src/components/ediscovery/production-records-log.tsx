@@ -79,15 +79,7 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
   });
 
   const { data: recordFiles, refetch: refetchFiles } = useQuery<ProductionRecordFile[]>({
-    queryKey: ["/api/production-records", filesDialogRecord?.id, "files"],
-    queryFn: async () => {
-      if (!filesDialogRecord?.id) return [];
-      const res = await fetch(`/api/production-records/${filesDialogRecord.id}/files`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch files');
-      return res.json();
-    },
+    queryKey: [`/api/production-records/${filesDialogRecord?.id}/files`],
     enabled: !!filesDialogRecord?.id,
   });
 
