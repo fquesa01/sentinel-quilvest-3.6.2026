@@ -131,9 +131,11 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
   
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewViewMode, setPreviewViewMode] = useState<'pdf' | 'text'>('pdf');
   
   const handlePreview = useCallback((pleading: CourtPleading) => {
     setPreviewId(pleading.id);
+    setPreviewViewMode('pdf');
     setIsPreviewOpen(true);
   }, []);
   
@@ -771,14 +773,38 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
         setIsPreviewOpen(open);
         if (!open) setPreviewId(null);
       }}>
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col" data-testid="dialog-document-preview">
+        <DialogContent className="max-w-[95vw] w-full h-[95vh] flex flex-col" data-testid="dialog-document-preview">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              {previewMetadata?.title || "Document Preview"}
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                {previewMetadata?.title || "Document Preview"}
+              </DialogTitle>
+              {previewMetadata?.previewType === 'pdf' && previewMetadata.extractedText && (
+                <div className="flex items-center gap-1 border rounded-lg p-1">
+                  <Button
+                    size="sm"
+                    variant={previewViewMode === 'pdf' ? 'default' : 'ghost'}
+                    onClick={() => setPreviewViewMode('pdf')}
+                    data-testid="button-view-pdf"
+                  >
+                    <Eye className="h-4 w-4 mr-1" />
+                    PDF View
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={previewViewMode === 'text' ? 'default' : 'ghost'}
+                    onClick={() => setPreviewViewMode('text')}
+                    data-testid="button-view-text"
+                  >
+                    <FileText className="h-4 w-4 mr-1" />
+                    Text View
+                  </Button>
+                </div>
+              )}
+            </div>
             {previewMetadata && (
-              <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+              <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1 flex-wrap">
                 <span>{previewMetadata.fileName}</span>
                 {previewMetadata.fileSize && (
                   <span>{(previewMetadata.fileSize / 1024).toFixed(1)} KB</span>
@@ -805,7 +831,7 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
                 <p className="ml-2 text-muted-foreground">Loading preview...</p>
               </div>
             ) : previewMetadata?.previewType === 'pdf' && previewMetadata.previewUrl ? (
-              previewMetadata.extractedText ? (
+              previewViewMode === 'text' && previewMetadata.extractedText ? (
                 <ScrollArea className="h-full">
                   <div className="p-6">
                     <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground border-b pb-2">
@@ -818,10 +844,9 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
                   </div>
                 </ScrollArea>
               ) : (
-                <object
-                  data={previewMetadata.previewUrl}
-                  type="application/pdf"
-                  className="w-full h-full"
+                <iframe
+                  src={previewMetadata.previewUrl}
+                  className="w-full h-full border-0"
                   title={previewMetadata.fileName}
                 >
                   <div className="flex flex-col items-center justify-center h-full">
@@ -833,7 +858,7 @@ export function CourtDocketTab({ caseId }: CourtDocketTabProps) {
                       Download PDF
                     </Button>
                   </div>
-                </object>
+                </iframe>
               )
             ) : previewMetadata?.previewType === 'image' && previewMetadata.previewUrl ? (
               <div className="flex items-center justify-center h-full p-4">
