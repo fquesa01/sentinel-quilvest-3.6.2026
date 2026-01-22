@@ -2826,6 +2826,22 @@ export const productionRecords = pgTable("production_records", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// eDiscovery: Production Record Files - Documents uploaded for received productions
+export const productionRecordFiles = pgTable("production_record_files", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  productionRecordId: varchar("production_record_id").references(() => productionRecords.id, { onDelete: "cascade" }).notNull(),
+  fileName: text("file_name").notNull(),
+  originalFileName: text("original_file_name").notNull(),
+  fileType: varchar("file_type").notNull(), // pdf, pst, jpg, png, etc.
+  mimeType: text("mime_type").notNull(),
+  fileSize: integer("file_size").notNull(), // in bytes
+  storagePath: text("storage_path").notNull(), // object storage path
+  uploadedBy: varchar("uploaded_by").references(() => users.id).notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+});
+
 // eDiscovery: Redaction Templates for Pattern-Based Redaction
 export const redactionTemplates = pgTable("redaction_templates", {
   id: varchar("id")
@@ -4350,6 +4366,13 @@ export const insertProductionRecordSchema = createInsertSchema(productionRecords
   updatedAt: true,
 });
 export type InsertProductionRecord = z.infer<typeof insertProductionRecordSchema>;
+
+export type ProductionRecordFile = typeof productionRecordFiles.$inferSelect;
+export const insertProductionRecordFileSchema = createInsertSchema(productionRecordFiles).omit({
+  id: true,
+  uploadedAt: true,
+});
+export type InsertProductionRecordFile = z.infer<typeof insertProductionRecordFileSchema>;
 
 export type RedactionTemplate = typeof redactionTemplates.$inferSelect;
 export const insertRedactionTemplateSchema = createInsertSchema(redactionTemplates).omit({
