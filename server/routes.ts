@@ -10,7 +10,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit for ZIP files
 });
-import { documentTags, caseAIAnalysis, caseParties, caseTimelineEvents } from "@shared/schema";
+import { documentTags, caseAIAnalysis, caseParties, caseTimelineEvents, productionRecords } from "@shared/schema";
 import { eq, and, desc, asc, or, sql, inArray, ne, isNull } from "drizzle-orm";
 import { setupAuth, isAuthenticated, requireRole } from "./replitAuth";
 import { analyzeViolation, analyzeCompliance, openai } from "./ai";
@@ -24318,6 +24318,159 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
       res.status(500).json({ message: error.message });
     }
   });
+
+
+  // ============================================================
+  // Production Records Endpoints (High-level production tracking)
+  // ============================================================
+
+  // Get all production records for a case
+  app.get("/api/cases/:caseId/production-records", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+    try {
+      const { caseId } = req.params;
+      const { direction } = req.query;
+      
+      let records = await db
+        .select()
+        .from(productionRecords)
+        .where(eq(productionRecords.caseId, caseId))
+        .orderBy(desc(productionRecords.productionDate));
+      
+      if (direction === "outgoing" || direction === "incoming") {
+        records = records.filter(r => r.direction === direction);
+      }
+      
+      res.json(records);
+    } catch (error: any) {
+      console.error("Error fetching production records:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get single production record
+  app.get("/api/cases/:caseId/production-records/:recordId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+    try {
+      const { recordId } = req.params;
+      
+      const [record] = await db
+        .select()
+        .from(productionRecords)
+        .where(eq(productionRecords.id, recordId));
+      
+      if (!record) {
+        return res.status(404).json({ message: "Production record not found" });
+      }
+      
+      res.json(record);
+    } catch (error: any) {
+      console.error("Error fetching production record:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create production record
+  app.post("/api/cases/:caseId/production-records", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+    try {
+      const { caseId } = req.params;
+      const userId = req.user?.id;
+      
+      const { 
+        direction, 
+        productionDate, 
+        productionNumber,
+        partyName, 
+        summary, 
+        reasonType,
+        reasonDetails,
+        documentCount, 
+        pageCount,
+        batesRange,
+        privilegeLogId,
+        privilegeLogEntryCount,
+        linkedProductionSetId,
+        notes,
+        attachmentUrl
+      } = req.body;
+      
+      const [record] = await db
+        .insert(productionRecords)
+        .values({
+          caseId,
+          direction,
+          productionDate: new Date(productionDate),
+          productionNumber,
+          partyName,
+          summary,
+          reasonType,
+          reasonDetails,
+          documentCount: documentCount || 0,
+          pageCount: pageCount || 0,
+          batesRange,
+          privilegeLogId,
+          privilegeLogEntryCount: privilegeLogEntryCount || 0,
+          linkedProductionSetId,
+          notes,
+          attachmentUrl,
+          createdBy: userId,
+        })
+        .returning();
+      
+      res.status(201).json(record);
+    } catch (error: any) {
+      console.error("Error creating production record:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update production record
+  app.patch("/api/cases/:caseId/production-records/:recordId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+    try {
+      const { recordId } = req.params;
+      const updates = req.body;
+      
+      if (updates.productionDate) {
+        updates.productionDate = new Date(updates.productionDate);
+      }
+      updates.updatedAt = new Date();
+      
+      const [record] = await db
+        .update(productionRecords)
+        .set(updates)
+        .where(eq(productionRecords.id, recordId))
+        .returning();
+      
+      if (!record) {
+        return res.status(404).json({ message: "Production record not found" });
+      }
+      
+      res.json(record);
+    } catch (error: any) {
+      console.error("Error updating production record:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete production record
+  app.delete("/api/cases/:caseId/production-records/:recordId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+    try {
+      const { recordId } = req.params;
+      
+      const [deleted] = await db
+        .delete(productionRecords)
+        .where(eq(productionRecords.id, recordId))
+        .returning();
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "Production record not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting production record:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
 
 
   // ============================================================

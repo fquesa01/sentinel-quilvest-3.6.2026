@@ -2800,6 +2800,32 @@ export const productionSets = pgTable("production_sets", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Production Records: High-level tracking of productions sent/received
+export const productionRecords = pgTable("production_records", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").references(() => cases.id).notNull(),
+  direction: varchar("direction").notNull(), // "outgoing" (our production to them) or "incoming" (their production to us)
+  productionDate: timestamp("production_date").notNull(),
+  productionNumber: varchar("production_number"), // e.g., "DEF-PROD-001"
+  partyName: text("party_name").notNull(), // Name of receiving/producing party
+  summary: text("summary").notNull(), // Description of what was produced
+  reasonType: varchar("reason_type").notNull(), // "discovery_request", "rule_26", "subpoena", "voluntary", "other"
+  reasonDetails: text("reason_details"), // Additional details about the reason (e.g., RFP number)
+  documentCount: integer("document_count").default(0).notNull(),
+  pageCount: integer("page_count").default(0),
+  batesRange: varchar("bates_range"), // e.g., "SENT000001 - SENT000500"
+  privilegeLogId: varchar("privilege_log_id").references(() => privilegeLogs.id),
+  privilegeLogEntryCount: integer("privilege_log_entry_count").default(0),
+  linkedProductionSetId: varchar("linked_production_set_id").references(() => productionSets.id),
+  notes: text("notes"),
+  attachmentUrl: text("attachment_url"), // URL to production cover letter or manifest
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // eDiscovery: Redaction Templates for Pattern-Based Redaction
 export const redactionTemplates = pgTable("redaction_templates", {
   id: varchar("id")
@@ -4316,6 +4342,14 @@ export const insertProductionSetSchema = createInsertSchema(productionSets).omit
   updatedAt: true,
 });
 export type InsertProductionSet = z.infer<typeof insertProductionSetSchema>;
+
+export type ProductionRecord = typeof productionRecords.$inferSelect;
+export const insertProductionRecordSchema = createInsertSchema(productionRecords).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProductionRecord = z.infer<typeof insertProductionRecordSchema>;
 
 export type RedactionTemplate = typeof redactionTemplates.$inferSelect;
 export const insertRedactionTemplateSchema = createInsertSchema(redactionTemplates).omit({
