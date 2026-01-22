@@ -10,7 +10,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit for ZIP files
 });
-import { documentTags, caseAIAnalysis, caseParties, caseTimelineEvents, productionRecords } from "@shared/schema";
+import { documentTags, caseAIAnalysis, caseParties, caseTimelineEvents, productionRecords, productionRecordFiles } from "@shared/schema";
 import { eq, and, desc, asc, or, sql, inArray, ne, isNull } from "drizzle-orm";
 import { setupAuth, isAuthenticated, requireRole } from "./replitAuth";
 import { analyzeViolation, analyzeCompliance, openai } from "./ai";
@@ -18,7 +18,7 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import { insertCommunicationSchema, insertCaseSchema, updateCaseSchema, insertRegulationSchema, insertInterviewSchema, insertInterviewTemplateSchema, insertInterviewInviteSchema, insertRecordedInterviewSchema, insertInterviewNoteSchema, updateInterviewTemplateSchema, updateInterviewInviteSchema, updateRecordedInterviewSchema, updateInterviewNoteSchema, insertRegulatoryChangeSchema, insertGrcRiskSchema, insertGrcControlSchema, insertGrcIncidentSchema, insertDocumentSetSchema, insertDocumentSetMemberSchema, insertDocumentForwardSchema, insertCaseMessageSchema, insertCasePartySchema, insertCaseTimelineEventSchema, updateCaseTimelineEventSchema, insertCustomTimelineColumnSchema, insertCustomTimelineColumnValueSchema } from "@shared/schema";
 import { generateBusinessSummaryPDF, generateDocumentExportPDF } from "./pdf-generator";
-import { ObjectStorageService } from "./objectStorage";
+import { ObjectStorageService, objectStorageClient } from "./objectStorage";
 import type { BusinessSummary, EntityInvolvement, EntityInvolvementEntry } from "@shared/business-summary-types";
 import { generateRealtimeToken, transcribeVideoFile } from "./elevenlabs";
 import { emailService } from "./services/email-service";
@@ -24474,6 +24474,189 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
 
 
   // ============================================================
+
+  // ============================================================
+  // Production Record Files Endpoints (for received productions)
+  // ============================================================
+
+  // Get files for a production record
+  app.get("/api/production-records/:recordId/files", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+    try {
+      const { recordId } = req.params;
+      
+      const files = await db
+        .select()
+        .from(productionRecordFiles)
+        .where(eq(productionRecordFiles.productionRecordId, recordId))
+        .orderBy(desc(productionRecordFiles.uploadedAt));
+      
+      res.json(files);
+    } catch (error: any) {
+      console.error("Error fetching production record files:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Upload files to a production record
+  app.post("/api/production-records/:recordId/files", isAuthenticated, requireRole("admin", "attorney"), upload.array("files", 50), async (req: any, res) => {
+    try {
+      const { recordId } = req.params;
+      const userId = req.user?.id;
+      const files = req.files as Express.Multer.File[];
+      
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No files provided" });
+      }
+      
+      // Verify the production record exists and is incoming
+      const [record] = await db
+        .select()
+        .from(productionRecords)
+        .where(eq(productionRecords.id, recordId));
+      
+      if (!record) {
+        return res.status(404).json({ message: "Production record not found" });
+      }
+      
+      if (record.direction !== "incoming") {
+        return res.status(400).json({ message: "Files can only be uploaded to incoming (received) productions" });
+      }
+      
+      const uploadedFiles = [];
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      
+      for (const file of files) {
+        const fileId = nanoid();
+        const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || '';
+        const fileName = `${fileId}.${fileExtension}`;
+        const storagePath = `${privateDir}/production-files/${recordId}/${fileName}`;
+        
+        // Parse bucket and object path
+        const pathParts = storagePath.split('/').filter(Boolean);
+        const bucketName = pathParts[0];
+        const objectName = pathParts.slice(1).join('/');
+        
+        // Upload to object storage
+        const bucket = objectStorageClient.bucket(bucketName);
+        const fileObj = bucket.file(objectName);
+        
+        await fileObj.save(file.buffer, {
+          contentType: file.mimetype,
+          metadata: {
+            originalName: file.originalname,
+            productionRecordId: recordId,
+          },
+        });
+        
+        // Save file record to database
+        const [savedFile] = await db
+          .insert(productionRecordFiles)
+          .values({
+            productionRecordId: recordId,
+            fileName: fileName,
+            originalFileName: file.originalname,
+            fileType: fileExtension,
+            mimeType: file.mimetype,
+            fileSize: file.size,
+            storagePath: `/objects/production-files/${recordId}/${fileName}`,
+            uploadedBy: userId,
+          })
+          .returning();
+        
+        uploadedFiles.push(savedFile);
+      }
+      
+      // Update document count on the production record
+      const fileCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(productionRecordFiles)
+        .where(eq(productionRecordFiles.productionRecordId, recordId));
+      
+      await db
+        .update(productionRecords)
+        .set({ documentCount: Number(fileCount[0]?.count || 0) })
+        .where(eq(productionRecords.id, recordId));
+      
+      res.json({ files: uploadedFiles, count: uploadedFiles.length });
+    } catch (error: any) {
+      console.error("Error uploading production record files:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Download a production record file
+  app.get("/api/production-records/files/:fileId/download", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+    try {
+      const { fileId } = req.params;
+      
+      const [file] = await db
+        .select()
+        .from(productionRecordFiles)
+        .where(eq(productionRecordFiles.id, fileId));
+      
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      const objectFile = await objectStorageService.getObjectEntityFile(file.storagePath);
+      const [metadata] = await objectFile.getMetadata();
+      
+      res.setHeader("Content-Type", file.mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${file.originalFileName}"`);
+      res.setHeader("Content-Length", metadata.size as string);
+      
+      objectFile.createReadStream().pipe(res);
+    } catch (error: any) {
+      console.error("Error downloading production record file:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete a production record file
+  app.delete("/api/production-records/files/:fileId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+    try {
+      const { fileId } = req.params;
+      
+      const [file] = await db
+        .select()
+        .from(productionRecordFiles)
+        .where(eq(productionRecordFiles.id, fileId));
+      
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      // Delete from object storage
+      try {
+        const objectFile = await objectStorageService.getObjectEntityFile(file.storagePath);
+        await objectFile.delete();
+      } catch (storageError) {
+        console.warn("Could not delete file from storage:", storageError);
+      }
+      
+      // Delete from database
+      await db
+        .delete(productionRecordFiles)
+        .where(eq(productionRecordFiles.id, fileId));
+      
+      // Update document count
+      const fileCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(productionRecordFiles)
+        .where(eq(productionRecordFiles.productionRecordId, file.productionRecordId));
+      
+      await db
+        .update(productionRecords)
+        .set({ documentCount: Number(fileCount[0]?.count || 0) })
+        .where(eq(productionRecords.id, file.productionRecordId));
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting production record file:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Redaction Endpoints
   // ============================================================
 

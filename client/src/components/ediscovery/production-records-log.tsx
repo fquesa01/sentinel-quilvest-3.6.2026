@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,12 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, FileText, ArrowUpRight, ArrowDownLeft, Calendar, Edit2, Trash2, BookOpen } from "lucide-react";
-import type { ProductionRecord } from "@shared/schema";
+import { Loader2, Plus, FileText, ArrowUpRight, ArrowDownLeft, Calendar, Edit2, Trash2, BookOpen, Upload, Download, File, X, FolderOpen, Image, FileArchive } from "lucide-react";
+import type { ProductionRecord, ProductionRecordFile } from "@shared/schema";
 
 interface ProductionRecordsLogProps {
   caseId: string;
@@ -27,11 +27,37 @@ const reasonTypeLabels: Record<string, string> = {
   other: "Other",
 };
 
+const getFileIcon = (fileType: string) => {
+  const type = fileType.toLowerCase();
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'].includes(type)) {
+    return <Image className="h-4 w-4 text-blue-500" />;
+  }
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'pst', 'ost'].includes(type)) {
+    return <FileArchive className="h-4 w-4 text-amber-500" />;
+  }
+  if (['pdf'].includes(type)) {
+    return <FileText className="h-4 w-4 text-red-500" />;
+  }
+  return <File className="h-4 w-4 text-muted-foreground" />;
+};
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+};
+
 export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<"outgoing" | "incoming">("outgoing");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ProductionRecord | null>(null);
+  const [filesDialogRecord, setFilesDialogRecord] = useState<ProductionRecord | null>(null);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [formData, setFormData] = useState({
     direction: "outgoing" as "outgoing" | "incoming",
     productionDate: new Date().toISOString().split("T")[0],
@@ -50,6 +76,19 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
 
   const { data: records, isLoading: recordsLoading } = useQuery<ProductionRecord[]>({
     queryKey: ["/api/cases", caseId, "production-records"],
+  });
+
+  const { data: recordFiles, refetch: refetchFiles } = useQuery<ProductionRecordFile[]>({
+    queryKey: ["/api/production-records", filesDialogRecord?.id, "files"],
+    queryFn: async () => {
+      if (!filesDialogRecord?.id) return [];
+      const res = await fetch(`/api/production-records/${filesDialogRecord.id}/files`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch files');
+      return res.json();
+    },
+    enabled: !!filesDialogRecord?.id,
   });
 
   const createMutation = useMutation({
@@ -98,6 +137,49 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
     },
   });
 
+  const deleteFileMutation = useMutation({
+    mutationFn: async (fileId: string) => {
+      const res = await apiRequest("DELETE", `/api/production-records/files/${fileId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchFiles();
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "production-records"] });
+      toast({ title: "File deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error deleting file", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const uploadFilesMutation = useMutation({
+    mutationFn: async ({ recordId, files }: { recordId: string; files: File[] }) => {
+      const formData = new FormData();
+      files.forEach(file => formData.append("files", file));
+      
+      const res = await fetch(`/api/production-records/${recordId}/files`, {
+        method: "POST",
+        body: formData,
+        credentials: 'include',
+      });
+      
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      refetchFiles();
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "production-records"] });
+      setSelectedFiles([]);
+      toast({ title: `${data.count} file(s) uploaded successfully` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error uploading files", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       direction: activeTab,
@@ -114,6 +196,7 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
       privilegeLogEntryCount: 0,
       notes: "",
     });
+    setSelectedFiles([]);
   };
 
   const handleOpenCreate = () => {
@@ -139,6 +222,43 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
       privilegeLogEntryCount: record.privilegeLogEntryCount || 0,
       notes: record.notes || "",
     });
+  };
+
+  const handleOpenFilesDialog = (record: ProductionRecord) => {
+    setFilesDialogRecord(record);
+    setSelectedFiles([]);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setSelectedFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+    }
+  };
+
+  const handleRemoveSelectedFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUploadFiles = async () => {
+    if (!filesDialogRecord || selectedFiles.length === 0) return;
+    setUploadingFiles(true);
+    try {
+      await uploadFilesMutation.mutateAsync({ 
+        recordId: filesDialogRecord.id, 
+        files: selectedFiles 
+      });
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const handleDownloadFile = (fileId: string, fileName: string) => {
+    const link = document.createElement('a');
+    link.href = `/api/production-records/files/${fileId}/download`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleSubmit = () => {
@@ -198,6 +318,7 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
                 direction="outgoing"
                 onEdit={handleOpenEdit}
                 onDelete={(id) => deleteMutation.mutate(id)}
+                onManageFiles={handleOpenFilesDialog}
               />
             </TabsContent>
 
@@ -207,12 +328,14 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
                 direction="incoming"
                 onEdit={handleOpenEdit}
                 onDelete={(id) => deleteMutation.mutate(id)}
+                onManageFiles={handleOpenFilesDialog}
               />
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
 
+      {/* Create/Edit Record Dialog */}
       <Dialog open={isCreateDialogOpen || !!editingRecord} onOpenChange={(open) => {
         if (!open) {
           setIsCreateDialogOpen(false);
@@ -365,7 +488,6 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
               </div>
             </div>
 
-
             <div className="space-y-2">
               <Label htmlFor="notes">Additional Notes</Label>
               <Textarea
@@ -376,6 +498,14 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
                 data-testid="input-notes"
               />
             </div>
+
+            {formData.direction === "incoming" && !editingRecord && (
+              <div className="border-t pt-4 mt-2">
+                <p className="text-sm text-muted-foreground mb-2">
+                  After creating this record, you can upload the received documents using the "Manage Files" button.
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -399,6 +529,147 @@ export function ProductionRecordsLog({ caseId }: ProductionRecordsLogProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Manage Files Dialog */}
+      <Dialog open={!!filesDialogRecord} onOpenChange={(open) => {
+        if (!open) {
+          setFilesDialogRecord(null);
+          setSelectedFiles([]);
+        }
+      }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5" />
+              Manage Production Files
+            </DialogTitle>
+            <DialogDescription>
+              Upload and manage documents for production: {filesDialogRecord?.productionNumber || filesDialogRecord?.partyName}
+            </DialogDescription>
+          </DialogHeader>
+
+          {filesDialogRecord?.direction !== "incoming" && (
+            <div className="bg-muted/50 border rounded-md p-4 text-center text-muted-foreground">
+              <p>File upload is only available for received (incoming) productions.</p>
+            </div>
+          )}
+
+          {filesDialogRecord?.direction === "incoming" && (
+            <div className="space-y-4">
+              {/* File Upload Section */}
+              <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept=".pdf,.pst,.ost,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.zip,.rar,.7z,.msg,.eml"
+                  data-testid="input-file-upload"
+                />
+                <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="text-sm font-medium">Drop files here or click to upload</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  PDFs, PSTs, Images, Office Documents, and Archives
+                </p>
+                <Button 
+                  variant="outline" 
+                  className="mt-3"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="button-select-files"
+                >
+                  Select Files
+                </Button>
+              </div>
+
+              {/* Selected Files List */}
+              {selectedFiles.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Selected Files ({selectedFiles.length})</Label>
+                    <Button 
+                      onClick={handleUploadFiles}
+                      disabled={uploadingFiles}
+                      data-testid="button-upload-files"
+                    >
+                      {uploadingFiles && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Upload Files
+                    </Button>
+                  </div>
+                  <div className="border rounded-md divide-y max-h-[200px] overflow-y-auto">
+                    {selectedFiles.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 text-sm">
+                        <div className="flex items-center gap-2">
+                          {getFileIcon(file.name.split('.').pop() || '')}
+                          <span className="truncate max-w-[300px]">{file.name}</span>
+                          <span className="text-muted-foreground">({formatFileSize(file.size)})</span>
+                        </div>
+                        <Button 
+                          size="icon" 
+                          variant="ghost"
+                          onClick={() => handleRemoveSelectedFile(index)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Uploaded Files List */}
+              <div className="space-y-2">
+                <Label>Uploaded Files ({recordFiles?.length || 0})</Label>
+                {recordFiles && recordFiles.length > 0 ? (
+                  <div className="border rounded-md divide-y max-h-[300px] overflow-y-auto">
+                    {recordFiles.map((file) => (
+                      <div key={file.id} className="flex items-center justify-between p-2 text-sm" data-testid={`file-${file.id}`}>
+                        <div className="flex items-center gap-2">
+                          {getFileIcon(file.fileType)}
+                          <span className="truncate max-w-[250px]">{file.originalFileName}</span>
+                          <span className="text-muted-foreground">({formatFileSize(file.fileSize)})</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            size="icon" 
+                            variant="ghost"
+                            onClick={() => handleDownloadFile(file.id, file.originalFileName)}
+                            data-testid={`button-download-${file.id}`}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            size="icon" 
+                            variant="ghost"
+                            onClick={() => deleteFileMutation.mutate(file.id)}
+                            data-testid={`button-delete-file-${file.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border rounded-md p-8 text-center text-muted-foreground">
+                    <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No files uploaded yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setFilesDialogRecord(null);
+              setSelectedFiles([]);
+            }} data-testid="button-close-files-dialog">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -408,9 +679,10 @@ interface ProductionRecordsTableProps {
   direction: "outgoing" | "incoming";
   onEdit: (record: ProductionRecord) => void;
   onDelete: (id: string) => void;
+  onManageFiles: (record: ProductionRecord) => void;
 }
 
-function ProductionRecordsTable({ records, direction, onEdit, onDelete }: ProductionRecordsTableProps) {
+function ProductionRecordsTable({ records, direction, onEdit, onDelete, onManageFiles }: ProductionRecordsTableProps) {
   if (records.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground border rounded-md">
@@ -445,7 +717,7 @@ function ProductionRecordsTable({ records, direction, onEdit, onDelete }: Produc
             <TableHead className="text-right">Pages</TableHead>
             <TableHead>Bates Range</TableHead>
             <TableHead className="text-right">Priv. Entries</TableHead>
-            <TableHead className="w-[100px]">Actions</TableHead>
+            <TableHead className="w-[120px]">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -494,6 +766,17 @@ function ProductionRecordsTable({ records, direction, onEdit, onDelete }: Produc
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1">
+                  {direction === "incoming" && (
+                    <Button 
+                      size="icon" 
+                      variant="ghost" 
+                      onClick={() => onManageFiles(record)}
+                      data-testid={`button-manage-files-${record.id}`}
+                      title="Manage uploaded files"
+                    >
+                      <Upload className="h-4 w-4" />
+                    </Button>
+                  )}
                   <Button 
                     size="icon" 
                     variant="ghost" 
