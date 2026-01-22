@@ -1,0 +1,619 @@
+# Sentinel Counsel LLP — Master Pitch Deck Outline
+
+## Design Direction
+**Aesthetic:** Luxury/refined with industrial undertones — navy blue (#1a2744) and gold (#c9a227) palette, Playfair Display for headlines, DM Sans for body. Clean lines, generous whitespace, subtle geometric accents. Professional credibility meets modern tech.
+
+**One Unforgettable Thing:** The "Privileged AI" positioning — your AI conversations are protected by actual attorney-client privilege. Nobody else can say that.
+
+---
+
+# MASTER DECK STRUCTURE
+
+## Section 1: Opening Hook (Slides 1-4)
+
+### Slide 1: Title
+**Visual:** Full-bleed navy background, centered gold logo mark, minimal text
+**Content:**
+- SENTINEL COUNSEL LLP
+- [Tagline varies by audience — see modules below]
+- Presenter name | Date
+
+**Speaker Notes:** Don't linger here. This slide is just brand establishment.
+
+---
+
+### Slide 2: The Problem Setup
+**Visual:** Large typography, single provocative statement
+**Content:**
+- "Your opposing counsel just found the smoking gun in your document production."
+- "You missed it because you were reviewing 50,000 documents with Ctrl+F."
+
+**Speaker Notes:** Pause for effect. This is the "knife in the heart" moment. Everyone in the room has felt this fear.
+
+---
+
+### Slide 3: The Market Reality
+**Visual:** Two-column comparison, stark contrast
+**Content:**
+
+| **Enterprise Firms** | **Everyone Else** |
+|---------------------|-------------------|
+| Relativity licenses | Ctrl+F and Excel |
+| Dedicated lit support staff | Associates pulling all-nighters |
+| AI-powered review | "I think I checked everything" |
+| $50K+ monthly tech spend | "We can't afford that" |
+
+**Speaker Notes:** The legal tech market has created a two-tier system. If you're not BigLaw or a major corporation, you're bringing a knife to a gunfight. That's not a sustainable model — and it's not fair to your clients.
+
+---
+
+### Slide 4: The Sentinel Thesis
+**Visual:** Bold centered statement with gold accent bar
+**Content:**
+- "Enterprise legal intelligence. Without enterprise overhead."
+- Subtext: "Built for the 95% of law firms with fewer than 10 attorneys."
+
+**Speaker Notes:** We built what Relativity would look like if it was designed for you. Every feature you need. None of the complexity or cost you don't.
+
+---
+
+## Section 2: Product Overview (Slides 5-10)
+
+### Slide 5: The Platform at a Glance
+**Visual:** Clean icon grid showing major capability areas
+**Content:**
+Six capability pillars:
+1. **eDiscovery & Document Review** — Find what matters, fast
+2. **AI-Powered Analysis** — GPT-5 risk scoring and pattern detection
+3. **Case & Investigation Management** — One source of truth
+4. **Due Diligence (M&A)** — Deal intelligence in days, not weeks
+5. **Ambient Intelligence** — Real-time insights during depositions
+6. **Privileged Research** — Attorney-client protected AI chat
+
+**Speaker Notes:** Walk through each briefly. These aren't just features — they're workflow transformations. We'll dive into each.
+
+---
+
+### Slide 6: How It Works — The Two-Stage Methodology
+**Visual:** Simple flow diagram
+**Content:**
+```
+[Document Universe] 
+    → Stage 1: Boolean Search (Filter to relevant subset)
+    → Stage 2: AI Analysis (Extract, synthesize, flag)
+    → [Actionable Intelligence]
+```
+
+**Key insight:** Pure AI analysis of massive document sets fails. Our hybrid approach ensures accuracy for deal-critical and litigation-critical work.
+
+**Speaker Notes:** This is the secret sauce. We've learned through extensive testing that you can't just throw AI at 10,000 documents and expect reliable results. The magic is in the staged approach: Boolean search first creates a manageable, relevant subset. Then AI does what it's actually good at — extraction, synthesis, and pattern recognition on focused data.
+
+---
+
+### Slide 7: The Privileged AI Advantage
+**Visual:** Side-by-side comparison with lock icons
+**Content:**
+
+| **ChatGPT / Generic AI** | **Sentinel Privileged Research** |
+|--------------------------|----------------------------------|
+| Third-party servers | Customer-deployed Azure |
+| No privilege protection | Attorney-client privileged |
+| Data used for training | Your data never leaves |
+| "I asked AI about strategy" = waiver risk | Protected work product |
+
+**The Difference:** Sentinel Counsel is structured as a law firm. Your AI conversations are protected by actual attorney-client privilege.
+
+**Speaker Notes:** This is our most defensible moat. When you use ChatGPT to discuss case strategy, you're potentially waiving privilege. When you use Sentinel's privileged research, you're having a confidential conversation with counsel. That's not marketing — it's our corporate structure.
+
+---
+
+### Slide 8: Customer-Deployed Architecture
+**Visual:** Simple architecture diagram showing data flow
+**Content:**
+```
+[Your Azure Environment]
+    ├── Your Documents (never leave)
+    ├── Sentinel Platform (deployed here)
+    ├── AI Processing (local)
+    └── Full control & audit
+    
+[Our SaaS Control Plane]
+    ├── Licensing
+    ├── Updates
+    └── Support
+```
+
+**Key benefits:**
+- No vendor storage costs
+- No subpoena risk to Sentinel
+- True data sovereignty
+- Audit trail you control
+
+**Speaker Notes:** Most legal tech vendors store your documents on their servers. That's a subpoena target. With Sentinel, your data never leaves your environment. We provide the software; you control the data. This isn't just a security feature — it's a fundamental rethinking of how legal tech should work.
+
+---
+
+### Slide 9: Ambient Intelligence Demo Setup
+**Visual:** Screenshot mockup of deposition interface
+**Content:**
+"What if relevant documents appeared on your screen the moment a witness contradicted them?"
+
+**Live during depositions:**
+- Real-time transcription
+- AI-powered document matching
+- Instant access to impeachment material
+- Risk-flagged highlights
+
+**Speaker Notes:** This is the feature that makes litigators' eyes light up. Imagine: you're in a deposition, the witness says something that contradicts a document you reviewed three months ago. Instead of scrambling through boxes or hoping your associate catches it, the document appears on your screen. That's ambient intelligence.
+
+---
+
+### Slide 10: Feature Depth Preview
+**Visual:** Expandable category list (teaser)
+**Content:**
+"17 integrated capability areas. One platform."
+
+Quick hits:
+- **eDiscovery:** Boolean search, TAR, auto-search term generation, 7 production formats
+- **Compliance:** Real-time surveillance, FCPA/SOX/AML detection, whistleblower portal
+- **Due Diligence:** 23-section checklist, 69 seeded queries, VDR, PDF report export
+- **Meetings:** WebRTC video, transcription, AI summaries, recording with stamps
+
+**Speaker Notes:** We're not going to walk through all 17 categories today — that's what demos are for. But I want you to understand the depth. This isn't a point solution. It's a platform that grows with your practice.
+
+---
+
+## Section 3: Use Case Deep Dives (Slides 11-16)
+*[Swap these based on audience — see modules below]*
+
+### Slide 11: Use Case 1 — eDiscovery & Document Review
+**Visual:** Before/after workflow comparison
+**Content:**
+
+**Before Sentinel:**
+- Manual search term development
+- Linear review of every document
+- Privilege review = associate nightmare
+- Production prep = weeks of Bates stamping
+
+**With Sentinel:**
+- AI-generated search terms from RFPs
+- Predictive coding prioritizes review
+- Auto-privilege detection with log generation
+- One-click production with 7 format options
+
+**Time savings:** 60-70% reduction in review time on typical matters
+
+**Speaker Notes:** Let's walk through a real workflow. You receive document requests. Instead of guessing at search terms, our AI analyzes the RFPs and suggests comprehensive Boolean queries. It compares your terms against opposing counsel's proposals — shows you the gap. Then predictive coding learns from your initial review decisions and prioritizes the rest. Privilege scanning catches what humans miss. Production prep that used to take a week takes an afternoon.
+
+---
+
+### Slide 12: Use Case 2 — Deposition & Trial Support
+**Visual:** Interface screenshot with callouts
+**Content:**
+
+**Real-time support includes:**
+- Live transcription with speaker identification
+- Automatic document surfacing based on testimony
+- Instant access to prior witness statements
+- Key moments extraction for later review
+- Risk-flagged contradictions
+
+**The result:** Walk into every deposition prepared for anything.
+
+**Speaker Notes:** The ambient intelligence system is listening. When a witness mentions a date, a person, a transaction — the system searches your case documents in real-time. Relevant exhibits appear in a sidebar. You're not scrambling to remember what document said what. You're in control.
+
+---
+
+### Slide 13: Use Case 3 — M&A Due Diligence
+**Visual:** VDR interface mockup with checklist
+**Content:**
+
+**The DD workflow:**
+1. Upload data room (or we host the VDR)
+2. 23-section checklist with 69 pre-built Boolean queries
+3. AI extracts key terms: MAE clauses, indemnities, IP assignments
+4. Risk flags surface buried issues
+5. PDF report generation for IC/board
+
+**Time to meaningful insights:** Days, not weeks
+
+**Speaker Notes:** Here's a real scenario: you're on a tight deal timeline, data room just opened, 8,000 documents. Traditional approach: paralegals spend two weeks just cataloging. Our approach: upload, run the checklist, get a risk-flagged report with extracted deal terms within 48 hours. You're spending your time on analysis, not document triage.
+
+---
+
+### Slide 14: Use Case 4 — Compliance & Investigations
+**Visual:** Risk dashboard mockup
+**Content:**
+
+**Continuous monitoring:**
+- Email, Slack, Teams surveillance
+- Real-time FCPA/SOX/AML risk scoring
+- Behavioral anomaly detection
+- Sentiment analysis on communications
+
+**When issues arise:**
+- Legal hold management with audit trails
+- Investigation case management
+- Interview system with transcription
+- Evidence linking and timeline building
+
+**Speaker Notes:** For in-house teams and compliance officers: you can't read every email. But you need to know when something's wrong before it becomes a lawsuit or regulatory action. Our surveillance system runs continuously, scoring communications for risk. When alerts fire, you have the investigation tools to respond immediately — all in one platform.
+
+---
+
+### Slide 15: Use Case 5 — Privileged Legal Research
+**Visual:** Chat interface mockup
+**Content:**
+
+**Like ChatGPT, but protected:**
+- Natural language queries
+- Context-aware responses using your case materials
+- Citation to relevant precedent
+- Strategy discussion without waiver risk
+
+**Use cases:**
+- "What are the elements of a breach of fiduciary duty claim in Delaware?"
+- "Summarize the plaintiff's key arguments across all their pleadings"
+- "What case law supports our position on the statute of limitations issue?"
+
+**Speaker Notes:** Your associates use ChatGPT. You know they do. The question is whether those conversations are privileged. With Sentinel, they are. Full stop. Use it for research, for brainstorming, for strategy — it's a conversation with counsel.
+
+---
+
+### Slide 16: Use Case 6 — Cause of Action Checklist
+**Visual:** Checklist interface with evidence mapping
+**Content:**
+
+**Litigation readiness:**
+1. AI extracts legal elements from complaints
+2. Map evidence to each element
+3. Identify gaps in your case
+4. Get AI suggestions for additional evidence
+5. Strength assessment for settlement/trial decisions
+
+**The output:** Clear-eyed view of where your case is strong and where it's vulnerable.
+
+**Speaker Notes:** Before you walk into mediation or trial, you need to know: do we have evidence for every element of every claim? This tool forces that discipline. It extracts the elements, lets you map your evidence, and highlights the gaps. Better to know now than on the witness stand.
+
+---
+
+## Section 4: Competitive Positioning (Slides 17-19)
+
+### Slide 17: Market Landscape
+**Visual:** 2x2 matrix or positioning chart
+**Content:**
+
+| | **Enterprise Capability** | **SMB Accessible** |
+|---|---|---|
+| **Relativity** | ✓ | ✗ ($$$) |
+| **CS Disco** | ✓ | Partial |
+| **Logikcull** | Partial | ✓ |
+| **Everlaw** | ✓ | ✗ ($$$) |
+| **Sentinel** | ✓ | ✓ |
+
+**Our position:** Enterprise features at SMB price points, with architectural advantages no competitor can match.
+
+**Speaker Notes:** The market has two tiers. Enterprise solutions that cost $30-50K/month — or stripped-down tools that lack critical capabilities. We're filling the gap: full-featured, AI-powered, but built for firms and companies that don't have unlimited budgets.
+
+---
+
+### Slide 18: Defensible Moats
+**Visual:** Three pillars with icons
+**Content:**
+
+**Moat 1: Privileged AI**
+- Law firm structure = attorney-client protection
+- Competitors can't replicate without restructuring
+
+**Moat 2: Customer-Deployed Architecture**
+- Data sovereignty eliminates vendor risk
+- Multi-year re-architecture for competitors to match
+
+**Moat 3: Integrated Platform**
+- 17 capability areas in one system
+- Competitors are point solutions requiring integration
+
+**Speaker Notes:** These aren't features — they're structural advantages. Our law firm structure took planning and legal work to establish. Our deployment architecture is fundamentally different from SaaS competitors. Copying us isn't a product decision — it's a corporate restructuring.
+
+---
+
+### Slide 19: Pricing Philosophy
+**Visual:** Simple tier comparison
+**Content:**
+
+**Our approach:**
+- Transparent per-seat pricing
+- No per-GB storage charges (your Azure, your costs)
+- No surprise overage fees
+- All features included at every tier
+
+**Comparison:**
+- Relativity: $15-25K+/month for similar capability
+- CS Disco: $5-15K/month + storage + processing
+- Sentinel: [Contact for pricing]
+
+**Speaker Notes:** We don't believe in nickel-and-diming. You shouldn't need a calculator to figure out your monthly cost. Per-seat pricing, all features included, and because your data lives in your Azure environment, you're paying Azure rates for storage — not our markup.
+
+---
+
+## Section 5: Trust & Security (Slides 20-22)
+
+### Slide 20: Security Architecture
+**Visual:** Security badge/certification icons
+**Content:**
+
+**Infrastructure:**
+- Customer-deployed on Azure
+- OpenZiti zero-trust networking (VPN-less)
+- End-to-end encryption
+- SOC 2 Type II [if applicable]
+
+**Access Control:**
+- Role-based permissions (Admin, Investigator, Reviewer)
+- Audit logging for every action
+- Legal hold management with immutability
+
+**Speaker Notes:** Security isn't a feature — it's a foundation. Because we deploy to your Azure environment, you inherit your existing security posture. We add role-based access, comprehensive audit logging, and zero-trust networking that eliminates the VPN complexity of traditional solutions.
+
+---
+
+### Slide 21: Compliance & Certifications
+**Visual:** Compliance badge grid
+**Content:**
+
+**Built for regulated environments:**
+- FCPA, SOX, AML detection rules pre-built
+- Sector-specific rule packs available
+- Audit trails meet regulatory requirements
+- Legal hold functionality for preservation
+
+**Attestations:**
+- [List applicable certifications]
+- Regular third-party penetration testing
+- Annual security audits
+
+**Speaker Notes:** If you're in a regulated industry — financial services, healthcare, government contracting — you need tools that understand your compliance obligations. We've built the detection rules, the audit trails, and the reporting capabilities that regulators expect.
+
+---
+
+### Slide 22: Data Handling Philosophy
+**Visual:** Simple flow showing data never leaves
+**Content:**
+
+**Your data stays yours:**
+- Documents never leave your Azure tenant
+- AI processing happens in your environment
+- We can't access your data (by design)
+- You control retention and deletion
+
+**What we see:**
+- Usage metrics (anonymized)
+- System health data
+- License compliance
+
+**Speaker Notes:** Here's the question you should ask every legal tech vendor: "Where does my data go, and who can see it?" Our answer is simple: your data stays in your environment. We literally cannot access it. That's not a policy — it's architecture.
+
+---
+
+## Section 6: Getting Started (Slides 23-25)
+
+### Slide 23: Implementation Timeline
+**Visual:** Timeline graphic
+**Content:**
+
+**Week 1:** Azure environment setup, Sentinel deployment
+**Week 2:** Integration configuration (email, cloud storage)
+**Week 3:** User training, workflow customization
+**Week 4:** Go-live with support
+
+**Total time to value:** 30 days or less
+
+**Speaker Notes:** We're not a multi-quarter implementation. Your Azure environment, our software, standard integrations. Most clients are operational within a month.
+
+---
+
+### Slide 24: What Success Looks Like
+**Visual:** Metric callouts
+**Content:**
+
+**Client outcomes:**
+- 60-70% reduction in document review time
+- Days instead of weeks for DD reports
+- Real-time deposition support that changes outcomes
+- Confidence in privilege protection
+
+**The real measure:** You stop worrying about what you might have missed.
+
+**Speaker Notes:** The metrics matter, but here's what I really hear from clients: "I sleep better." They're not lying awake wondering if they missed something in discovery. They're not worried about privilege waiver. They have a system they trust.
+
+---
+
+### Slide 25: Next Steps
+**Visual:** Clear CTA with contact info
+**Content:**
+
+**Let's talk:**
+1. **30-minute discovery call** — understand your current workflow
+2. **Customized demo** — see Sentinel on your use case
+3. **Pilot program** — test with a real matter
+
+**Contact:**
+[Name] | [Email] | [Phone]
+[Website]
+
+**Speaker Notes:** I'm not going to hard-sell you. Let's have a conversation about your workflow, your pain points, and whether we're a fit. If we are, we'll show you exactly how it would work for you.
+
+---
+
+# AUDIENCE-SPECIFIC MODULES
+
+## Module A: Law Firms (Litigation Focus)
+
+### Swap for Slide 1 Tagline:
+"Enterprise Litigation Support. Solo Firm Simplicity."
+
+### Swap for Slide 2:
+**Content:**
+- "Last month, you lost a motion because opposing counsel found a document your team missed."
+- "Not because they were smarter. Because they had better tools."
+
+### Emphasize in Use Cases:
+- Slide 11 (eDiscovery) — LEAD WITH THIS
+- Slide 12 (Deposition Support) — SECOND PRIORITY
+- Slide 16 (Cause of Action Checklist)
+
+### Additional talking points:
+- "Your clients expect BigLaw work product at your rates"
+- "Document review is killing your margins"
+- "Ambient intelligence changes how you depose witnesses"
+- "Privileged AI protects your strategy discussions"
+
+---
+
+## Module B: Private Equity
+
+### Swap for Slide 1 Tagline:
+"Deal Intelligence in Days, Not Weeks."
+
+### Swap for Slide 2:
+**Content:**
+- "The indemnification clause that killed your last deal?"
+- "It was on page 847 of the data room. Nobody saw it."
+
+### Emphasize in Use Cases:
+- Slide 13 (M&A Due Diligence) — LEAD WITH THIS
+- Slide 14 (Compliance for portfolio monitoring)
+- Slide 7 (Privileged AI for IC discussions)
+
+### Additional talking points:
+- "You don't have a team of analysts. You need one."
+- "Find the deal-killer before it finds you"
+- "Portfolio company risk monitoring catches problems early"
+- "VDR functionality without DataSite/Intralinks costs"
+- "DD reports for IC in 48 hours"
+
+---
+
+## Module C: In-House General Counsel
+
+### Swap for Slide 1 Tagline:
+"Your Early Warning System for Legal Risk."
+
+### Swap for Slide 2:
+**Content:**
+- "The harassment complaint that became a class action?"
+- "It was in your Slack channels for months. Nobody was watching."
+
+### Emphasize in Use Cases:
+- Slide 14 (Compliance & Investigations) — LEAD WITH THIS
+- Slide 11 (eDiscovery for response to litigation)
+- Slide 15 (Privileged Research)
+
+### Additional talking points:
+- "Know about problems before they become lawsuits"
+- "Handle early case assessment internally"
+- "Legal holds that actually work"
+- "Whistleblower portal with proper intake"
+- "Board-ready compliance dashboards"
+- "Cut outside counsel costs by handling more in-house"
+
+---
+
+## Module D: Compliance Officers (Regulated Industries)
+
+### Swap for Slide 1 Tagline:
+"Prove You Were Watching."
+
+### Swap for Slide 2:
+**Content:**
+- "The regulator doesn't just want you to catch bad actors."
+- "They want evidence you were looking."
+
+### Emphasize in Use Cases:
+- Slide 14 (Compliance & Investigations) — LEAD WITH THIS
+- Slide 20-22 (Security & Compliance) — EXPANDED COVERAGE
+
+### Additional talking points:
+- "Defensible surveillance with audit trails"
+- "Sector-specific rule packs for your industry"
+- "Real-time FCPA, SOX, AML detection"
+- "Documentation that survives examination"
+- "Behavioral analysis catches what keyword search misses"
+
+---
+
+## Module E: HR / Employee Relations
+
+### Swap for Slide 1 Tagline:
+"Investigate Right. Every Time."
+
+### Swap for Slide 2:
+**Content:**
+- "When the harassment complaint comes in, do you have a system?"
+- "Or are you hoping your notes are good enough?"
+
+### Emphasize in Use Cases:
+- Slide 14 (Investigation tools)
+- Custom emphasis on Interview System (from Slide 10)
+
+### Additional talking points:
+- "Build a defensible record"
+- "AI-assisted interview analysis"
+- "Evidence linking and timeline building"
+- "You're not investigators — but you need to investigate"
+- "Avoid becoming the next headline"
+
+---
+
+# APPENDIX: OBJECTION HANDLING
+
+## "We already have Relativity"
+**Response:** "Relativity is great if you have the budget and the staff. What do you do for matters that don't justify spinning up Relativity? The $50K case that still needs document review? That's where we fit. And our privileged AI and ambient intelligence features aren't available on Relativity at any price."
+
+## "Our data is too sensitive"
+**Response:** "That's exactly why we deploy to YOUR Azure environment. Your data never leaves your control. We can't see it. Most competitors host your data on their servers — we're the opposite."
+
+## "We don't have Azure"
+**Response:** "We can help you set it up, or we can deploy to a dedicated environment we manage for you with the same security guarantees. Most clients find their IT teams can spin up an Azure tenant in a few days."
+
+## "How is AI privileged?"
+**Response:** "Sentinel Counsel is structured as a law firm. When you use our privileged research feature, you're communicating with counsel. That's the legal relationship. Combined with customer-deployed architecture where data doesn't leave your environment, privilege arguments are as strong as we can make them."
+
+## "What about hallucinations?"
+**Response:** "That's why we use the two-stage methodology. We don't throw AI at your entire document universe and hope for the best. Boolean search first creates a relevant, manageable subset. Then AI works on focused data where it's reliable. For litigation and M&A work, accuracy isn't optional."
+
+## "This seems like a lot of features"
+**Response:** "You don't have to use everything. Start with the workflow that's hurting you most — usually document review or deposition prep. The platform grows with you."
+
+## "Why haven't I heard of you?"
+**Response:** "We're purpose-built for firms and companies that the big vendors ignore — the 95% of law firms with fewer than 10 attorneys, PE shops without massive analyst teams, GCs who can't justify enterprise software costs. That's not a market the incumbents are chasing."
+
+---
+
+# DEMO FLOW RECOMMENDATIONS
+
+## For Litigation-Focused Demo (45 min):
+1. **Search Term Generation** (10 min) — Upload sample RFP, show AI-generated terms
+2. **Document Review Interface** (10 min) — Show tagging, predictive coding setup
+3. **Ambient Intelligence** (15 min) — Live deposition simulation with document surfacing
+4. **Privileged Research** (5 min) — Quick query showing chat interface
+5. **Q&A** (5 min)
+
+## For M&A-Focused Demo (45 min):
+1. **VDR Setup** (5 min) — Quick folder structure, access controls
+2. **DD Checklist** (15 min) — Run through section examples, show Boolean queries
+3. **AI Extraction** (10 min) — Show key terms extraction from sample contracts
+4. **Report Generation** (10 min) — Generate PDF report for IC
+5. **Q&A** (5 min)
+
+## For Compliance-Focused Demo (45 min):
+1. **Surveillance Dashboard** (10 min) — Show risk scoring, alert examples
+2. **Investigation Workflow** (10 min) — Case creation, evidence linking
+3. **Interview System** (10 min) — Quick walkthrough
+4. **Reporting** (10 min) — Board report, audit trail examples
+5. **Q&A** (5 min)
+
+---
+
+*End of Pitch Deck Outline*
