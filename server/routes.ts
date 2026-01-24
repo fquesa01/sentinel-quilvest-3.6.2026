@@ -15275,6 +15275,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
         .values({
           dealId: dealId || null,
           caseId: caseId || null,
+          clientId: clientId || null,
           targetName,
           targetWebsite: targetWebsite || null,
           targetIndustry: targetIndustry || null,
@@ -22988,6 +22989,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         const [newJob] = await db.insert(schema.ingestionJobs).values({
           uploadedBy: userId,
           caseId: caseId || null,
+          clientId: clientId || null,
           status: "pending",
           totalFiles: 1,
         }).returning();
@@ -25779,7 +25781,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         return res.status(401).json({ message: "User not authenticated" });
       }
 
-      const { title, caseId, modelProvider, modelId, retentionPolicy } = req.body;
+      const { title, caseId, clientId, modelProvider, modelId, retentionPolicy } = req.body;
 
       const [session] = await db
         .insert(schema.privilegedSessions)
@@ -25787,6 +25789,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
           userId,
           title: title || "New Research Session",
           caseId: caseId || null,
+          clientId: clientId || null,
           modelProvider: modelProvider || "openai",
           modelId: modelId || "gpt-4o",
           retentionPolicy: retentionPolicy || "save",
