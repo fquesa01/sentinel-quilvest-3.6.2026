@@ -61,8 +61,8 @@ export default function CalendarPage() {
     location: "",
     courtName: "",
     judgeName: "",
-    caseId: "",
-    clientId: "",
+    caseId: "none",
+    clientId: "none",
     isBillable: false,
     estimatedHours: 0,
     isAllDay: false,
@@ -153,8 +153,8 @@ export default function CalendarPage() {
       location: "",
       courtName: "",
       judgeName: "",
-      caseId: "",
-      clientId: "",
+      caseId: "none",
+      clientId: "none",
       isBillable: false,
       estimatedHours: 0,
       isAllDay: false,
@@ -468,7 +468,16 @@ export default function CalendarPage() {
           <h1 className="text-2xl font-bold">Legal Calendar</h1>
           <p className="text-muted-foreground">Manage hearings, depositions, deadlines, and court dates</p>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-event">
+        <Button onClick={() => {
+          const now = new Date();
+          const dateStr = format(now, "yyyy-MM-dd");
+          setNewEvent(prev => ({
+            ...prev,
+            startTime: `${dateStr}T09:00`,
+            endTime: `${dateStr}T10:00`,
+          }));
+          setIsCreateDialogOpen(true);
+        }} data-testid="button-create-event">
           <Plus className="w-4 h-4 mr-2" />
           New Event
         </Button>
