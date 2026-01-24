@@ -12076,3 +12076,152 @@ export interface ClientWithDetails extends Client {
   primaryAttorney?: { id: string; firstName: string | null; lastName: string | null };
   leadParalegal?: { id: string; firstName: string | null; lastName: string | null };
 }
+
+// Litigation Templates / Forms
+export const templateCategoryEnum = pgEnum("template_category", [
+  "pleadings",
+  "discovery",
+  "memoranda",
+  "court_forms",
+  "agreements",
+  "correspondence",
+  "other",
+]);
+
+export const templatePleadingTypeEnum = pgEnum("template_pleading_type", [
+  "complaint",
+  "answer",
+  "motion",
+  "brief",
+  "opposition",
+  "reply",
+  "notice",
+  "declaration",
+  "affidavit",
+  "order",
+  "judgment",
+  "other",
+]);
+
+export const templateJurisdictionEnum = pgEnum("template_jurisdiction", [
+  "federal",
+  "state",
+  "local",
+  "administrative",
+  "arbitration",
+  "other",
+]);
+
+export const litigationTemplates = pgTable("litigation_templates", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: templateCategoryEnum("category").notNull().default("other"),
+  pleadingType: templatePleadingTypeEnum("pleading_type"),
+  jurisdiction: templateJurisdictionEnum("jurisdiction"),
+  courtName: text("court_name"),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  filePath: text("file_path").notNull(),
+  tags: text("tags").array().default(sql`'{}'::text[]`),
+  downloadCount: integer("download_count").default(0),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  lastUsedAt: timestamp("last_used_at"),
+  lastUsedBy: varchar("last_used_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const templateFavorites = pgTable("template_favorites", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id")
+    .references(() => litigationTemplates.id, { onDelete: "cascade" })
+    .notNull(),
+  userId: varchar("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueFavorite: unique().on(table.templateId, table.userId),
+}));
+
+export const templateUsageHistory = pgTable("template_usage_history", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id")
+    .references(() => litigationTemplates.id, { onDelete: "cascade" })
+    .notNull(),
+  userId: varchar("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  usedAt: timestamp("used_at").defaultNow().notNull(),
+});
+
+export const litigationTemplatesRelations = relations(litigationTemplates, ({ one, many }) => ({
+  uploadedByUser: one(users, {
+    fields: [litigationTemplates.uploadedBy],
+    references: [users.id],
+    relationName: "templateUploadedBy",
+  }),
+  lastUsedByUser: one(users, {
+    fields: [litigationTemplates.lastUsedBy],
+    references: [users.id],
+    relationName: "templateLastUsedBy",
+  }),
+  favorites: many(templateFavorites),
+  usageHistory: many(templateUsageHistory),
+}));
+
+export const templateFavoritesRelations = relations(templateFavorites, ({ one }) => ({
+  template: one(litigationTemplates, {
+    fields: [templateFavorites.templateId],
+    references: [litigationTemplates.id],
+  }),
+  user: one(users, {
+    fields: [templateFavorites.userId],
+    references: [users.id],
+  }),
+}));
+
+export const templateUsageHistoryRelations = relations(templateUsageHistory, ({ one }) => ({
+  template: one(litigationTemplates, {
+    fields: [templateUsageHistory.templateId],
+    references: [litigationTemplates.id],
+  }),
+  user: one(users, {
+    fields: [templateUsageHistory.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertLitigationTemplateSchema = createInsertSchema(litigationTemplates).omit({
+  id: true,
+  downloadCount: true,
+  lastUsedAt: true,
+  lastUsedBy: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertTemplateFavoriteSchema = createInsertSchema(templateFavorites).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type LitigationTemplate = typeof litigationTemplates.$inferSelect;
+export type InsertLitigationTemplate = z.infer<typeof insertLitigationTemplateSchema>;
+export type TemplateFavorite = typeof templateFavorites.$inferSelect;
+export type InsertTemplateFavorite = z.infer<typeof insertTemplateFavoriteSchema>;
+export type TemplateUsageHistory = typeof templateUsageHistory.$inferSelect;
+
+export interface LitigationTemplateWithDetails extends LitigationTemplate {
+  uploadedByUser?: { id: string; firstName: string | null; lastName: string | null };
+  isFavorite?: boolean;
+  recentlyUsed?: boolean;
+}
