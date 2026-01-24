@@ -699,7 +699,7 @@ export default function CalendarPage() {
     <div className="h-full flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Legal Calendar</h1>
+          <h1 className="text-2xl font-bold">Calendar</h1>
           <p className="text-muted-foreground">Manage hearings, depositions, deadlines, and court dates</p>
         </div>
         <Button onClick={() => {
@@ -716,7 +716,6 @@ export default function CalendarPage() {
           New Event
         </Button>
       </div>
-
       <div className="flex-1 flex gap-4 min-h-0">
         <div className="w-64 flex-shrink-0 space-y-4">
           <Card>
@@ -932,7 +931,6 @@ export default function CalendarPage() {
           )}
         </Card>
       </div>
-
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1231,7 +1229,6 @@ export default function CalendarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <Dialog open={isEventDialogOpen} onOpenChange={setIsEventDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -1310,7 +1307,6 @@ export default function CalendarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <Dialog open={isCreateCalendarOpen} onOpenChange={setIsCreateCalendarOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -1357,7 +1353,6 @@ export default function CalendarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <Dialog open={isConnectAccountsOpen} onOpenChange={setIsConnectAccountsOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
