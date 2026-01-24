@@ -272,7 +272,7 @@ export default function EDiscoveryPage() {
           <CardHeader>
             <CardTitle>Production Sets</CardTitle>
             <CardDescription>
-              SEC/DOJ compliant export packages with Bates numbering and chain-of-custody tracking
+              Export packages with Bates numbering and chain-of-custody tracking
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -333,7 +333,7 @@ export default function EDiscoveryPage() {
                 <FileText className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
                 <h3 className="mt-4 text-lg font-semibold">No Production Sets</h3>
                 <p className="text-sm text-muted-foreground mt-2">
-                  Create your first production set to begin exporting case data for SEC/DOJ compliance
+                  Create your first production set.
                 </p>
                 <Button
                   variant="outline"
@@ -352,9 +352,6 @@ export default function EDiscoveryPage() {
         <Card className="mt-6">
           <CardHeader>
             <CardTitle>About Production Sets</CardTitle>
-            <CardDescription>
-              SEC/DOJ compliant export workflow with complete chain-of-custody
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div>
