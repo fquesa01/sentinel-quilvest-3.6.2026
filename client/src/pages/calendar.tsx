@@ -1086,94 +1086,6 @@ export default function CalendarPage() {
             <DialogDescription>Add a new event to your legal calendar</DialogDescription>
           </DialogHeader>
           
-          {/* AI-powered image extraction section */}
-          <div className="border rounded-lg p-4 bg-muted/30">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">Create from Document</span>
-            </div>
-            
-            {eventImage ? (
-              <div className="relative" data-testid="image-preview-container">
-                <img 
-                  src={eventImage} 
-                  alt="Uploaded document" 
-                  className="w-full max-h-32 object-contain rounded border bg-background"
-                  data-testid="image-preview"
-                />
-                {isExtractingFromImage ? (
-                  <div 
-                    className="absolute inset-0 flex items-center justify-center bg-background/80 rounded"
-                    data-testid="status-extracting"
-                  >
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span data-testid="text-extracting-status">Extracting event details...</span>
-                    </div>
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-1 right-1"
-                    onClick={clearEventImage}
-                    data-testid="button-clear-image"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div 
-                className="border-2 border-dashed rounded-lg p-4 text-center hover-elevate cursor-pointer transition-colors"
-                onPaste={(e) => handlePaste(e as unknown as ClipboardEvent)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const file = e.dataTransfer.files[0];
-                  if (file && file.type.startsWith("image/")) {
-                    handleImageUpload(file);
-                  }
-                }}
-                onDragOver={(e) => e.preventDefault()}
-                tabIndex={0}
-                data-testid="dropzone-image"
-              >
-                <div className="flex flex-col items-center gap-2">
-                  <ImageIcon className="w-8 h-8 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground" data-testid="text-dropzone-instructions">
-                    Upload a photo, paste a screenshot, or take a picture of a document
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleFileSelect}
-                      data-testid="button-upload-image"
-                    >
-                      <Upload className="w-3 h-3 mr-1" />
-                      Upload
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCameraCapture}
-                      data-testid="button-camera-capture"
-                    >
-                      <Camera className="w-3 h-3 mr-1" />
-                      Camera
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Or press Ctrl+V to paste an image
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-          
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
@@ -1594,6 +1506,94 @@ export default function CalendarPage() {
                 </Select>
               </div>
             </div>
+          </div>
+          
+          {/* AI-powered image extraction section */}
+          <div className="border rounded-lg p-4 bg-muted/30">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">Create from Document</span>
+            </div>
+            
+            {eventImage ? (
+              <div className="relative" data-testid="image-preview-container">
+                <img 
+                  src={eventImage} 
+                  alt="Uploaded document" 
+                  className="w-full max-h-32 object-contain rounded border bg-background"
+                  data-testid="image-preview"
+                />
+                {isExtractingFromImage ? (
+                  <div 
+                    className="absolute inset-0 flex items-center justify-center bg-background/80 rounded"
+                    data-testid="status-extracting"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span data-testid="text-extracting-status">Extracting event details...</span>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1 right-1"
+                    onClick={clearEventImage}
+                    data-testid="button-clear-image"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div 
+                className="border-2 border-dashed rounded-lg p-4 text-center hover-elevate cursor-pointer transition-colors"
+                onPaste={(e) => handlePaste(e as unknown as ClipboardEvent)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const file = e.dataTransfer.files[0];
+                  if (file && file.type.startsWith("image/")) {
+                    handleImageUpload(file);
+                  }
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                tabIndex={0}
+                data-testid="dropzone-image"
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground" data-testid="text-dropzone-instructions">
+                    Upload a photo, paste a screenshot, or take a picture of a document
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleFileSelect}
+                      data-testid="button-upload-image"
+                    >
+                      <Upload className="w-3 h-3 mr-1" />
+                      Upload
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCameraCapture}
+                      data-testid="button-camera-capture"
+                    >
+                      <Camera className="w-3 h-3 mr-1" />
+                      Camera
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Or press Ctrl+V to paste an image
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
           
           <DialogFooter>
