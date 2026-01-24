@@ -191,12 +191,6 @@ export function AppSidebar() {
           icon: Database,
           roles: ["admin", "attorney", "external_counsel", "compliance_officer"],
         },
-      ],
-    },
-    {
-      title: "PE Deal Intelligence",
-      defaultOpen: true,
-      items: [
         {
           title: "Deal Pipeline",
           url: "/pe/deals",
