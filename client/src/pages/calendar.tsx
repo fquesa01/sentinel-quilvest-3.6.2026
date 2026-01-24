@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { CalendarEvent, Case, Client, UserCalendar, ConnectedCalendarAccount } from "@shared/schema";
 import { SiGoogle } from "react-icons/si";
-import { Link2, Unlink, RefreshCw, Settings2, Mail } from "lucide-react";
+import { Link2, Unlink, RefreshCw, Settings2, Mail, Phone, UserPlus, Send, ExternalLink } from "lucide-react";
 
 type ViewType = "day" | "week" | "month" | "list";
 
@@ -81,6 +81,7 @@ export default function CalendarPage() {
     estimatedHours: 0,
     isAllDay: false,
     reminderMinutes: 30,
+    invitees: [] as { name: string; email: string; phone: string; notifyVia: "email" | "sms" | "both" }[],
   });
 
   // Image-based event creation
@@ -333,14 +334,38 @@ export default function CalendarPage() {
     },
   });
 
+  const sendInvitationsMutation = useMutation({
+    mutationFn: async ({ eventId, invitees }: { eventId: string; invitees: typeof newEvent.invitees }) => {
+      const response = await apiRequest("POST", `/api/calendar/events/${eventId}/send-invitations`, { invitees });
+      return response;
+    },
+    onSuccess: (data: any) => {
+      toast({ 
+        title: "Invitations sent", 
+        description: data.note || `${data.results?.length || 0} invitations queued`
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to send invitations", description: error.message, variant: "destructive" });
+    },
+  });
+
   const createEventMutation = useMutation({
     mutationFn: async (eventData: any) => {
       const response = await apiRequest("POST", "/api/calendar/events", eventData);
-      return response;
+      return response as CalendarEvent;
     },
-    onSuccess: () => {
+    onSuccess: (createdEvent, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
       toast({ title: "Event created successfully" });
+      
+      // Send invitations if there are invitees with valid contact info (use variables to avoid race condition)
+      const submittedInvitees = variables.invitees || [];
+      const validInvitees = submittedInvitees.filter((i: any) => i.email || i.phone);
+      if (validInvitees.length > 0) {
+        sendInvitationsMutation.mutate({ eventId: createdEvent.id, invitees: validInvitees });
+      }
+      
       setIsCreateDialogOpen(false);
       resetNewEvent();
     },
@@ -397,6 +422,7 @@ export default function CalendarPage() {
       estimatedHours: 0,
       isAllDay: false,
       reminderMinutes: 30,
+      invitees: [],
     });
   };
 
@@ -429,6 +455,8 @@ export default function CalendarPage() {
       calendarId: newEvent.calendarId && newEvent.calendarId !== "none" ? newEvent.calendarId : null,
       videoConferenceType: newEvent.videoConferenceType !== "none" ? newEvent.videoConferenceType : null,
       enableAmbientIntelligence: newEvent.enableAmbientIntelligence,
+      externalAttendees: newEvent.invitees.map(i => ({ name: i.name, email: i.email || "" })),
+      invitees: newEvent.invitees,
     });
   };
 
@@ -1339,6 +1367,147 @@ export default function CalendarPage() {
                 </div>
               )}
 
+              {/* Invitees Section */}
+              <div className="col-span-2 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Invitees
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setNewEvent(prev => ({
+                      ...prev,
+                      invitees: [...prev.invitees, { name: "", email: "", phone: "", notifyVia: "email" }]
+                    }))}
+                    data-testid="button-add-invitee"
+                  >
+                    <UserPlus className="w-4 h-4 mr-1" />
+                    Add Invitee
+                  </Button>
+                </div>
+                {newEvent.invitees.length === 0 && (
+                  <p className="text-sm text-muted-foreground" data-testid="text-no-invitees">
+                    No invitees added. Click "Add Invitee" to invite participants.
+                  </p>
+                )}
+                {newEvent.invitees.map((invitee, index) => (
+                  <div key={index} className="p-3 border rounded-md space-y-2 bg-muted/30" data-testid={`invitee-row-${index}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <Input
+                        placeholder="Name"
+                        value={invitee.name}
+                        onChange={(e) => {
+                          const updated = [...newEvent.invitees];
+                          updated[index].name = e.target.value;
+                          setNewEvent(prev => ({ ...prev, invitees: updated }));
+                        }}
+                        className="flex-1"
+                        data-testid={`input-invitee-name-${index}`}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const updated = newEvent.invitees.filter((_, i) => i !== index);
+                          setNewEvent(prev => ({ ...prev, invitees: updated }));
+                        }}
+                        data-testid={`button-remove-invitee-${index}`}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Email address"
+                          type="email"
+                          value={invitee.email}
+                          onChange={(e) => {
+                            const updated = [...newEvent.invitees];
+                            updated[index].email = e.target.value;
+                            setNewEvent(prev => ({ ...prev, invitees: updated }));
+                          }}
+                          className="pl-9"
+                          data-testid={`input-invitee-email-${index}`}
+                        />
+                      </div>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Phone (optional)"
+                          type="tel"
+                          value={invitee.phone}
+                          onChange={(e) => {
+                            const updated = [...newEvent.invitees];
+                            updated[index].phone = e.target.value;
+                            setNewEvent(prev => ({ ...prev, invitees: updated }));
+                          }}
+                          className="pl-9"
+                          data-testid={`input-invitee-phone-${index}`}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-muted-foreground">Notify via:</span>
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`notify-${index}`}
+                            checked={invitee.notifyVia === "email"}
+                            onChange={() => {
+                              const updated = [...newEvent.invitees];
+                              updated[index].notifyVia = "email";
+                              setNewEvent(prev => ({ ...prev, invitees: updated }));
+                            }}
+                            className="w-4 h-4"
+                            data-testid={`radio-notify-email-${index}`}
+                          />
+                          <Mail className="w-3.5 h-3.5" />
+                          <span className="text-sm">Email</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`notify-${index}`}
+                            checked={invitee.notifyVia === "sms"}
+                            onChange={() => {
+                              const updated = [...newEvent.invitees];
+                              updated[index].notifyVia = "sms";
+                              setNewEvent(prev => ({ ...prev, invitees: updated }));
+                            }}
+                            className="w-4 h-4"
+                            data-testid={`radio-notify-sms-${index}`}
+                          />
+                          <Phone className="w-3.5 h-3.5" />
+                          <span className="text-sm">SMS</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`notify-${index}`}
+                            checked={invitee.notifyVia === "both"}
+                            onChange={() => {
+                              const updated = [...newEvent.invitees];
+                              updated[index].notifyVia = "both";
+                              setNewEvent(prev => ({ ...prev, invitees: updated }));
+                            }}
+                            className="w-4 h-4"
+                            data-testid={`radio-notify-both-${index}`}
+                          />
+                          <span className="text-sm">Both</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
               {(newEvent.eventType === "hearing" || newEvent.eventType === "trial") && (
                 <>
                   <div>
@@ -1480,6 +1649,46 @@ export default function CalendarPage() {
                 </div>
               )}
               
+              {/* Video Meeting Quick Start */}
+              {selectedEvent.videoConferenceType && selectedEvent.videoConferenceType !== "none" && (
+                <div className="p-3 rounded-md bg-primary/10 border border-primary/20">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Video className="w-5 h-5 text-primary" />
+                      <div>
+                        <p className="font-medium text-sm">
+                          {selectedEvent.videoConferenceType === "sentinel" && "Sentinel Video Meeting"}
+                          {selectedEvent.videoConferenceType === "google_meet" && "Google Meet"}
+                          {selectedEvent.videoConferenceType === "zoom" && "Zoom Meeting"}
+                          {selectedEvent.videoConferenceType === "teams" && "Microsoft Teams"}
+                        </p>
+                        {selectedEvent.enableAmbientIntelligence && (
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Brain className="w-3 h-3" />
+                            Ambient Intelligence enabled
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        // Use absolute URL with meetingRoomId for consistent meeting links
+                        const baseUrl = window.location.origin;
+                        const roomId = (selectedEvent as any).meetingRoomId || selectedEvent.id;
+                        const meetingUrl = selectedEvent.videoConferenceUrl || 
+                          `${baseUrl}/video-meeting/${roomId}?eventId=${selectedEvent.id}&type=${selectedEvent.videoConferenceType}`;
+                        window.open(meetingUrl, "_blank");
+                      }}
+                      data-testid="button-start-meeting"
+                    >
+                      <Video className="w-4 h-4 mr-1" />
+                      Start Meeting
+                    </Button>
+                  </div>
+                </div>
+              )}
+              
               {selectedEvent.description && (
                 <div className="pt-2 border-t">
                   <p className="text-sm">{selectedEvent.description}</p>
@@ -1495,6 +1704,49 @@ export default function CalendarPage() {
                   </Badge>
                 )}
               </div>
+              
+              {/* Invitees Section */}
+              {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && (
+                <div className="pt-2 border-t space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Invitees ({selectedEvent.externalAttendees.length})
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        // Use stored inviteeNotifications to preserve preferences
+                        const storedNotifications = (selectedEvent as any).inviteeNotifications || [];
+                        const invitees = selectedEvent.externalAttendees?.map((a, idx) => {
+                          const notification = storedNotifications[idx];
+                          return {
+                            name: a.name,
+                            email: a.email || notification?.email || "",
+                            phone: notification?.phone || "",
+                            notifyVia: (notification?.method as "email" | "sms" | "both") || "email"
+                          };
+                        }) || [];
+                        sendInvitationsMutation.mutate({ eventId: selectedEvent.id, invitees });
+                      }}
+                      disabled={sendInvitationsMutation.isPending}
+                      data-testid="button-resend-invitations"
+                    >
+                      <Send className="w-4 h-4 mr-1" />
+                      {sendInvitationsMutation.isPending ? "Sending..." : "Resend"}
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedEvent.externalAttendees.map((attendee, idx) => (
+                      <Badge key={idx} variant="secondary" className="flex items-center gap-1" data-testid={`badge-invitee-${idx}`}>
+                        <Users className="w-3 h-3" />
+                        {attendee.name || attendee.email}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           

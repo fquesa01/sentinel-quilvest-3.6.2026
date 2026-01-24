@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
@@ -1000,12 +1001,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create calendar event
   app.post("/api/calendar/events", isAuthenticated, async (req: any, res) => {
     try {
+      // Generate meetingRoomId server-side for video conference events
+      const meetingRoomId = req.body.videoConferenceType && req.body.videoConferenceType !== "none"
+        ? crypto.randomUUID().slice(0, 12)
+        : null;
+      
+      // Store invitee preferences as inviteeNotifications
+      const inviteeNotifications = (req.body.invitees || []).map((i: any) => ({
+        email: i.email || undefined,
+        phone: i.phone || undefined,
+        method: i.notifyVia || "email"
+      }));
+      
       const eventData = {
         ...req.body,
         createdBy: req.user.id,
         startTime: new Date(req.body.startTime),
         endTime: new Date(req.body.endTime),
+        meetingRoomId,
+        inviteeNotifications,
       };
+      
+      // Remove frontend-only fields
+      delete eventData.invitees;
+      
       const event = await storage.createCalendarEvent(eventData);
       await logAction(req, "create", "calendar_event", event.id, { title: event.title });
       res.status(201).json(event);
@@ -1015,6 +1034,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  // Send invitations to event invitees
+  const sendInvitationsSchema = z.object({
+    eventId: z.string().min(1),
+    invitees: z.array(z.object({
+      name: z.string(),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
+      notifyVia: z.enum(["email", "sms", "both"])
+    }).refine(
+      (inv) => inv.email || inv.phone,
+      { message: "Each invitee must have at least an email or phone number" }
+    ))
+  });
+
+  app.post("/api/calendar/events/:eventId/send-invitations", isAuthenticated, async (req: any, res) => {
+    try {
+      const { eventId } = req.params;
+      const parseResult = sendInvitationsSchema.safeParse({ eventId, ...req.body });
+      
+      if (!parseResult.success) {
+        return res.status(400).json({ message: parseResult.error.errors[0]?.message || "Invalid request" });
+      }
+
+      const { invitees } = parseResult.data;
+      
+      // Get event details
+      const event = await storage.getCalendarEvent(eventId);
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+
+      const results: { email?: string; phone?: string; method: string; status: string; sentAt: string }[] = [];
+      const sentAt = new Date().toISOString();
+
+      for (const invitee of invitees) {
+        // Generate meeting URL using meetingRoomId for consistent links
+        const baseUrl = process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : 'http://localhost:5000';
+        const roomId = (event as any).meetingRoomId || eventId;
+        const meetingUrl = event.videoConferenceUrl || `${baseUrl}/video-meeting/${roomId}?eventId=${eventId}`;
+        
+        const eventDetails = `
+Event: ${event.title}
+Date: ${new Date(event.startTime).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+Time: ${new Date(event.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - ${new Date(event.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+${event.location ? `Location: ${event.location}` : ''}
+${event.videoConferenceType && event.videoConferenceType !== 'none' ? `Join Meeting: ${meetingUrl}` : ''}
+${event.description ? `\nDetails: ${event.description}` : ''}
+        `.trim();
+
+        // For now, log the invitation (in production, integrate with email/SMS provider)
+        if (invitee.notifyVia === "email" || invitee.notifyVia === "both") {
+          if (invitee.email) {
+            console.log(`[EMAIL INVITATION] To: ${invitee.email}\nSubject: You're invited: ${event.title}\n\n${eventDetails}`);
+            results.push({ email: invitee.email, method: "email", status: "queued", sentAt });
+          }
+        }
+        
+        if (invitee.notifyVia === "sms" || invitee.notifyVia === "both") {
+          if (invitee.phone) {
+            const smsMessage = `You're invited to "${event.title}" on ${new Date(event.startTime).toLocaleDateString()}. ${event.videoConferenceType && event.videoConferenceType !== 'none' ? `Join: ${meetingUrl}` : ''}`;
+            console.log(`[SMS INVITATION] To: ${invitee.phone}\nMessage: ${smsMessage}`);
+            results.push({ phone: invitee.phone, method: "sms", status: "queued", sentAt });
+          }
+        }
+      }
+
+      // Store notification records in the event
+      await storage.updateCalendarEvent(eventId, {
+        inviteeNotifications: results,
+        externalAttendees: invitees.map(i => ({ name: i.name, email: i.email || "" }))
+      });
+
+      await logAction(req, "send_invitations", "calendar_event", eventId, { count: results.length });
+      
+      res.json({ 
+        message: `Invitations ${results.length > 0 ? 'sent' : 'queued'} successfully`,
+        results,
+        note: "Email and SMS delivery requires configured providers (SendGrid/Twilio)"
+      });
+    } catch (error: any) {
+      console.error("Error sending invitations:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
   // Zod schema for image extraction request
   const extractFromImageSchema = z.object({
     image: z.string()
@@ -1079,7 +1183,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
               {
                 type: "image_url",
                 image_url: {
-                  url: `data:\${mimeType};base64,\${base64Data}`
+                  url: `data:${mimeType};base64,${base64Data}`
                 }
               }
             ]

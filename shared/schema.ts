@@ -12378,6 +12378,8 @@ export const calendarEvents = pgTable("calendar_events", {
   location: text("location"),
   videoConferenceUrl: text("video_conference_url"),
   videoConferenceType: varchar("video_conference_type", { length: 50 }),
+  meetingRoomId: varchar("meeting_room_id", { length: 100 }),
+  inviteeNotifications: jsonb("invitee_notifications").$type<{ email?: string; phone?: string; sentAt?: string; method: "email" | "sms" | "both" }[]>().default([]),
   enableAmbientIntelligence: boolean("enable_ambient_intelligence").notNull().default(false),
   color: varchar("color", { length: 20 }),
   isPrivate: boolean("is_private").notNull().default(false),
