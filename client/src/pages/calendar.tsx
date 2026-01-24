@@ -15,9 +15,13 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import type { CalendarEvent, Case, Client } from "@shared/schema";
+import type { CalendarEvent, Case, Client, UserCalendar } from "@shared/schema";
 
 type ViewType = "day" | "week" | "month" | "list";
+
+interface CalendarWithEvents extends UserCalendar {
+  eventCount?: number;
+}
 
 const eventTypeColors: Record<string, string> = {
   hearing: "bg-blue-500",
@@ -51,6 +55,10 @@ export default function CalendarPage() {
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [visibleCalendarIds, setVisibleCalendarIds] = useState<Set<string>>(new Set());
+  const [isCreateCalendarOpen, setIsCreateCalendarOpen] = useState(false);
+  const [newCalendarName, setNewCalendarName] = useState("");
+  const [newCalendarColor, setNewCalendarColor] = useState("#3b82f6");
   
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -63,6 +71,7 @@ export default function CalendarPage() {
     judgeName: "",
     caseId: "none",
     clientId: "none",
+    calendarId: "none",
     isBillable: false,
     estimatedHours: 0,
     isAllDay: false,
@@ -97,6 +106,58 @@ export default function CalendarPage() {
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
   });
+
+  const { data: userCalendars = [] } = useQuery<UserCalendar[]>({
+    queryKey: ["/api/user-calendars"],
+  });
+
+  // Initialize visible calendars when userCalendars load
+  useMemo(() => {
+    if (userCalendars.length > 0 && visibleCalendarIds.size === 0) {
+      const visibleIds = userCalendars.filter(c => c.isVisible).map(c => c.id);
+      setVisibleCalendarIds(new Set(visibleIds));
+    }
+  }, [userCalendars]);
+
+  // Filter events by visible calendars
+  const filteredEvents = useMemo(() => {
+    if (visibleCalendarIds.size === 0 && userCalendars.length === 0) return events;
+    if (visibleCalendarIds.size === 0) return [];
+    return events.filter(event => {
+      if (!event.calendarId) return true; // Show events without calendar assignment
+      return visibleCalendarIds.has(event.calendarId);
+    });
+  }, [events, visibleCalendarIds, userCalendars]);
+
+  const createCalendarMutation = useMutation({
+    mutationFn: async (data: { name: string; color: string }) => {
+      return await apiRequest("POST", "/api/user-calendars", data);
+    },
+    onSuccess: (newCal) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-calendars"] });
+      toast({ title: "Calendar created" });
+      setIsCreateCalendarOpen(false);
+      setNewCalendarName("");
+      setNewCalendarColor("#3b82f6");
+      // Add new calendar to visible set
+      setVisibleCalendarIds(prev => new Set([...prev, newCal.id]));
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create calendar", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleCalendarVisibility = (calendarId: string) => {
+    setVisibleCalendarIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(calendarId)) {
+        newSet.delete(calendarId);
+      } else {
+        newSet.add(calendarId);
+      }
+      return newSet;
+    });
+  };
 
   const createEventMutation = useMutation({
     mutationFn: async (eventData: any) => {
@@ -155,6 +216,7 @@ export default function CalendarPage() {
       judgeName: "",
       caseId: "none",
       clientId: "none",
+      calendarId: userCalendars.find(c => c.isDefault)?.id || "none",
       isBillable: false,
       estimatedHours: 0,
       isAllDay: false,
@@ -173,6 +235,7 @@ export default function CalendarPage() {
       endTime: new Date(newEvent.endTime).toISOString(),
       caseId: newEvent.caseId && newEvent.caseId !== "none" ? newEvent.caseId : null,
       clientId: newEvent.clientId && newEvent.clientId !== "none" ? newEvent.clientId : null,
+      calendarId: newEvent.calendarId && newEvent.calendarId !== "none" ? newEvent.calendarId : null,
     });
   };
 
@@ -205,7 +268,7 @@ export default function CalendarPage() {
   const goToToday = () => setCurrentDate(new Date());
 
   const getEventsForDay = (date: Date) => {
-    return events.filter(event => {
+    return filteredEvents.filter(event => {
       const eventDate = new Date(event.startTime);
       return isSameDay(eventDate, date);
     });
@@ -581,6 +644,48 @@ export default function CalendarPage() {
           </Card>
           
           <Card>
+            <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+              <CardTitle className="text-sm">My Calendars</CardTitle>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6"
+                onClick={() => setIsCreateCalendarOpen(true)}
+                data-testid="button-add-calendar"
+              >
+                <Plus className="w-3 h-3" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {userCalendars.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No calendars yet</p>
+              ) : (
+                userCalendars.map(calendar => (
+                  <div 
+                    key={calendar.id} 
+                    className="flex items-center gap-2 text-sm cursor-pointer hover-elevate p-1 rounded"
+                    data-testid={`calendar-toggle-${calendar.id}`}
+                  >
+                    <Checkbox
+                      checked={visibleCalendarIds.has(calendar.id)}
+                      onCheckedChange={() => toggleCalendarVisibility(calendar.id)}
+                      data-testid={`checkbox-calendar-${calendar.id}`}
+                    />
+                    <div 
+                      className="w-3 h-3 rounded-sm flex-shrink-0" 
+                      style={{ backgroundColor: calendar.color }}
+                    />
+                    <span className="truncate flex-1">{calendar.name}</span>
+                    {calendar.isDefault && (
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0">Default</Badge>
+                    )}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Event Types</CardTitle>
             </CardHeader>
@@ -757,6 +862,26 @@ export default function CalendarPage() {
                   onChange={(e) => setNewEvent(prev => ({ ...prev, endTime: e.target.value }))}
                   data-testid="input-end-time"
                 />
+              </div>
+
+              <div>
+                <Label htmlFor="calendarId">Calendar</Label>
+                <Select value={newEvent.calendarId} onValueChange={(v) => setNewEvent(prev => ({ ...prev, calendarId: v }))}>
+                  <SelectTrigger data-testid="select-calendar">
+                    <SelectValue placeholder="Select a calendar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No calendar</SelectItem>
+                    {userCalendars.map(cal => (
+                      <SelectItem key={cal.id} value={cal.id}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cal.color }} />
+                          {cal.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
@@ -973,6 +1098,53 @@ export default function CalendarPage() {
             </Button>
             <Button variant="outline" onClick={() => setIsEventDialogOpen(false)} data-testid="button-close-event">
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCreateCalendarOpen} onOpenChange={setIsCreateCalendarOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Create New Calendar</DialogTitle>
+            <DialogDescription>Add a new calendar to organize your events</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="calendarName">Calendar Name</Label>
+              <Input
+                id="calendarName"
+                value={newCalendarName}
+                onChange={(e) => setNewCalendarName(e.target.value)}
+                placeholder="e.g., Personal, Work Cases"
+                data-testid="input-calendar-name"
+              />
+            </div>
+            <div>
+              <Label htmlFor="calendarColor">Color</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="color"
+                  id="calendarColor"
+                  value={newCalendarColor}
+                  onChange={(e) => setNewCalendarColor(e.target.value)}
+                  className="w-10 h-10 rounded cursor-pointer border-0"
+                  data-testid="input-calendar-color"
+                />
+                <span className="text-sm text-muted-foreground">{newCalendarColor}</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateCalendarOpen(false)} data-testid="button-cancel-calendar">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => createCalendarMutation.mutate({ name: newCalendarName, color: newCalendarColor })}
+              disabled={!newCalendarName.trim() || createCalendarMutation.isPending}
+              data-testid="button-save-calendar"
+            >
+              {createCalendarMutation.isPending ? "Creating..." : "Create Calendar"}
             </Button>
           </DialogFooter>
         </DialogContent>
