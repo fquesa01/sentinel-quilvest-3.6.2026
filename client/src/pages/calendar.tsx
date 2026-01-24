@@ -171,8 +171,8 @@ export default function CalendarPage() {
       ...newEvent,
       startTime: new Date(newEvent.startTime).toISOString(),
       endTime: new Date(newEvent.endTime).toISOString(),
-      caseId: newEvent.caseId || null,
-      clientId: newEvent.clientId || null,
+      caseId: newEvent.caseId && newEvent.caseId !== "none" ? newEvent.caseId : null,
+      clientId: newEvent.clientId && newEvent.clientId !== "none" ? newEvent.clientId : null,
     });
   };
 
@@ -656,7 +656,7 @@ export default function CalendarPage() {
                     <SelectValue placeholder="Select a case" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No case</SelectItem>
+                    <SelectItem value="none">No case</SelectItem>
                     {cases.map(c => (
                       <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>
                     ))}
@@ -671,7 +671,7 @@ export default function CalendarPage() {
                     <SelectValue placeholder="Select a client" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No client</SelectItem>
+                    <SelectItem value="none">No client</SelectItem>
                     {clients.map(c => (
                       <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
                     ))}
