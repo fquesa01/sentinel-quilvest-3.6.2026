@@ -16,7 +16,9 @@ import { SiGooglemeet, SiZoom } from "react-icons/si";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import type { CalendarEvent, Case, Client, UserCalendar } from "@shared/schema";
+import type { CalendarEvent, Case, Client, UserCalendar, ConnectedCalendarAccount } from "@shared/schema";
+import { SiGoogle } from "react-icons/si";
+import { Link2, Unlink, RefreshCw, Settings2, Mail } from "lucide-react";
 
 type ViewType = "day" | "week" | "month" | "list";
 
@@ -114,6 +116,19 @@ export default function CalendarPage() {
     queryKey: ["/api/user-calendars"],
   });
 
+  const { data: connectedAccounts = [] } = useQuery<ConnectedCalendarAccount[]>({
+    queryKey: ["/api/calendar/connected-accounts"],
+  });
+
+  const { data: integrationStatus } = useQuery<{
+    google: { configured: boolean };
+    microsoft: { configured: boolean };
+  }>({
+    queryKey: ["/api/calendar/integration-status"],
+  });
+
+  const [isConnectAccountsOpen, setIsConnectAccountsOpen] = useState(false);
+
   // Initialize visible calendars when userCalendars load
   useMemo(() => {
     if (userCalendars.length > 0 && visibleCalendarIds.size === 0) {
@@ -161,6 +176,49 @@ export default function CalendarPage() {
       return newSet;
     });
   };
+
+  const connectGoogleMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/calendar/oauth/google/connect");
+      if (!response.ok) throw new Error("Failed to get auth URL");
+      const data = await response.json();
+      return data.authUrl;
+    },
+    onSuccess: (authUrl: string) => {
+      window.location.href = authUrl;
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to connect Google Calendar", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const connectMicrosoftMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/calendar/oauth/microsoft/connect");
+      if (!response.ok) throw new Error("Failed to get auth URL");
+      const data = await response.json();
+      return data.authUrl;
+    },
+    onSuccess: (authUrl: string) => {
+      window.location.href = authUrl;
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to connect Outlook Calendar", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const disconnectAccountMutation = useMutation({
+    mutationFn: async (accountId: string) => {
+      return await apiRequest("DELETE", `/api/calendar/connected-accounts/${accountId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/connected-accounts"] });
+      toast({ title: "Calendar disconnected" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to disconnect calendar", description: error.message, variant: "destructive" });
+    },
+  });
 
   const createEventMutation = useMutation({
     mutationFn: async (eventData: any) => {
@@ -708,6 +766,57 @@ export default function CalendarPage() {
           </Card>
 
           <Card>
+            <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+              <CardTitle className="text-sm">Connected Calendars</CardTitle>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6"
+                onClick={() => setIsConnectAccountsOpen(true)}
+                data-testid="button-connect-calendar"
+              >
+                <Link2 className="w-3 h-3" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {connectedAccounts.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Connect Google or Outlook to sync events
+                </p>
+              ) : (
+                connectedAccounts.map(account => (
+                  <div 
+                    key={account.id} 
+                    className="flex items-center gap-2 text-sm p-1.5 rounded bg-muted/50"
+                    data-testid={`connected-account-${account.id}`}
+                  >
+                    {account.provider === "google" ? (
+                      <SiGoogle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    ) : (
+                      <Mail className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs truncate block">{account.providerEmail}</span>
+                      {account.syncStatus === "error" && (
+                        <span className="text-[10px] text-destructive">Sync error</span>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 flex-shrink-0"
+                      onClick={() => disconnectAccountMutation.mutate(account.id)}
+                      data-testid={`disconnect-${account.id}`}
+                    >
+                      <Unlink className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Event Types</CardTitle>
             </CardHeader>
@@ -1244,6 +1353,109 @@ export default function CalendarPage() {
               data-testid="button-save-calendar"
             >
               {createCalendarMutation.isPending ? "Creating..." : "Create Calendar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isConnectAccountsOpen} onOpenChange={setIsConnectAccountsOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect External Calendar</DialogTitle>
+            <DialogDescription>
+              Sync your Google Calendar or Microsoft Outlook events with Sentinel Counsel
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3 h-14"
+                onClick={() => connectGoogleMutation.mutate()}
+                disabled={!integrationStatus?.google.configured || connectGoogleMutation.isPending}
+                data-testid="button-connect-google"
+              >
+                <SiGoogle className="w-5 h-5 text-red-500" />
+                <div className="text-left">
+                  <div className="font-medium">Google Calendar</div>
+                  <div className="text-xs text-muted-foreground">
+                    {integrationStatus?.google.configured 
+                      ? "Connect your Google account" 
+                      : "API not configured"}
+                  </div>
+                </div>
+              </Button>
+
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3 h-14"
+                onClick={() => connectMicrosoftMutation.mutate()}
+                disabled={!integrationStatus?.microsoft.configured || connectMicrosoftMutation.isPending}
+                data-testid="button-connect-microsoft"
+              >
+                <Mail className="w-5 h-5 text-blue-600" />
+                <div className="text-left">
+                  <div className="font-medium">Microsoft Outlook</div>
+                  <div className="text-xs text-muted-foreground">
+                    {integrationStatus?.microsoft.configured 
+                      ? "Connect your Microsoft account" 
+                      : "API not configured"}
+                  </div>
+                </div>
+              </Button>
+            </div>
+
+            {(!integrationStatus?.google.configured && !integrationStatus?.microsoft.configured) && (
+              <div className="p-3 rounded-md bg-muted/50 text-sm">
+                <p className="font-medium mb-1">Setup Required</p>
+                <p className="text-muted-foreground text-xs">
+                  To enable calendar sync, add your Google Calendar or Microsoft API credentials 
+                  to your environment variables.
+                </p>
+              </div>
+            )}
+
+            {connectedAccounts.length > 0 && (
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-2">Connected Accounts</h4>
+                <div className="space-y-2">
+                  {connectedAccounts.map(account => (
+                    <div 
+                      key={account.id}
+                      className="flex items-center justify-between p-2 rounded bg-muted/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        {account.provider === "google" ? (
+                          <SiGoogle className="w-4 h-4 text-red-500" />
+                        ) : (
+                          <Mail className="w-4 h-4 text-blue-500" />
+                        )}
+                        <span className="text-sm">{account.providerEmail}</span>
+                        <Badge 
+                          variant={account.syncStatus === "active" ? "default" : "destructive"}
+                          className="text-[10px]"
+                        >
+                          {account.syncStatus}
+                        </Badge>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => disconnectAccountMutation.mutate(account.id)}
+                        data-testid={`dialog-disconnect-${account.id}`}
+                      >
+                        <Unlink className="w-3 h-3 mr-1" />
+                        Disconnect
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsConnectAccountsOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

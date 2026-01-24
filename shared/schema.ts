@@ -12263,6 +12263,18 @@ export const calendarEventStatusEnum = pgEnum("calendar_event_status", [
   "cancelled",
 ]);
 
+export const calendarProviderEnum = pgEnum("calendar_provider", [
+  "google",
+  "microsoft",
+]);
+
+export const calendarSyncStatusEnum = pgEnum("calendar_sync_status", [
+  "active",
+  "paused",
+  "error",
+  "disconnected",
+]);
+
 export const calendarRecurrenceFrequencyEnum = pgEnum("calendar_recurrence_frequency", [
   "daily",
   "weekly",
@@ -12287,6 +12299,72 @@ export const insertUserCalendarSchema = createInsertSchema(userCalendars).omit({
 export type InsertUserCalendar = z.infer<typeof insertUserCalendarSchema>;
 export type UserCalendar = typeof userCalendars.$inferSelect;
 
+// Connected external calendar accounts (Google Calendar, Outlook)
+export const connectedCalendarAccounts = pgTable("connected_calendar_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  provider: calendarProviderEnum("provider").notNull(),
+  providerAccountId: varchar("provider_account_id", { length: 255 }).notNull(),
+  providerEmail: varchar("provider_email", { length: 255 }),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  syncStatus: calendarSyncStatusEnum("sync_status").notNull().default("active"),
+  syncError: text("sync_error"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  syncDirection: varchar("sync_direction", { length: 20 }).notNull().default("bidirectional"),
+  selectedCalendars: jsonb("selected_calendars").$type<string[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  userProviderIdx: index("idx_connected_calendars_user_provider").on(table.userId, table.provider),
+}));
+
+export const insertConnectedCalendarAccountSchema = createInsertSchema(connectedCalendarAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertConnectedCalendarAccount = z.infer<typeof insertConnectedCalendarAccountSchema>;
+export type ConnectedCalendarAccount = typeof connectedCalendarAccounts.$inferSelect;
+
+// External calendar events synced from Google/Outlook
+export const externalCalendarEvents = pgTable("external_calendar_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  connectedAccountId: varchar("connected_account_id").references(() => connectedCalendarAccounts.id, { onDelete: "cascade" }).notNull(),
+  externalEventId: varchar("external_event_id", { length: 255 }).notNull(),
+  externalCalendarId: varchar("external_calendar_id", { length: 255 }).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  isAllDay: boolean("is_all_day").notNull().default(false),
+  location: text("location"),
+  status: varchar("status", { length: 50 }),
+  organizer: jsonb("organizer").$type<{ email: string; displayName?: string }>(),
+  attendees: jsonb("attendees").$type<{ email: string; displayName?: string; responseStatus?: string }[]>().default([]),
+  htmlLink: text("html_link"),
+  conferenceData: jsonb("conference_data").$type<{ conferenceUrl?: string; conferenceSolution?: string }>(),
+  localEventId: varchar("local_event_id").references(() => calendarEvents.id, { onDelete: "set null" }),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+  rawData: jsonb("raw_data"),
+}, (table) => ({
+  accountEventIdx: index("idx_external_events_account").on(table.connectedAccountId),
+  externalIdIdx: index("idx_external_events_external_id").on(table.externalEventId),
+}));
+
+export const insertExternalCalendarEventSchema = createInsertSchema(externalCalendarEvents).omit({ id: true, syncedAt: true });
+export type InsertExternalCalendarEvent = z.infer<typeof insertExternalCalendarEventSchema>;
+export type ExternalCalendarEvent = typeof externalCalendarEvents.$inferSelect;
+
+// OAuth nonces for single-use state protection (prevents replay attacks)
+export const oauthNonces = pgTable("oauth_nonces", {
+  nonce: varchar("nonce", { length: 64 }).primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  provider: varchar("provider", { length: 50 }).notNull(),
+  usedAt: timestamp("used_at"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  expiresIdx: index("idx_oauth_nonces_expires").on(table.expiresAt),
+  userProviderIdx: index("idx_oauth_nonces_user_provider").on(table.userId, table.provider),
+}));
 
 export const calendarEvents = pgTable("calendar_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -12333,6 +12411,9 @@ export const calendarEvents = pgTable("calendar_events", {
   opposingCounsel: text("opposing_counsel"),
   witnessName: text("witness_name"),
   timeEntryId: varchar("time_entry_id"),
+  externalEventId: varchar("external_event_id", { length: 255 }),
+  externalCalendarAccountId: varchar("external_calendar_account_id").references(() => connectedCalendarAccounts.id, { onDelete: "set null" }),
+  syncedToExternal: boolean("synced_to_external").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

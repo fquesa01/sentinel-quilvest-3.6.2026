@@ -55,6 +55,7 @@ import { corporateResearchApi } from "./services/corporate-research-api";
 import recordedStatementsRouter from "./routes/recorded-statements";
 import dueDiligenceRouter from "./routes-due-diligence";
 import ddBooleanSearchRoutes from "./routes/dd-boolean-search-routes";
+import calendarOAuthRouter from "./routes/calendar-oauth";
 
 // Helper to extract email from various formats (e.g., "John Doe <john@example.com>" -> "john@example.com")
 function extractEmail(input: string): string | null {
@@ -287,6 +288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/recorded-statements', recordedStatementsRouter);
   app.use('/api/due-diligence', dueDiligenceRouter);
   app.use('/api/dd-boolean-search', ddBooleanSearchRoutes);
+  app.use(calendarOAuthRouter);
 
   // Register video meeting routes
   registerVideoMeetingRoutes(app, logAction);
