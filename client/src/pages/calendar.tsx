@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel, Users, FileText, AlertCircle, DollarSign, MapPin, Trash2, Edit2, X, Video, MonitorPlay } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel, Users, FileText, AlertCircle, DollarSign, MapPin, Trash2, Edit2, X, Video, MonitorPlay, Brain } from "lucide-react";
 import { SiGooglemeet, SiZoom } from "react-icons/si";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -74,6 +74,7 @@ export default function CalendarPage() {
     clientId: "none",
     calendarId: "none",
     videoConferenceType: "none",
+    enableAmbientIntelligence: false,
     isBillable: false,
     estimatedHours: 0,
     isAllDay: false,
@@ -220,6 +221,7 @@ export default function CalendarPage() {
       clientId: "none",
       calendarId: userCalendars.find(c => c.isDefault)?.id || "none",
       videoConferenceType: "none",
+      enableAmbientIntelligence: false,
       isBillable: false,
       estimatedHours: 0,
       isAllDay: false,
@@ -240,6 +242,7 @@ export default function CalendarPage() {
       clientId: newEvent.clientId && newEvent.clientId !== "none" ? newEvent.clientId : null,
       calendarId: newEvent.calendarId && newEvent.calendarId !== "none" ? newEvent.calendarId : null,
       videoConferenceType: newEvent.videoConferenceType !== "none" ? newEvent.videoConferenceType : null,
+      enableAmbientIntelligence: newEvent.enableAmbientIntelligence,
     });
   };
 
@@ -966,6 +969,29 @@ export default function CalendarPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {newEvent.videoConferenceType !== "none" && (
+                <div className="col-span-2 flex items-center gap-3 p-3 rounded-md bg-muted/50 border">
+                  <Checkbox
+                    id="enableAmbientIntelligence"
+                    checked={newEvent.enableAmbientIntelligence}
+                    onCheckedChange={(v) => setNewEvent(prev => ({ ...prev, enableAmbientIntelligence: !!v }))}
+                    data-testid="checkbox-ambient-intelligence"
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="enableAmbientIntelligence" className="flex items-center gap-2 cursor-pointer">
+                      <Brain className="w-4 h-4 text-primary" />
+                      Enable Ambient Intelligence
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      AI-powered transcription, document discovery, and real-time insights
+                      {(newEvent.caseId !== "none" || newEvent.clientId !== "none") && (
+                        <span className="text-primary"> — linked to selected {newEvent.caseId !== "none" ? "case" : "client"}</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {(newEvent.eventType === "hearing" || newEvent.eventType === "trial") && (
                 <>
