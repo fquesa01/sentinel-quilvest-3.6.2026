@@ -25,19 +25,6 @@ import GRCDashboard from "@/pages/grc-dashboard";
 import GrcRisks from "@/pages/grc-risks";
 import GrcControls from "@/pages/grc-controls";
 import GrcIncidents from "@/pages/grc-incidents";
-import RiskDashboard from "@/pages/risk-dashboard";
-import RiskRegister from "@/pages/risk-register";
-import RiskDetail from "@/pages/risk-detail";
-import RiskAssessments from "@/pages/risk-assessments";
-import RiskAssessmentDetail from "@/pages/risk-assessment-detail";
-import KeyRiskIndicators from "@/pages/key-risk-indicators";
-import KriDetail from "@/pages/kri-detail";
-import RiskAppetitePage from "@/pages/risk-appetite";
-import RiskAppetiteDetail from "@/pages/risk-appetite-detail";
-import BowTieAnalysis from "@/pages/bow-tie-analysis";
-import BowTieDetail from "@/pages/bow-tie-detail";
-import BusinessContinuity from "@/pages/business-continuity";
-import BcpDetail from "@/pages/bcp-detail";
 import VendorRiskPage from "@/pages/vendor-risk";
 import ExecutiveAnalytics from "@/pages/executive-analytics";
 import ManagementAnalytics from "@/pages/management-analytics";
@@ -185,21 +172,6 @@ function AuthenticatedApp() {
               <Route path="/grc/risks" component={GrcRisks} />
               <Route path="/grc/controls" component={GrcControls} />
               <Route path="/grc/incidents" component={GrcIncidents} />
-              <Route path="/risk-management" component={RiskDashboard} />
-              <Route path="/risk-management/register" component={RiskRegister} />
-              <Route path="/risk-management/risk/:id" component={RiskDetail} />
-              <Route path="/risk-management/assessments" component={RiskAssessments} />
-              <Route path="/risk-management/assessments/:id" component={RiskAssessmentDetail} />
-              <Route path="/risk-management/kris" component={KeyRiskIndicators} />
-              <Route path="/risk-management/kris/:id" component={KriDetail} />
-              <Route path="/risk-management/risk-appetite" component={RiskAppetitePage} />
-              <Route path="/risk-management/risk-appetite/:id" component={RiskAppetiteDetail} />
-              <Route path="/risk-management/bow-tie" component={BowTieAnalysis} />
-              <Route path="/risk-management/bow-tie/:id" component={BowTieDetail} />
-              <Route path="/risk-management/bcp" component={BusinessContinuity} />
-              <Route path="/risk-management/bcp/:id" component={BcpDetail} />
-              <Route path="/risk-management/controls" component={GrcControls} />
-              <Route path="/risk-management/incidents" component={GrcIncidents} />
               <Route path="/transactions/dashboard" component={TransactionsDashboard} />
               <Route path="/transactions/deals" component={TransactionsDeals} />
               <Route path="/transactions/deals/:id" component={TransactionsDealDetail} />
