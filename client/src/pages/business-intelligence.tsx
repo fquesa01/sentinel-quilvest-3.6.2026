@@ -536,27 +536,7 @@ export default function BusinessIntelligence() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>About Business Intelligence Summaries</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm text-muted-foreground">
-              <p>
-                This AI-powered tool analyzes your enterprise communications and documents to generate 
-                comprehensive business intelligence reports suitable for external counsel, auditors, and 
-                regulatory review.
-              </p>
-              <p>
-                Each report includes evidence-backed insights across 12 key sections, with confidence 
-                scores for all assertions and source citations for every factual claim.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                <strong>Confidentiality Notice:</strong> Generated reports are marked as attorney work product 
-                and should be treated as confidential material.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+          </div>
       </div>
     </div>
   );
