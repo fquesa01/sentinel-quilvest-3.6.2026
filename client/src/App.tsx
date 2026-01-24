@@ -13,6 +13,7 @@ import CommunicationDetail from "@/pages/communication-detail";
 import CommunicationAnalytics from "@/pages/communication-analytics";
 import Alerts from "@/pages/alerts";
 import CasesPage from "@/pages/cases";
+import ClientsPage from "@/pages/clients";
 import CaseDetail from "@/pages/case-detail";
 import AttorneyQueue from "@/pages/attorney-queue";
 import KnowledgeBase from "@/pages/knowledge-base";
@@ -128,6 +129,7 @@ function AuthenticatedApp() {
               <Route path="/communications/:id" component={CommunicationDetail} />
               <Route path="/communication-analytics" component={CommunicationAnalytics} />
               <Route path="/alerts" component={Alerts} />
+              <Route path="/clients" component={ClientsPage} />
               <Route path="/cases" component={CasesPage} />
               <Route path="/cases/:id" component={CaseDetail} />
               <Route path="/cases/:caseId/communications-heatmap" component={CommunicationsHeatmap} />

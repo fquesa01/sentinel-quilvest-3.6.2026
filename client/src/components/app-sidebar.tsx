@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   BarChart3,
   BookOpen,
+  Building2,
   Calendar,
   FileText,
   Home,
@@ -118,8 +119,20 @@ export function AppSidebar() {
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  // Menu sections - Investigations first, then others
+  // Menu sections - Clients pinned first, then Litigation
   const menuSections: MenuSection[] = [
+    {
+      title: "Clients",
+      defaultOpen: true,
+      items: [
+        {
+          title: "All Clients",
+          url: "/clients",
+          icon: Building2,
+          roles: ["admin", "compliance_officer", "attorney", "external_counsel"],
+        },
+      ],
+    },
     {
       title: "Litigation",
       defaultOpen: true,
