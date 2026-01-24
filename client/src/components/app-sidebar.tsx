@@ -150,12 +150,6 @@ export function AppSidebar() {
           roles: ["admin", "compliance_officer", "attorney", "auditor"],
         },
         {
-          title: "Doc Review",
-          url: "/document-review",
-          icon: Eye,
-          roles: ["admin", "attorney", "compliance_officer"],
-        },
-        {
           title: "Interviews",
           url: "/interviews",
           icon: Calendar,
@@ -221,6 +215,12 @@ export function AppSidebar() {
       title: "Discovery & Productions",
       defaultOpen: true,
       items: [
+        {
+          title: "Doc Review",
+          url: "/document-review",
+          icon: Eye,
+          roles: ["admin", "attorney", "compliance_officer"],
+        },
         {
           title: "Sharing Documents",
           url: "/ediscovery",
