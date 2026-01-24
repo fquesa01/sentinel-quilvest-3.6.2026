@@ -346,7 +346,6 @@ export default function PrivilegedResearch() {
         <title>Privileged Research | Sentinel Counsel LLP</title>
         <meta name="description" content="AI-powered confidential legal research under attorney-client privilege" />
       </Helmet>
-      
       <div className="flex h-[calc(100vh-64px)] bg-background relative">
         {/* Mobile sidebar overlay */}
         {sidebarOpen && (
@@ -646,10 +645,7 @@ export default function PrivilegedResearch() {
                   <Sparkles className="h-8 w-8 text-primary" />
                 </div>
                 <h2 className="text-2xl font-semibold mb-3">Privileged Legal Research</h2>
-                <p className="text-muted-foreground mb-6">
-                  Start a confidential research session with AI assistance. All conversations are 
-                  protected under attorney-client privilege and stored securely.
-                </p>
+                <p className="text-muted-foreground mb-6">Confidential and attorney work product privileged research.</p>
                 <div className="flex flex-col gap-3 text-sm text-left bg-muted/50 rounded-lg p-4 mb-6">
                   <div className="flex items-start gap-3">
                     <FileText className="h-5 w-5 text-primary shrink-0 mt-0.5" />
@@ -867,7 +863,6 @@ export default function PrivilegedResearch() {
           )}
         </div>
       </div>
-
       {/* Retention Policy Dialog */}
       <Dialog open={showRetentionDialog} onOpenChange={setShowRetentionDialog}>
         <DialogContent className="sm:max-w-md overflow-hidden">
@@ -918,7 +913,6 @@ export default function PrivilegedResearch() {
           </div>
         </DialogContent>
       </Dialog>
-
       <AlertDialog open={!!deleteSessionId} onOpenChange={() => setDeleteSessionId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
