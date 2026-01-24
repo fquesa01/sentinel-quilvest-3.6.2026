@@ -162,6 +162,12 @@ export function AppSidebar() {
           roles: ["admin", "compliance_officer", "attorney"],
         },
         {
+          title: "Forms & Templates",
+          url: "/litigation-templates",
+          icon: FileText,
+          roles: ["admin", "compliance_officer", "attorney", "external_counsel"],
+        },
+        {
           title: "Document Sets",
           url: "/document-sets",
           icon: Folder,

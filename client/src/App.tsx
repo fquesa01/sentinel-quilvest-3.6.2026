@@ -14,6 +14,7 @@ import CommunicationAnalytics from "@/pages/communication-analytics";
 import Alerts from "@/pages/alerts";
 import CasesPage from "@/pages/cases";
 import ClientsPage from "@/pages/clients";
+import LitigationTemplatesPage from "@/pages/litigation-templates";
 import CaseDetail from "@/pages/case-detail";
 import AttorneyQueue from "@/pages/attorney-queue";
 import KnowledgeBase from "@/pages/knowledge-base";
@@ -182,6 +183,7 @@ function AuthenticatedApp() {
               <Route path="/report/lookup" component={WhistleblowerLookup} />
               <Route path="/tags" component={TagManagement} />
               <Route path="/document-sets" component={DocumentSets} />
+              <Route path="/litigation-templates" component={LitigationTemplatesPage} />
               <Route path="/monitoring/directory" component={MonitoringDirectory} />
               <Route path="/monitoring/profile/:type/:id" component={MonitoringProfile} />
               <Route path="/monitoring/communications/:type/:personId/:contactType/:contactId" component={PersonToPersonCommunications} />
