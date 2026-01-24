@@ -591,6 +591,141 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  // ===== CLIENT MANAGEMENT ROUTES =====
+  
+  // Get all clients
+  app.get("/api/clients", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
+    try {
+      const isActive = req.query.isActive ? req.query.isActive === 'true' : undefined;
+      const searchQuery = req.query.search as string | undefined;
+      const clients = await storage.getClients({ isActive, searchQuery });
+      res.json(clients);
+    } catch (error: any) {
+      console.error("Error fetching clients:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get single client with full details
+  app.get("/api/clients/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
+    try {
+      const client = await storage.getClientWithDetails(req.params.id);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+      res.json(client);
+    } catch (error: any) {
+      console.error("Error fetching client:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create new client
+  app.post("/api/clients", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+    try {
+      const clientData = { ...req.body, createdBy: req.user.id };
+      const client = await storage.createClient(clientData);
+      await logAction(req, "create", "client", client.id, { companyName: client.companyName });
+      res.status(201).json(client);
+    } catch (error: any) {
+      console.error("Error creating client:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update client
+  app.patch("/api/clients/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+    try {
+      const client = await storage.updateClient(req.params.id, req.body);
+      await logAction(req, "update", "client", client.id, { updates: Object.keys(req.body) });
+      res.json(client);
+    } catch (error: any) {
+      console.error("Error updating client:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete client
+  app.delete("/api/clients/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      await storage.deleteClient(req.params.id);
+      await logAction(req, "delete", "client", req.params.id, {});
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting client:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get client contacts
+  app.get("/api/clients/:id/contacts", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
+    try {
+      const contacts = await storage.getClientContacts(req.params.id);
+      res.json(contacts);
+    } catch (error: any) {
+      console.error("Error fetching client contacts:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create client contact
+  app.post("/api/clients/:id/contacts", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+    try {
+      const contactData = { ...req.body, clientId: req.params.id };
+      const contact = await storage.createClientContact(contactData);
+      res.status(201).json(contact);
+    } catch (error: any) {
+      console.error("Error creating client contact:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update client contact
+  app.patch("/api/client-contacts/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+    try {
+      const contact = await storage.updateClientContact(req.params.id, req.body);
+      res.json(contact);
+    } catch (error: any) {
+      console.error("Error updating client contact:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete client contact
+  app.delete("/api/client-contacts/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      await storage.deleteClientContact(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting client contact:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Link client to case
+  app.post("/api/clients/:id/cases", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+    try {
+      const linkData = { clientId: req.params.id, caseId: req.body.caseId, role: req.body.role };
+      const link = await storage.linkClientToCase(linkData);
+      res.status(201).json(link);
+    } catch (error: any) {
+      console.error("Error linking client to case:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Unlink client from case
+  app.delete("/api/clients/:clientId/cases/:caseId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+    try {
+      await storage.unlinkClientFromCase(req.params.clientId, req.params.caseId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error unlinking client from case:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Search autocomplete endpoint
   app.get("/api/search/autocomplete", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
     try {
