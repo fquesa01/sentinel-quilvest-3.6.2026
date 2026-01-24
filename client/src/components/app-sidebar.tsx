@@ -132,7 +132,7 @@ export function AppSidebar() {
           roles: ["admin", "compliance_officer", "attorney", "auditor"],
         },
         {
-          title: "Email & Document Review",
+          title: "Doc Review",
           url: "/document-review",
           icon: Eye,
           roles: ["admin", "attorney", "compliance_officer"],
