@@ -300,6 +300,7 @@ const NAVIGATION_INTENTS = [
 
 const ACTION_INTENTS = [
   "schedule_interview",
+  "create_calendar_event",
   "search_documents",
   "search_emails",
   "filter_by_sender",
@@ -383,6 +384,25 @@ ACTION COMMANDS (respond with mode: "command"):
 - "Schedule an interview with [name] for [date/time]" → schedule_interview
 - "Search for [query]" → search_documents
 - "Find emails from [sender]" → filter_by_sender
+
+CALENDAR EVENT CREATION (respond with mode: "command"):
+IMPORTANT: When the user wants to create a meeting, calendar event, appointment, or schedule time with someone, use create_calendar_event intent.
+- "Create a meeting with [person] for [date/time]" → create_calendar_event
+- "Schedule a meeting between [person] and me for [time]" → create_calendar_event  
+- "Add a calendar event for [title] on [date]" → create_calendar_event
+- "Set up a call with [person] on [day] at [time]" → create_calendar_event
+- "Book a meeting for [date/time]" → create_calendar_event
+- "Create an appointment with [person] next [day]" → create_calendar_event
+- Parameters:
+  - title: meeting/event title (derive from context, e.g., "Meeting with Ed")
+  - startTime: date/time string (e.g., "Monday at 9 AM", "tomorrow at 3pm", "next Tuesday at 2:30 PM")
+  - attendees: array of attendee names mentioned (extract from "with [person]", "between [person] and me")
+  - duration: optional duration in minutes (default 60)
+  - eventType: optional type like "meeting", "hearing", "deposition", "client_meeting" (default: "meeting")
+- Examples:
+  - "Create a meeting between Ed and I for 9:00 AM this upcoming Monday" → title: "Meeting with Ed", startTime: "this Monday at 9:00 AM", attendees: ["Ed"]
+  - "Schedule a call with John tomorrow at 2pm" → title: "Call with John", startTime: "tomorrow at 2pm", attendees: ["John"]
+  - "Book a client meeting on Friday at 10am" → title: "Client Meeting", startTime: "Friday at 10am", eventType: "client_meeting"
 
 VIDEO CONFERENCE COMMANDS (respond with mode: "command"):
 IMPORTANT: When the user wants to start a video call, video conference, or video meeting, use start_video_conference intent.

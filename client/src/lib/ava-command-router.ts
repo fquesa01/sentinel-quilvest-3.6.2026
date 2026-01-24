@@ -1,38 +1,108 @@
-import { addDays, setHours, setMinutes, isValid } from "date-fns";
+import { addDays, setHours, setMinutes, isValid, getDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
+
+// Helper to extract time from string
+function extractTime(str: string): { hours: number; minutes: number } | null {
+  const timeMatch = str.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (timeMatch) {
+    let hours = parseInt(timeMatch[1], 10);
+    const minutes = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    const isPM = timeMatch[3]?.toLowerCase() === "pm";
+    const isAM = timeMatch[3]?.toLowerCase() === "am";
+    if (isPM && hours < 12) hours += 12;
+    if (isAM && hours === 12) hours = 0;
+    // Handle ambiguous times (no am/pm) - assume PM for times 1-6, AM for 7-12
+    if (!timeMatch[3] && hours >= 1 && hours <= 6) hours += 12;
+    return { hours, minutes };
+  }
+  return null;
+}
+
+// Get next occurrence of a day of week (0=Sunday, 1=Monday, etc.)
+function getNextDayOfWeek(dayOfWeek: number, includeToday = false): Date {
+  const now = new Date();
+  const currentDay = getDay(now);
+  let daysToAdd = dayOfWeek - currentDay;
+  if (daysToAdd < 0 || (daysToAdd === 0 && !includeToday)) {
+    daysToAdd += 7;
+  }
+  return addDays(now, daysToAdd);
+}
 
 export function parseScheduledTime(timeStr: string, timezone?: string): Date {
   const now = new Date();
   const lowerStr = timeStr.toLowerCase();
   
+  // Day of week mapping
+  const dayMap: Record<string, number> = {
+    sunday: 0, sun: 0,
+    monday: 1, mon: 1,
+    tuesday: 2, tue: 2, tues: 2,
+    wednesday: 3, wed: 3,
+    thursday: 4, thu: 4, thur: 4, thurs: 4,
+    friday: 5, fri: 5,
+    saturday: 6, sat: 6,
+  };
+  
   if (lowerStr.includes("tomorrow")) {
     const tomorrow = addDays(now, 1);
-    const timeMatch = lowerStr.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    if (timeMatch) {
-      let hours = parseInt(timeMatch[1], 10);
-      const minutes = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-      const isPM = timeMatch[3]?.toLowerCase() === "pm";
-      if (isPM && hours < 12) hours += 12;
-      if (!isPM && hours === 12) hours = 0;
-      return setMinutes(setHours(tomorrow, hours), minutes);
+    const time = extractTime(lowerStr);
+    if (time) {
+      return setMinutes(setHours(tomorrow, time.hours), time.minutes);
     }
     return setHours(tomorrow, 9);
   }
   
   if (lowerStr.includes("today")) {
-    const timeMatch = lowerStr.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    if (timeMatch) {
-      let hours = parseInt(timeMatch[1], 10);
-      const minutes = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-      const isPM = timeMatch[3]?.toLowerCase() === "pm";
-      if (isPM && hours < 12) hours += 12;
-      if (!isPM && hours === 12) hours = 0;
-      return setMinutes(setHours(now, hours), minutes);
+    const time = extractTime(lowerStr);
+    if (time) {
+      return setMinutes(setHours(now, time.hours), time.minutes);
+    }
+    return setHours(now, 9);
+  }
+  
+  // Handle "next [day]" - e.g., "next Monday" (always means the week after, not this week)
+  const nextDayMatch = lowerStr.match(/next\s+(sunday|sun|monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thur|thurs|friday|fri|saturday|sat)/i);
+  if (nextDayMatch) {
+    const dayName = nextDayMatch[1].toLowerCase();
+    const targetDay = dayMap[dayName];
+    if (targetDay !== undefined) {
+      // "next Monday" means the Monday in the next week (7+ days from now)
+      const currentDay = getDay(now);
+      let daysToAdd = targetDay - currentDay;
+      if (daysToAdd <= 0) daysToAdd += 7; // If same day or past, go to next week
+      daysToAdd += 7; // Add a week because "next" means the week after
+      const targetDate = addDays(now, daysToAdd);
+      const time = extractTime(lowerStr);
+      if (time) {
+        return setMinutes(setHours(targetDate, time.hours), time.minutes);
+      }
+      return setHours(targetDate, 9);
+    }
+  }
+  
+  // Handle "this [day]" or "[day]" or "upcoming [day]" - e.g., "this Monday", "Monday", "upcoming Monday"
+  const thisDayMatch = lowerStr.match(/(this\s+|upcoming\s+|this\s+upcoming\s+)?(sunday|sun|monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thur|thurs|friday|fri|saturday|sat)/i);
+  if (thisDayMatch) {
+    const dayName = thisDayMatch[2].toLowerCase();
+    const targetDay = dayMap[dayName];
+    if (targetDay !== undefined) {
+      const targetDate = getNextDayOfWeek(targetDay, false);
+      const time = extractTime(lowerStr);
+      if (time) {
+        return setMinutes(setHours(targetDate, time.hours), time.minutes);
+      }
+      return setHours(targetDate, 9);
     }
   }
   
   if (lowerStr.includes("next week")) {
-    return addDays(setHours(now, 9), 7);
+    const time = extractTime(lowerStr);
+    const targetDate = addDays(now, 7);
+    if (time) {
+      return setMinutes(setHours(targetDate, time.hours), time.minutes);
+    }
+    return setHours(targetDate, 9);
   }
   
   const dateMatch = lowerStr.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
@@ -41,8 +111,15 @@ export function parseScheduledTime(timeStr: string, timezone?: string): Date {
     const day = parseInt(dateMatch[2], 10);
     const year = dateMatch[3] ? parseInt(dateMatch[3], 10) : now.getFullYear();
     const fullYear = year < 100 ? 2000 + year : year;
-    const parsed = new Date(fullYear, month - 1, day, 9, 0);
+    const time = extractTime(lowerStr);
+    const parsed = new Date(fullYear, month - 1, day, time?.hours || 9, time?.minutes || 0);
     if (isValid(parsed)) return parsed;
+  }
+  
+  // Try to extract just a time for today
+  const time = extractTime(lowerStr);
+  if (time) {
+    return setMinutes(setHours(now, time.hours), time.minutes);
   }
   
   return addDays(setHours(now, 9), 1);
@@ -754,6 +831,82 @@ export async function executeAvaCommand(
       } catch (err) {
         console.error("[CommandRouter] Failed to search transactions:", err);
         return { errorMessage: "Failed to search transactions. Please try again." };
+      }
+    }
+
+    case "create_calendar_event": {
+      const title = parameters.title || "Meeting";
+      const startTimeStr = parameters.startTime;
+      const attendees = parameters.attendees || [];
+      const duration = parameters.duration || 60;
+      const eventType = parameters.eventType || "meeting";
+
+      if (!startTimeStr) {
+        return { errorMessage: "I need a date and time for this event. Please specify when you'd like to schedule it." };
+      }
+
+      try {
+        // Parse the natural language time using our helper
+        const startDate = parseScheduledTime(startTimeStr, context?.timezone);
+        const endDate = addDays(startDate, 0); // Clone
+        endDate.setMinutes(endDate.getMinutes() + duration);
+
+        // Create the calendar event via API
+        // Note: We don't include externalAttendees since we only have names from voice,
+        // and the backend requires email/phone for invitees
+        const response = await apiRequest("POST", "/api/calendar/events", {
+          title,
+          startTime: startDate.toISOString(),
+          endTime: endDate.toISOString(),
+          eventType,
+          description: attendees.length > 0 ? `Meeting with ${attendees.join(", ")}` : undefined,
+          isAllDay: false,
+          reminderMinutes: 15,
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to create calendar event");
+        }
+
+        const event = await response.json();
+        
+        const formattedDate = startDate.toLocaleDateString(undefined, { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+        const formattedTime = startDate.toLocaleTimeString(undefined, { 
+          hour: 'numeric', 
+          minute: '2-digit' 
+        });
+
+        showToast?.({
+          title: "Event Created",
+          description: `${title} scheduled for ${formattedDate} at ${formattedTime}`,
+        });
+
+        navigate("/calendar");
+        closeDrawer?.();
+
+        return {
+          navigateTo: "/calendar",
+          successMessage: `I've created "${title}" for ${formattedDate} at ${formattedTime}.`,
+          responseMessage: `Done! I've added "${title}" to your calendar for ${formattedDate} at ${formattedTime}.`,
+          actionLink: {
+            label: "View Calendar",
+            href: "/calendar",
+          },
+        };
+      } catch (err) {
+        console.error("[CommandRouter] Failed to create calendar event:", err);
+        return { 
+          errorMessage: "Failed to create the calendar event. Please try again or create it manually.",
+          actionLink: {
+            label: "Go to Calendar",
+            href: "/calendar",
+          },
+        };
       }
     }
 
