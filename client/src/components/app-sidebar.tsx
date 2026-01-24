@@ -150,7 +150,7 @@ export function AppSidebar() {
           roles: ["admin", "attorney", "compliance_officer"],
         },
         {
-          title: "Interviews/Video Conferencing",
+          title: "Interviews",
           url: "/interviews",
           icon: Calendar,
           roles: ["admin", "compliance_officer", "attorney"],
@@ -164,7 +164,7 @@ export function AppSidebar() {
       ],
     },
     {
-      title: "Business Transactions",
+      title: "Transactions",
       defaultOpen: true,
       items: [
         {
