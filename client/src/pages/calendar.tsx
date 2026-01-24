@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { CalendarEvent, Case, Client } from "@shared/schema";
 
-type ViewType = "day" | "week" | "month";
+type ViewType = "day" | "week" | "month" | "list";
 
 const eventTypeColors: Record<string, string> = {
   hearing: "bg-blue-500",
@@ -419,6 +419,97 @@ export default function CalendarPage() {
     );
   };
 
+  const renderListView = () => {
+    const sortedEvents = [...events].sort((a, b) => 
+      new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+    );
+
+    const groupedEvents: Record<string, CalendarEvent[]> = {};
+    sortedEvents.forEach(event => {
+      const dateKey = format(new Date(event.startTime), "yyyy-MM-dd");
+      if (!groupedEvents[dateKey]) {
+        groupedEvents[dateKey] = [];
+      }
+      groupedEvents[dateKey].push(event);
+    });
+
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="p-4 border-b">
+          <div className="text-lg font-medium">
+            Events for {format(startDate, "MMM d")} - {format(endDate, "MMM d, yyyy")}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {events.length} event{events.length !== 1 ? 's' : ''} found
+          </div>
+        </div>
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-4">
+            {Object.keys(groupedEvents).length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <CalendarIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium">No events scheduled</p>
+                <p className="text-sm">Click "New Event" to add your first event</p>
+              </div>
+            ) : (
+              Object.entries(groupedEvents).map(([dateKey, dayEvents]) => (
+                <div key={dateKey} className="space-y-2">
+                  <div className="sticky top-0 bg-background py-2 border-b">
+                    <h3 className="font-semibold text-sm text-muted-foreground">
+                      {format(new Date(dateKey), "EEEE, MMMM d, yyyy")}
+                    </h3>
+                  </div>
+                  <div className="space-y-2">
+                    {dayEvents.map(event => {
+                      const Icon = eventTypeIcons[event.eventType] || CalendarIcon;
+                      return (
+                        <div
+                          key={event.id}
+                          className="flex items-start gap-4 p-3 rounded-lg border hover-elevate cursor-pointer"
+                          onClick={() => handleEventClick(event)}
+                          data-testid={`list-event-${event.id}`}
+                        >
+                          <div className={cn("p-2 rounded text-white flex-shrink-0", eventTypeColors[event.eventType])}>
+                            <Icon className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium">{event.title}</div>
+                            <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+                              <Clock className="w-3 h-3" />
+                              {format(new Date(event.startTime), "h:mm a")} - {format(new Date(event.endTime), "h:mm a")}
+                            </div>
+                            {event.location && (
+                              <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+                                <MapPin className="w-3 h-3" />
+                                {event.location}
+                              </div>
+                            )}
+                            {event.description && (
+                              <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{event.description}</p>
+                            )}
+                          </div>
+                          <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                            <Badge variant="outline" className="capitalize text-xs">{event.eventType}</Badge>
+                            {event.isBillable && (
+                              <Badge variant="secondary" className="text-xs">
+                                <DollarSign className="w-3 h-3 mr-1" />
+                                {event.estimatedHours || 0}h
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  };
+
   const renderMiniCalendar = () => {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
@@ -552,6 +643,7 @@ export default function CalendarPage() {
                 {view === "month" && format(currentDate, "MMMM yyyy")}
                 {view === "week" && `${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`}
                 {view === "day" && format(currentDate, "MMMM d, yyyy")}
+                {view === "list" && `${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`}
               </h2>
             </div>
             <div className="flex items-center gap-1">
@@ -579,6 +671,14 @@ export default function CalendarPage() {
               >
                 Month
               </Button>
+              <Button
+                variant={view === "list" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("list")}
+                data-testid="button-view-list"
+              >
+                List
+              </Button>
             </div>
           </div>
           
@@ -591,6 +691,7 @@ export default function CalendarPage() {
               {view === "month" && renderMonthView()}
               {view === "week" && renderWeekView()}
               {view === "day" && renderDayView()}
+              {view === "list" && renderListView()}
             </>
           )}
         </Card>
