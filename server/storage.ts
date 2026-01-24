@@ -324,6 +324,16 @@ import {
   type InsertPEDealDocument,
   type DealTimelineEvent,
   type InsertDealTimelineEvent,
+  clients,
+  clientContacts,
+  clientCases,
+  type Client,
+  type InsertClient,
+  type ClientContact,
+  type InsertClientContact,
+  type ClientCase,
+  type InsertClientCase,
+  type ClientWithDetails,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray } from "drizzle-orm";
@@ -5998,6 +6008,133 @@ export class DatabaseStorage implements IStorage {
 
   async deleteDiligenceTemplate(id: string): Promise<void> {
     await db.delete(diligenceTemplates).where(eq(diligenceTemplates.id, id));
+  }
+
+  // ===== CLIENT MANAGEMENT OPERATIONS =====
+
+  async getClients(filters?: { isActive?: boolean; searchQuery?: string }): Promise<Client[]> {
+    let query = db.select().from(clients);
+    const conditions: any[] = [];
+    
+    if (filters?.isActive !== undefined) {
+      conditions.push(eq(clients.isActive, filters.isActive));
+    }
+    if (filters?.searchQuery) {
+      conditions.push(ilike(clients.companyName, `%${filters.searchQuery}%`));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    return query.orderBy(desc(clients.createdAt));
+  }
+
+  async getClient(id: string): Promise<Client | undefined> {
+    const result = await db.select().from(clients).where(eq(clients.id, id));
+    return result[0];
+  }
+
+  async getClientWithDetails(id: string): Promise<ClientWithDetails | undefined> {
+    const client = await this.getClient(id);
+    if (!client) return undefined;
+
+    const contacts = await db.select().from(clientContacts).where(eq(clientContacts.clientId, id));
+    
+    const clientCaseLinks = await db.select({
+      caseId: clientCases.caseId,
+      role: clientCases.role,
+      caseNumber: cases.caseNumber,
+      title: cases.title,
+      status: cases.status,
+    })
+    .from(clientCases)
+    .leftJoin(cases, eq(clientCases.caseId, cases.id))
+    .where(eq(clientCases.clientId, id));
+
+    let primaryAttorney: { id: string; firstName: string | null; lastName: string | null } | undefined;
+    let leadParalegal: { id: string; firstName: string | null; lastName: string | null } | undefined;
+
+    if (client.primaryAttorneyId) {
+      const attorney = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+        .from(users).where(eq(users.id, client.primaryAttorneyId));
+      primaryAttorney = attorney[0];
+    }
+    if (client.leadParalegalId) {
+      const paralegal = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+        .from(users).where(eq(users.id, client.leadParalegalId));
+      leadParalegal = paralegal[0];
+    }
+
+    return {
+      ...client,
+      contacts,
+      cases: clientCaseLinks.map(c => ({
+        caseId: c.caseId,
+        caseNumber: c.caseNumber || '',
+        title: c.title || '',
+        status: c.status || '',
+        role: c.role || 'plaintiff',
+      })),
+      primaryAttorney,
+      leadParalegal,
+    };
+  }
+
+  async createClient(data: InsertClient): Promise<Client> {
+    const result = await db.insert(clients).values(data).returning();
+    return result[0];
+  }
+
+  async updateClient(id: string, updates: Partial<Client>): Promise<Client> {
+    const result = await db.update(clients)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(clients.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteClient(id: string): Promise<void> {
+    await db.delete(clients).where(eq(clients.id, id));
+  }
+
+  // Client Contacts
+  async getClientContacts(clientId: string): Promise<ClientContact[]> {
+    return db.select().from(clientContacts).where(eq(clientContacts.clientId, clientId));
+  }
+
+  async createClientContact(data: InsertClientContact): Promise<ClientContact> {
+    const result = await db.insert(clientContacts).values(data).returning();
+    return result[0];
+  }
+
+  async updateClientContact(id: string, updates: Partial<ClientContact>): Promise<ClientContact> {
+    const result = await db.update(clientContacts)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(clientContacts.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteClientContact(id: string): Promise<void> {
+    await db.delete(clientContacts).where(eq(clientContacts.id, id));
+  }
+
+  // Client-Case Links
+  async getClientCases(clientId: string): Promise<ClientCase[]> {
+    return db.select().from(clientCases).where(eq(clientCases.clientId, clientId));
+  }
+
+  async linkClientToCase(data: InsertClientCase): Promise<ClientCase> {
+    const result = await db.insert(clientCases).values(data).returning();
+    return result[0];
+  }
+
+  async unlinkClientFromCase(clientId: string, caseId: string): Promise<void> {
+    await db.delete(clientCases).where(and(
+      eq(clientCases.clientId, clientId),
+      eq(clientCases.caseId, caseId)
+    ));
   }
 }
 
