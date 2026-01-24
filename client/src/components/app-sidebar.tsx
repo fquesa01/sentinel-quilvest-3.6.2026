@@ -131,6 +131,12 @@ export function AppSidebar() {
           icon: Building2,
           roles: ["admin", "compliance_officer", "attorney", "external_counsel"],
         },
+        {
+          title: "Business Intelligence",
+          url: "/business-intelligence",
+          icon: Briefcase,
+          roles: ["admin", "attorney", "external_counsel", "auditor"],
+        },
       ],
     },
     {
@@ -245,12 +251,6 @@ export function AppSidebar() {
       title: "Analytics & Intelligence",
       defaultOpen: true,
       items: [
-        {
-          title: "Business Intelligence",
-          url: "/business-intelligence",
-          icon: Briefcase,
-          roles: ["admin", "attorney", "external_counsel", "auditor"],
-        },
         {
           title: "Communication Analytics",
           url: "/communication-analytics",
