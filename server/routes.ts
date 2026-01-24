@@ -781,6 +781,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========================
+  // Litigation Templates API
+  // ========================
+  
+  // Get all templates with filters
+  app.get("/api/litigation-templates", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const filters = {
+        category: req.query.category as string | undefined,
+        jurisdiction: req.query.jurisdiction as string | undefined,
+        searchQuery: req.query.search as string | undefined,
+        userId: req.user?.id,
+      };
+      const templates = await storage.getLitigationTemplates(filters);
+      res.json(templates);
+    } catch (error: any) {
+      console.error("Error fetching templates:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get single template
+  app.get("/api/litigation-templates/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
+    try {
+      const template = await storage.getLitigationTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      console.error("Error fetching template:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Upload new template
+  app.post("/api/litigation-templates", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), upload.single("file"), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const fileType = req.file.originalname.split('.').pop()?.toLowerCase();
+      if (!['docx', 'doc', 'xlsx', 'xls', 'pdf'].includes(fileType || '')) {
+        return res.status(400).json({ message: "Invalid file type. Allowed: docx, doc, xlsx, xls, pdf" });
+      }
+
+      const templateData = {
+        name: req.body.name || req.file.originalname.replace(/\.[^/.]+$/, ''),
+        description: req.body.description || null,
+        category: req.body.category || 'other',
+        pleadingType: req.body.pleadingType || null,
+        jurisdiction: req.body.jurisdiction || 'federal',
+        tags: req.body.tags ? JSON.parse(req.body.tags) : [],
+        fileName: req.file.originalname,
+        fileType: fileType as 'docx' | 'doc' | 'xlsx' | 'xls' | 'pdf',
+        fileSize: req.file.size,
+        fileData: req.file.buffer,
+        uploadedBy: req.user.id,
+      };
+
+      const template = await storage.createLitigationTemplate(templateData);
+      await logAction(req, "create", "litigation_template", template.id, { name: template.name });
+      res.status(201).json(template);
+    } catch (error: any) {
+      console.error("Error uploading template:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update template metadata
+  app.patch("/api/litigation-templates/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+    try {
+      const updates: any = {};
+      if (req.body.name) updates.name = req.body.name;
+      if (req.body.description !== undefined) updates.description = req.body.description;
+      if (req.body.category) updates.category = req.body.category;
+      if (req.body.pleadingType !== undefined) updates.pleadingType = req.body.pleadingType;
+      if (req.body.jurisdiction) updates.jurisdiction = req.body.jurisdiction;
+      if (req.body.tags) updates.tags = req.body.tags;
+
+      const template = await storage.updateLitigationTemplate(req.params.id, updates);
+      await logAction(req, "update", "litigation_template", template.id, updates);
+      res.json(template);
+    } catch (error: any) {
+      console.error("Error updating template:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete template
+  app.delete("/api/litigation-templates/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      await storage.deleteLitigationTemplate(req.params.id);
+      await logAction(req, "delete", "litigation_template", req.params.id, {});
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting template:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Download template file
+  app.get("/api/litigation-templates/:id/download", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const template = await storage.getLitigationTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      // Record usage
+      if (req.user?.id) {
+        await storage.recordTemplateUsage(template.id, req.user.id);
+      }
+
+      const mimeTypes: Record<string, string> = {
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'doc': 'application/msword',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'xls': 'application/vnd.ms-excel',
+        'pdf': 'application/pdf',
+      };
+
+      res.setHeader('Content-Type', mimeTypes[template.fileType] || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${template.fileName}"`);
+      res.send(template.fileData);
+    } catch (error: any) {
+      console.error("Error downloading template:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Add to favorites
+  app.post("/api/litigation-templates/:id/favorite", isAuthenticated, async (req: any, res) => {
+    try {
+      const favorite = await storage.addTemplateFavorite(req.params.id, req.user.id);
+      res.status(201).json(favorite);
+    } catch (error: any) {
+      console.error("Error adding favorite:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Remove from favorites
+  app.delete("/api/litigation-templates/:id/favorite", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.removeTemplateFavorite(req.params.id, req.user.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error removing favorite:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get user's favorites
+  app.get("/api/litigation-templates-favorites", isAuthenticated, async (req: any, res) => {
+    try {
+      const favorites = await storage.getTemplateFavorites(req.user.id);
+      res.json(favorites);
+    } catch (error: any) {
+      console.error("Error fetching favorites:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get recently used templates
+  app.get("/api/litigation-templates-recent", isAuthenticated, async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const templates = await storage.getRecentlyUsedTemplates(req.user.id, limit);
+      res.json(templates);
+    } catch (error: any) {
+      console.error("Error fetching recent templates:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Search autocomplete endpoint
   app.get("/api/search/autocomplete", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
     try {
