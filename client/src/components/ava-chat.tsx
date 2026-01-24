@@ -737,7 +737,7 @@ export function AvaChat({
           aria-label="Open Emma AI Compliance Assistant chat"
         >
           <Bot className="h-4 w-4 shrink-0" />
-          <span className="group-data-[collapsible=icon]:hidden">Speak to Navigate or Create</span>
+          <span className="group-data-[collapsible=icon]:hidden flex items-center gap-1.5"><Mic className="h-3.5 w-3.5" /> to Navigate or Create</span>
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="w-full sm:w-[500px] p-0 flex flex-col" role="dialog" aria-label="Emma AI Compliance Assistant">
