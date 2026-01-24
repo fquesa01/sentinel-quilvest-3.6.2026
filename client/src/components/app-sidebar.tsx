@@ -299,13 +299,7 @@ export function AppSidebar() {
           icon: Home,
           roles: ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor"],
         },
-        {
-          title: "My Compliance",
-          url: "/employee/compliance",
-          icon: GraduationCap,
-          roles: ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor"],
-        },
-        {
+                {
           title: "Admin Dashboard",
           url: "/admin",
           icon: Settings,
@@ -317,13 +311,7 @@ export function AppSidebar() {
           icon: Users,
           roles: ["admin"],
         },
-        {
-          title: "Platform Settings",
-          url: "/settings",
-          icon: Settings,
-          roles: ["admin"],
-        },
-        {
+                {
           title: "Role Management",
           url: "/roles",
           icon: UserCog,
