@@ -731,13 +731,13 @@ export function AvaChat({
       <SheetTrigger asChild>
         <Button
           variant="default"
-          size="sm"
-          className="flex-1 justify-start gap-2 group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:w-9 group-data-[collapsible=icon]:h-9 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:justify-center"
+          size="default"
+          className="w-full justify-start gap-2 group-data-[collapsible=icon]:w-9 group-data-[collapsible=icon]:h-9 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:justify-center"
           data-testid="button-open-emma-chat"
           aria-label="Open Emma AI Compliance Assistant chat"
         >
           <Bot className="h-4 w-4 shrink-0" />
-          <span className="group-data-[collapsible=icon]:hidden">Emma</span>
+          <span className="group-data-[collapsible=icon]:hidden">Speak to Navigate or Create</span>
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="w-full sm:w-[500px] p-0 flex flex-col" role="dialog" aria-label="Emma AI Compliance Assistant">

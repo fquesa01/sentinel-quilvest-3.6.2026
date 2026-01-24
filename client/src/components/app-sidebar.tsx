@@ -418,6 +418,19 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
       <SidebarContent>
+        {/* Pinned Emma section - always at very top */}
+        <SidebarGroup className="py-2 px-3">
+          {isCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="w-full"><AvaChat /></div>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>Speak to Navigate or Create</TooltipContent>
+            </Tooltip>
+          ) : (
+            <div className="w-full"><AvaChat /></div>
+          )}
+        </SidebarGroup>
         {/* Pinned My Queue section - always at top */}
         {user && ["admin", "attorney", "external_counsel"].includes(user.role || "") && (
           <SidebarGroup className="py-2">
@@ -601,16 +614,6 @@ export function AppSidebar() {
           </div>
         </div>
         <div className="flex gap-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
-          {isCollapsed ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div><AvaChat /></div>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={8}>Emma AI Assistant</TooltipContent>
-            </Tooltip>
-          ) : (
-            <AvaChat />
-          )}
           <Button
             variant="ghost"
             size="sm"
