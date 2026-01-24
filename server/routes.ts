@@ -1015,6 +1015,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Zod schema for image extraction request
+  const extractFromImageSchema = z.object({
+    image: z.string()
+      .min(1, "Image is required")
+      .refine(
+        (val) => /^data:image\/(jpeg|png|gif|webp);base64,/.test(val),
+        "Invalid image format. Please upload a JPEG, PNG, GIF, or WebP image."
+      )
+      .refine(
+        (val) => {
+          const base64Data = val.split("base64,")[1];
+          if (!base64Data) return false;
+          const estimatedSize = (base64Data.length * 3) / 4;
+          return estimatedSize <= 10 * 1024 * 1024; // 10MB
+        },
+        "Image too large. Please upload an image smaller than 10MB."
+      )
+  });
+
+  // Extract event details from image using OpenAI vision
+  app.post("/api/calendar/extract-from-image", isAuthenticated, async (req: any, res) => {
+    try {
+      // Validate request body with Zod schema
+      const parseResult = extractFromImageSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          message: parseResult.error.errors[0]?.message || "Invalid request" 
+        });
+      }
+      
+      const { image } = parseResult.data;
+      const base64Data = image.split("base64,")[1];
+      const mimeMatch = image.match(/^data:(image\/[^;]+);/);
+      const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [
+          {
+            role: "system",
+            content: `You are an AI assistant that extracts calendar event details from images of legal documents, court notices, meeting invitations, and similar documents.
+
+Extract the following fields if present:
+- title: The event title or subject
+- eventType: One of: hearing, deposition, deadline, trial, meeting, filing, mediation, conference, other
+- startTime: Date and time in ISO 8601 format (YYYY-MM-DDTHH:mm)
+- duration: Duration in minutes (15, 30, 45, 60, 120, 180, 240, 300, 360, 420, 480, half_day, all_day)
+- description: A brief description or summary
+- location: The venue or address
+- courtName: If it's a court-related event
+- judgeName: If a judge is mentioned
+
+Return ONLY a valid JSON object with these fields. Only include fields that you can confidently extract from the image. If a date is found but no time, assume 9:00 AM.`
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Extract event details from this document image:"
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:\${mimeType};base64,\${base64Data}`
+                }
+              }
+            ]
+          }
+        ],
+        max_completion_tokens: 1000,
+      });
+
+      const content = response.choices[0]?.message?.content || "";
+      
+      // Robust JSON parsing with multiple fallback strategies
+      let extracted: any = {};
+      let jsonStr = content.trim();
+      
+      try {
+        extracted = JSON.parse(jsonStr);
+      } catch {
+        const jsonBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonBlockMatch) {
+          jsonStr = jsonBlockMatch[1].trim();
+        }
+        
+        const braceMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (braceMatch) {
+          jsonStr = braceMatch[0];
+        }
+        
+        try {
+          extracted = JSON.parse(jsonStr);
+        } catch (parseError) {
+          console.error("Failed to parse AI response:", content);
+          return res.status(422).json({ 
+            message: "Could not extract event details from this image. Please try a clearer image or enter details manually." 
+          });
+        }
+      }
+      
+      // Validate extracted fields have expected types
+      const validatedResult: Record<string, string> = {};
+      const stringFields = ["title", "eventType", "startTime", "duration", "description", "location", "courtName", "judgeName"];
+      
+      for (const field of stringFields) {
+        if (extracted[field] && typeof extracted[field] === "string") {
+          validatedResult[field] = extracted[field];
+        }
+      }
+      
+      res.json(validatedResult);
+    } catch (error: any) {
+      console.error("Error extracting event from image:", error);
+      res.status(500).json({ message: error.message || "Failed to extract event details" });
+    }
+  });
   // Update calendar event
   app.patch("/api/calendar/events/:id", isAuthenticated, async (req: any, res) => {
     try {

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel, Users, FileText, AlertCircle, DollarSign, MapPin, Trash2, Edit2, X, Video, MonitorPlay, Brain } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel, Users, FileText, AlertCircle, DollarSign, MapPin, Trash2, Edit2, X, Video, MonitorPlay, Brain, Upload, Camera, Image as ImageIcon, Loader2, Sparkles } from "lucide-react";
 import { SiGooglemeet, SiZoom } from "react-icons/si";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -83,6 +83,119 @@ export default function CalendarPage() {
     reminderMinutes: 30,
   });
 
+  // Image-based event creation
+  const [eventImage, setEventImage] = useState<string | null>(null);
+  const [isExtractingFromImage, setIsExtractingFromImage] = useState(false);
+
+  const extractEventFromImageMutation = useMutation({
+    mutationFn: async (imageData: string) => {
+      const response = await apiRequest("POST", "/api/calendar/extract-from-image", { image: imageData });
+      return response as {
+        title?: string;
+        eventType?: string;
+        startTime?: string;
+        duration?: string;
+        description?: string;
+        location?: string;
+        courtName?: string;
+        judgeName?: string;
+      };
+    },
+    onSuccess: (data) => {
+      // Auto-populate form fields with extracted data
+      setNewEvent(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        eventType: data.eventType || prev.eventType,
+        startTime: data.startTime || prev.startTime,
+        duration: data.duration || prev.duration,
+        description: data.description || prev.description,
+        location: data.location || prev.location,
+        courtName: data.courtName || prev.courtName,
+        judgeName: data.judgeName || prev.judgeName,
+      }));
+      toast({ title: "Event details extracted", description: "Review and adjust the extracted information as needed" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to extract event details", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleImageUpload = async (file: File) => {
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Invalid file type", description: "Please upload an image file", variant: "destructive" });
+      return;
+    }
+    // Validate file size (max 10MB)
+    const MAX_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      toast({ title: "File too large", description: "Please upload an image smaller than 10MB", variant: "destructive" });
+      return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target?.result as string;
+      setEventImage(base64);
+      setIsExtractingFromImage(true);
+      try {
+        await extractEventFromImageMutation.mutateAsync(base64);
+      } finally {
+        setIsExtractingFromImage(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePaste = async (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await handleImageUpload(file);
+        }
+        break;
+      }
+    }
+  };
+
+  const handleCameraCapture = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.capture = "environment";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        await handleImageUpload(file);
+      }
+    };
+    input.click();
+  };
+
+  const handleFileSelect = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        await handleImageUpload(file);
+      }
+    };
+    input.click();
+  };
+
+  const clearEventImage = () => {
+    setEventImage(null);
+  };
+
   const { startDate, endDate } = useMemo(() => {
     if (view === "month") {
       const start = startOfWeek(startOfMonth(currentDate));
@@ -149,7 +262,7 @@ export default function CalendarPage() {
 
   const createCalendarMutation = useMutation({
     mutationFn: async (data: { name: string; color: string }) => {
-      return await apiRequest("POST", "/api/user-calendars", data);
+      return await apiRequest("POST", "/api/user-calendars", data) as unknown as UserCalendar;
     },
     onSuccess: (newCal) => {
       queryClient.invalidateQueries({ queryKey: ["/api/user-calendars"] });
@@ -158,7 +271,7 @@ export default function CalendarPage() {
       setNewCalendarName("");
       setNewCalendarColor("#3b82f6");
       // Add new calendar to visible set
-      setVisibleCalendarIds(prev => new Set([...prev, newCal.id]));
+      setVisibleCalendarIds(prev => new Set([...Array.from(prev), newCal.id]));
     },
     onError: (error: any) => {
       toast({ title: "Failed to create calendar", description: error.message, variant: "destructive" });
@@ -932,11 +1045,106 @@ export default function CalendarPage() {
         </Card>
       </div>
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent 
+          className="max-w-2xl max-h-[90vh] overflow-y-auto"
+          onPaste={(e) => {
+            if (!eventImage && !isExtractingFromImage) {
+              handlePaste(e as unknown as ClipboardEvent);
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Create New Event</DialogTitle>
             <DialogDescription>Add a new event to your legal calendar</DialogDescription>
           </DialogHeader>
+          
+          {/* AI-powered image extraction section */}
+          <div className="border rounded-lg p-4 bg-muted/30">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">Create from Document</span>
+            </div>
+            
+            {eventImage ? (
+              <div className="relative" data-testid="image-preview-container">
+                <img 
+                  src={eventImage} 
+                  alt="Uploaded document" 
+                  className="w-full max-h-32 object-contain rounded border bg-background"
+                  data-testid="image-preview"
+                />
+                {isExtractingFromImage ? (
+                  <div 
+                    className="absolute inset-0 flex items-center justify-center bg-background/80 rounded"
+                    data-testid="status-extracting"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span data-testid="text-extracting-status">Extracting event details...</span>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1 right-1"
+                    onClick={clearEventImage}
+                    data-testid="button-clear-image"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div 
+                className="border-2 border-dashed rounded-lg p-4 text-center hover-elevate cursor-pointer transition-colors"
+                onPaste={(e) => handlePaste(e as unknown as ClipboardEvent)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const file = e.dataTransfer.files[0];
+                  if (file && file.type.startsWith("image/")) {
+                    handleImageUpload(file);
+                  }
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                tabIndex={0}
+                data-testid="dropzone-image"
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground" data-testid="text-dropzone-instructions">
+                    Upload a photo, paste a screenshot, or take a picture of a document
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleFileSelect}
+                      data-testid="button-upload-image"
+                    >
+                      <Upload className="w-3 h-3 mr-1" />
+                      Upload
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCameraCapture}
+                      data-testid="button-camera-capture"
+                    >
+                      <Camera className="w-3 h-3 mr-1" />
+                      Camera
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Or press Ctrl+V to paste an image
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
           
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
