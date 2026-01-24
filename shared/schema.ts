@@ -12233,3 +12233,114 @@ export interface LitigationTemplateWithDetails extends LitigationTemplate {
   isFavorite?: boolean;
   recentlyUsed?: boolean;
 }
+
+// ============================================
+// CALENDAR SYSTEM
+// ============================================
+
+export const calendarEventTypeEnum = pgEnum("calendar_event_type", [
+  "meeting",
+  "hearing",
+  "deposition",
+  "deadline",
+  "filing",
+  "trial",
+  "mediation",
+  "arbitration",
+  "conference",
+  "consultation",
+  "internal",
+  "personal",
+  "focus_time",
+  "out_of_office",
+  "travel",
+  "other",
+]);
+
+export const calendarEventStatusEnum = pgEnum("calendar_event_status", [
+  "tentative",
+  "confirmed",
+  "cancelled",
+]);
+
+export const calendarRecurrenceFrequencyEnum = pgEnum("calendar_recurrence_frequency", [
+  "daily",
+  "weekly",
+  "monthly",
+  "yearly",
+]);
+
+export const calendarEvents = pgTable("calendar_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  eventType: calendarEventTypeEnum("event_type").notNull().default("meeting"),
+  status: calendarEventStatusEnum("status").notNull().default("confirmed"),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  isAllDay: boolean("is_all_day").notNull().default(false),
+  location: text("location"),
+  videoConferenceUrl: text("video_conference_url"),
+  color: varchar("color", { length: 20 }),
+  isPrivate: boolean("is_private").notNull().default(false),
+  isBillable: boolean("is_billable").notNull().default(false),
+  billingCode: varchar("billing_code", { length: 50 }),
+  estimatedHours: real("estimated_hours"),
+  actualHours: real("actual_hours"),
+  hourlyRate: real("hourly_rate"),
+  caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
+  matterId: varchar("matter_id"),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  attendees: jsonb("attendees").$type<string[]>().default([]),
+  externalAttendees: jsonb("external_attendees").$type<{ name: string; email: string }[]>().default([]),
+  reminderMinutes: integer("reminder_minutes").default(15),
+  notes: text("notes"),
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  recurrencePattern: jsonb("recurrence_pattern").$type<{
+    frequency: "daily" | "weekly" | "monthly" | "yearly";
+    interval: number;
+    daysOfWeek?: number[];
+    dayOfMonth?: number;
+    endDate?: string;
+    endAfterOccurrences?: number;
+  }>(),
+  recurrenceParentId: varchar("recurrence_parent_id"),
+  deadlineType: varchar("deadline_type", { length: 50 }),
+  courtName: text("court_name"),
+  judgeName: text("judge_name"),
+  opposingCounsel: text("opposing_counsel"),
+  witnessName: text("witness_name"),
+  timeEntryId: varchar("time_entry_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  createdByIdx: index("idx_calendar_events_created_by").on(table.createdBy),
+  startTimeIdx: index("idx_calendar_events_start_time").on(table.startTime),
+  caseIdx: index("idx_calendar_events_case").on(table.caseId),
+  clientIdx: index("idx_calendar_events_client").on(table.clientId),
+  eventTypeIdx: index("idx_calendar_events_type").on(table.eventType),
+}));
+
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
+
+export const calendarEventsRelations = relations(calendarEvents, ({ one }) => ({
+  createdByUser: one(users, {
+    fields: [calendarEvents.createdBy],
+    references: [users.id],
+  }),
+  case: one(cases, {
+    fields: [calendarEvents.caseId],
+    references: [cases.id],
+  }),
+  client: one(clients, {
+    fields: [calendarEvents.clientId],
+    references: [clients.id],
+  }),
+}));

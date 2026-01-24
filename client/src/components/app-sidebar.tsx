@@ -537,6 +537,40 @@ export function AppSidebar() {
                   </Link>
                 )}
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                {isCollapsed ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Link
+                        href="/calendar"
+                        className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover-elevate active-elevate-2 ${
+                          location === "/calendar" || location.startsWith("/calendar/")
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground"
+                        }`}
+                        data-testid="link-nav-calendar"
+                      >
+                        <Calendar className="h-4 w-4 flex-shrink-0" />
+                        <span className="group-data-[collapsible=icon]:hidden">Calendar</span>
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>Calendar</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Link
+                    href="/calendar"
+                    className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover-elevate active-elevate-2 ${
+                      location === "/calendar" || location.startsWith("/calendar/")
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-sidebar-foreground"
+                    }`}
+                    data-testid="link-nav-calendar"
+                  >
+                    <Calendar className="h-4 w-4 flex-shrink-0" />
+                    <span className="group-data-[collapsible=icon]:hidden">Calendar</span>
+                  </Link>
+                )}
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
         )}
