@@ -33,6 +33,8 @@ import {
   Pencil,
   Trash2,
   UserPlus,
+  Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
@@ -176,6 +178,8 @@ export default function ClientsPage() {
   const [addContactDialogOpen, setAddContactDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ClientWithDetails | null>(null);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -307,6 +311,44 @@ export default function ClientsPage() {
     },
   });
 
+  const importClientsMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/clients/import", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to import clients");
+      }
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({
+        title: "Import Complete",
+        description: `Successfully imported ${data.imported} clients${data.errors.length > 0 ? `. ${data.errors.length} errors occurred.` : ""}`,
+      });
+      setImportDialogOpen(false);
+      setImportFile(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Import Failed",
+        description: error.message || "Failed to import clients",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleImport = () => {
+    if (importFile) {
+      importClientsMutation.mutate(importFile);
+    }
+  };
+
   const openClientDetail = (client: Client) => {
     setSelectedClient(client as ClientWithDetails);
     setDetailSheetOpen(true);
@@ -348,10 +390,16 @@ export default function ClientsPage() {
           </h1>
           <p className="text-muted-foreground">Manage your firm's clients and contacts</p>
         </div>
-        <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-add-client">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Client
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-testid="button-import-clients">
+            <Upload className="h-4 w-4 mr-2" />
+            Import
+          </Button>
+          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-add-client">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Client
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
@@ -543,6 +591,64 @@ export default function ClientsPage() {
           ))}
         </div>
       )}
+
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Import Clients from Excel
+            </DialogTitle>
+            <DialogDescription>
+              Upload an Excel file (.xlsx or .xls) to bulk import clients. The spreadsheet should have columns for Company Name, Client Type, Industry, etc.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="border-2 border-dashed rounded-lg p-6 text-center">
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                className="hidden"
+                id="import-file-input"
+                data-testid="input-import-file"
+              />
+              <label
+                htmlFor="import-file-input"
+                className="cursor-pointer flex flex-col items-center gap-2"
+              >
+                <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  {importFile ? importFile.name : "Click to select an Excel file"}
+                </span>
+              </label>
+            </div>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p className="font-medium">Expected columns:</p>
+              <ul className="list-disc list-inside">
+                <li>Company Name (required)</li>
+                <li>Client Type (corporation, llc, partnership, individual)</li>
+                <li>Industry</li>
+                <li>Referred By</li>
+                <li>Billing Rate</li>
+                <li>Email Domain</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={!importFile || importClientsMutation.isPending}
+              data-testid="button-confirm-import"
+            >
+              {importClientsMutation.isPending ? "Importing..." : "Import Clients"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
