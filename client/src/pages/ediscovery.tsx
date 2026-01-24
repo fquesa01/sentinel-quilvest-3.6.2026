@@ -168,9 +168,7 @@ export default function EDiscoveryPage() {
             <h1 className="text-3xl font-bold tracking-tight" data-testid="heading-ediscovery">
               Communication & Document Review
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Create production sets for SEC/DOJ compliance with Bates numbering and export formats
-            </p>
+            <p className="text-muted-foreground mt-1">Create production sets with Bates numbering.</p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -269,7 +267,6 @@ export default function EDiscoveryPage() {
           </Dialog>
         </div>
       </div>
-
       <div className="flex-1 overflow-auto p-6">
         <Card>
           <CardHeader>
