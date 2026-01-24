@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel, Users, FileText, AlertCircle, DollarSign, MapPin, Trash2, Edit2, X } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel, Users, FileText, AlertCircle, DollarSign, MapPin, Trash2, Edit2, X, Video, MonitorPlay } from "lucide-react";
+import { SiGooglemeet, SiZoom } from "react-icons/si";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -72,6 +73,7 @@ export default function CalendarPage() {
     caseId: "none",
     clientId: "none",
     calendarId: "none",
+    videoConferenceType: "none",
     isBillable: false,
     estimatedHours: 0,
     isAllDay: false,
@@ -217,6 +219,7 @@ export default function CalendarPage() {
       caseId: "none",
       clientId: "none",
       calendarId: userCalendars.find(c => c.isDefault)?.id || "none",
+      videoConferenceType: "none",
       isBillable: false,
       estimatedHours: 0,
       isAllDay: false,
@@ -236,6 +239,7 @@ export default function CalendarPage() {
       caseId: newEvent.caseId && newEvent.caseId !== "none" ? newEvent.caseId : null,
       clientId: newEvent.clientId && newEvent.clientId !== "none" ? newEvent.clientId : null,
       calendarId: newEvent.calendarId && newEvent.calendarId !== "none" ? newEvent.calendarId : null,
+      videoConferenceType: newEvent.videoConferenceType !== "none" ? newEvent.videoConferenceType : null,
     });
   };
 
@@ -923,6 +927,44 @@ export default function CalendarPage() {
                   placeholder="e.g., Courtroom 5B, 100 Center Street"
                   data-testid="input-location"
                 />
+              </div>
+
+              <div className="col-span-2">
+                <Label htmlFor="videoConferenceType">Video Meeting</Label>
+                <Select value={newEvent.videoConferenceType} onValueChange={(v) => setNewEvent(prev => ({ ...prev, videoConferenceType: v }))}>
+                  <SelectTrigger data-testid="select-video-conference">
+                    <SelectValue placeholder="Select video meeting type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <span className="text-muted-foreground">No video meeting</span>
+                    </SelectItem>
+                    <SelectItem value="sentinel">
+                      <div className="flex items-center gap-2">
+                        <Video className="w-4 h-4 text-primary" />
+                        <span>Sentinel Video Meeting</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="google_meet">
+                      <div className="flex items-center gap-2">
+                        <SiGooglemeet className="w-4 h-4 text-green-600" />
+                        <span>Google Meet</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="zoom">
+                      <div className="flex items-center gap-2">
+                        <SiZoom className="w-4 h-4 text-blue-500" />
+                        <span>Zoom</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="teams">
+                      <div className="flex items-center gap-2">
+                        <MonitorPlay className="w-4 h-4 text-purple-600" />
+                        <span>Microsoft Teams</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {(newEvent.eventType === "hearing" || newEvent.eventType === "trial") && (

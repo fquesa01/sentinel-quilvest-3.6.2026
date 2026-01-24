@@ -12299,6 +12299,7 @@ export const calendarEvents = pgTable("calendar_events", {
   isAllDay: boolean("is_all_day").notNull().default(false),
   location: text("location"),
   videoConferenceUrl: text("video_conference_url"),
+  videoConferenceType: varchar("video_conference_type", { length: 50 }),
   color: varchar("color", { length: 20 }),
   isPrivate: boolean("is_private").notNull().default(false),
   isBillable: boolean("is_billable").notNull().default(false),
