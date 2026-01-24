@@ -1,0 +1,845 @@
+# Sentinel Calendar: Reimagined Legal Intelligence Scheduling
+
+## Executive Summary
+
+A calendar system that looks and feels like Microsoft Outlook but operates with the intelligence of Motion, the flexibility of Calendly, and the legal-specific features that small law firms and PE firms desperately need. This isn't just a calendar — it's a **Legal Time Intelligence System**.
+
+---
+
+## Core Philosophy
+
+**"Outlook Familiarity, AI Intelligence, Legal Precision"**
+
+Small law firms and PE firms don't have time to learn new interfaces. They want something that feels familiar but works smarter. The Sentinel Calendar delivers:
+
+1. **Zero Learning Curve** — Outlook-style interface they already know
+2. **AI That Adapts** — Dynamic scheduling that respects legal workflows
+3. **Matter-Centric** — Everything links to clients, matters, and billable time
+4. **Privilege-Protected** — All AI interactions under attorney-client privilege
+
+---
+
+## Feature Categories
+
+### 1. TRADITIONAL CALENDAR FEATURES (Outlook/Gmail Parity)
+
+#### Views
+- **Day View** — Hourly breakdown with side-by-side matter panels
+- **Work Week View** — Monday-Friday with collapsed weekends
+- **Full Week View** — 7-day spread
+- **Month View** — Overview with event density indicators
+- **Schedule View** — Vertical agenda list (Gmail-style)
+- **Year View** — Heat map of busy periods (innovative)
+
+#### Core Functions
+- Create/Edit/Delete events
+- Recurring events (daily, weekly, monthly, yearly, custom)
+- All-day events
+- Multi-day events
+- Event categories with color coding
+- Private/Public visibility
+- Reminders (popup, email, SMS)
+- Attachments
+- Location/Video conferencing links
+- Time zone support
+- Calendar sharing
+- Multiple calendar overlay
+- Drag-and-drop rescheduling
+- Quick event creation (click on time slot)
+- Event search
+- Print calendar views
+
+---
+
+### 2. AI-POWERED SCHEDULING (Motion/Reclaim Innovation)
+
+#### Intelligent Auto-Scheduling
+```
+Traditional: You manually find time for tasks
+Sentinel: AI schedules tasks around your existing commitments
+```
+
+**How it works:**
+1. Create a task with deadline, duration, and priority
+2. AI analyzes your calendar, energy patterns, and workload
+3. Automatically places task in optimal time slot
+4. Dynamically reschedules if conflicts arise
+
+#### Focus Time Protection
+- Set daily/weekly focus time goals (e.g., "4 hours deep work daily")
+- AI automatically blocks and defends these hours
+- Smart "flex" blocks that move when high-priority meetings arise
+- "Do Not Disturb" periods that sync with phone/desktop
+
+#### Smart Rescheduling
+- When meetings change, dependent tasks automatically shift
+- Missed tasks roll to next available slot
+- Deadline-aware: Tasks approaching due dates get higher priority
+- Energy-aware: Complex work scheduled during peak productivity hours (configurable)
+
+#### AI Meeting Prep
+- 15 minutes before any external meeting:
+  - Auto-surface relevant documents from CRM/DMS
+  - Show matter history and recent communications
+  - Prepare brief of attendee relationships
+  - Generate suggested talking points
+
+---
+
+### 3. EXTERNAL BOOKING SYSTEM (Calendly Innovation)
+
+#### Scheduling Links
+```
+https://sentinel.counsel/book/john-smith/consultation
+```
+
+**Features:**
+- Multiple event types (15min call, 30min consultation, 60min strategy session)
+- Custom availability per event type
+- Buffer time between meetings
+- Daily/weekly booking limits
+- Minimum advance notice requirements
+- Custom branding per attorney
+
+#### Routing Forms (Lead Qualification)
+Before booking, prospects answer screening questions:
+```
+1. What type of legal matter? [dropdown]
+2. Is this time-sensitive? [yes/no]
+3. Brief description of your situation [text]
+4. Preferred contact method [phone/video/in-person]
+```
+
+Based on answers:
+- Route to correct attorney (practice area matching)
+- Route to first available (round-robin)
+- Flag high-priority for immediate follow-up
+- Reject and redirect if outside practice areas
+
+#### Round-Robin Scheduling
+- Distribute client bookings evenly across team
+- Weight by availability, specialization, current workload
+- Respect attorney preferences (no evenings, no Fridays)
+
+#### Payment Collection at Booking
+- Integrate with Stripe/PayPal
+- Collect consultation fees upfront
+- Retainer deposits
+- Automatic invoice generation
+
+#### Meeting Polls (Group Scheduling)
+- Send poll to multiple parties
+- Everyone selects available times
+- Auto-book the time that works for majority
+- Perfect for depositions, mediations, closings
+
+---
+
+### 4. TEAM COORDINATION (Clockwise Innovation)
+
+#### Organizational Calendar Intelligence
+- View all team calendars in overlay
+- Identify best times for firm-wide meetings
+- Protect collective focus time
+- Detect and prevent meeting overload
+
+#### Smart 1:1s
+- Recurring meetings that automatically find optimal times weekly
+- Reschedule themselves when conflicts arise
+- Never require manual coordination
+
+#### Meeting Culture Analytics
+- Dashboard showing firm's meeting culture health
+- Average meeting length trends
+- Focus time ratio (focused hours : meeting hours)
+- Meeting creep alerts
+
+---
+
+### 5. LEGAL-SPECIFIC INNOVATIONS
+
+#### Matter-Linked Events
+Every calendar event can be linked to:
+- **Client** (from CRM)
+- **Matter** (case/deal)
+- **Billing code** (activity type)
+- **Documents** (from DMS)
+
+This enables:
+- One-click time entry after events
+- Automatic billing descriptions
+- Matter timeline reconstruction
+- Conflict checking
+
+#### Billable Time Tracking Integration
+```
+┌─────────────────────────────────────────┐
+│ Meeting with Smith Corp re: Acquisition │
+│ 10:00 AM - 11:30 AM (1.5 hours)        │
+│                                         │
+│ [✓] Billable                           │
+│ Matter: Smith Corp v. Jones LLC        │
+│ Activity: Client Conference            │
+│ Rate: $450/hr                          │
+│ Amount: $675.00                        │
+│                                         │
+│ [Start Timer] [Log Time] [Non-Billable]│
+└─────────────────────────────────────────┘
+```
+
+After meeting ends:
+- Popup prompts for time confirmation
+- Auto-populates billing entry
+- Option to adjust duration
+- Add detailed description
+- Submit directly to billing system
+
+#### Court Deadline Integration
+- Sync with court filing systems
+- Auto-calculate derivative deadlines
+  - "Motion due 30 days from filing"
+  - "Response due 14 days from motion"
+  - "Hearing date + travel time"
+- Deadline cascade views
+- Malpractice insurance requirements compliance
+
+#### Deposition/Hearing Scheduler
+**Special event type with unique fields:**
+- Witness name
+- Court reporter booked
+- Videographer booked
+- Exhibits prepared (checklist)
+- Notice served (with date)
+- Venue/remote platform
+- Opposing counsel notified
+- Auto-generate deposition notice document
+
+#### Statute of Limitations Tracker
+- Create SOL events with countdown
+- Automatic 30/60/90 day warning alerts
+- Link to intake matter
+- Cannot be deleted without supervisor approval
+- Audit trail of all modifications
+
+#### Conflict Calendar
+- Before accepting any matter/meeting:
+  - Auto-check for party conflicts
+  - Show related matters
+  - Flag potential ethical issues
+- Integration with conflicts database
+
+---
+
+### 6. AMBIENT INTELLIGENCE INTEGRATION
+
+#### Real-Time Meeting Support
+During calendar events:
+- Activate ambient transcription
+- Surface relevant precedents live
+- Track key points discussed
+- Generate action items automatically
+
+#### Post-Meeting Intelligence
+After every meeting:
+- Auto-generated summary
+- Extracted action items (assigned to team members)
+- Follow-up tasks created with deadlines
+- Client communication drafted for review
+
+#### Calendar + CRM Sync
+- Meeting outcomes flow to contact records
+- Deal stages update based on meeting types
+- Relationship mapping enhanced automatically
+
+---
+
+### 7. WORKFLOW AUTOMATION
+
+#### Pre-Meeting Workflows
+```
+WHEN: 24 hours before client meeting
+THEN:
+  1. Send reminder email to client
+  2. Generate prep brief
+  3. Pull recent communications
+  4. Alert attorney if documents missing
+```
+
+#### Post-Meeting Workflows
+```
+WHEN: Meeting ends
+THEN:
+  1. Send follow-up email template
+  2. Create time entry draft
+  3. Schedule follow-up if requested
+  4. Update matter status
+```
+
+#### Deadline Workflows
+```
+WHEN: 7 days before filing deadline
+THEN:
+  1. Alert responsible attorney
+  2. Alert supervising partner
+  3. Check document status
+  4. Block day before for final prep
+```
+
+---
+
+### 8. ANALYTICS & REPORTING
+
+#### Personal Productivity Dashboard
+- Time allocation by matter
+- Billable vs non-billable ratio
+- Focus time achieved vs goal
+- Meeting distribution analysis
+- Deadline compliance rate
+
+#### Firm-Wide Analytics
+- Attorney utilization rates
+- Practice area time distribution
+- Client meeting frequency
+- Revenue per meeting type
+- Calendar efficiency score
+
+#### Time Recovery Insights
+```
+"This week, you spent 12 hours in meetings that could have been emails.
+ Consider declining recurring status meetings."
+```
+
+---
+
+## User Interface Design
+
+### Primary Layout (Outlook-Style)
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│  ← →  Today  │ Day  Week  Month  Schedule │ 🔍 Search │ + New Event │ ⚙️  │
+├──────────────┬─────────────────────────────────────────────────────────────┤
+│              │                                                             │
+│  January     │    Monday 1/24        Tuesday 1/25       Wednesday 1/26    │
+│  2026        │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐     │
+│              │  │             │    │             │    │             │     │
+│  S M T W T F S│  8:00         │    │             │    │             │     │
+│        1 2 3 4│  ├─────────────┤    │ 8:30-9:30   │    │             │     │
+│  5 6 7 8 9 10│  9:00         │    │ Team Standup│    │ 9:00-11:00  │     │
+│  12 13 14 15 │  ├─────────────┤    └─────────────┘    │ Deposition  │     │
+│  16 17 18 19 │  │ 9:00-10:30  │                       │ Smith v.    │     │
+│  20 21 22 23 │  │ Smith Corp  │    ┌─────────────┐    │ Jones       │     │
+│ [24]25 26 27 │  │ Conference  │    │ 10:00-10:30 │    │             │     │
+│  28 29 30 31 │  │ 💼 Billable │    │ Client Call │    │ 💼 Billable │     │
+│              │  └─────────────┘    │ 💼 Billable │    └─────────────┘     │
+├──────────────┤                     └─────────────┘                        │
+│ MY CALENDARS │  ├─────────────┤                       ┌─────────────┐     │
+│ ☑ Work       │  11:00         │    ┌─────────────┐    │ 11:30-12:00 │     │
+│ ☑ Court Dates│  │ 🔒 Focus    │    │ 11:00-12:00 │    │ Follow-up   │     │
+│ ☑ Deadlines  │  │   Time      │    │ Document    │    └─────────────┘     │
+│ ☐ Personal   │  │   (Protected)│    │ Review      │                       │
+│              │  └─────────────┘    │ 📄 Internal │                       │
+├──────────────┤                     └─────────────┘                        │
+│ TEAM         │  ├─────────────┤                                           │
+│ ☑ John S.    │  12:00 LUNCH   │                                           │
+│ ☐ Sarah M.   │  ├─────────────┤                                           │
+│ ☐ Mike R.    │  │ 12:30-1:00  │                                           │
+│              │  │ 🍽️ Lunch    │                                           │
+├──────────────┤  │ (Protected)  │                                           │
+│ MATTERS      │  └─────────────┘                                           │
+│ 🔷 Smith Corp│                                                            │
+│ 🔷 Jones LLC │  ...                                                       │
+│ 🔷 Acme Deal │                                                            │
+└──────────────┴─────────────────────────────────────────────────────────────┘
+```
+
+### Event Creation Modal
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ New Event                                                    ✕  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Title: [Client Strategy Session - Smith Corp________________] │
+│                                                                 │
+│  📅 Start: [Jan 24, 2026] [10:00 AM] ─ End: [11:30 AM]        │
+│                                                                 │
+│  🔄 Repeat: [Does not repeat        ▼]                         │
+│                                                                 │
+│  📍 Location: [Zoom - Auto-generate link ▼]                    │
+│                                                                 │
+│  👥 Attendees: [John Smith] [jane@smithcorp.com] [+ Add]       │
+│                                                                 │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  LEGAL INTELLIGENCE                                             │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                 │
+│  🏢 Client: [Smith Corporation          ▼]                     │
+│                                                                 │
+│  📁 Matter: [Acquisition of Jones LLC   ▼]                     │
+│                                                                 │
+│  💰 Billing:                                                    │
+│     [✓] Billable Event                                          │
+│     Activity Code: [Client Conference   ▼]                     │
+│     Estimated: 1.5 hours @ $450/hr = $675.00                    │
+│                                                                 │
+│  📎 Related Documents:                                          │
+│     [+ Attach from Matter Files]                                │
+│     • Due Diligence Checklist.docx                             │
+│     • Term Sheet v3.pdf                                         │
+│                                                                 │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  AUTOMATION                                                     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                 │
+│  [✓] Send reminder to attendees (24 hours before)              │
+│  [✓] Activate ambient intelligence during meeting               │
+│  [✓] Generate meeting summary after                             │
+│  [✓] Prompt for time entry on completion                        │
+│                                                                 │
+│  ⏰ Personal Reminder: [30 minutes before ▼]                    │
+│                                                                 │
+│  📝 Notes:                                                      │
+│  [Discuss timeline concerns and resource allocation for Q1...  ]│
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│              [Cancel]                    [Save Event]           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Scheduling Link Configuration
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Create Booking Page                                          ✕  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Event Name: [Initial Consultation___________________________] │
+│                                                                 │
+│  Duration: ○ 15 min  ○ 30 min  ● 60 min  ○ Custom: [___]      │
+│                                                                 │
+│  Your Link: sentinel.counsel/book/john/[consultation_________] │
+│             [Copy Link]                                         │
+│                                                                 │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  AVAILABILITY                                                   │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                 │
+│  Available Hours:                                               │
+│  [✓] Mon  [9:00 AM] - [5:00 PM]                                │
+│  [✓] Tue  [9:00 AM] - [5:00 PM]                                │
+│  [✓] Wed  [9:00 AM] - [5:00 PM]                                │
+│  [✓] Thu  [9:00 AM] - [5:00 PM]                                │
+│  [✓] Fri  [9:00 AM] - [12:00 PM]                               │
+│  [ ] Sat                                                        │
+│  [ ] Sun                                                        │
+│                                                                 │
+│  Buffer: [15 min ▼] before and after each meeting              │
+│                                                                 │
+│  Advance Notice: Minimum [24 hours ▼] before booking           │
+│                                                                 │
+│  Daily Limit: Maximum [4 ▼] consultations per day              │
+│                                                                 │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  INTAKE QUESTIONS                                               │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                 │
+│  ✓ What type of legal matter?                                  │
+│    [Employment ▼] [Corporate ▼] [Litigation ▼] [Other]        │
+│                                                                 │
+│  ✓ Brief description of your situation                         │
+│    [Required text field]                                        │
+│                                                                 │
+│  ✓ Have you worked with an attorney on this matter?            │
+│    [Yes/No]                                                     │
+│                                                                 │
+│  [+ Add Question]                                               │
+│                                                                 │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  PAYMENT                                                        │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                 │
+│  [✓] Collect payment at booking                                 │
+│                                                                 │
+│  Consultation Fee: $[250.00]                                    │
+│  [✓] Apply toward retainer if engaged                           │
+│                                                                 │
+│  Payment Methods: [✓] Card  [✓] Bank Transfer                  │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│          [Preview Page]            [Save & Publish]             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### AI Task Scheduling Panel
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Smart Schedule Task                                          ✕  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Task: [Review discovery documents - Smith v. Jones___________]│
+│                                                                 │
+│  Estimated Duration: [4 hours ▼]                               │
+│                                                                 │
+│  Deadline: [Jan 30, 2026]                                      │
+│                                                                 │
+│  Priority: ○ Low  ○ Medium  ● High  ○ Urgent                  │
+│                                                                 │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  AI SCHEDULING OPTIONS                                          │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                 │
+│  Work Type: ● Deep Focus (needs 2+ hour blocks)                │
+│             ○ Shallow Work (can split into 30min chunks)        │
+│             ○ Collaborative (needs overlap with team)           │
+│                                                                 │
+│  Time Preference:                                               │
+│             ○ Morning (peak energy)                             │
+│             ● Afternoon (secondary focus)                       │
+│             ○ Any available time                                │
+│                                                                 │
+│  [✓] Can be rescheduled if conflicts arise                     │
+│  [✓] Protect from meeting requests                              │
+│                                                                 │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  AI RECOMMENDATION                                              │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                                 │
+│  Based on your calendar and deadline:                           │
+│                                                                 │
+│  📅 Suggested: Tuesday Jan 27, 1:00 PM - 5:00 PM               │
+│     ✓ 4-hour uninterrupted block available                     │
+│     ✓ 3 days before deadline (buffer for revisions)            │
+│     ✓ Afternoon matches your focus preference                   │
+│                                                                 │
+│  Alternative: Wednesday Jan 28, 9:00 AM - 1:00 PM              │
+│                                                                 │
+│  ⚠️ Note: You have 12 hours of tasks due this week.            │
+│     Consider delegating or extending deadlines.                 │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│      [Schedule Manually]        [Accept AI Recommendation]      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Technical Architecture
+
+### Database Schema (Drizzle ORM)
+
+```typescript
+// Calendar Events
+export const calendarEvents = pgTable('calendar_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').references(() => organizations.id),
+  createdById: uuid('created_by_id').references(() => users.id),
+  
+  // Basic Event Data
+  title: varchar('title', { length: 500 }).notNull(),
+  description: text('description'),
+  location: varchar('location', { length: 500 }),
+  videoConferenceUrl: varchar('video_conference_url', { length: 1000 }),
+  
+  // Timing
+  startTime: timestamp('start_time').notNull(),
+  endTime: timestamp('end_time').notNull(),
+  allDay: boolean('all_day').default(false),
+  timezone: varchar('timezone', { length: 100 }).default('America/New_York'),
+  
+  // Recurrence (RFC 5545 RRULE format)
+  recurrenceRule: varchar('recurrence_rule', { length: 500 }),
+  recurrenceEndDate: timestamp('recurrence_end_date'),
+  parentEventId: uuid('parent_event_id').references(() => calendarEvents.id),
+  
+  // Classification
+  eventType: varchar('event_type', { length: 50 }).notNull(), // meeting, task, deadline, focus, personal
+  visibility: varchar('visibility', { length: 20 }).default('default'), // public, private, confidential
+  status: varchar('status', { length: 20 }).default('confirmed'), // tentative, confirmed, cancelled
+  
+  // Legal Intelligence Links
+  clientId: uuid('client_id').references(() => contacts.id),
+  matterId: uuid('matter_id').references(() => matters.id),
+  
+  // Billing Integration
+  isBillable: boolean('is_billable').default(false),
+  billingActivityCode: varchar('billing_activity_code', { length: 50 }),
+  estimatedDuration: integer('estimated_duration_minutes'),
+  actualDuration: integer('actual_duration_minutes'),
+  billingRate: decimal('billing_rate', { precision: 10, scale: 2 }),
+  timeEntryId: uuid('time_entry_id').references(() => timeEntries.id),
+  
+  // AI Scheduling
+  isAiScheduled: boolean('is_ai_scheduled').default(false),
+  canBeRescheduled: boolean('can_be_rescheduled').default(true),
+  priority: integer('priority').default(2), // 1=low, 2=medium, 3=high, 4=urgent
+  workType: varchar('work_type', { length: 20 }), // deep_focus, shallow, collaborative
+  timePreference: varchar('time_preference', { length: 20 }), // morning, afternoon, any
+  
+  // Automation Flags
+  sendReminder: boolean('send_reminder').default(true),
+  reminderMinutes: integer('reminder_minutes').default(30),
+  activateAmbient: boolean('activate_ambient').default(false),
+  generateSummary: boolean('generate_summary').default(false),
+  promptTimeEntry: boolean('prompt_time_entry').default(true),
+  
+  // Metadata
+  color: varchar('color', { length: 20 }),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Event Attendees
+export const eventAttendees = pgTable('event_attendees', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  eventId: uuid('event_id').references(() => calendarEvents.id).notNull(),
+  
+  // Can be internal user or external email
+  userId: uuid('user_id').references(() => users.id),
+  email: varchar('email', { length: 255 }),
+  name: varchar('name', { length: 255 }),
+  
+  // Response
+  responseStatus: varchar('response_status', { length: 20 }).default('needsAction'),
+  // needsAction, declined, tentative, accepted
+  
+  isOrganizer: boolean('is_organizer').default(false),
+  isOptional: boolean('is_optional').default(false),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Scheduling Links (Calendly-style)
+export const schedulingLinks = pgTable('scheduling_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  organizationId: uuid('organization_id').references(() => organizations.id),
+  
+  // Link Configuration
+  slug: varchar('slug', { length: 100 }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  duration: integer('duration_minutes').notNull(),
+  
+  // Availability
+  availabilityScheduleId: uuid('availability_schedule_id').references(() => availabilitySchedules.id),
+  bufferBefore: integer('buffer_before_minutes').default(0),
+  bufferAfter: integer('buffer_after_minutes').default(15),
+  minNotice: integer('min_notice_hours').default(24),
+  maxAdvance: integer('max_advance_days').default(60),
+  dailyLimit: integer('daily_limit'),
+  weeklyLimit: integer('weekly_limit'),
+  
+  // Meeting Details
+  locationType: varchar('location_type', { length: 50 }), // zoom, meet, teams, phone, in_person
+  locationDetails: text('location_details'),
+  
+  // Payment
+  collectPayment: boolean('collect_payment').default(false),
+  paymentAmount: decimal('payment_amount', { precision: 10, scale: 2 }),
+  paymentDescription: varchar('payment_description', { length: 255 }),
+  applyToRetainer: boolean('apply_to_retainer').default(false),
+  
+  // Routing
+  routingType: varchar('routing_type', { length: 20 }).default('direct'),
+  // direct, round_robin, form_based
+  
+  // Branding
+  brandColor: varchar('brand_color', { length: 20 }),
+  logoUrl: varchar('logo_url', { length: 500 }),
+  customMessage: text('custom_message'),
+  
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// Intake Questions for Scheduling Links
+export const intakeQuestions = pgTable('intake_questions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  schedulingLinkId: uuid('scheduling_link_id').references(() => schedulingLinks.id).notNull(),
+  
+  question: varchar('question', { length: 500 }).notNull(),
+  questionType: varchar('question_type', { length: 20 }).notNull(),
+  // text, textarea, select, multi_select, yes_no, phone, email
+  
+  options: jsonb('options'), // For select/multi_select types
+  isRequired: boolean('is_required').default(false),
+  sortOrder: integer('sort_order').default(0),
+  
+  // Routing logic
+  routingRules: jsonb('routing_rules'),
+  // e.g., { "employment": "user_123", "corporate": "user_456" }
+  
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Focus Time / Habits (Reclaim-style)
+export const focusTimeGoals = pgTable('focus_time_goals', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  
+  name: varchar('name', { length: 255 }).notNull(),
+  goalType: varchar('goal_type', { length: 20 }).notNull(),
+  // focus_time, habit, break, lunch
+  
+  // Goal Definition
+  targetHours: decimal('target_hours', { precision: 4, scale: 2 }),
+  frequency: varchar('frequency', { length: 20 }).notNull(), // daily, weekly
+  
+  // Scheduling Preferences
+  preferredTimeWindows: jsonb('preferred_time_windows'),
+  // e.g., [{ day: "monday", start: "09:00", end: "12:00" }]
+  
+  minBlockSize: integer('min_block_size_minutes').default(60),
+  maxBlockSize: integer('max_block_size_minutes').default(240),
+  
+  // Defense Settings
+  defenseLevel: varchar('defense_level', { length: 20 }).default('medium'),
+  // low (shows as free), medium (shows as busy, can be booked over)
+  // high (shows as busy, protected)
+  
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Court Deadlines
+export const courtDeadlines = pgTable('court_deadlines', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  matterId: uuid('matter_id').references(() => matters.id).notNull(),
+  eventId: uuid('event_id').references(() => calendarEvents.id),
+  
+  deadlineType: varchar('deadline_type', { length: 50 }).notNull(),
+  // filing, response, hearing, trial, discovery, sol
+  
+  description: varchar('description', { length: 500 }).notNull(),
+  dueDate: timestamp('due_date').notNull(),
+  
+  // For calculated deadlines
+  parentDeadlineId: uuid('parent_deadline_id').references(() => courtDeadlines.id),
+  calculationRule: varchar('calculation_rule', { length: 255 }),
+  // e.g., "parent + 30 days", "filing date + 14 business days"
+  
+  // Notifications
+  alertDays: jsonb('alert_days').default('[30, 14, 7, 3, 1]'),
+  
+  // Compliance
+  isCompleted: boolean('is_completed').default(false),
+  completedAt: timestamp('completed_at'),
+  completedById: uuid('completed_by_id').references(() => users.id),
+  
+  // Audit
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+  deletedAt: timestamp('deleted_at'),
+  deletedById: uuid('deleted_by_id').references(() => users.id),
+  deletionReason: text('deletion_reason'),
+  supervisorApprovalId: uuid('supervisor_approval_id').references(() => users.id),
+});
+```
+
+### API Endpoints
+
+```typescript
+// Calendar Events
+GET    /api/calendar/events                    // List events with filters
+GET    /api/calendar/events/:id                // Get single event
+POST   /api/calendar/events                    // Create event
+PUT    /api/calendar/events/:id                // Update event
+DELETE /api/calendar/events/:id                // Delete event
+POST   /api/calendar/events/:id/respond        // RSVP to event
+
+// AI Scheduling
+POST   /api/calendar/ai/schedule-task          // AI schedules a task
+POST   /api/calendar/ai/optimize-week          // Reoptimize entire week
+GET    /api/calendar/ai/suggestions            // Get scheduling suggestions
+POST   /api/calendar/ai/protect-focus          // Create focus time blocks
+
+// Scheduling Links
+GET    /api/scheduling/links                   // List user's scheduling links
+POST   /api/scheduling/links                   // Create scheduling link
+PUT    /api/scheduling/links/:id               // Update scheduling link
+DELETE /api/scheduling/links/:id               // Delete scheduling link
+GET    /api/book/:username/:slug               // Public booking page
+POST   /api/book/:username/:slug               // Create booking
+GET    /api/book/:username/:slug/availability  // Get available times
+
+// Focus Time Goals
+GET    /api/calendar/focus-goals               // List focus goals
+POST   /api/calendar/focus-goals               // Create focus goal
+PUT    /api/calendar/focus-goals/:id           // Update focus goal
+DELETE /api/calendar/focus-goals/:id           // Delete focus goal
+
+// Court Deadlines
+GET    /api/calendar/deadlines                 // List deadlines
+POST   /api/calendar/deadlines                 // Create deadline
+PUT    /api/calendar/deadlines/:id             // Update deadline
+POST   /api/calendar/deadlines/:id/complete    // Mark complete
+DELETE /api/calendar/deadlines/:id             // Delete (requires approval)
+
+// Analytics
+GET    /api/calendar/analytics/personal        // Personal productivity stats
+GET    /api/calendar/analytics/team            // Team-wide analytics
+GET    /api/calendar/analytics/billable        // Billable time analysis
+```
+
+---
+
+## Implementation Phases
+
+### Phase 1: Core Calendar (Weeks 1-4)
+- Basic event CRUD
+- Day/Week/Month views
+- Recurring events
+- Calendar sharing
+- Attendee management
+- Video conferencing integration
+
+### Phase 2: Legal Intelligence (Weeks 5-8)
+- Matter linking
+- Billable time tracking
+- Time entry integration
+- Court deadline management
+- SOL tracker
+- Conflict checking
+
+### Phase 3: AI Scheduling (Weeks 9-12)
+- Task auto-scheduling
+- Focus time protection
+- Smart rescheduling
+- Meeting prep automation
+- Post-meeting workflows
+
+### Phase 4: External Booking (Weeks 13-16)
+- Scheduling links
+- Intake forms
+- Round-robin routing
+- Payment collection
+- Public booking pages
+
+### Phase 5: Analytics & Polish (Weeks 17-20)
+- Productivity dashboards
+- Firm-wide analytics
+- Calendar intelligence
+- Mobile optimization
+- Performance tuning
+
+---
+
+## Competitive Advantages
+
+1. **Attorney-Client Privilege** — All AI interactions are privileged
+2. **Matter-Centric** — Every event links to billable work
+3. **Legal Workflow Native** — Built for court deadlines, depositions, SOLs
+4. **Zero Learning Curve** — Outlook familiarity reduces training
+5. **Ambient Integration** — Calendar + real-time meeting intelligence
+6. **Customer-Deployed** — Data never leaves client's security perimeter
+
+---
+
+## Summary
+
+The Sentinel Calendar transforms time management from a chore into a competitive advantage. By combining the familiar interface of Outlook with the intelligent automation of Motion/Reclaim and the booking flexibility of Calendly — all wrapped in legal-specific features — small law firms and PE firms gain enterprise-grade calendar intelligence without enterprise complexity or cost.
+
+**The result: More billable hours, fewer missed deadlines, and clients who are impressed by your firm's seamless scheduling experience.**
