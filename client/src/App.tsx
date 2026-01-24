@@ -25,15 +25,12 @@ import ManagementAnalytics from "@/pages/management-analytics";
 import EDiscoveryPage from "@/pages/ediscovery";
 import DocumentReviewPage from "@/pages/document-review";
 import CollectionsPage from "@/pages/collections";
-import ComplianceWorkflowsPage from "@/pages/compliance-workflows";
 import PrivilegeReviewQueue from "@/pages/privilege-review-queue";
 import PrivilegeLog from "@/pages/privilege-log";
 import AttorneyReviewQueue from "@/pages/attorney-review-queue";
 import WhistleblowerReport from "@/pages/whistleblower-report";
 import WhistleblowerConfirmation from "@/pages/whistleblower-confirmation";
 import WhistleblowerLookup from "@/pages/whistleblower-lookup";
-import RulesDashboard from "@/pages/rules-dashboard";
-import RuleBuilder from "@/pages/rule-builder";
 import TagManagement from "@/pages/tag-management";
 import DocumentSets from "@/pages/document-sets";
 import AdminDashboard from "@/pages/admin-dashboard";
@@ -176,15 +173,12 @@ function AuthenticatedApp() {
               <Route path="/background-research/:id" component={BackgroundResearchDetail} />
               <Route path="/ediscovery" component={EDiscoveryPage} />
               <Route path="/collections" component={CollectionsPage} />
-              <Route path="/workflows" component={ComplianceWorkflowsPage} />
               <Route path="/privilege-review" component={PrivilegeReviewQueue} />
               <Route path="/privilege-log" component={PrivilegeLog} />
               <Route path="/attorney-review" component={AttorneyReviewQueue} />
               <Route path="/report" component={WhistleblowerReport} />
               <Route path="/report/confirmation" component={WhistleblowerConfirmation} />
               <Route path="/report/lookup" component={WhistleblowerLookup} />
-              <Route path="/rules" component={RulesDashboard} />
-              <Route path="/rules/builder" component={RuleBuilder} />
               <Route path="/tags" component={TagManagement} />
               <Route path="/document-sets" component={DocumentSets} />
               <Route path="/monitoring/directory" component={MonitoringDirectory} />
