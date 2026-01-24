@@ -228,12 +228,6 @@ export function AppSidebar() {
           roles: ["admin", "attorney", "compliance_officer"],
         },
         {
-          title: "Productions",
-          url: "/reports/productions",
-          icon: Package,
-          roles: ["admin", "attorney", "external_counsel"],
-        },
-        {
           title: "Discovery Reports",
           url: "/reports/discovery",
           icon: FileText,
