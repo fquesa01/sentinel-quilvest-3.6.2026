@@ -717,20 +717,16 @@ Do you understand and consent to proceed with this interview?`;
       <div className="flex items-center justify-between stagger-1">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" data-testid="heading-interviews">Investigation Interviews</h1>
-          <p className="text-muted-foreground mt-1">
-            End-to-end interview workflow with Upjohn warnings, consent capture, and privilege protection
-          </p>
+          <p className="text-muted-foreground mt-1">End-to-end interview workflow with consent capture, and privilege protection</p>
         </div>
         <Button onClick={() => setScheduleOpen(true)} data-testid="button-schedule-interview">
           <Plus className="h-4 w-4 mr-2" />
           Schedule Interview
         </Button>
       </div>
-
       <div className="stagger-2">
         <InterviewTemplatesPanel />
       </div>
-
       <Tabs value={mainTab} onValueChange={setMainTab} className="space-y-4 stagger-3">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 h-auto gap-1">
           <TabsTrigger value="live-sessions" data-testid="tab-live-sessions" className="text-xs sm:text-sm py-2">
@@ -2207,7 +2203,6 @@ Do you understand and consent to proceed with this interview?`;
           <InterviewInvitesPanel cases={cases} templates={templates} />
         </TabsContent>
       </Tabs>
-
       {/* Schedule Interview Dialog */}
       <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
         <DialogContent className="max-w-2xl" data-testid="dialog-schedule-interview">
@@ -2411,7 +2406,6 @@ Do you understand and consent to proceed with this interview?`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       {/* Transcript Dialog */}
       <Dialog open={transcriptOpen} onOpenChange={setTranscriptOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto" data-testid="dialog-transcript">
@@ -2431,7 +2425,6 @@ Do you understand and consent to proceed with this interview?`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       {/* AI Summary Dialog */}
       <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto" data-testid="dialog-summary">
@@ -2451,14 +2444,12 @@ Do you understand and consent to proceed with this interview?`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       {/* Recorded Interview Detail Dialog */}
       <RecordedInterviewDetailDialog
         open={recordedDetailOpen}
         onOpenChange={setRecordedDetailOpen}
         interviewId={selectedRecordedId}
       />
-
       {/* Court Transcript Dialog */}
       <Dialog open={courtTranscriptOpen} onOpenChange={setCourtTranscriptOpen}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" data-testid="dialog-court-transcript">
@@ -2489,7 +2480,6 @@ Do you understand and consent to proceed with this interview?`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       {/* Apply Template Dialog */}
       <Dialog open={applyTemplateDialogOpen} onOpenChange={setApplyTemplateDialogOpen}>
         <DialogContent className="max-w-lg" data-testid="dialog-apply-template">
@@ -2551,7 +2541,6 @@ Do you understand and consent to proceed with this interview?`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       {/* Delete Question Confirmation Dialog */}
       <AlertDialog open={deleteQuestionConfirm.open} onOpenChange={(open) => 
         !open && setDeleteQuestionConfirm({ open: false, interviewId: "", questionIndex: -1, questionText: "" })
@@ -2578,7 +2567,6 @@ Do you understand and consent to proceed with this interview?`;
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
       {/* Expanded AI Summary Dialog with Follow-up Questions */}
       <Dialog open={!!expandedSummaryData?.open} onOpenChange={(open) => !open && closeExpandedSummary()}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" data-testid="dialog-expanded-summary">

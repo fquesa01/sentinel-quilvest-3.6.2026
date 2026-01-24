@@ -11890,3 +11890,189 @@ export interface CaseElementWithEvidence extends CaseElement {
     neutral: number;
   };
 }
+
+// ================================
+// CLIENTS / CONTACTS MANAGEMENT
+// ================================
+
+export const clientTypeEnum = pgEnum("client_type", [
+  "individual",
+  "corporation",
+  "llc",
+  "partnership",
+  "government_entity",
+  "nonprofit",
+  "trust",
+  "estate",
+  "other",
+]);
+
+export const contactRoleEnum = pgEnum("contact_role", [
+  "client",
+  "representative",
+  "general_counsel",
+  "in_house_counsel",
+  "cfo",
+  "ceo",
+  "other_executive",
+  "assistant",
+  "other",
+]);
+
+export const communicationPreferenceEnum = pgEnum("communication_preference", [
+  "email",
+  "phone_call",
+  "text",
+  "any",
+]);
+
+export const emailProviderEnum = pgEnum("email_provider", [
+  "gmail",
+  "outlook",
+  "other",
+]);
+
+export const clients = pgTable("clients", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  companyName: text("company_name").notNull(),
+  clientType: clientTypeEnum("client_type").default("corporation").notNull(),
+  industrySector: text("industry_sector"),
+  referredBy: text("referred_by"),
+  retainerDate: date("retainer_date"),
+  retainerDocumentUrl: text("retainer_document_url"),
+  billingRate: numeric("billing_rate", { precision: 10, scale: 2 }),
+  feeArrangement: text("fee_arrangement"),
+  paymentTerms: text("payment_terms"),
+  retainerBalance: numeric("retainer_balance", { precision: 12, scale: 2 }),
+  outstandingInvoices: numeric("outstanding_invoices", { precision: 12, scale: 2 }),
+  lifetimeBilling: numeric("lifetime_billing", { precision: 14, scale: 2 }),
+  primaryAttorneyId: varchar("primary_attorney_id").references(() => users.id),
+  leadParalegalId: varchar("lead_paralegal_id").references(() => users.id),
+  emailProvider: emailProviderEnum("email_provider").default("gmail"),
+  emailSearchDomain: text("email_search_domain"),
+  lastContactDate: date("last_contact_date"),
+  nextFollowUp: date("next_follow_up"),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const clientContacts = pgTable("client_contacts", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id")
+    .references(() => clients.id, { onDelete: "cascade" })
+    .notNull(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  contactRole: contactRoleEnum("contact_role").default("client").notNull(),
+  title: text("title"),
+  email: text("email"),
+  officePhone: text("office_phone"),
+  cellPhone: text("cell_phone"),
+  address1: text("address_1"),
+  address2: text("address_2"),
+  city: text("city"),
+  state: text("state"),
+  zipCode: text("zip_code"),
+  country: text("country"),
+  communicationPreference: communicationPreferenceEnum("communication_preference").default("email"),
+  isPrimaryContact: boolean("is_primary_contact").default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const clientCases = pgTable("client_cases", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id")
+    .references(() => clients.id, { onDelete: "cascade" })
+    .notNull(),
+  caseId: varchar("case_id")
+    .references(() => cases.id, { onDelete: "cascade" })
+    .notNull(),
+  role: text("role").default("plaintiff"),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+});
+
+export const clientsRelations = relations(clients, ({ one, many }) => ({
+  primaryAttorney: one(users, {
+    fields: [clients.primaryAttorneyId],
+    references: [users.id],
+    relationName: "clientPrimaryAttorney",
+  }),
+  leadParalegal: one(users, {
+    fields: [clients.leadParalegalId],
+    references: [users.id],
+    relationName: "clientLeadParalegal",
+  }),
+  createdByUser: one(users, {
+    fields: [clients.createdBy],
+    references: [users.id],
+    relationName: "clientCreatedBy",
+  }),
+  contacts: many(clientContacts),
+  clientCases: many(clientCases),
+}));
+
+export const clientContactsRelations = relations(clientContacts, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientContacts.clientId],
+    references: [clients.id],
+  }),
+}));
+
+export const clientCasesRelations = relations(clientCases, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientCases.clientId],
+    references: [clients.id],
+  }),
+  case: one(cases, {
+    fields: [clientCases.caseId],
+    references: [cases.id],
+  }),
+}));
+
+export const insertClientSchema = createInsertSchema(clients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertClientContactSchema = createInsertSchema(clientContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertClientCaseSchema = createInsertSchema(clientCases).omit({
+  id: true,
+  addedAt: true,
+});
+
+export type Client = typeof clients.$inferSelect;
+export type InsertClient = z.infer<typeof insertClientSchema>;
+export type ClientContact = typeof clientContacts.$inferSelect;
+export type InsertClientContact = z.infer<typeof insertClientContactSchema>;
+export type ClientCase = typeof clientCases.$inferSelect;
+export type InsertClientCase = z.infer<typeof insertClientCaseSchema>;
+
+export interface ClientWithDetails extends Client {
+  contacts: ClientContact[];
+  cases: Array<{
+    caseId: string;
+    caseNumber: string;
+    title: string;
+    status: string;
+    role: string;
+  }>;
+  primaryAttorney?: { id: string; firstName: string | null; lastName: string | null };
+  leadParalegal?: { id: string; firstName: string | null; lastName: string | null };
+}
