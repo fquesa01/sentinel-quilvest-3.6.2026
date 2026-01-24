@@ -20,32 +20,20 @@ import Interviews from "@/pages/interviews";
 import Analytics from "@/pages/analytics";
 import UserManagement from "@/pages/user-management";
 import EmployeeDashboard from "@/pages/employee-dashboard";
-import RegulatoryChanges from "@/pages/regulatory-changes";
-import GRCDashboard from "@/pages/grc-dashboard";
-import GrcRisks from "@/pages/grc-risks";
-import GrcControls from "@/pages/grc-controls";
-import GrcIncidents from "@/pages/grc-incidents";
-import VendorRiskPage from "@/pages/vendor-risk";
 import ExecutiveAnalytics from "@/pages/executive-analytics";
 import ManagementAnalytics from "@/pages/management-analytics";
 import EDiscoveryPage from "@/pages/ediscovery";
 import DocumentReviewPage from "@/pages/document-review";
 import CollectionsPage from "@/pages/collections";
-import RulePacksPage from "@/pages/rule-packs";
 import ComplianceWorkflowsPage from "@/pages/compliance-workflows";
 import PrivilegeReviewQueue from "@/pages/privilege-review-queue";
 import PrivilegeLog from "@/pages/privilege-log";
 import AttorneyReviewQueue from "@/pages/attorney-review-queue";
-import RemediationPlans from "@/pages/remediation-plans";
-import RegulatoryStrategies from "@/pages/regulatory-strategies";
-import DisclosurePlaybooks from "@/pages/disclosure-playbooks";
-import BoardReports from "@/pages/board-reports";
 import WhistleblowerReport from "@/pages/whistleblower-report";
 import WhistleblowerConfirmation from "@/pages/whistleblower-confirmation";
 import WhistleblowerLookup from "@/pages/whistleblower-lookup";
 import RulesDashboard from "@/pages/rules-dashboard";
 import RuleBuilder from "@/pages/rule-builder";
-import PoliciesTraining from "@/pages/policies-training";
 import TagManagement from "@/pages/tag-management";
 import DocumentSets from "@/pages/document-sets";
 import AdminDashboard from "@/pages/admin-dashboard";
@@ -166,12 +154,7 @@ function AuthenticatedApp() {
               <Route path="/management-analytics" component={ManagementAnalytics} />
               <Route path="/users" component={UserManagement} />
               <Route path="/admin" component={AdminDashboard} />
-              <Route path="/regulatory-changes" component={RegulatoryChanges} />
               <Route path="/employee/compliance" component={EmployeeDashboard} />
-              <Route path="/grc" component={GRCDashboard} />
-              <Route path="/grc/risks" component={GrcRisks} />
-              <Route path="/grc/controls" component={GrcControls} />
-              <Route path="/grc/incidents" component={GrcIncidents} />
               <Route path="/transactions/dashboard" component={TransactionsDashboard} />
               <Route path="/transactions/deals" component={TransactionsDeals} />
               <Route path="/transactions/deals/:id" component={TransactionsDealDetail} />
@@ -191,24 +174,17 @@ function AuthenticatedApp() {
               <Route path="/pe/deal-intelligence" component={PEDealIntelligence} />
               <Route path="/background-research" component={BackgroundResearch} />
               <Route path="/background-research/:id" component={BackgroundResearchDetail} />
-              <Route path="/vendor-risk" component={VendorRiskPage} />
               <Route path="/ediscovery" component={EDiscoveryPage} />
               <Route path="/collections" component={CollectionsPage} />
-              <Route path="/rule-packs" component={RulePacksPage} />
               <Route path="/workflows" component={ComplianceWorkflowsPage} />
               <Route path="/privilege-review" component={PrivilegeReviewQueue} />
               <Route path="/privilege-log" component={PrivilegeLog} />
               <Route path="/attorney-review" component={AttorneyReviewQueue} />
-              <Route path="/remediation-plans" component={RemediationPlans} />
-              <Route path="/regulatory-strategies" component={RegulatoryStrategies} />
-              <Route path="/disclosure-playbooks" component={DisclosurePlaybooks} />
-              <Route path="/board-reports" component={BoardReports} />
               <Route path="/report" component={WhistleblowerReport} />
               <Route path="/report/confirmation" component={WhistleblowerConfirmation} />
               <Route path="/report/lookup" component={WhistleblowerLookup} />
               <Route path="/rules" component={RulesDashboard} />
               <Route path="/rules/builder" component={RuleBuilder} />
-              <Route path="/policies-training" component={PoliciesTraining} />
               <Route path="/tags" component={TagManagement} />
               <Route path="/document-sets" component={DocumentSets} />
               <Route path="/monitoring/directory" component={MonitoringDirectory} />
