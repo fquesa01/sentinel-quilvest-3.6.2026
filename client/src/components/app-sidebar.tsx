@@ -132,7 +132,7 @@ export function AppSidebar() {
           roles: ["admin", "compliance_officer", "attorney", "external_counsel"],
         },
         {
-          title: "Business Intelligence",
+          title: "Client Intelligence",
           url: "/business-intelligence",
           icon: Briefcase,
           roles: ["admin", "attorney", "external_counsel", "auditor"],
