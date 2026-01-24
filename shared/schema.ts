@@ -497,7 +497,8 @@ export const communications = pgTable("communications", {
   aiComplianceAnalysis: text("ai_compliance_analysis"), // AI-generated violation explanation
   analyzedAt: timestamp("analyzed_at"), // When compliance analysis was performed
   // Case Association (for ingested documents)
-  caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }), // Optional case association from ingestion
+  caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }), // Optional case association from ingestion
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -560,6 +561,7 @@ export const ingestedChatMessages = pgTable("ingested_chat_messages", {
   notes: text("notes"), // Collaborative notes on this message
   // Case Association (for ingested chat data)
   caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   threadIdx: index("ingested_chat_thread_idx").on(table.threadId),
@@ -960,7 +962,8 @@ export const ingestionJobs = pgTable("ingestion_jobs", {
   uploadedBy: varchar("uploaded_by")
     .references(() => users.id)
     .notNull(),
-  caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }), // Optional case association
+  caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }), // Optional case association
   status: ingestionJobStatusEnum("status").default("pending").notNull(),
   totalFiles: integer("total_files").default(0).notNull(),
   processedFiles: integer("processed_files").default(0).notNull(),
@@ -7889,6 +7892,7 @@ export const backgroundResearch = pgTable("background_research", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   dealId: varchar("deal_id").references(() => deals.id, { onDelete: "set null" }),
   caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   targetName: varchar("target_name", { length: 255 }).notNull(),
   targetWebsite: varchar("target_website", { length: 500 }),
   targetIndustry: varchar("target_industry", { length: 100 }),
@@ -8930,6 +8934,7 @@ export const ambientSuggestionConfidenceEnum = pgEnum("ambient_suggestion_confid
 export const ambientSessions = pgTable("ambient_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   sessionName: varchar("session_name", { length: 255 }).notNull(),
   sessionType: ambientSessionTypeEnum("session_type").default("other"),
   status: ambientSessionStatusEnum("status").default("active"),
@@ -9080,6 +9085,7 @@ export const focusIssues = pgTable("focus_issues", {
   sessionId: varchar("session_id").references(() => ambientSessions.id, { onDelete: "cascade" }),
   meetingId: varchar("meeting_id").references(() => videoMeetings.id, { onDelete: "cascade" }),
   caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   
   // User-defined issue
   title: text("title").notNull(),
@@ -9295,6 +9301,7 @@ export const privilegedSessions = pgTable("privileged_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull(),
   caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   title: varchar("title", { length: 255 }).notNull().default("New Session"),
   modelProvider: varchar("model_provider", { length: 50 }).notNull().default("openai"),
   modelId: varchar("model_id", { length: 100 }).notNull().default("gpt-4o"),
@@ -9305,6 +9312,7 @@ export const privilegedSessions = pgTable("privileged_sessions", {
 }, (table) => ({
   userIdx: index("idx_privileged_sessions_user").on(table.userId),
   caseIdx: index("idx_privileged_sessions_case").on(table.caseId),
+  clientIdx: index("idx_privileged_sessions_client").on(table.clientId),
   lastActivityIdx: index("idx_privileged_sessions_last_activity").on(table.lastActivityAt),
 }));
 

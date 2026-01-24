@@ -35,7 +35,10 @@ import {
   Sparkles,
   Menu,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  Briefcase,
+  Building2,
+  Scale
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -63,6 +66,15 @@ import {
 } from "@/components/ui/dialog";
 import { Save, Trash } from "lucide-react";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -72,6 +84,7 @@ type PrivilegedSession = {
   id: string;
   userId: string;
   caseId: string | null;
+  clientId: string | null;
   title: string;
   modelProvider: string;
   modelId: string;
@@ -79,6 +92,8 @@ type PrivilegedSession = {
   isArchived: boolean;
   createdAt: string;
   lastActivityAt: string;
+  case?: { id: string; caseNumber: string; title: string } | null;
+  client?: { id: string; companyName: string } | null;
 };
 
 type PrivilegedMessage = {
@@ -120,6 +135,10 @@ export default function PrivilegedResearch() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [nonStoredMessages, setNonStoredMessages] = useState<{user: string; assistant: string} | null>(null);
   const [showRetentionDialog, setShowRetentionDialog] = useState(false);
+  const [showLinkDialog, setShowLinkDialog] = useState(false);
+  const [linkType, setLinkType] = useState<"case" | "client">("case");
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -128,14 +147,24 @@ export default function PrivilegedResearch() {
     queryKey: ["/api/privileged-sessions"],
   });
 
+  const { data: casesData = [] } = useQuery<{ id: string; caseNumber: string; title: string }[]>({
+    queryKey: ["/api/cases"],
+    enabled: showLinkDialog,
+  });
+
+  const { data: clientsData = [] } = useQuery<{ id: string; companyName: string }[]>({
+    queryKey: ["/api/clients"],
+    enabled: showLinkDialog,
+  });
+
   const { data: currentSession, isLoading: sessionLoading, refetch: refetchSession } = useQuery<SessionWithMessages>({
     queryKey: ["/api/privileged-sessions", sessionId],
     enabled: !!sessionId,
   });
 
   const createSession = useMutation({
-    mutationFn: async (retentionPolicy: "save" | "auto_delete") => {
-      const response = await apiRequest("POST", "/api/privileged-sessions", { retentionPolicy });
+    mutationFn: async (params: { retentionPolicy: "save" | "auto_delete"; caseId?: string; clientId?: string }) => {
+      const response = await apiRequest("POST", "/api/privileged-sessions", params);
       return response.json();
     },
     onSuccess: (newSession) => {
@@ -879,7 +908,7 @@ export default function PrivilegedResearch() {
             <Button
               variant="outline"
               className="h-auto py-4 px-4 justify-start gap-4 w-full overflow-hidden"
-              onClick={() => createSession.mutate("save")}
+              onClick={() => createSession.mutate({ retentionPolicy: "save" })}
               disabled={createSession.isPending}
               data-testid="button-retention-save"
             >
@@ -896,7 +925,7 @@ export default function PrivilegedResearch() {
             <Button
               variant="outline"
               className="h-auto py-4 px-4 justify-start gap-4 w-full overflow-hidden"
-              onClick={() => createSession.mutate("auto_delete")}
+              onClick={() => createSession.mutate({ retentionPolicy: "auto_delete" })}
               disabled={createSession.isPending}
               data-testid="button-retention-delete"
             >
@@ -907,6 +936,23 @@ export default function PrivilegedResearch() {
                 <div className="font-medium">Auto-Delete When Done</div>
                 <div className="text-sm text-muted-foreground whitespace-normal break-words">
                   Permanently delete this session when you close or leave it
+                </div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto py-4 px-4 justify-start gap-4 w-full overflow-hidden"
+              onClick={() => { setShowRetentionDialog(false); setShowLinkDialog(true); }}
+              disabled={createSession.isPending}
+              data-testid="button-retention-link"
+            >
+              <div className="w-10 h-10 rounded-full bg-accent/30 flex items-center justify-center shrink-0">
+                <Briefcase className="h-5 w-5 text-foreground" />
+              </div>
+              <div className="text-left flex-1 min-w-0 overflow-hidden">
+                <div className="font-medium">Save to Case or Client</div>
+                <div className="text-sm text-muted-foreground whitespace-normal break-words">
+                  Link this research to a specific case or client matter
                 </div>
               </div>
             </Button>
@@ -924,6 +970,89 @@ export default function PrivilegedResearch() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
+      <Dialog open={showLinkDialog} onOpenChange={setShowLinkDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Briefcase className="h-5 w-5 text-primary" />
+              Save Research to Case or Client
+            </DialogTitle>
+            <DialogDescription>
+              Link this research session to a case or client for easy access later.
+            </DialogDescription>
+          </DialogHeader>
+          <Tabs value={linkType} onValueChange={(v) => setLinkType(v as "case" | "client")} className="mt-4">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="case" className="gap-2" data-testid="tab-link-case">
+                <Scale className="h-4 w-4" />
+                Case
+              </TabsTrigger>
+              <TabsTrigger value="client" className="gap-2" data-testid="tab-link-client">
+                <Building2 className="h-4 w-4" />
+                Client
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="case" className="mt-4 space-y-4">
+              <div>
+                <Label>Select Case</Label>
+                <Select value={selectedCaseId || ""} onValueChange={setSelectedCaseId}>
+                  <SelectTrigger data-testid="select-link-case">
+                    <SelectValue placeholder="Choose a case..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {casesData.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.caseNumber} - {c.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button 
+                className="w-full" 
+                disabled={!selectedCaseId || createSession.isPending}
+                onClick={() => {
+                  createSession.mutate({ retentionPolicy: "save", caseId: selectedCaseId! });
+                  setShowLinkDialog(false);
+                  setSelectedCaseId(null);
+                }}
+                data-testid="button-confirm-link-case"
+              >
+                {createSession.isPending ? "Creating..." : "Save & Link to Case"}
+              </Button>
+            </TabsContent>
+            <TabsContent value="client" className="mt-4 space-y-4">
+              <div>
+                <Label>Select Client</Label>
+                <Select value={selectedClientId || ""} onValueChange={setSelectedClientId}>
+                  <SelectTrigger data-testid="select-link-client">
+                    <SelectValue placeholder="Choose a client..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clientsData.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.companyName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button 
+                className="w-full" 
+                disabled={!selectedClientId || createSession.isPending}
+                onClick={() => {
+                  createSession.mutate({ retentionPolicy: "save", clientId: selectedClientId! });
+                  setShowLinkDialog(false);
+                  setSelectedClientId(null);
+                }}
+                data-testid="button-confirm-link-client"
+              >
+                {createSession.isPending ? "Creating..." : "Save & Link to Client"}
+              </Button>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
             <AlertDialogAction
               onClick={() => deleteSessionId && deleteSession.mutate(deleteSessionId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
