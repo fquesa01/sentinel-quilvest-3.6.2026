@@ -63,9 +63,9 @@ export default function CalendarPage() {
   
   const [newEvent, setNewEvent] = useState({
     title: "",
-    eventType: "meeting" as string,
+    eventType: "none" as string,
     startTime: "",
-    endTime: "",
+    duration: "60" as string,
     description: "",
     location: "",
     courtName: "",
@@ -210,9 +210,9 @@ export default function CalendarPage() {
   const resetNewEvent = () => {
     setNewEvent({
       title: "",
-      eventType: "meeting",
+      eventType: "none",
       startTime: "",
-      endTime: "",
+      duration: "60",
       description: "",
       location: "",
       courtName: "",
@@ -230,14 +230,29 @@ export default function CalendarPage() {
   };
 
   const handleCreateEvent = () => {
-    if (!newEvent.title || !newEvent.startTime || !newEvent.endTime) {
+    if (!newEvent.title || !newEvent.startTime) {
       toast({ title: "Please fill in required fields", variant: "destructive" });
       return;
     }
+    const startDate = new Date(newEvent.startTime);
+    let endDate: Date;
+    
+    if (newEvent.duration === "all_day") {
+      endDate = new Date(startDate);
+      endDate.setHours(23, 59, 59);
+    } else if (newEvent.duration === "half_day") {
+      endDate = new Date(startDate.getTime() + 4 * 60 * 60 * 1000);
+    } else {
+      const durationMinutes = parseInt(newEvent.duration, 10);
+      endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
+    }
+    
     createEventMutation.mutate({
       ...newEvent,
-      startTime: new Date(newEvent.startTime).toISOString(),
-      endTime: new Date(newEvent.endTime).toISOString(),
+      eventType: newEvent.eventType !== "none" ? newEvent.eventType : null,
+      startTime: startDate.toISOString(),
+      endTime: endDate.toISOString(),
+      isAllDay: newEvent.duration === "all_day",
       caseId: newEvent.caseId && newEvent.caseId !== "none" ? newEvent.caseId : null,
       clientId: newEvent.clientId && newEvent.clientId !== "none" ? newEvent.clientId : null,
       calendarId: newEvent.calendarId && newEvent.calendarId !== "none" ? newEvent.calendarId : null,
@@ -252,7 +267,7 @@ export default function CalendarPage() {
     setNewEvent(prev => ({
       ...prev,
       startTime: `${dateStr}T09:00`,
-      endTime: `${dateStr}T10:00`,
+      duration: "60",
     }));
     setIsCreateDialogOpen(true);
   };
@@ -830,12 +845,15 @@ export default function CalendarPage() {
               </div>
               
               <div>
-                <Label htmlFor="eventType">Event Type *</Label>
+                <Label htmlFor="eventType">Event Type</Label>
                 <Select value={newEvent.eventType} onValueChange={(v) => setNewEvent(prev => ({ ...prev, eventType: v as any }))}>
                   <SelectTrigger data-testid="select-event-type">
-                    <SelectValue />
+                    <SelectValue placeholder="Select event type" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">
+                      <span className="text-muted-foreground">No type</span>
+                    </SelectItem>
                     <SelectItem value="hearing">Hearing</SelectItem>
                     <SelectItem value="deposition">Deposition</SelectItem>
                     <SelectItem value="deadline">Deadline</SelectItem>
@@ -861,14 +879,27 @@ export default function CalendarPage() {
               </div>
               
               <div>
-                <Label htmlFor="endTime">End Time *</Label>
-                <Input
-                  id="endTime"
-                  type="datetime-local"
-                  value={newEvent.endTime}
-                  onChange={(e) => setNewEvent(prev => ({ ...prev, endTime: e.target.value }))}
-                  data-testid="input-end-time"
-                />
+                <Label htmlFor="duration">Duration *</Label>
+                <Select value={newEvent.duration} onValueChange={(v) => setNewEvent(prev => ({ ...prev, duration: v }))}>
+                  <SelectTrigger data-testid="select-duration">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="15">15 minutes</SelectItem>
+                    <SelectItem value="30">30 minutes</SelectItem>
+                    <SelectItem value="45">45 minutes</SelectItem>
+                    <SelectItem value="60">1 hour</SelectItem>
+                    <SelectItem value="120">2 hours</SelectItem>
+                    <SelectItem value="180">3 hours</SelectItem>
+                    <SelectItem value="240">4 hours</SelectItem>
+                    <SelectItem value="300">5 hours</SelectItem>
+                    <SelectItem value="360">6 hours</SelectItem>
+                    <SelectItem value="420">7 hours</SelectItem>
+                    <SelectItem value="480">8 hours</SelectItem>
+                    <SelectItem value="half_day">Half day</SelectItem>
+                    <SelectItem value="all_day">All day</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
