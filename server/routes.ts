@@ -1040,6 +1040,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // USER CALENDARS ROUTES
+  // ============================================
+  
+  // Get user's calendars
+  app.get("/api/user-calendars", isAuthenticated, async (req: any, res) => {
+    try {
+      const calendars = await storage.getUserCalendars(req.user.id);
+      res.json(calendars);
+    } catch (error: any) {
+      console.error("Error fetching user calendars:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get single calendar
+  app.get("/api/user-calendars/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const calendar = await storage.getUserCalendar(req.params.id);
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      res.json(calendar);
+    } catch (error: any) {
+      console.error("Error fetching calendar:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create user calendar
+  app.post("/api/user-calendars", isAuthenticated, async (req: any, res) => {
+    try {
+      const calendarData = {
+        ...req.body,
+        userId: req.user.id,
+      };
+      const calendar = await storage.createUserCalendar(calendarData);
+      res.status(201).json(calendar);
+    } catch (error: any) {
+      console.error("Error creating calendar:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update user calendar
+  app.patch("/api/user-calendars/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const calendar = await storage.updateUserCalendar(req.params.id, req.body);
+      res.json(calendar);
+    } catch (error: any) {
+      console.error("Error updating calendar:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete user calendar
+  app.delete("/api/user-calendars/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteUserCalendar(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting calendar:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Search autocomplete endpoint
   app.get("/api/search/autocomplete", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
     try {

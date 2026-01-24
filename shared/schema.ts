@@ -12270,6 +12270,24 @@ export const calendarRecurrenceFrequencyEnum = pgEnum("calendar_recurrence_frequ
   "yearly",
 ]);
 
+// User calendars for multi-calendar support
+export const userCalendars = pgTable("user_calendars", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  color: varchar("color", { length: 20 }).notNull().default("#3b82f6"),
+  description: text("description"),
+  isDefault: boolean("is_default").notNull().default(false),
+  isVisible: boolean("is_visible").notNull().default(true),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertUserCalendarSchema = createInsertSchema(userCalendars).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserCalendar = z.infer<typeof insertUserCalendarSchema>;
+export type UserCalendar = typeof userCalendars.$inferSelect;
+
+
 export const calendarEvents = pgTable("calendar_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
@@ -12291,6 +12309,7 @@ export const calendarEvents = pgTable("calendar_events", {
   caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
   clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   matterId: varchar("matter_id"),
+  calendarId: varchar("calendar_id").references(() => userCalendars.id, { onDelete: "set null" }),
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   attendees: jsonb("attendees").$type<string[]>().default([]),
   externalAttendees: jsonb("external_attendees").$type<{ name: string; email: string }[]>().default([]),

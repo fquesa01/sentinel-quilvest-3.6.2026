@@ -345,6 +345,9 @@ import {
   calendarEvents,
   type CalendarEvent,
   type InsertCalendarEvent,
+  userCalendars,
+  type UserCalendar,
+  type InsertUserCalendar,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -945,6 +948,14 @@ export interface IStorage {
   createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent>;
   updateCalendarEvent(id: string, updates: Partial<CalendarEvent>): Promise<CalendarEvent>;
   deleteCalendarEvent(id: string): Promise<void>;
+  
+  // User Calendars
+  getUserCalendars(userId: string): Promise<UserCalendar[]>;
+  getUserCalendar(id: string): Promise<UserCalendar | undefined>;
+  createUserCalendar(calendar: InsertUserCalendar): Promise<UserCalendar>;
+  updateUserCalendar(id: string, updates: Partial<UserCalendar>): Promise<UserCalendar>;
+  deleteUserCalendar(id: string): Promise<void>;
+  getDefaultUserCalendar(userId: string): Promise<UserCalendar | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -6371,6 +6382,35 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCalendarEvent(id: string): Promise<void> {
     await db.delete(calendarEvents).where(eq(calendarEvents.id, id));
+  }
+
+  // User Calendars implementation
+  async getUserCalendars(userId: string): Promise<UserCalendar[]> {
+    return await db.select().from(userCalendars).where(eq(userCalendars.userId, userId)).orderBy(desc(userCalendars.isDefault), asc(userCalendars.name));
+  }
+
+  async getUserCalendar(id: string): Promise<UserCalendar | undefined> {
+    const [calendar] = await db.select().from(userCalendars).where(eq(userCalendars.id, id));
+    return calendar;
+  }
+
+  async createUserCalendar(calendar: InsertUserCalendar): Promise<UserCalendar> {
+    const [newCalendar] = await db.insert(userCalendars).values(calendar).returning();
+    return newCalendar;
+  }
+
+  async updateUserCalendar(id: string, updates: Partial<UserCalendar>): Promise<UserCalendar> {
+    const [updated] = await db.update(userCalendars).set({ ...updates, updatedAt: new Date() }).where(eq(userCalendars.id, id)).returning();
+    return updated;
+  }
+
+  async deleteUserCalendar(id: string): Promise<void> {
+    await db.delete(userCalendars).where(eq(userCalendars.id, id));
+  }
+
+  async getDefaultUserCalendar(userId: string): Promise<UserCalendar | undefined> {
+    const [calendar] = await db.select().from(userCalendars).where(and(eq(userCalendars.userId, userId), eq(userCalendars.isDefault, true)));
+    return calendar;
   }
 }
 
