@@ -43,7 +43,6 @@ import CrisisIntake from "@/pages/crisis-intake";
 import BusinessIntelligence from "@/pages/business-intelligence";
 import DocumentIngestion from "@/pages/document-ingestion";
 import ReportsProductions from "@/pages/reports-productions";
-import ChatReviewPage from "@/pages/chat-review";
 import CommunicationsHeatmap from "@/pages/communications-heatmap";
 import IssueHeatmap from "@/pages/issue-heatmap";
 import IssueHeatmapLanding from "@/pages/issue-heatmap-landing";
@@ -247,14 +246,6 @@ function App() {
         {/* Case-scoped Document Review (from heatmap navigation) */}
         <Route path="/cases/:caseId/document-review">
           {(params) => isAuthenticated ? <DocumentReviewPage routeParams={params} /> : <Landing />}
-        </Route>
-        {/* Chat Review has its own sidebar management */}
-        <Route path="/chat-review">
-          {() => isAuthenticated ? <ChatReviewPage /> : <Landing />}
-        </Route>
-        {/* Case-scoped Chat Review */}
-        <Route path="/cases/:caseId/chat-review">
-          {() => isAuthenticated ? <ChatReviewPage /> : <Landing />}
         </Route>
         <Route>
           {() =>

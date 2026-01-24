@@ -137,12 +137,6 @@ export function AppSidebar() {
           roles: ["admin", "attorney", "compliance_officer"],
         },
         {
-          title: "Chat Conversations",
-          url: "/chat-review",
-          icon: MessageSquare,
-          roles: ["admin", "attorney", "compliance_officer"],
-        },
-        {
           title: "Interviews/Video Conferencing",
           url: "/interviews",
           icon: Calendar,
