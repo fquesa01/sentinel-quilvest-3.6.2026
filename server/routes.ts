@@ -29,6 +29,7 @@ import type { WebResearch } from "@shared/business-summary-types";
 import * as entityExtractionService from "./services/entity-extraction-service";
 import * as heatmapService from "./services/communications-heatmap-service";
 import * as issueExtractionService from "./services/issue-extraction-service";
+import * as XLSX from "xlsx";
 import { setupWebRTCSignaling } from "./webrtc-signaling";
 import { registerVideoMeetingRoutes } from "./video-meeting-routes";
 import { registerFocusIssueRoutes } from "./routes/focus-issues-routes";
@@ -658,6 +659,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  // Import clients from Excel
+  app.post("/api/clients/import", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), upload.single("file"), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      if (jsonData.length === 0) {
+        return res.status(400).json({ message: "No data found in spreadsheet" });
+      }
+
+      const results = { imported: 0, errors: [] as string[] };
+
+      for (const row of jsonData as any[]) {
+        try {
+          const clientData = {
+            companyName: row["Company Name"] || row["companyName"] || row["Name"] || row["name"],
+            clientType: row["Client Type"] || row["clientType"] || "corporation",
+            industrySector: row["Industry"] || row["industrySector"] || row["Sector"] || null,
+            referredBy: row["Referred By"] || row["referredBy"] || null,
+            billingRate: row["Billing Rate"] || row["billingRate"] || null,
+            feeArrangement: row["Fee Arrangement"] || row["feeArrangement"] || null,
+            paymentTerms: row["Payment Terms"] || row["paymentTerms"] || null,
+            emailProvider: row["Email Provider"] || row["emailProvider"] || "gmail",
+            emailSearchDomain: row["Email Domain"] || row["emailSearchDomain"] || null,
+            notes: row["Notes"] || row["notes"] || null,
+            createdBy: req.user.id,
+          };
+
+          if (!clientData.companyName) {
+            results.errors.push(`Row missing company name`);
+            continue;
+          }
+
+          await storage.createClient(clientData);
+          results.imported++;
+        } catch (error: any) {
+          results.errors.push(`Error importing row: ${error.message}`);
+        }
+      }
+
+      await logAction(req, "import", "clients", null, { imported: results.imported, errors: results.errors.length });
+      res.json(results);
+    } catch (error: any) {
+      console.error("Error importing clients:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
   // Get client contacts
   app.get("/api/clients/:id/contacts", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
     try {
