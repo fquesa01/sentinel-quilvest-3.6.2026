@@ -122,7 +122,7 @@ export function AppSidebar() {
   // Menu sections - Investigations first, then others
   const menuSections: MenuSection[] = [
     {
-      title: "Investigations",
+      title: "Litigation",
       defaultOpen: true,
       items: [
         {
