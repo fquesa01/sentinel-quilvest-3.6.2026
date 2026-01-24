@@ -334,6 +334,14 @@ import {
   type ClientCase,
   type InsertClientCase,
   type ClientWithDetails,
+  litigationTemplates,
+  templateFavorites,
+  templateUsageHistory,
+  type LitigationTemplate,
+  type InsertLitigationTemplate,
+  type TemplateFavorite,
+  type TemplateUsageHistory,
+  type LitigationTemplateWithDetails,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray } from "drizzle-orm";
@@ -910,6 +918,23 @@ export interface IStorage {
   // Checklist Item Comment operations
   getChecklistItemComments(itemId: string): Promise<ChecklistItemComment[]>;
   createChecklistItemComment(comment: InsertChecklistItemComment): Promise<ChecklistItemComment>;
+  
+  // Litigation Template operations
+  getLitigationTemplates(filters?: { category?: string; jurisdiction?: string; searchQuery?: string; userId?: string }): Promise<LitigationTemplateWithDetails[]>;
+  getLitigationTemplate(id: string): Promise<LitigationTemplate | undefined>;
+  createLitigationTemplate(template: InsertLitigationTemplate): Promise<LitigationTemplate>;
+  updateLitigationTemplate(id: string, updates: Partial<LitigationTemplate>): Promise<LitigationTemplate>;
+  deleteLitigationTemplate(id: string): Promise<void>;
+  
+  // Template Favorites operations
+  getTemplateFavorites(userId: string): Promise<TemplateFavorite[]>;
+  addTemplateFavorite(templateId: string, userId: string): Promise<TemplateFavorite>;
+  removeTemplateFavorite(templateId: string, userId: string): Promise<void>;
+  isTemplateFavorite(templateId: string, userId: string): Promise<boolean>;
+  
+  // Template Usage History operations
+  recordTemplateUsage(templateId: string, userId: string): Promise<void>;
+  getRecentlyUsedTemplates(userId: string, limit?: number): Promise<LitigationTemplate[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -6135,6 +6160,154 @@ export class DatabaseStorage implements IStorage {
       eq(clientCases.clientId, clientId),
       eq(clientCases.caseId, caseId)
     ));
+  }
+
+  // Litigation Template operations
+  async getLitigationTemplates(filters?: { category?: string; jurisdiction?: string; searchQuery?: string; userId?: string }): Promise<LitigationTemplateWithDetails[]> {
+    const conditions: any[] = [];
+    
+    if (filters?.category) {
+      conditions.push(eq(litigationTemplates.category, filters.category as any));
+    }
+    if (filters?.jurisdiction) {
+      conditions.push(eq(litigationTemplates.jurisdiction, filters.jurisdiction as any));
+    }
+    if (filters?.searchQuery) {
+      conditions.push(
+        or(
+          ilike(litigationTemplates.name, `%${filters.searchQuery}%`),
+          ilike(litigationTemplates.description, `%${filters.searchQuery}%`),
+          ilike(litigationTemplates.fileName, `%${filters.searchQuery}%`)
+        )
+      );
+    }
+    
+    const templates = await db.select()
+      .from(litigationTemplates)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(litigationTemplates.createdAt));
+    
+    // Get favorites for user if userId provided
+    let userFavorites: string[] = [];
+    let recentlyUsedIds: string[] = [];
+    
+    if (filters?.userId) {
+      const favorites = await db.select({ templateId: templateFavorites.templateId })
+        .from(templateFavorites)
+        .where(eq(templateFavorites.userId, filters.userId));
+      userFavorites = favorites.map(f => f.templateId);
+      
+      // Get recently used (last 7 days)
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      const recentUsage = await db.select({ templateId: templateUsageHistory.templateId })
+        .from(templateUsageHistory)
+        .where(and(
+          eq(templateUsageHistory.userId, filters.userId),
+          sql`${templateUsageHistory.usedAt} > ${oneWeekAgo}`
+        ));
+      recentlyUsedIds = [...new Set(recentUsage.map(r => r.templateId))];
+    }
+    
+    // Get uploader info
+    const templatesWithDetails: LitigationTemplateWithDetails[] = await Promise.all(
+      templates.map(async (template) => {
+        let uploadedByUser: { id: string; firstName: string | null; lastName: string | null } | undefined;
+        if (template.uploadedBy) {
+          const [user] = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+            .from(users).where(eq(users.id, template.uploadedBy));
+          uploadedByUser = user;
+        }
+        return {
+          ...template,
+          uploadedByUser,
+          isFavorite: userFavorites.includes(template.id),
+          recentlyUsed: recentlyUsedIds.includes(template.id),
+        };
+      })
+    );
+    
+    return templatesWithDetails;
+  }
+
+  async getLitigationTemplate(id: string): Promise<LitigationTemplate | undefined> {
+    const [template] = await db.select().from(litigationTemplates).where(eq(litigationTemplates.id, id));
+    return template;
+  }
+
+  async createLitigationTemplate(template: InsertLitigationTemplate): Promise<LitigationTemplate> {
+    const [result] = await db.insert(litigationTemplates).values(template).returning();
+    return result;
+  }
+
+  async updateLitigationTemplate(id: string, updates: Partial<LitigationTemplate>): Promise<LitigationTemplate> {
+    const [result] = await db.update(litigationTemplates)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(litigationTemplates.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteLitigationTemplate(id: string): Promise<void> {
+    await db.delete(litigationTemplates).where(eq(litigationTemplates.id, id));
+  }
+
+  // Template Favorites operations
+  async getTemplateFavorites(userId: string): Promise<TemplateFavorite[]> {
+    return db.select().from(templateFavorites).where(eq(templateFavorites.userId, userId));
+  }
+
+  async addTemplateFavorite(templateId: string, userId: string): Promise<TemplateFavorite> {
+    const [result] = await db.insert(templateFavorites)
+      .values({ templateId, userId })
+      .returning();
+    return result;
+  }
+
+  async removeTemplateFavorite(templateId: string, userId: string): Promise<void> {
+    await db.delete(templateFavorites).where(and(
+      eq(templateFavorites.templateId, templateId),
+      eq(templateFavorites.userId, userId)
+    ));
+  }
+
+  async isTemplateFavorite(templateId: string, userId: string): Promise<boolean> {
+    const [result] = await db.select()
+      .from(templateFavorites)
+      .where(and(
+        eq(templateFavorites.templateId, templateId),
+        eq(templateFavorites.userId, userId)
+      ));
+    return !!result;
+  }
+
+  // Template Usage History operations
+  async recordTemplateUsage(templateId: string, userId: string): Promise<void> {
+    await db.insert(templateUsageHistory).values({ templateId, userId });
+    // Also update the template's download count and last used info
+    await db.update(litigationTemplates)
+      .set({ 
+        downloadCount: sql`${litigationTemplates.downloadCount} + 1`,
+        lastUsedAt: new Date(),
+        lastUsedBy: userId
+      })
+      .where(eq(litigationTemplates.id, templateId));
+  }
+
+  async getRecentlyUsedTemplates(userId: string, limit: number = 10): Promise<LitigationTemplate[]> {
+    const recentUsage = await db.select({ templateId: templateUsageHistory.templateId })
+      .from(templateUsageHistory)
+      .where(eq(templateUsageHistory.userId, userId))
+      .orderBy(desc(templateUsageHistory.usedAt))
+      .limit(limit * 2);
+    
+    const uniqueIds = [...new Set(recentUsage.map(r => r.templateId))].slice(0, limit);
+    
+    if (uniqueIds.length === 0) return [];
+    
+    return db.select()
+      .from(litigationTemplates)
+      .where(inArray(litigationTemplates.id, uniqueIds));
   }
 }
 
