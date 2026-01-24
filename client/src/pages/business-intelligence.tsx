@@ -216,7 +216,7 @@ export default function BusinessIntelligence() {
                 AI Business Summary Generator
               </CardTitle>
               <CardDescription>
-                Automatically analyzes enterprise communications and documents to produce a detailed 
+                Analyzes communications and documents to produce a detailed 
                 business intelligence report with evidence-backed insights. Optionally includes live web search for current media coverage, litigation history, and regulatory actions.
               </CardDescription>
             </CardHeader>
