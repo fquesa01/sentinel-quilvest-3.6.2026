@@ -77,52 +77,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-
-type Client = {
-  id: string;
-  companyName: string;
-  clientType: string;
-  industrySector: string | null;
-  referredBy: string | null;
-  retainerDate: string | null;
-  retainerDocumentUrl: string | null;
-  billingRate: string | null;
-  feeArrangement: string | null;
-  paymentTerms: string | null;
-  retainerBalance: string | null;
-  outstandingInvoices: string | null;
-  lifetimeBilling: string | null;
-  primaryAttorneyId: string | null;
-  leadParalegalId: string | null;
-  emailProvider: string | null;
-  emailSearchDomain: string | null;
-  lastContactDate: string | null;
-  nextFollowUp: string | null;
-  notes: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type ClientContact = {
-  id: string;
-  clientId: string;
-  firstName: string;
-  lastName: string;
-  contactRole: string;
-  title: string | null;
-  email: string | null;
-  officePhone: string | null;
-  cellPhone: string | null;
-  address1: string | null;
-  address2: string | null;
-  city: string | null;
-  state: string | null;
-  zipCode: string | null;
-  country: string | null;
-  communicationPreference: string | null;
-  isPrimaryContact: boolean;
-};
+import {
+  type Client,
+  type ClientContact,
+  insertClientSchema,
+  insertClientContactSchema,
+} from "@shared/schema";
 
 type ClientWithDetails = Client & {
   contacts: ClientContact[];
@@ -137,36 +97,42 @@ type ClientWithDetails = Client & {
   leadParalegal?: { id: string; firstName: string | null; lastName: string | null };
 };
 
-const createClientSchema = z.object({
+const createClientSchema = insertClientSchema.extend({
   companyName: z.string().min(1, "Company name is required"),
-  clientType: z.string().default("corporation"),
-  industrySector: z.string().optional(),
-  referredBy: z.string().optional(),
-  retainerDate: z.string().optional(),
-  billingRate: z.string().optional(),
-  feeArrangement: z.string().optional(),
-  paymentTerms: z.string().optional(),
-  emailProvider: z.string().default("gmail"),
-  emailSearchDomain: z.string().optional(),
-  notes: z.string().optional(),
+}).pick({
+  companyName: true,
+  clientType: true,
+  industrySector: true,
+  referredBy: true,
+  retainerDate: true,
+  billingRate: true,
+  feeArrangement: true,
+  paymentTerms: true,
+  emailProvider: true,
+  emailSearchDomain: true,
+  notes: true,
 });
 
-const createContactSchema = z.object({
+const createContactSchema = insertClientContactSchema.extend({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
-  contactRole: z.string().default("client"),
-  title: z.string().optional(),
-  email: z.string().email().optional().or(z.literal("")),
-  officePhone: z.string().optional(),
-  cellPhone: z.string().optional(),
-  address1: z.string().optional(),
-  address2: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  zipCode: z.string().optional(),
-  country: z.string().optional(),
-  communicationPreference: z.string().default("email"),
-  isPrimaryContact: z.boolean().default(false),
+  email: z.string().email().optional().or(z.literal("")).nullable(),
+}).pick({
+  firstName: true,
+  lastName: true,
+  contactRole: true,
+  title: true,
+  email: true,
+  officePhone: true,
+  cellPhone: true,
+  address1: true,
+  address2: true,
+  city: true,
+  state: true,
+  zipCode: true,
+  country: true,
+  communicationPreference: true,
+  isPrimaryContact: true,
 });
 
 type CreateClientFormData = z.infer<typeof createClientSchema>;
