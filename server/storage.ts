@@ -342,9 +342,12 @@ import {
   type TemplateFavorite,
   type TemplateUsageHistory,
   type LitigationTemplateWithDetails,
+  calendarEvents,
+  type CalendarEvent,
+  type InsertCalendarEvent,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, and, or, ilike, sql, inArray } from "drizzle-orm";
+import { eq, desc, asc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
 
 // Comprehensive filter type for communications
 export interface CommunicationFilters {
@@ -935,6 +938,13 @@ export interface IStorage {
   // Template Usage History operations
   recordTemplateUsage(templateId: string, userId: string): Promise<void>;
   getRecentlyUsedTemplates(userId: string, limit?: number): Promise<LitigationTemplate[]>;
+  
+  // Calendar Event operations
+  getCalendarEvents(filters?: { userId?: string; startDate?: Date; endDate?: Date; caseId?: string; clientId?: string; eventType?: string }): Promise<CalendarEvent[]>;
+  getCalendarEvent(id: string): Promise<CalendarEvent | undefined>;
+  createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent>;
+  updateCalendarEvent(id: string, updates: Partial<CalendarEvent>): Promise<CalendarEvent>;
+  deleteCalendarEvent(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -6308,6 +6318,59 @@ export class DatabaseStorage implements IStorage {
     return db.select()
       .from(litigationTemplates)
       .where(inArray(litigationTemplates.id, uniqueIds));
+  }
+
+  // Calendar Event operations
+  async getCalendarEvents(filters?: { userId?: string; startDate?: Date; endDate?: Date; caseId?: string; clientId?: string; eventType?: string }): Promise<CalendarEvent[]> {
+    const conditions = [];
+    
+    if (filters?.userId) {
+      conditions.push(eq(calendarEvents.createdBy, filters.userId));
+    }
+    if (filters?.startDate) {
+      conditions.push(gte(calendarEvents.startTime, filters.startDate));
+    }
+    if (filters?.endDate) {
+      conditions.push(lte(calendarEvents.endTime, filters.endDate));
+    }
+    if (filters?.caseId) {
+      conditions.push(eq(calendarEvents.caseId, filters.caseId));
+    }
+    if (filters?.clientId) {
+      conditions.push(eq(calendarEvents.clientId, filters.clientId));
+    }
+    if (filters?.eventType) {
+      conditions.push(eq(calendarEvents.eventType, filters.eventType as any));
+    }
+    
+    return db.select()
+      .from(calendarEvents)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(asc(calendarEvents.startTime));
+  }
+
+  async getCalendarEvent(id: string): Promise<CalendarEvent | undefined> {
+    const [event] = await db.select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, id));
+    return event;
+  }
+
+  async createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent> {
+    const [created] = await db.insert(calendarEvents).values(event).returning();
+    return created;
+  }
+
+  async updateCalendarEvent(id: string, updates: Partial<CalendarEvent>): Promise<CalendarEvent> {
+    const [updated] = await db.update(calendarEvents)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(calendarEvents.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCalendarEvent(id: string): Promise<void> {
+    await db.delete(calendarEvents).where(eq(calendarEvents.id, id));
   }
 }
 

@@ -958,6 +958,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // CALENDAR ROUTES
+  // ============================================
+  
+  // Get calendar events
+  app.get("/api/calendar/events", isAuthenticated, async (req: any, res) => {
+    try {
+      const { startDate, endDate, caseId, clientId, eventType } = req.query;
+      const events = await storage.getCalendarEvents({
+        userId: req.user.id,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        caseId: caseId as string,
+        clientId: clientId as string,
+        eventType: eventType as string,
+      });
+      res.json(events);
+    } catch (error: any) {
+      console.error("Error fetching calendar events:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get single calendar event
+  app.get("/api/calendar/events/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const event = await storage.getCalendarEvent(req.params.id);
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      res.json(event);
+    } catch (error: any) {
+      console.error("Error fetching calendar event:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create calendar event
+  app.post("/api/calendar/events", isAuthenticated, async (req: any, res) => {
+    try {
+      const eventData = {
+        ...req.body,
+        createdBy: req.user.id,
+        startTime: new Date(req.body.startTime),
+        endTime: new Date(req.body.endTime),
+      };
+      const event = await storage.createCalendarEvent(eventData);
+      await logAction(req, "create", "calendar_event", event.id, { title: event.title });
+      res.status(201).json(event);
+    } catch (error: any) {
+      console.error("Error creating calendar event:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update calendar event
+  app.patch("/api/calendar/events/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const updates = { ...req.body };
+      if (updates.startTime) updates.startTime = new Date(updates.startTime);
+      if (updates.endTime) updates.endTime = new Date(updates.endTime);
+      const event = await storage.updateCalendarEvent(req.params.id, updates);
+      await logAction(req, "update", "calendar_event", event.id, updates);
+      res.json(event);
+    } catch (error: any) {
+      console.error("Error updating calendar event:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete calendar event
+  app.delete("/api/calendar/events/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await logAction(req, "delete", "calendar_event", req.params.id, {});
+      await storage.deleteCalendarEvent(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Error deleting calendar event:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Search autocomplete endpoint
   app.get("/api/search/autocomplete", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
     try {

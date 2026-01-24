@@ -15,6 +15,7 @@ import Alerts from "@/pages/alerts";
 import CasesPage from "@/pages/cases";
 import ClientsPage from "@/pages/clients";
 import LitigationTemplatesPage from "@/pages/litigation-templates";
+import CalendarPage from "@/pages/calendar";
 import CaseDetail from "@/pages/case-detail";
 import AttorneyQueue from "@/pages/attorney-queue";
 import KnowledgeBase from "@/pages/knowledge-base";
@@ -142,6 +143,7 @@ function AuthenticatedApp() {
               <Route path="/ambient-intelligence/:sessionId" component={AmbientSession} />
               <Route path="/privileged-research" component={PrivilegedResearch} />
               <Route path="/privileged-research/:sessionId" component={PrivilegedResearch} />
+              <Route path="/calendar" component={CalendarPage} />
               <Route path="/attorney-queue" component={AttorneyQueue} />
               <Route path="/knowledge-base" component={KnowledgeBase} />
               <Route path="/interviews" component={Interviews} />
