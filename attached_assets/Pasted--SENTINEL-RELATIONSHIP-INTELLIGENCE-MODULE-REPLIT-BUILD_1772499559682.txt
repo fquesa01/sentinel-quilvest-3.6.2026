@@ -1,0 +1,815 @@
+# SENTINEL RELATIONSHIP INTELLIGENCE MODULE — REPLIT BUILD PROMPT
+
+## PROJECT OVERVIEW
+
+Build a **Relationship Intelligence Module** integrated into the Sentinel Counsel platform. This module monitors a user’s professional contacts across multiple sources, continuously scans news and media for mentions of those contacts and their associated companies, cross-references those mentions against the Sentinel Doc Review knowledge base (which contains the user’s complete corporate history — deals, transactions, conversations, business operations, and opportunities), and generates AI-powered, contextually rich outreach suggestions that connect the news event to the user’s actual relationship history with that person or company.
+
+This is not a generic “congrats on the promotion” tool. This is a litigation-grade, deal-aware intelligence engine that connects the dots between what’s happening in the news and what’s in the user’s knowledge base, then writes outreach that demonstrates real knowledge and genuine connection.
+
+-----
+
+## TECH STACK
+
+- **Frontend**: React + Tailwind CSS (or Next.js if preferred for SSR)
+- **Backend**: Node.js with Express (or Python FastAPI — choose based on preference)
+- **Database**: PostgreSQL (via Supabase or Neon on Replit) + pgvector extension for semantic search
+- **AI/LLM**: OpenAI GPT-4o API (or Claude API via Anthropic) for message drafting and knowledge base analysis
+- **News API**: NewsAPI.org (free tier: 100 requests/day) OR Bing News Search API OR Google News API
+- **Vector Embeddings**: OpenAI text-embedding-3-small for Doc Review semantic search
+- **Job Scheduler**: node-cron or BullMQ for daily scanning jobs
+- **Authentication**: Clerk or Supabase Auth (supports OAuth for Microsoft + Google)
+- **Email Integration**: Microsoft Graph API (Outlook), Google People API (Google Contacts), Apple CloudKit (iCloud contacts)
+- **File Storage**: Supabase Storage or Replit Object Storage for uploaded documents
+
+-----
+
+## DATABASE SCHEMA
+
+### Core Tables
+
+```sql
+-- Users of the Sentinel platform
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  full_name VARCHAR(255),
+  company_name VARCHAR(255),
+  role VARCHAR(255),
+  industry VARCHAR(255),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Contact sources connected by the user
+CREATE TABLE contact_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  source_type VARCHAR(50) NOT NULL, -- 'outlook', 'icloud', 'google', 'csv_upload', 'salesforce', 'linkedin'
+  access_token TEXT, -- encrypted OAuth token
+  refresh_token TEXT, -- encrypted
+  token_expires_at TIMESTAMP,
+  last_synced_at TIMESTAMP,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Individual contacts imported from all sources
+CREATE TABLE contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  source_id UUID REFERENCES contact_sources(id),
+  external_id VARCHAR(255), -- ID from the source system
+  first_name VARCHAR(255),
+  last_name VARCHAR(255),
+  full_name VARCHAR(255) NOT NULL,
+  email VARCHAR(255),
+  phone VARCHAR(50),
+  company VARCHAR(255),
+  job_title VARCHAR(255),
+  linkedin_url VARCHAR(500),
+  city VARCHAR(255),
+  state VARCHAR(100),
+  country VARCHAR(100),
+  tags TEXT[], -- user-defined tags: 'client', 'prospect', 'opposing_counsel', 'co-counsel', 'vendor'
+  priority_level INTEGER DEFAULT 3, -- 1=VIP, 2=High, 3=Normal, 4=Low
+  last_news_scan_at TIMESTAMP,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, full_name, email) -- prevent duplicates
+);
+
+-- News hits matched to contacts
+CREATE TABLE news_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  headline VARCHAR(1000) NOT NULL,
+  source_name VARCHAR(255),
+  source_url TEXT,
+  published_at TIMESTAMP,
+  summary TEXT,
+  sentiment VARCHAR(20), -- 'positive', 'negative', 'neutral'
+  category VARCHAR(100), -- 'promotion', 'funding', 'acquisition', 'legal', 'award', 'departure', 'partnership', 'ipo', 'bankruptcy', 'regulatory'
+  relevance_score FLOAT, -- 0.0 to 1.0 AI-computed relevance
+  is_read BOOLEAN DEFAULT FALSE,
+  is_dismissed BOOLEAN DEFAULT FALSE,
+  is_acted_on BOOLEAN DEFAULT FALSE,
+  knowledge_base_connections JSONB, -- references to Doc Review entries that connect
+  suggested_outreach TEXT, -- AI-generated outreach suggestion
+  outreach_channel VARCHAR(50), -- 'email', 'linkedin', 'sms', 'phone_call'
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Doc Review Knowledge Base (Sentinel's core corporate intelligence)
+CREATE TABLE knowledge_base (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  document_type VARCHAR(100) NOT NULL, -- 'deal', 'transaction', 'conversation', 'memo', 'contract', 'email_thread', 'meeting_notes', 'litigation', 'regulatory_filing', 'business_plan', 'due_diligence'
+  title VARCHAR(500),
+  content TEXT NOT NULL,
+  summary TEXT, -- AI-generated summary
+  entities_mentioned TEXT[], -- people, companies, places extracted by NER
+  companies_mentioned TEXT[], -- extracted company names
+  people_mentioned TEXT[], -- extracted person names
+  deal_value DECIMAL(15,2), -- if applicable
+  deal_date DATE,
+  tags TEXT[],
+  source_file_path TEXT,
+  embedding VECTOR(1536), -- for semantic search via pgvector
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Outreach history — what the user actually sent
+CREATE TABLE outreach_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  contact_id UUID REFERENCES contacts(id),
+  news_alert_id UUID REFERENCES news_alerts(id),
+  channel VARCHAR(50), -- 'email', 'linkedin', 'sms', 'phone'
+  message_content TEXT,
+  sent_at TIMESTAMP DEFAULT NOW(),
+  response_received BOOLEAN DEFAULT FALSE,
+  response_at TIMESTAMP,
+  outcome VARCHAR(100), -- 'meeting_booked', 'replied', 'no_response', 'deal_opened'
+  notes TEXT
+);
+
+-- Index for fast vector similarity search
+CREATE INDEX ON knowledge_base USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX idx_contacts_user ON contacts(user_id, is_active);
+CREATE INDEX idx_contacts_fullname ON contacts(full_name);
+CREATE INDEX idx_alerts_user_date ON news_alerts(user_id, created_at DESC);
+CREATE INDEX idx_kb_entities ON knowledge_base USING GIN(entities_mentioned);
+CREATE INDEX idx_kb_companies ON knowledge_base USING GIN(companies_mentioned);
+CREATE INDEX idx_kb_people ON knowledge_base USING GIN(people_mentioned);
+```
+
+-----
+
+## MODULE ARCHITECTURE — THE FIVE ENGINES
+
+### ENGINE 1: CONTACT INGESTION & SYNC
+
+**Purpose**: Import contacts from all connected sources and keep them updated.
+
+**Implementation**:
+
+```
+CONTACT INGESTION FLOW:
+1. User connects a source (OAuth for Outlook/Google, file upload for CSV, API key for Salesforce)
+2. On initial connect: bulk import all contacts
+3. On schedule (every 6 hours): delta sync — pull only changed/new contacts
+4. On each contact: normalize name, deduplicate against existing contacts, enrich with available metadata
+5. Store in contacts table with source tracking
+```
+
+**Microsoft Outlook Integration** (Microsoft Graph API):
+
+- OAuth 2.0 flow: `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize`
+- Scopes: `Contacts.Read`, `Calendars.Read`, `Mail.Read`
+- Endpoint: `GET https://graph.microsoft.com/v1.0/me/contacts`
+- Delta sync: `GET https://graph.microsoft.com/v1.0/me/contacts/delta`
+
+**Google Contacts Integration** (Google People API):
+
+- OAuth 2.0 flow via Google Cloud Console
+- Scope: `https://www.googleapis.com/auth/contacts.readonly`
+- Endpoint: `GET https://people.googleapis.com/v1/people/me/connections`
+
+**iCloud Contacts Integration**:
+
+- Use CardDAV protocol against `https://contacts.icloud.com`
+- Requires app-specific password from user
+- Parse vCard (.vcf) format responses
+
+**CSV Upload**:
+
+- Accept CSV with columns: First Name, Last Name, Email, Phone, Company, Title
+- Parse with Papa Parse, validate, deduplicate, and insert
+- Support drag-and-drop upload UI
+
+**Deduplication Logic**:
+
+```
+Priority order for matching:
+1. Exact email match → merge
+2. Full name + company match → merge
+3. Full name match (fuzzy, Levenshtein distance < 2) → flag for user review
+4. No match → create new contact
+```
+
+-----
+
+### ENGINE 2: NEWS SCANNING & MATCHING
+
+**Purpose**: Run daily (and on-demand) searches for every active contact across news APIs. Identify and categorize relevant mentions.
+
+**Implementation**:
+
+```
+DAILY NEWS SCAN JOB (runs at 6:00 AM user local time):
+
+For each user:
+  1. Pull all active contacts (batch by priority_level — VIPs first)
+  2. For each contact:
+     a. Build search queries:
+        - "{first_name} {last_name}" (exact phrase)
+        - "{first_name} {last_name}" + "{company}" (higher precision)
+        - "{company}" alone (for company-level news)
+     b. Hit News API with each query
+     c. For each result:
+        - Verify the article actually mentions this person (not a name collision)
+          → Use LLM: "Does this article reference {full_name} who works at {company} as {title}? Respond YES or NO with confidence score."
+        - If verified (confidence > 0.7):
+          → Classify the news category (promotion, funding, acquisition, legal, award, etc.)
+          → Compute sentiment (positive/negative/neutral)
+          → Compute relevance score based on: recency, source authority, category importance
+          → Store in news_alerts table
+  3. After all contacts scanned:
+     → Trigger Engine 3 (Knowledge Base Connection)
+     → Send daily digest email/push notification
+```
+
+**News API Integration Options**:
+
+Option A — NewsAPI.org:
+
+```javascript
+// Free tier: 100 requests/day, 1-month historical
+// Paid: $449/mo for 250,000 requests/day
+const response = await fetch(
+  `https://newsapi.org/v2/everything?q="${encodeURIComponent(contactName)}"&sortBy=publishedAt&language=en&apiKey=${API_KEY}`
+);
+```
+
+Option B — Bing News Search API (Azure):
+
+```javascript
+// $1 per 1,000 transactions, more generous limits
+const response = await fetch(
+  `https://api.bing.microsoft.com/v7.0/news/search?q="${encodeURIComponent(contactName)}"&freshness=Day&count=10`,
+  { headers: { 'Ocp-Apim-Subscription-Key': BING_KEY } }
+);
+```
+
+Option C — Google Custom Search JSON API:
+
+```javascript
+// 100 free queries/day, $5 per 1,000 after
+const response = await fetch(
+  `https://www.googleapis.com/customsearch/v1?q="${encodeURIComponent(contactName)}"&cx=${SEARCH_ENGINE_ID}&key=${GOOGLE_KEY}&dateRestrict=d1&tbm=nws`
+);
+```
+
+**Rate Limiting Strategy**:
+
+```
+With 500 contacts and NewsAPI free tier (100 requests/day):
+- Batch contacts: 5 contacts per query using OR operators where supported
+- Priority scanning: VIP contacts daily, High priority every 2 days, Normal weekly
+- Cache results: Don't re-fetch same article within 24 hours
+- Upgrade path: Bing News API at scale ($1/1000 = $15/month for 500 daily contacts)
+```
+
+**Name Disambiguation** (critical for common names):
+
+```
+LLM Prompt for verification:
+"I found a news article with the headline: '{headline}'
+Article snippet: '{snippet}'
+
+I'm looking for: {contact.full_name}, {contact.job_title} at {contact.company}, based in {contact.city}.
+
+Does this article reference this specific person? Consider:
+- Does the company match or relate?
+- Does the role/industry align?
+- Is the geographic region consistent?
+
+Respond with: { "match": true/false, "confidence": 0.0-1.0, "reason": "brief explanation" }"
+```
+
+-----
+
+### ENGINE 3: KNOWLEDGE BASE CONNECTION (THE DIFFERENTIATOR)
+
+**Purpose**: When a news alert is found, search the Sentinel Doc Review knowledge base for any historical connection between the user and the person/company in the news. This is what transforms a generic news alert into actionable business intelligence.
+
+**Implementation**:
+
+```
+KNOWLEDGE BASE CONNECTION FLOW:
+
+When a news alert is created for Contact X at Company Y:
+
+1. EXACT MATCH SEARCH:
+   - Search knowledge_base.people_mentioned for Contact X's name
+   - Search knowledge_base.companies_mentioned for Company Y
+   - Search knowledge_base.entities_mentioned for both
+   → Returns: List of documents where this person or company appears
+
+2. SEMANTIC SEARCH (for indirect connections):
+   - Generate embedding for: "{contact_name} {company} {news_category} {news_summary}"
+   - Query pgvector for top 10 most similar knowledge_base entries
+   - Filter by relevance threshold (cosine similarity > 0.75)
+   → Returns: Deals, transactions, or conversations that are thematically related
+
+3. RELATIONSHIP GRAPH SEARCH:
+   - If Contact X is not directly in KB, check if Company Y is
+   - If Company Y has deals/transactions in KB, find the people involved
+   - Check if any of those people are also in the user's contacts
+   → Returns: Indirect connections ("You worked with John at Company Y — Jane just became their new CEO")
+
+4. AI SYNTHESIS:
+   Feed the LLM:
+   - The news article summary
+   - All matched KB documents
+   - The contact's profile
+   - The user's profile and role
+   
+   Ask for:
+   - A "connection summary" explaining how this news relates to the user's history
+   - A relevance score (1-10)
+   - Suggested outreach angle
+```
+
+**Embedding Generation for Knowledge Base**:
+
+```javascript
+// When documents are added to Doc Review, generate and store embeddings
+async function embedDocument(docId, content) {
+  const response = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: content.substring(0, 8000) // token limit
+  });
+  const embedding = response.data[0].embedding;
+  await db.query(
+    'UPDATE knowledge_base SET embedding = $1 WHERE id = $2',
+    [JSON.stringify(embedding), docId]
+  );
+}
+
+// When searching for connections
+async function findConnections(newsContext) {
+  const queryEmbedding = await generateEmbedding(newsContext);
+  const results = await db.query(`
+    SELECT id, title, content, summary, document_type, deal_date,
+           1 - (embedding <=> $1::vector) as similarity
+    FROM knowledge_base
+    WHERE user_id = $2
+      AND 1 - (embedding <=> $1::vector) > 0.7
+    ORDER BY similarity DESC
+    LIMIT 10
+  `, [JSON.stringify(queryEmbedding), userId]);
+  return results.rows;
+}
+```
+
+**Entity Extraction** (run when documents are added to KB):
+
+```
+LLM Prompt for Entity Extraction:
+"Extract all named entities from this document:
+
+Document: {content}
+
+Return JSON:
+{
+  "people": ["John Smith", "Jane Doe"],
+  "companies": ["Acme Corp", "XYZ Holdings"],
+  "locations": ["Miami, FL", "New York"],
+  "deal_types": ["acquisition", "refinancing"],
+  "monetary_values": ["$5.2M", "$150K"],
+  "dates": ["March 2022", "Q3 2023"],
+  "key_topics": ["commercial real estate", "healthcare compliance"]
+}"
+```
+
+-----
+
+### ENGINE 4: AI OUTREACH GENERATION
+
+**Purpose**: Generate contextually rich, personalized outreach messages that incorporate both the news event and the user’s historical relationship with the contact.
+
+**Implementation**:
+
+```
+OUTREACH GENERATION PROMPT:
+
+System: You are a professional relationship intelligence assistant for {user.full_name},
+{user.role} at {user.company_name} in the {user.industry} industry.
+
+Your job is to draft outreach messages that are:
+- Warm but professional
+- Specific to the news event
+- Connected to the user's actual history with this person/company
+- Designed to open a conversation, not close a deal
+- Written in the user's voice (learn from outreach_log examples)
+- Available in both English and Spanish when requested
+
+Context:
+- Contact: {contact.full_name}, {contact.job_title} at {contact.company}
+- Relationship tags: {contact.tags} (e.g., 'former client', 'prospect', 'co-counsel')
+- Priority: {contact.priority_level}
+
+News Event:
+- Headline: {alert.headline}
+- Summary: {alert.summary}
+- Category: {alert.category}
+- Sentiment: {alert.sentiment}
+
+Knowledge Base Connections Found:
+{For each matched KB document:}
+- Document: {kb.title} ({kb.document_type}, dated {kb.deal_date})
+  Summary: {kb.summary}
+  Relevance: {similarity_score}
+
+Previous Outreach History:
+{Recent entries from outreach_log for this contact, if any}
+
+Generate 3 message variants:
+1. SHORT (2-3 sentences, suitable for text/LinkedIn)
+2. MEDIUM (1 paragraph, suitable for email)
+3. DETAILED (2-3 paragraphs, suitable for formal email with specific references to shared history)
+
+For each variant, specify:
+- Suggested channel (email, LinkedIn, text, phone call)
+- Suggested subject line (if email)
+- Tone (congratulatory, informational, opportunity-seeking, supportive)
+- The specific KB connection being leveraged
+
+IMPORTANT: If no KB connection exists, still generate outreach but flag it as
+"general networking" and suggest the user add context about their relationship.
+```
+
+**Outreach Examples by Category**:
+
+```
+NEWS: "Jane Smith appointed CFO at Acme Corp"
+KB HIT: User's firm handled Acme Corp restructuring in 2022, Jane was on the deal team
+
+→ SHORT (LinkedIn): "Jane — huge congratulations on the CFO appointment. Having worked together during the 2022 restructuring, I know Acme is in exceptional hands. Would love to catch up."
+
+→ MEDIUM (Email): "Jane, congratulations on your appointment as CFO at Acme Corp. During our work together on the 2022 restructuring, your financial acumen was evident — this promotion is well-deserved. I'd welcome the opportunity to reconnect and discuss how our firm might support Acme's next chapter. Coffee sometime this month?"
+
+→ DETAILED (Formal Email): [Full version with specific deal references, shared history, and a concrete meeting proposal]
+```
+
+-----
+
+### ENGINE 5: DAILY DIGEST & NOTIFICATIONS
+
+**Purpose**: Deliver a curated daily briefing of the most important alerts, connections, and outreach opportunities.
+
+**Implementation**:
+
+```
+DAILY DIGEST STRUCTURE:
+
+🔔 SENTINEL DAILY INTELLIGENCE BRIEF
+   {date} | {user.full_name}
+
+📊 TODAY'S SUMMARY:
+   - {count} contacts in the news today
+   - {count} with knowledge base connections
+   - {count} suggested outreach opportunities
+   - Top priority: {highest_relevance_alert.contact_name} — {alert.headline}
+
+🎯 HIGH-PRIORITY ALERTS (contacts tagged VIP or with KB connections):
+   For each:
+   - Contact name, title, company
+   - Headline + 1-line summary
+   - KB Connection: "You worked with {company} on {deal} in {year}"
+   - Suggested action + draft message preview
+   - [Draft Email] [Draft LinkedIn] [Dismiss] buttons
+
+📰 OTHER ALERTS:
+   - Remaining alerts grouped by category
+   - Quick action buttons
+
+📈 WEEKLY TRENDS:
+   - Contacts most frequently in the news
+   - Industries showing increased activity
+   - Suggested contacts to re-engage
+```
+
+**Delivery Channels**:
+
+- In-app dashboard (primary)
+- Email digest (daily, configurable time)
+- Push notifications for VIP alerts (immediate)
+- Weekly summary report (PDF export)
+
+-----
+
+## USER INTERFACE DESIGN
+
+### Dashboard View (Main Screen)
+
+```
+┌──────────────────────────────────────────────────────┐
+│  SENTINEL — Relationship Intelligence                │
+│  ┌─────────┬──────────┬──────────┬─────────────────┐ │
+│  │ Feed    │ Contacts │ Doc Review│ Settings       │ │
+│  └─────────┴──────────┴──────────┴─────────────────┘ │
+│                                                      │
+│  TODAY'S INTELLIGENCE  (March 2, 2026)               │
+│  ─────────────────────────────────────               │
+│                                                      │
+│  🔴 HIGH PRIORITY                                    │
+│  ┌──────────────────────────────────────────────┐    │
+│  │ 👤 Jane Smith — Appointed CFO, Acme Corp     │    │
+│  │ 📰 WSJ • 2 hours ago • Positive              │    │
+│  │ 🔗 KB Match: Acme Corp restructuring (2022)   │    │
+│  │ 💡 "Congratulate on promotion, reference      │    │
+│  │    shared deal history"                        │    │
+│  │ [Draft Email] [Draft LinkedIn] [Dismiss]       │    │
+│  └──────────────────────────────────────────────┘    │
+│                                                      │
+│  🟡 MEDIUM PRIORITY                                  │
+│  ┌──────────────────────────────────────────────┐    │
+│  │ 👤 Bob Johnson — Quoted in Forbes on AI       │    │
+│  │ 📰 Forbes • 5 hours ago • Neutral             │    │
+│  │ 🔗 No direct KB match — General networking    │    │
+│  │ [Draft Email] [Draft LinkedIn] [Dismiss]       │    │
+│  └──────────────────────────────────────────────┘    │
+│                                                      │
+│  SIDEBAR: Quick Stats                                │
+│  • 1,247 contacts monitored                          │
+│  • 23 alerts this week                               │
+│  • 8 outreach messages sent                          │
+│  • 3 meetings booked from Sentinel outreach          │
+└──────────────────────────────────────────────────────┘
+```
+
+### Contact Detail View
+
+```
+┌──────────────────────────────────────────────────────┐
+│  👤 JANE SMITH                                       │
+│  CFO, Acme Corp | Miami, FL                          │
+│  Priority: ⭐ VIP | Tags: Client, Former Deal Team   │
+│  ─────────────────────────────────────               │
+│                                                      │
+│  📰 RECENT NEWS (last 30 days)                       │
+│  • Appointed CFO at Acme Corp — WSJ, Mar 2           │
+│  • Spoke at Davos on corporate governance — FT, Feb 15│
+│  • Named to Board of Directors, XYZ Fund — PR, Jan 28│
+│                                                      │
+│  🔗 KNOWLEDGE BASE CONNECTIONS                       │
+│  • Acme Corp Restructuring (Deal, 2022) — Jane was   │
+│    point of contact on financial due diligence        │
+│  • Email thread re: Acme compliance review (2023)     │
+│  • Meeting notes: Lunch with Jane, Feb 2023           │
+│                                                      │
+│  📤 OUTREACH HISTORY                                 │
+│  • Email sent Jan 15 re: New Year check-in ✅ Reply   │
+│  • LinkedIn message Nov 3 re: Industry conference     │
+│                                                      │
+│  💬 SUGGESTED OUTREACH                               │
+│  [Generate New Message] [View Drafts]                 │
+└──────────────────────────────────────────────────────┘
+```
+
+-----
+
+## API ROUTES
+
+```
+Authentication:
+POST   /api/auth/register
+POST   /api/auth/login
+POST   /api/auth/oauth/microsoft     — Start Microsoft OAuth flow
+POST   /api/auth/oauth/google        — Start Google OAuth flow
+GET    /api/auth/oauth/callback       — OAuth callback handler
+
+Contacts:
+GET    /api/contacts                  — List all contacts (paginated, filterable)
+POST   /api/contacts                  — Add single contact
+POST   /api/contacts/import/csv       — Upload CSV file
+POST   /api/contacts/sync/{source}    — Trigger sync for a contact source
+PUT    /api/contacts/:id              — Update contact
+DELETE /api/contacts/:id              — Remove contact
+GET    /api/contacts/:id/news         — Get all news alerts for a contact
+GET    /api/contacts/:id/connections  — Get KB connections for a contact
+PATCH  /api/contacts/:id/priority     — Update priority level
+PATCH  /api/contacts/:id/tags         — Update tags
+
+Contact Sources:
+GET    /api/sources                   — List connected sources
+POST   /api/sources/connect           — Connect new source (OAuth or API key)
+DELETE /api/sources/:id               — Disconnect source
+POST   /api/sources/:id/sync          — Force re-sync
+
+News Alerts:
+GET    /api/alerts                    — Get all alerts (paginated, filterable by date/category/priority)
+GET    /api/alerts/daily-digest       — Get today's digest
+GET    /api/alerts/:id                — Get single alert with KB connections
+PATCH  /api/alerts/:id/read           — Mark as read
+PATCH  /api/alerts/:id/dismiss        — Dismiss alert
+PATCH  /api/alerts/:id/act            — Mark as acted on
+POST   /api/alerts/scan-now           — Trigger immediate scan for all contacts
+
+Knowledge Base (Doc Review):
+GET    /api/kb                        — List all KB documents
+POST   /api/kb                        — Add document (with auto entity extraction + embedding)
+POST   /api/kb/upload                 — Upload document file (PDF, DOCX, TXT)
+GET    /api/kb/:id                    — Get document detail
+PUT    /api/kb/:id                    — Update document
+DELETE /api/kb/:id                    — Delete document
+POST   /api/kb/search                 — Semantic search against KB
+GET    /api/kb/entities               — List all extracted entities
+
+Outreach:
+POST   /api/outreach/generate         — Generate AI outreach for a specific alert
+GET    /api/outreach/history          — Get outreach history
+POST   /api/outreach/send             — Log sent outreach
+PATCH  /api/outreach/:id/outcome      — Update outcome (replied, meeting booked, etc.)
+
+Analytics:
+GET    /api/analytics/dashboard       — Dashboard stats
+GET    /api/analytics/weekly-report   — Weekly trends
+GET    /api/analytics/roi             — Outreach ROI metrics
+```
+
+-----
+
+## SCHEDULED JOBS
+
+```javascript
+const cron = require('node-cron');
+
+// Daily news scan — 6:00 AM ET
+cron.schedule('0 6 * * *', async () => {
+  const users = await getAllActiveUsers();
+  for (const user of users) {
+    await runNewsScanForUser(user.id);
+  }
+});
+
+// Contact sync — every 6 hours
+cron.schedule('0 */6 * * *', async () => {
+  const sources = await getAllActiveSources();
+  for (const source of sources) {
+    await syncContactSource(source.id);
+  }
+});
+
+// Weekly digest — Monday 8:00 AM ET
+cron.schedule('0 8 * * 1', async () => {
+  const users = await getAllActiveUsers();
+  for (const user of users) {
+    await generateWeeklyReport(user.id);
+  }
+});
+
+// KB re-embedding — nightly at 2:00 AM (for updated docs)
+cron.schedule('0 2 * * *', async () => {
+  await reembedModifiedDocuments();
+});
+```
+
+-----
+
+## BILINGUAL SUPPORT (ENGLISH + SPANISH)
+
+Since many of your clients are in Miami’s Cuban-American community, the system should:
+
+1. **Detect contact language preference**: Store `preferred_language` on contact record
+1. **Generate outreach in both languages**: The AI prompt should include:
+   
+   ```
+   "Generate this outreach message in both English and Spanish.
+   For the Spanish version, use professional Latin American business Spanish
+   appropriate for Miami's business community."
+   ```
+1. **UI language toggle**: All interface elements available in EN/ES
+1. **News scanning in both languages**: Search for contact names in both English and Spanish-language news sources
+
+-----
+
+## SECURITY & COMPLIANCE
+
+```
+- All OAuth tokens encrypted at rest (AES-256)
+- API keys stored in Replit Secrets (environment variables)
+- Row-level security in PostgreSQL (users can only access their own data)
+- SOC 2 considerations: audit log for all data access
+- GDPR/CCPA: ability to export and delete all user data
+- Contact data never shared between users
+- News articles stored as summaries + links, not full text (copyright compliance)
+- All LLM calls use the user's data only — no cross-user training
+```
+
+-----
+
+## IMPLEMENTATION PHASES
+
+### Phase 1: Foundation (Week 1-2)
+
+- [ ] Set up Replit project with Node.js + React
+- [ ] PostgreSQL database with schema
+- [ ] User authentication (email/password + OAuth)
+- [ ] CSV contact upload and management UI
+- [ ] Basic contact CRUD operations
+
+### Phase 2: Contact Integration (Week 3-4)
+
+- [ ] Microsoft Outlook OAuth integration
+- [ ] Google Contacts OAuth integration
+- [ ] Contact deduplication engine
+- [ ] Contact tagging and priority system
+- [ ] Contact detail view UI
+
+### Phase 3: News Intelligence (Week 5-6)
+
+- [ ] News API integration (start with NewsAPI.org)
+- [ ] Daily scan job with cron
+- [ ] Name disambiguation with LLM
+- [ ] News categorization and sentiment analysis
+- [ ] Alert feed UI with filtering
+
+### Phase 4: Knowledge Base Connection (Week 7-8)
+
+- [ ] Doc Review document upload and storage
+- [ ] Entity extraction pipeline (NER via LLM)
+- [ ] Vector embedding generation (pgvector)
+- [ ] Semantic search for KB connections
+- [ ] Connection display on alert cards
+
+### Phase 5: AI Outreach (Week 9-10)
+
+- [ ] Outreach generation engine with 3 variants
+- [ ] Message editor UI with channel selection
+- [ ] Outreach history and tracking
+- [ ] Bilingual generation (EN/ES)
+- [ ] Tone and style customization
+
+### Phase 6: Polish & Scale (Week 11-12)
+
+- [ ] Daily digest email
+- [ ] Push notifications for VIP alerts
+- [ ] Analytics dashboard
+- [ ] Weekly trend reports
+- [ ] Performance optimization (batch processing, caching)
+- [ ] Integration with Sentinel’s existing modules
+
+-----
+
+## ENV VARIABLES (Replit Secrets)
+
+```
+DATABASE_URL=postgresql://...
+OPENAI_API_KEY=sk-...
+NEWS_API_KEY=...
+BING_NEWS_API_KEY=...
+MICROSOFT_CLIENT_ID=...
+MICROSOFT_CLIENT_SECRET=...
+MICROSOFT_REDIRECT_URI=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=...
+CLERK_SECRET_KEY=... (if using Clerk)
+JWT_SECRET=...
+ENCRYPTION_KEY=... (for token encryption)
+SMTP_HOST=...
+SMTP_USER=...
+SMTP_PASS=...
+```
+
+-----
+
+## KEY DIFFERENTIATORS FROM REN
+
+|Feature                |Ren                            |Sentinel Relationship Intelligence                         |
+|-----------------------|-------------------------------|-----------------------------------------------------------|
+|News monitoring        |✅ Monitors 300K+ sources       |✅ News API integration (scalable)                          |
+|Contact sources        |✅ Outlook, Gmail, LinkedIn, CRM|✅ Same + iCloud + CSV + Salesforce                         |
+|Message drafting       |✅ Generic AI drafts            |✅ **Context-aware drafts using Doc Review KB**             |
+|Knowledge base         |❌ None                         |✅ **Full corporate history, deals, transactions**          |
+|Connection intelligence|❌ Manual                       |✅ **Auto-matches news to user’s deal/relationship history**|
+|Bilingual              |❌ English only                 |✅ **English + Spanish**                                    |
+|Legal industry focus   |❌ General business             |✅ **Litigation-aware, compliance-aware**                   |
+|Pricing                |$449+/mo (Pro)                 |✅ **Integrated into Sentinel platform**                    |
+
+-----
+
+## NOTES FOR REPLIT DEVELOPMENT
+
+1. **Start with a monorepo**: Single Replit project with `/client` (React) and `/server` (Node/Express) directories
+1. **Use Replit’s built-in PostgreSQL** or connect to Supabase for managed Postgres with pgvector
+1. **Replit Secrets** for all API keys — never hardcode
+1. **Use Replit’s Always On** feature to keep cron jobs running
+1. **Start with NewsAPI free tier** for development, upgrade to Bing News for production
+1. **Test with 10-20 contacts first** before scaling to hundreds
+1. **The LLM calls are the most expensive part** — cache aggressively, batch where possible
+1. **pgvector setup on Replit**: You may need to use Supabase or Neon (free tier) since Replit’s built-in Postgres may not support pgvector natively
+
+-----
+
+## COPY-PASTE REPLIT PROMPT
+
+When starting the project in Replit, paste this as your initial prompt:
+
+> Build a full-stack relationship intelligence application using Node.js/Express backend and React/Tailwind frontend with PostgreSQL database. The app allows users to upload contacts via CSV or connect Microsoft Outlook and Google accounts via OAuth. A daily cron job searches NewsAPI for mentions of each contact by name and company. When news is found, the system uses OpenAI GPT-4o to verify the match, categorize the news (promotion, funding, legal, etc.), and then searches a vector-embedded knowledge base (using pgvector) of the user’s corporate documents, deals, and transaction history to find connections between the news event and the user’s relationship history. The AI then generates personalized outreach messages in 3 variants (short/medium/detailed) that reference both the news event and the shared history. Include a dashboard with alert feed, contact management, document upload with auto entity extraction, outreach tracking, and daily email digest. Support English and Spanish. Use Replit Secrets for all API keys.
