@@ -36,7 +36,6 @@ import {
   EyeOff,
   ExternalLink,
   BookOpen,
-  Zap,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -44,7 +43,6 @@ import {
   Check,
   Loader2,
   RefreshCw,
-  Database,
 } from "lucide-react";
 import type { NewsAlert, RelationshipContact } from "@shared/schema";
 
@@ -169,6 +167,26 @@ function StatsBar({ stats, isLoading }: { stats: StatsData | undefined; isLoadin
   );
 }
 
+function highlightNames(text: string, contactName: string, company: string | null): JSX.Element {
+  const parts: string[] = [contactName];
+  if (company) parts.push(company);
+  const escaped = parts.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const regex = new RegExp(`(${escaped.join("|")})`, "gi");
+  const segments = text.split(regex);
+  const matchRegex = new RegExp(`^(${escaped.join("|")})$`, "i");
+  return (
+    <>
+      {segments.map((seg, i) =>
+        matchRegex.test(seg) ? (
+          <span key={i} className="font-semibold text-foreground">{seg}</span>
+        ) : (
+          <span key={i}>{seg}</span>
+        )
+      )}
+    </>
+  );
+}
+
 function AlertCard({
   alertData,
   onDraftEmail,
@@ -183,139 +201,116 @@ function AlertCard({
   onMarkRead: () => void;
 }) {
   const { alert, contact } = alertData;
-  const kbConnections = alert.knowledgeBaseConnections as {
-    entries: Array<{ id: string; title: string; documentType: string; summary: string; relevance: number }>;
-    connectionSummary: string;
-  } | null;
 
   return (
     <Card
       className={alert.isRead ? "opacity-75" : ""}
       data-testid={`alert-card-${alert.id}`}
     >
-      <CardContent className="p-4">
-        <div className="flex gap-3">
-          <Avatar className="h-10 w-10 shrink-0">
-            <AvatarFallback>{getInitials(contact.fullName)}</AvatarFallback>
-          </Avatar>
-
-          <div className="flex-1 min-w-0 space-y-2">
-            <div className="flex items-start justify-between gap-2 flex-wrap">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-sm" data-testid={`text-contact-name-${alert.id}`}>
-                    {contact.fullName}
-                  </span>
-                  {contact.company && (
-                    <span className="text-xs text-muted-foreground">
-                      {contact.jobTitle ? `${contact.jobTitle} at ` : ""}{contact.company}
-                    </span>
-                  )}
-                </div>
-                <h4 className="text-sm font-medium mt-1" data-testid={`text-headline-${alert.id}`}>
-                  {alert.headline}
-                </h4>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {alert.sourceName} &middot; {timeAgo(alert.publishedAt)}
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar className="h-9 w-9 shrink-0">
+              <AvatarFallback>{getInitials(contact.fullName)}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <span className="font-semibold text-sm" data-testid={`text-contact-name-${alert.id}`}>
+                {contact.fullName}
+              </span>
+              {contact.company && (
+                <span className="text-xs text-muted-foreground ml-1.5">
+                  {contact.company}
                 </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <SentimentBadge sentiment={alert.sentiment} />
-              <CategoryBadge category={alert.category} />
-              {contact.priorityLevel <= 2 && (
-                <Badge variant="outline" data-testid={`badge-priority-${alert.id}`}>
-                  {contact.priorityLevel === 1 ? "VIP" : "High Priority"}
-                </Badge>
               )}
-              {!alert.isRead && (
-                <span className="inline-block w-2 h-2 rounded-full bg-primary shrink-0" />
-              )}
-            </div>
-
-            {alert.summary && (
-              <p className="text-sm text-muted-foreground line-clamp-2" data-testid={`text-summary-${alert.id}`}>
-                {alert.summary}
-              </p>
-            )}
-
-            {kbConnections && kbConnections.entries && kbConnections.entries.length > 0 && (
-              <div className="flex items-start gap-2 p-2 rounded-md bg-muted/50">
-                <Database className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs font-medium">
-                    {kbConnections.entries.length} KB Connection{kbConnections.entries.length !== 1 ? "s" : ""}
-                  </p>
-                  <p className="text-xs text-muted-foreground line-clamp-2">
-                    {kbConnections.connectionSummary}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {alert.suggestedOutreach && (
-              <div className="flex items-start gap-2 p-2 rounded-md bg-muted/50">
-                <Zap className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                <p className="text-xs text-muted-foreground line-clamp-2">
-                  {alert.suggestedOutreach}
-                </p>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 flex-wrap pt-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onDraftEmail}
-                data-testid={`button-draft-email-${alert.id}`}
-              >
-                <Mail className="w-3.5 h-3.5 mr-1" />
-                Draft Email
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onDraftLinkedIn}
-                data-testid={`button-draft-linkedin-${alert.id}`}
-              >
-                <Linkedin className="w-3.5 h-3.5 mr-1" />
-                Draft LinkedIn
-              </Button>
-              {alert.sourceUrl && alert.sourceUrl !== "#" && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  asChild
-                >
-                  <a href={alert.sourceUrl} target="_blank" rel="noopener noreferrer" data-testid={`link-source-${alert.id}`}>
-                    <ExternalLink className="w-3.5 h-3.5 mr-1" />
-                    Source
-                  </a>
-                </Button>
-              )}
-              <div className="flex-1" />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onMarkRead}
-                data-testid={`button-mark-read-${alert.id}`}
-              >
-                {alert.isRead ? <EyeOff className="w-3.5 h-3.5 mr-1" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
-                {alert.isRead ? "Unread" : "Read"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onDismiss}
-                data-testid={`button-dismiss-${alert.id}`}
-              >
-                Dismiss
-              </Button>
             </div>
           </div>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <CategoryBadge category={alert.category} />
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {timeAgo(alert.publishedAt)}
+            </span>
+            {!alert.isRead && (
+              <span className="inline-block w-2 h-2 rounded-full bg-primary shrink-0" />
+            )}
+          </div>
+        </div>
+
+        {alert.sourceUrl && alert.sourceUrl !== "#" ? (
+          <a
+            href={alert.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-base font-semibold leading-snug hover:underline"
+            data-testid={`text-headline-${alert.id}`}
+          >
+            {alert.headline}
+            <ExternalLink className="w-3.5 h-3.5 inline-block ml-1.5 text-muted-foreground" />
+          </a>
+        ) : (
+          <h4 className="text-base font-semibold leading-snug" data-testid={`text-headline-${alert.id}`}>
+            {alert.headline}
+          </h4>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <SentimentBadge sentiment={alert.sentiment} />
+          <CategoryBadge category={alert.category} />
+          {contact.priorityLevel <= 2 && (
+            <Badge variant="outline" data-testid={`badge-priority-${alert.id}`}>
+              {contact.priorityLevel === 1 ? "VIP" : "High Priority"}
+            </Badge>
+          )}
+        </div>
+
+        {alert.summary && (
+          <p className="text-sm text-muted-foreground line-clamp-3" data-testid={`text-summary-${alert.id}`}>
+            {highlightNames(alert.summary, contact.fullName, contact.company)}
+          </p>
+        )}
+
+        {alert.sourceName && (
+          <p className="text-xs text-muted-foreground" data-testid={`text-source-${alert.id}`}>
+            {alert.sourceName} &middot; {timeAgo(alert.publishedAt)}
+          </p>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onDraftEmail}
+            data-testid={`button-draft-email-${alert.id}`}
+          >
+            <Mail className="w-3.5 h-3.5 mr-1" />
+            Draft Email
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onDraftLinkedIn}
+            data-testid={`button-draft-linkedin-${alert.id}`}
+          >
+            <Linkedin className="w-3.5 h-3.5 mr-1" />
+            Draft LinkedIn
+          </Button>
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onMarkRead}
+            data-testid={`button-mark-read-${alert.id}`}
+          >
+            {alert.isRead ? <EyeOff className="w-3.5 h-3.5 mr-1" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+            {alert.isRead ? "Unread" : "Read"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDismiss}
+            data-testid={`button-dismiss-${alert.id}`}
+          >
+            Dismiss
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -584,9 +579,14 @@ export default function RelationshipIntelligence() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/alerts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+      const parts = [];
+      if (data.companies) parts.push(`${data.companies} companies`);
+      if (data.scanned) parts.push(`${data.scanned} contacts`);
       toast({
-        title: "Scan Complete",
-        description: `Scanned ${data.scanned} contacts, created ${data.alertsCreated} new alerts.`,
+        title: "News Scan Complete",
+        description: data.alertsCreated > 0
+          ? `Found ${data.alertsCreated} new article${data.alertsCreated !== 1 ? "s" : ""} across ${parts.join(" and ")}.`
+          : `Scanned ${parts.join(" and ")} — no new articles found.`,
       });
     },
     onError: (error: Error) => {
@@ -671,11 +671,16 @@ export default function RelationshipIntelligence() {
             data-testid="button-scan-news"
           >
             {scanMutation.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin mr-1" />
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                Scanning contacts...
+              </>
             ) : (
-              <RefreshCw className="w-4 h-4 mr-1" />
+              <>
+                <RefreshCw className="w-4 h-4 mr-1" />
+                Scan News
+              </>
             )}
-            Scan News
           </Button>
         </div>
 

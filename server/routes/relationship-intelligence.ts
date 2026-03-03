@@ -404,9 +404,16 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
       const userId = req.user?.id;
       const { contactId } = req.body;
 
-      let contactsToScan;
+      const newsApiKey = process.env.NEWS_API_KEY;
+      if (!newsApiKey) {
+        return res.status(400).json({ message: "NEWS_API_KEY is not configured. Please add it to your environment variables." });
+      }
+
+      const sixHoursAgo = new Date(Date.now() - 6 * 3600000);
+
+      let allContacts;
       if (contactId) {
-        contactsToScan = await db
+        allContacts = await db
           .select()
           .from(relationshipContacts)
           .where(and(
@@ -415,111 +422,206 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
             eq(relationshipContacts.isActive, true)
           ));
       } else {
-        contactsToScan = await db
+        allContacts = await db
           .select()
           .from(relationshipContacts)
           .where(and(
             eq(relationshipContacts.userId, userId),
             eq(relationshipContacts.isActive, true)
           ))
-          .orderBy(relationshipContacts.priorityLevel)
-          .limit(20);
+          .orderBy(relationshipContacts.priorityLevel);
       }
+
+      if (allContacts.length === 0) {
+        return res.json({ scanned: 0, companies: 0, alertsCreated: 0, skipped: 0, message: "No contacts to scan" });
+      }
+
+      const contactsToScan = allContacts.filter(c =>
+        !c.lastNewsScanAt || c.lastNewsScanAt < sixHoursAgo
+      );
+      const skippedCount = allContacts.length - contactsToScan.length;
 
       if (contactsToScan.length === 0) {
-        return res.json({ scanned: 0, alertsCreated: 0, message: "No contacts to scan" });
+        return res.json({ scanned: 0, companies: 0, alertsCreated: 0, skipped: skippedCount, message: "All contacts were scanned within the last 6 hours" });
       }
 
-      const newsApiKey = process.env.NEWS_API_KEY;
-      let totalAlerts = 0;
+      const companyGroups = new Map<string, typeof contactsToScan>();
+      const noCompanyVIPs: typeof contactsToScan = [];
 
       for (const contact of contactsToScan) {
-        try {
-          let articles: any[] = [];
-
-          if (newsApiKey) {
-            const searchQuery = contact.company
-              ? `"${contact.fullName}" OR ("${contact.fullName}" AND "${contact.company}")`
-              : `"${contact.fullName}"`;
-
-            const response = await fetch(
-              `https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQuery)}&sortBy=publishedAt&language=en&pageSize=5&apiKey=${newsApiKey}`
-            );
-            const data = await response.json();
-            if (data.articles) articles = data.articles;
-          } else {
-            articles = generateDemoNewsForContact(contact);
+        if (contact.company && contact.company.trim()) {
+          const companyKey = contact.company.trim().toLowerCase();
+          if (!companyGroups.has(companyKey)) {
+            companyGroups.set(companyKey, []);
           }
+          companyGroups.get(companyKey)!.push(contact);
+        } else if (contact.priorityLevel === 1) {
+          noCompanyVIPs.push(contact);
+        }
+      }
 
-          for (const article of articles) {
-            let verified = true;
-            let category: string = "general";
-            let sentiment: string = "neutral";
-            let summary = article.description || article.title;
+      let totalAlerts = 0;
+      let totalApiCalls = 0;
+      const MAX_API_CALLS = 90;
 
-            try {
-              const aiResponse = await openai.chat.completions.create({
-                model: "gpt-5",
-                messages: [{
-                  role: "system",
-                  content: "You analyze news articles for relevance to specific people. Respond with JSON only."
-                }, {
-                  role: "user",
-                  content: `Analyze this news article for: ${contact.fullName}${contact.company ? ` at ${contact.company}` : ""}${contact.jobTitle ? `, ${contact.jobTitle}` : ""}.
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+      async function fetchNewsArticles(searchQuery: string): Promise<any[]> {
+        if (totalApiCalls >= MAX_API_CALLS) {
+          console.log("[RI] Approaching API call limit, stopping further requests");
+          return [];
+        }
+        totalApiCalls++;
+        try {
+          const response = await fetch(
+            `https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQuery)}&sortBy=publishedAt&language=en&pageSize=10&apiKey=${newsApiKey}`
+          );
+          const data = await response.json();
+          if (data.status === "error") {
+            console.error(`[RI] NewsAPI error: ${data.message}`);
+            return [];
+          }
+          return data.articles || [];
+        } catch (err) {
+          console.error("[RI] NewsAPI fetch error:", err);
+          return [];
+        }
+      }
+
+      function contactMatchesArticle(contact: typeof contactsToScan[0], article: any): boolean {
+        const text = `${article.title || ""} ${article.description || ""}`.toLowerCase();
+        const nameParts = contact.fullName.toLowerCase().split(/\s+/).filter(p => p.length > 2);
+        const lastNameMatch = nameParts.length > 1 && text.includes(nameParts[nameParts.length - 1]);
+        const fullNameMatch = text.includes(contact.fullName.toLowerCase());
+        return fullNameMatch || lastNameMatch;
+      }
+
+      async function processArticleForContact(contact: typeof contactsToScan[0], article: any) {
+        let category: string = "general";
+        let sentiment: string = "neutral";
+        let summary = article.description || article.title;
+
+        try {
+          const aiResponse = await openai.chat.completions.create({
+            model: "gpt-5",
+            messages: [{
+              role: "system",
+              content: "You analyze news articles for relevance to specific people. Respond with JSON only."
+            }, {
+              role: "user",
+              content: `Analyze this news article for: ${contact.fullName}${contact.company ? ` at ${contact.company}` : ""}${contact.jobTitle ? `, ${contact.jobTitle}` : ""}.
 
 Headline: ${article.title}
 Snippet: ${article.description || ""}
 
 Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "promotion|funding|acquisition|legal|award|departure|partnership|ipo|bankruptcy|regulatory|general", "sentiment": "positive|negative|neutral", "summary": "1-2 sentence summary" }`
-                }],
-                response_format: { type: "json_object" },
-                max_tokens: 200,
-              });
+            }],
+            response_format: { type: "json_object" },
+            max_tokens: 200,
+          });
 
-              const analysis = JSON.parse(aiResponse.choices[0].message.content || "{}");
-              verified = analysis.match && analysis.confidence > 0.6;
-              category = analysis.category || "general";
-              sentiment = analysis.sentiment || "neutral";
-              if (analysis.summary) summary = analysis.summary;
-            } catch {
-              verified = true;
+          const analysis = JSON.parse(aiResponse.choices[0].message.content || "{}");
+          if (!analysis.match || analysis.confidence <= 0.4) return false;
+          category = analysis.category || "general";
+          sentiment = analysis.sentiment || "neutral";
+          if (analysis.summary) summary = analysis.summary;
+        } catch {
+        }
+
+        const existingAlert = await db
+          .select()
+          .from(newsAlerts)
+          .where(and(
+            eq(newsAlerts.contactId, contact.id),
+            eq(newsAlerts.headline, article.title || "")
+          ))
+          .limit(1);
+
+        if (existingAlert.length > 0) return false;
+
+        await db.insert(newsAlerts).values({
+          contactId: contact.id,
+          userId,
+          headline: article.title || "News Article",
+          sourceName: article.source?.name || "News",
+          sourceUrl: article.url || "",
+          publishedAt: article.publishedAt ? new Date(article.publishedAt) : new Date(),
+          summary,
+          sentiment: sentiment as any,
+          category: category as any,
+          relevanceScore: 0.8,
+        });
+        return true;
+      }
+
+      console.log(`[RI] Starting scan: ${companyGroups.size} companies, ${noCompanyVIPs.length} individual VIPs, ${skippedCount} skipped (recently scanned)`);
+
+      for (const [companyKey, contacts] of companyGroups) {
+        if (totalApiCalls >= MAX_API_CALLS) break;
+
+        const companyName = contacts[0].company!;
+        const searchQuery = `"${companyName}"`;
+
+        const articles = await fetchNewsArticles(searchQuery);
+        await delay(200);
+
+        for (const article of articles) {
+          const nameMatchedContacts = contacts.filter(c => contactMatchesArticle(c, article));
+
+          const targetContacts = nameMatchedContacts.length > 0
+            ? nameMatchedContacts
+            : [contacts.reduce((best, c) => c.priorityLevel < best.priorityLevel ? c : best, contacts[0])];
+
+          for (const contact of targetContacts) {
+            try {
+              const created = await processArticleForContact(contact, article);
+              if (created) totalAlerts++;
+            } catch (err) {
+              console.error(`[RI] Error processing article for ${contact.fullName}:`, err);
             }
-
-            if (!verified) continue;
-
-            const existingAlert = await db
-              .select()
-              .from(newsAlerts)
-              .where(and(
-                eq(newsAlerts.contactId, contact.id),
-                eq(newsAlerts.headline, article.title || "")
-              ))
-              .limit(1);
-
-            if (existingAlert.length > 0) continue;
-
-            await db.insert(newsAlerts).values({
-              contactId: contact.id,
-              userId,
-              headline: article.title || "News Article",
-              sourceName: article.source?.name || article.sourceName || "News",
-              sourceUrl: article.url || article.sourceUrl || "",
-              publishedAt: article.publishedAt ? new Date(article.publishedAt) : new Date(),
-              summary,
-              sentiment: sentiment as any,
-              category: category as any,
-              relevanceScore: 0.8,
-            });
-            totalAlerts++;
           }
+        }
 
-          await db.update(relationshipContacts).set({ lastNewsScanAt: new Date() }).where(eq(relationshipContacts.id, contact.id));
-        } catch (err) {
-          console.error(`[RI] Error scanning contact ${contact.fullName}:`, err);
+        const contactIds = contacts.map(c => c.id);
+        if (contactIds.length > 0) {
+          await db.update(relationshipContacts)
+            .set({ lastNewsScanAt: new Date() })
+            .where(inArray(relationshipContacts.id, contactIds));
         }
       }
 
-      res.json({ scanned: contactsToScan.length, alertsCreated: totalAlerts });
+      for (const contact of noCompanyVIPs) {
+        if (totalApiCalls >= MAX_API_CALLS) break;
+
+        const searchQuery = `"${contact.fullName}"`;
+        const articles = await fetchNewsArticles(searchQuery);
+        await delay(200);
+
+        for (const article of articles) {
+          if (!contactMatchesArticle(contact, article)) continue;
+
+          try {
+            const created = await processArticleForContact(contact, article);
+            if (created) totalAlerts++;
+          } catch (err) {
+            console.error(`[RI] Error processing article for VIP ${contact.fullName}:`, err);
+          }
+        }
+
+        await db.update(relationshipContacts)
+          .set({ lastNewsScanAt: new Date() })
+          .where(eq(relationshipContacts.id, contact.id));
+      }
+
+      console.log(`[RI] Scan complete: ${contactsToScan.length} contacts, ${companyGroups.size} companies, ${totalAlerts} alerts created, ${totalApiCalls} API calls, ${skippedCount} skipped`);
+
+      res.json({
+        scanned: contactsToScan.length,
+        companies: companyGroups.size,
+        alertsCreated: totalAlerts,
+        skipped: skippedCount,
+        apiCallsUsed: totalApiCalls,
+      });
     } catch (error: any) {
       console.error("[RI] Scan error:", error);
       res.status(500).json({ message: error.message });
@@ -1415,25 +1517,3 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-function generateDemoNewsForContact(contact: any) {
-  const categories = [
-    { cat: "promotion", headline: `${contact.fullName} Named to Senior Leadership Role at ${contact.company || "Major Firm"}`, sentiment: "positive" },
-    { cat: "partnership", headline: `${contact.company || "Company"} Announces Strategic Partnership in New Market`, sentiment: "positive" },
-    { cat: "award", headline: `${contact.fullName} Recognized Among Top Industry Leaders`, sentiment: "positive" },
-    { cat: "funding", headline: `${contact.company || "Company"} Secures New Round of Growth Capital`, sentiment: "positive" },
-    { cat: "acquisition", headline: `${contact.company || "Company"} Explores Acquisition of Regional Competitor`, sentiment: "neutral" },
-  ];
-
-  const selected = categories[Math.floor(Math.random() * categories.length)];
-  return [{
-    title: selected.headline,
-    description: `${contact.fullName}${contact.jobTitle ? `, ${contact.jobTitle}` : ""} at ${contact.company || "a leading organization"} was featured in recent industry coverage.`,
-    source: { name: "Industry News" },
-    url: "#",
-    publishedAt: new Date().toISOString(),
-    sourceName: "Industry News",
-    sourceUrl: "#",
-    category: selected.cat,
-    sentiment: selected.sentiment,
-  }];
-}
