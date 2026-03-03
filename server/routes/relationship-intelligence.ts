@@ -473,23 +473,46 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
         }
         totalApiCalls++;
         try {
-          const response = await fetch(
-            `https://newsapi.org/v2/everything?q=${encodeURIComponent(searchQuery)}&sortBy=publishedAt&language=en&pageSize=10&apiKey=${newsApiKey}`
-          );
-          const data = await response.json();
-          if (data.status === "error") {
-            console.error(`[RI] NewsAPI error: ${data.message}`);
+          const response = await fetch("https://eventregistry.org/api/v1/article/getArticles", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              apiKey: newsApiKey,
+              keyword: searchQuery,
+              keywordOper: "or",
+              lang: "eng",
+              articlesSortBy: "date",
+              articlesCount: 10,
+              resultType: "articles",
+              articleBodyLen: 400,
+              includeArticleOriginalArticle: false,
+            }),
+          });
+          if (!response.ok) {
+            console.error(`[RI] EventRegistry HTTP error: ${response.status} ${response.statusText}`);
             return [];
           }
-          return data.articles || [];
+          const data = await response.json();
+          if (data.error) {
+            console.error(`[RI] EventRegistry error:`, JSON.stringify(data.error).substring(0, 200));
+            return [];
+          }
+          const results = data.articles?.results || [];
+          return results.map((a: any) => ({
+            title: a.title || "",
+            body: (a.body || "").substring(0, 500),
+            url: a.url || "",
+            sourceName: a.source?.title || "News",
+            publishedAt: a.dateTime || a.dateTimePub || new Date().toISOString(),
+          }));
         } catch (err) {
-          console.error("[RI] NewsAPI fetch error:", err);
+          console.error("[RI] EventRegistry fetch error:", err);
           return [];
         }
       }
 
       function contactMatchesArticle(contact: typeof contactsToScan[0], article: any): boolean {
-        const text = `${article.title || ""} ${article.description || ""}`.toLowerCase();
+        const text = `${article.title || ""} ${article.body || ""}`.toLowerCase();
         const nameParts = contact.fullName.toLowerCase().split(/\s+/).filter(p => p.length > 2);
         const lastNameMatch = nameParts.length > 1 && text.includes(nameParts[nameParts.length - 1]);
         const fullNameMatch = text.includes(contact.fullName.toLowerCase());
@@ -499,7 +522,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
       async function processArticleForContact(contact: typeof contactsToScan[0], article: any) {
         let category: string = "general";
         let sentiment: string = "neutral";
-        let summary = article.description || article.title;
+        let summary = article.body || article.title;
 
         try {
           const aiResponse = await openai.chat.completions.create({
@@ -512,12 +535,12 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
               content: `Analyze this news article for: ${contact.fullName}${contact.company ? ` at ${contact.company}` : ""}${contact.jobTitle ? `, ${contact.jobTitle}` : ""}.
 
 Headline: ${article.title}
-Snippet: ${article.description || ""}
+Snippet: ${article.body || ""}
 
-Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "promotion|funding|acquisition|legal|award|departure|partnership|ipo|bankruptcy|regulatory|general", "sentiment": "positive|negative|neutral", "summary": "1-2 sentence summary" }`
+Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "promotion|funding|acquisition|legal|award|departure|partnership|ipo|bankruptcy|regulatory|general", "sentiment": "positive|negative|neutral", "summary": "2-3 sentence summary of the article highlighting how it relates to the person or their organization" }`
             }],
             response_format: { type: "json_object" },
-            max_completion_tokens: 200,
+            max_completion_tokens: 300,
           });
 
           const analysis = JSON.parse(aiResponse.choices[0].message.content || "{}");
@@ -543,7 +566,7 @@ Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "pr
           contactId: contact.id,
           userId,
           headline: article.title || "News Article",
-          sourceName: article.source?.name || "News",
+          sourceName: article.sourceName || "News",
           sourceUrl: article.url || "",
           publishedAt: article.publishedAt ? new Date(article.publishedAt) : new Date(),
           summary,
