@@ -4412,31 +4412,69 @@ export class DatabaseStorage implements IStorage {
       lastSeen: Date | null;
     }>();
 
+    const parseRawContact = (raw: string): { email: string; name: string } | null => {
+      if (!raw || raw.trim().length === 0) return null;
+      raw = raw.trim();
+      let name = "";
+      let email = "";
+      const angleMatch = raw.match(/<([^>]+)>/);
+      if (angleMatch) {
+        email = angleMatch[1].trim().toLowerCase();
+        name = raw.substring(0, raw.indexOf("<")).trim();
+        name = name.replace(/^["']+|["']+$/g, "").trim();
+      } else if (raw.includes("@")) {
+        email = raw.trim().toLowerCase();
+      }
+      if (!email || !email.includes("@") || email.length > 254) return null;
+      const viaMatch = name.match(/^'?(.+?)'?\s+via\s+/i);
+      if (viaMatch) {
+        name = viaMatch[1].trim().replace(/^'|'$/g, "");
+      }
+      name = name.replace(/^["']+|["']+$/g, "").trim();
+      return { email, name };
+    };
+
     // Process senders
     for (const row of senderStats.rows as any[]) {
-      const email = row.email?.toLowerCase() || '';
-      if (!email || !email.includes('@')) continue;
+      const rawSender = row.email || '';
+      const parsed = parseRawContact(rawSender);
+      if (!parsed) continue;
+      const { email, name } = parsed;
+      const domain = email.split("@")[1] || '';
       
-      entityMap.set(email, {
-        email,
-        name: this.extractNameFromEmail(email),
-        domain: row.domain || '',
-        sentCount: parseInt(row.sent_count) || 0,
-        receivedCount: 0,
-        firstSeen: row.first_seen ? new Date(row.first_seen) : null,
-        lastSeen: row.last_seen ? new Date(row.last_seen) : null,
-      });
+      const existing = entityMap.get(email);
+      if (existing) {
+        existing.sentCount += parseInt(row.sent_count) || 0;
+        if (name && (!existing.name || name.length > existing.name.length)) {
+          existing.name = name;
+        }
+      } else {
+        entityMap.set(email, {
+          email,
+          name: name || this.extractNameFromEmail(email),
+          domain,
+          sentCount: parseInt(row.sent_count) || 0,
+          receivedCount: 0,
+          firstSeen: row.first_seen ? new Date(row.first_seen) : null,
+          lastSeen: row.last_seen ? new Date(row.last_seen) : null,
+        });
+      }
     }
 
     // Process recipients and merge with senders
     for (const row of recipientStats.rows as any[]) {
-      const email = row.email?.toLowerCase() || '';
-      if (!email || !email.includes('@')) continue;
+      const rawRecipient = row.email || '';
+      const parsed = parseRawContact(rawRecipient);
+      if (!parsed) continue;
+      const { email, name } = parsed;
+      const domain = email.split("@")[1] || '';
       
       const existing = entityMap.get(email);
       if (existing) {
-        existing.receivedCount = parseInt(row.received_count) || 0;
-        // Update first/last seen if needed
+        existing.receivedCount += parseInt(row.received_count) || 0;
+        if (name && (!existing.name || name.length > existing.name.length)) {
+          existing.name = name;
+        }
         const rowFirstSeen = row.first_seen ? new Date(row.first_seen) : null;
         const rowLastSeen = row.last_seen ? new Date(row.last_seen) : null;
         if (rowFirstSeen && (!existing.firstSeen || rowFirstSeen < existing.firstSeen)) {
@@ -4448,8 +4486,8 @@ export class DatabaseStorage implements IStorage {
       } else {
         entityMap.set(email, {
           email,
-          name: this.extractNameFromEmail(email),
-          domain: row.domain || '',
+          name: name || this.extractNameFromEmail(email),
+          domain,
           sentCount: 0,
           receivedCount: parseInt(row.received_count) || 0,
           firstSeen: row.first_seen ? new Date(row.first_seen) : null,

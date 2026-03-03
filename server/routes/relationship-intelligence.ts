@@ -2044,11 +2044,13 @@ Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }
       const selectedEmailSet = new Set(
         contactEmails.map((e: string) => {
           const parsed = parseEmailContact(e);
-          return parsed ? parsed.email : e.toLowerCase().trim();
+          const result = parsed ? parsed.email : e.toLowerCase().trim();
+          return result;
         })
       );
       const allContacts = Array.from(contactMap.values());
       allContacts.sort((a, b) => (b.sendCount + b.recvCount) - (a.sendCount + a.recvCount));
+
       const contacts = allContacts.filter(c => selectedEmailSet.has(c.email));
 
       const totalContacts = contacts.length;
