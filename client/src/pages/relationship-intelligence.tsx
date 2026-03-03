@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +24,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -43,6 +55,13 @@ import {
   Check,
   Loader2,
   RefreshCw,
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  Star,
+  Building2,
+  Briefcase,
 } from "lucide-react";
 import type { NewsAlert, RelationshipContact } from "@shared/schema";
 
@@ -533,6 +552,421 @@ function OutreachDialog({
   );
 }
 
+const addContactSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().optional().default(""),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  company: z.string().optional().default(""),
+  jobTitle: z.string().optional().default(""),
+  priorityLevel: z.number().min(1).max(5).default(3),
+});
+
+type AddContactValues = z.infer<typeof addContactSchema>;
+
+function AddContactDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const form = useForm<AddContactValues>({
+    resolver: zodResolver(addContactSchema),
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      company: "",
+      jobTitle: "",
+      priorityLevel: 3,
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (data: AddContactValues) => {
+      return apiRequest("POST", "/api/relationship-intelligence/contacts", {
+        ...data,
+        tags: [],
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Contact added to monitoring" });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+      onOpenChange(false);
+      form.reset();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Contact to Monitor</DialogTitle>
+          <DialogDescription>Add a new person to track for news and updates.</DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="firstName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>First Name</FormLabel>
+                    <FormControl>
+                      <Input {...field} data-testid="input-add-first-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="lastName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Last Name</FormLabel>
+                    <FormControl>
+                      <Input {...field} data-testid="input-add-last-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input type="email" {...field} data-testid="input-add-email" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="company"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Company</FormLabel>
+                    <FormControl>
+                      <Input {...field} data-testid="input-add-company" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="jobTitle"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Job Title</FormLabel>
+                    <FormControl>
+                      <Input {...field} data-testid="input-add-job-title" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <FormField
+              control={form.control}
+              name="priorityLevel"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Priority (1=highest, 5=lowest)</FormLabel>
+                  <FormControl>
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => field.onChange(star)}
+                          data-testid={`star-add-${star}`}
+                        >
+                          <Star
+                            className={`h-5 w-5 ${
+                              star <= field.value
+                                ? "fill-amber-400 text-amber-400"
+                                : "text-muted-foreground/30"
+                            }`}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={mutation.isPending} data-testid="button-submit-add-contact">
+                {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                Add Contact
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ContactsPanel() {
+  const { toast } = useToast();
+  const [expanded, setExpanded] = useState(false);
+  const [contactSearch, setContactSearch] = useState("");
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [page, setPage] = useState(0);
+  const pageSize = 25;
+
+  const queryParams = new URLSearchParams();
+  if (contactSearch) queryParams.set("search", contactSearch);
+  queryParams.set("limit", String(pageSize));
+  queryParams.set("offset", String(page * pageSize));
+  const qStr = queryParams.toString();
+
+  const { data: contactsData, isLoading } = useQuery<{
+    contacts: RelationshipContact[];
+    total: number;
+  }>({
+    queryKey: ["/api/relationship-intelligence/contacts", `?${qStr}`],
+    enabled: expanded,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (contactId: string) => {
+      await apiRequest("DELETE", `/api/relationship-intelligence/contacts/${contactId}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Contact removed from monitoring" });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const contacts = contactsData?.contacts || [];
+  const total = contactsData?.total || 0;
+  const totalPages = Math.ceil(total / pageSize);
+
+  useEffect(() => {
+    setPage(0);
+  }, [contactSearch]);
+
+  return (
+    <>
+      <Card>
+        <CardHeader
+          className="flex flex-row items-center justify-between gap-2 space-y-0 cursor-pointer hover-elevate"
+          onClick={() => setExpanded(!expanded)}
+          data-testid="button-toggle-contacts-panel"
+        >
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-base font-semibold">
+              Monitored Contacts
+            </CardTitle>
+            <Badge variant="secondary" data-testid="badge-contact-count">{total || "..."}</Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            {expanded && (
+              <Button
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAddDialogOpen(true);
+                }}
+                data-testid="button-add-contact"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Add Contact
+              </Button>
+            )}
+            {expanded ? (
+              <ChevronUp className="w-4 h-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            )}
+          </div>
+        </CardHeader>
+
+        {expanded && (
+          <CardContent className="pt-0 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search contacts by name, email, or company..."
+                value={contactSearch}
+                onChange={(e) => setContactSearch(e.target.value)}
+                className="pl-9"
+                data-testid="input-search-contacts"
+              />
+            </div>
+
+            {isLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="flex items-center gap-3 p-2">
+                    <Skeleton className="h-8 w-8 rounded-full" />
+                    <div className="flex-1 space-y-1">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-48" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : contacts.length === 0 ? (
+              <div className="py-6 text-center">
+                <Users className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  {contactSearch ? "No contacts match your search." : "No contacts being monitored yet."}
+                </p>
+              </div>
+            ) : (
+              <>
+                <ScrollArea className={contacts.length > 8 ? "h-[400px]" : ""}>
+                  <div className="space-y-1">
+                    {contacts.map((contact) => (
+                      <div
+                        key={contact.id}
+                        className="flex items-center gap-3 p-2 rounded-md hover-elevate group"
+                        data-testid={`contact-row-${contact.id}`}
+                      >
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs">
+                            {getInitials(contact.fullName)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium truncate" data-testid={`text-contact-name-${contact.id}`}>
+                              {contact.fullName}
+                            </span>
+                            <div className="flex items-center gap-0.5">
+                              {[1, 2, 3, 4, 5].map((s) => (
+                                <Star
+                                  key={s}
+                                  className={`h-3 w-3 ${
+                                    s <= contact.priorityLevel
+                                      ? "fill-amber-400 text-amber-400"
+                                      : "text-muted-foreground/20"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            {contact.company && (
+                              <span className="flex items-center gap-1 truncate">
+                                <Building2 className="w-3 h-3 shrink-0" />
+                                {contact.company}
+                              </span>
+                            )}
+                            {contact.jobTitle && (
+                              <span className="flex items-center gap-1 truncate">
+                                <Briefcase className="w-3 h-3 shrink-0" />
+                                {contact.jobTitle}
+                              </span>
+                            )}
+                            {contact.email && (
+                              <span className="truncate">{contact.email}</span>
+                            )}
+                          </div>
+                        </div>
+                        {confirmDelete === contact.id ? (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                deleteMutation.mutate(contact.id);
+                                setConfirmDelete(null);
+                              }}
+                              data-testid={`button-confirm-delete-${contact.id}`}
+                            >
+                              Remove
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setConfirmDelete(null)}
+                              data-testid={`button-cancel-delete-${contact.id}`}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="invisible group-hover:visible"
+                            onClick={() => setConfirmDelete(contact.id)}
+                            data-testid={`button-delete-contact-${contact.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-muted-foreground" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between gap-2 pt-2">
+                    <p className="text-xs text-muted-foreground" data-testid="text-contacts-pagination">
+                      Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page === 0}
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        data-testid="button-contacts-prev"
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= totalPages - 1}
+                        onClick={() => setPage((p) => p + 1)}
+                        data-testid="button-contacts-next"
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        )}
+      </Card>
+      <AddContactDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />
+    </>
+  );
+}
+
 export default function RelationshipIntelligence() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -697,6 +1131,8 @@ export default function RelationshipIntelligence() {
         </div>
 
         <StatsBar stats={stats} isLoading={statsLoading} />
+
+        <ContactsPanel />
 
         <Card>
           <CardContent className="p-4">
