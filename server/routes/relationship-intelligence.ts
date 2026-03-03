@@ -993,11 +993,18 @@ Generate 3 variants as JSON:
   app.post("/api/relationship-intelligence/outreach/draft-response", isAuthenticated, riRoles, async (req: any, res) => {
     try {
       const userId = req.user?.id;
-      const { alertId, contactId } = req.body;
+      const { alertId, contactId, tone = "formal" } = req.body;
 
       if (!alertId || !contactId) {
         return res.status(400).json({ message: "alertId and contactId are required" });
       }
+
+      const toneInstructions: Record<string, string> = {
+        formal: "Write in a professional, polished tone. Use proper greetings and sign-offs. Keep the language respectful and business-appropriate.",
+        informal: "Write in a casual, friendly tone. Use conversational language as if writing to a colleague you know well. Keep it warm and approachable but still appropriate.",
+        playful: "Write in a lighthearted, witty tone. Add a touch of humor where appropriate. Keep it fun and engaging while still being respectful and professional enough for a business context.",
+      };
+      const selectedToneInstruction = toneInstructions[tone] || toneInstructions.formal;
 
       const [alert] = await db.select().from(newsAlerts).where(and(eq(newsAlerts.id, alertId), eq(newsAlerts.userId, userId)));
       if (!alert) return res.status(404).json({ message: "Alert not found" });
@@ -1132,10 +1139,12 @@ Each term should be a simple keyword or short phrase (not complex boolean syntax
         model: "gpt-5",
         messages: [{
           role: "system",
-          content: `You are a professional relationship intelligence assistant helping a compliance professional craft outreach messages. Write concise, warm but professional messages. Do not use emojis. Output JSON only.`
+          content: `You are a relationship intelligence assistant helping a compliance professional craft outreach messages. ${selectedToneInstruction} Do not use emojis. Output JSON only.`
         }, {
           role: "user",
           content: `Draft a short personalized response (1-5 sentences) to reach out to this contact about the news article below.
+
+Tone: ${tone}
 
 Contact: ${contact.fullName}, ${contact.jobTitle || "Professional"} at ${contact.company || "their organization"}
 
@@ -1148,12 +1157,12 @@ Source: ${alert.sourceName || "news outlet"}
 ${contextBlock}
 
 Instructions:
-- Write a natural, professional message as if from a colleague or professional connection
-- If email context was found, weave in a reference to the shared history or connection (e.g., "Since we've been following developments at [Company]..." or "Given our previous correspondence regarding...")
+- ${selectedToneInstruction}
+- If email context was found, weave in a reference to the shared history or connection
 - Keep it 1-5 sentences maximum
 - Make it feel personal and informed, not generic
 - If the article sentiment is negative (lawsuit, investigation), be tactful and supportive rather than congratulatory
-- Include a subject line suggestion
+- Include a subject line suggestion that matches the ${tone} tone
 
 Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }`
         }],

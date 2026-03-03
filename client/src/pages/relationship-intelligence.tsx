@@ -796,12 +796,14 @@ function DraftResponseDialog({
   const [editedDraft, setEditedDraft] = useState("");
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
+  const [tone, setTone] = useState<"formal" | "informal" | "playful">("formal");
 
   const draftMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (selectedTone: "formal" | "informal" | "playful") => {
       const res = await apiRequest("POST", "/api/relationship-intelligence/outreach/draft-response", {
         alertId: alert?.id,
         contactId: contact?.id,
+        tone: selectedTone,
       });
       return res.json() as Promise<DraftResponseData>;
     },
@@ -833,6 +835,11 @@ function DraftResponseDialog({
     },
   });
 
+  const handleToneChange = (newTone: "formal" | "informal" | "playful") => {
+    setTone(newTone);
+    draftMutation.mutate(newTone);
+  };
+
   const hasFiredRef = useRef(false);
 
   useEffect(() => {
@@ -840,7 +847,8 @@ function DraftResponseDialog({
       hasFiredRef.current = true;
       setExpandedSources(new Set());
       setCopied(false);
-      draftMutation.mutate();
+      setTone("formal");
+      draftMutation.mutate("formal");
     }
     if (!open) {
       hasFiredRef.current = false;
@@ -884,7 +892,7 @@ function DraftResponseDialog({
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle data-testid="dialog-title-draft-response">
-            Draft Response
+            Draft Note
           </DialogTitle>
           <DialogDescription>
             {contact && (
@@ -916,10 +924,31 @@ function DraftResponseDialog({
         {draftMutation.isError && (
           <div className="py-4 text-center space-y-2">
             <p className="text-sm text-destructive">Failed to generate draft response.</p>
-            <Button variant="outline" size="sm" onClick={() => draftMutation.mutate()} data-testid="button-retry-draft">
+            <Button variant="outline" size="sm" onClick={() => draftMutation.mutate(tone)} data-testid="button-retry-draft">
               <RefreshCw className="w-3.5 h-3.5 mr-1" />
               Retry
             </Button>
+          </div>
+        )}
+
+        {(draftMutation.data || draftMutation.isPending) && (
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Tone</label>
+            <div className="flex items-center gap-2">
+              {(["formal", "informal", "playful"] as const).map((t) => (
+                <Button
+                  key={t}
+                  variant="outline"
+                  size="sm"
+                  className={`capitalize toggle-elevate ${tone === t ? "toggle-elevated" : ""}`}
+                  disabled={draftMutation.isPending}
+                  onClick={() => handleToneChange(t)}
+                  data-testid={`button-tone-${t}`}
+                >
+                  {t}
+                </Button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -933,7 +962,7 @@ function DraftResponseDialog({
                 </div>
               )}
               <div>
-                <label className="text-sm font-medium">Draft Response</label>
+                <label className="text-sm font-medium">Draft Note</label>
                 <Textarea
                   value={editedDraft}
                   onChange={(e) => setEditedDraft(e.target.value)}
