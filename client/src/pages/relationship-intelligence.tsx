@@ -62,6 +62,8 @@ import {
   Star,
   Building2,
   Briefcase,
+  Link2,
+  AlertCircle,
 } from "lucide-react";
 import type { NewsAlert, RelationshipContact } from "@shared/schema";
 
@@ -359,6 +361,183 @@ function AlertCard({
   );
 }
 
+type EmailAccountInfo = {
+  id: string;
+  provider: string;
+  email: string;
+  displayName: string | null;
+};
+
+function useEmailAccounts() {
+  return useQuery<EmailAccountInfo[]>({
+    queryKey: ["/api/relationship-intelligence/email-accounts"],
+    staleTime: 60_000,
+  });
+}
+
+function SendEmailSection({
+  contactId,
+  contactEmail,
+  alertId,
+  subject,
+  bodyText,
+  onSent,
+}: {
+  contactId: string;
+  contactEmail: string | null | undefined;
+  alertId?: string;
+  subject: string;
+  bodyText: string;
+  onSent: () => void;
+}) {
+  const { toast } = useToast();
+  const { data: accounts, isLoading: accountsLoading, isError: accountsError, refetch: refetchAccounts } = useEmailAccounts();
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [confirmSend, setConfirmSend] = useState(false);
+
+  useEffect(() => {
+    if (accounts?.length && !selectedAccountId) {
+      setSelectedAccountId(accounts[0].id);
+    }
+  }, [accounts, selectedAccountId]);
+
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      const bodyHtml = bodyText.replace(/\n/g, "<br/>");
+      const res = await apiRequest("POST", "/api/relationship-intelligence/outreach/send-email", {
+        contactId,
+        alertId,
+        accountId: selectedAccountId,
+        subject,
+        bodyHtml,
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+      toast({ title: "Email Sent", description: data.message || "Email delivered successfully." });
+      setConfirmSend(false);
+      onSent();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Send Failed", description: error.message, variant: "destructive" });
+      setConfirmSend(false);
+    },
+  });
+
+  if (accountsLoading) {
+    return <Button disabled><Loader2 className="w-4 h-4 animate-spin mr-1" />Loading...</Button>;
+  }
+
+  if (accountsError) {
+    return (
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => refetchAccounts()} data-testid="button-retry-accounts">
+          <RefreshCw className="w-3.5 h-3.5 mr-1" />
+          Retry Loading Accounts
+        </Button>
+      </div>
+    );
+  }
+
+  if (!accounts?.length) {
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => window.open("/api/email/oauth/microsoft", "_blank")}
+          data-testid="button-connect-outlook"
+        >
+          <Link2 className="w-3.5 h-3.5 mr-1" />
+          Connect Outlook
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => window.open("/api/email/oauth/google", "_blank")}
+          data-testid="button-connect-gmail"
+        >
+          <Link2 className="w-3.5 h-3.5 mr-1" />
+          Connect Gmail
+        </Button>
+      </div>
+    );
+  }
+
+  if (!contactEmail) {
+    return (
+      <Button disabled data-testid="button-send-no-email">
+        <AlertCircle className="w-3.5 h-3.5 mr-1" />
+        No Email on File
+      </Button>
+    );
+  }
+
+  if (confirmSend) {
+    const selectedAccount = accounts.find(a => a.id === selectedAccountId);
+    return (
+      <div className="flex flex-col gap-2 w-full p-3 rounded-md bg-muted/50">
+        <p className="text-sm font-medium">Confirm Send</p>
+        <p className="text-xs text-muted-foreground">
+          From: {selectedAccount?.email || "Unknown"}<br/>
+          To: {contactEmail}<br/>
+          Subject: {subject || "(no subject)"}
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirmSend(false)}
+            disabled={sendMutation.isPending}
+            data-testid="button-cancel-send"
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => sendMutation.mutate()}
+            disabled={sendMutation.isPending}
+            data-testid="button-confirm-send"
+          >
+            {sendMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+            <Send className="w-3.5 h-3.5 mr-1" />
+            Confirm Send
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {accounts.length > 1 && (
+        <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+          <SelectTrigger className="w-[200px]" data-testid="select-email-account">
+            <SelectValue placeholder="Select account" />
+          </SelectTrigger>
+          <SelectContent>
+            {accounts.map((acc) => (
+              <SelectItem key={acc.id} value={acc.id} data-testid={`select-account-${acc.id}`}>
+                {acc.email} ({acc.provider})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      <Button
+        onClick={() => setConfirmSend(true)}
+        disabled={!bodyText.trim() || !subject.trim()}
+        data-testid="button-send-email"
+      >
+        <Send className="w-3.5 h-3.5 mr-1" />
+        Send via {accounts.find(a => a.id === selectedAccountId)?.provider === "google" ? "Gmail" : "Outlook"}
+      </Button>
+    </div>
+  );
+}
+
 function OutreachDialog({
   open,
   onOpenChange,
@@ -369,7 +548,7 @@ function OutreachDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   alert: NewsAlert | null;
-  contact: { id: string; fullName: string; company: string | null } | null;
+  contact: { id: string; fullName: string; company: string | null; email?: string | null } | null;
   channel: string;
 }) {
   const { toast } = useToast();
@@ -545,11 +724,29 @@ function OutreachDialog({
           </div>
         )}
 
-        <DialogFooter>
+        {selectedVariant !== null && generateMutation.data?.variants && contact && (
+          (() => {
+            const variant = generateMutation.data.variants[selectedVariant];
+            if (variant?.channel !== "email") return null;
+            return (
+              <SendEmailSection
+                contactId={contact.id}
+                contactEmail={contact.email}
+                alertId={alert?.id}
+                subject={variant.subjectLine || `Re: ${alert?.headline || "Follow-up"}`}
+                bodyText={editedMessage || variant.message}
+                onSent={() => onOpenChange(false)}
+              />
+            );
+          })()
+        )}
+
+        <DialogFooter className="gap-2 flex-wrap">
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-outreach">
             Cancel
           </Button>
           <Button
+            variant="outline"
             onClick={handleLogSent}
             disabled={selectedVariant === null || logOutreachMutation.isPending}
             data-testid="button-log-outreach"
@@ -588,7 +785,7 @@ function DraftResponseDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   alert: NewsAlert | null;
-  contact: { id: string; fullName: string; company: string | null } | null;
+  contact: { id: string; fullName: string; company: string | null; email?: string | null } | null;
 }) {
   const { toast } = useToast();
   const [editedDraft, setEditedDraft] = useState("");
@@ -819,6 +1016,17 @@ function DraftResponseDialog({
           </div>
         )}
 
+        {draftMutation.data && contact && (
+          <SendEmailSection
+            contactId={contact.id}
+            contactEmail={contact.email}
+            alertId={alert?.id}
+            subject={draftMutation.data.subjectLine || `Re: ${alert?.headline || "Follow-up"}`}
+            bodyText={editedDraft}
+            onSent={() => onOpenChange(false)}
+          />
+        )}
+
         <DialogFooter className="gap-2 flex-wrap">
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-close-draft">
             Close
@@ -843,12 +1051,12 @@ function DraftResponseDialog({
                 {copied ? "Copied" : "Copy"}
               </Button>
               <Button
+                variant="outline"
                 onClick={handleLogSent}
                 disabled={logOutreachMutation.isPending || !editedDraft.trim()}
                 data-testid="button-log-draft-sent"
               >
                 {logOutreachMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
-                <Send className="w-3.5 h-3.5 mr-1" />
                 Log as Sent
               </Button>
             </>
@@ -1284,14 +1492,14 @@ export default function RelationshipIntelligence() {
   const [outreachDialog, setOutreachDialog] = useState<{
     open: boolean;
     alert: NewsAlert | null;
-    contact: { id: string; fullName: string; company: string | null } | null;
+    contact: { id: string; fullName: string; company: string | null; email?: string | null } | null;
     channel: string;
   }>({ open: false, alert: null, contact: null, channel: "email" });
 
   const [draftResponseDialog, setDraftResponseDialog] = useState<{
     open: boolean;
     alert: NewsAlert | null;
-    contact: { id: string; fullName: string; company: string | null } | null;
+    contact: { id: string; fullName: string; company: string | null; email?: string | null } | null;
   }>({ open: false, alert: null, contact: null });
 
   const { data: stats, isLoading: statsLoading } = useQuery<StatsData>({
@@ -1383,7 +1591,7 @@ export default function RelationshipIntelligence() {
     setOutreachDialog({
       open: true,
       alert,
-      contact: { id: contact.id, fullName: contact.fullName, company: contact.company },
+      contact: { id: contact.id, fullName: contact.fullName, company: contact.company, email: contact.email },
       channel,
     });
   };
@@ -1392,7 +1600,7 @@ export default function RelationshipIntelligence() {
     setDraftResponseDialog({
       open: true,
       alert,
-      contact: { id: contact.id, fullName: contact.fullName, company: contact.company },
+      contact: { id: contact.id, fullName: contact.fullName, company: contact.company, email: contact.email },
     });
   };
 

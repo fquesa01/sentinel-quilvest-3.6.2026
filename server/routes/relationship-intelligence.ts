@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { Express, Request, Response } from "express";
 import { isAuthenticated, requireRole } from "../replitAuth";
 import { db, pool } from "../db";
@@ -8,10 +9,12 @@ import {
   knowledgeBaseEntries,
   outreachLog,
   communications,
+  emailAccounts,
 } from "@shared/schema";
 import { eq, and, desc, ilike, or, sql, inArray } from "drizzle-orm";
 import multer from "multer";
 import { openai } from "../ai";
+import { sendEmail } from "../services/emailService";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -1161,6 +1164,86 @@ Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }
       });
     } catch (error: any) {
       console.error("[RI] Draft response error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =============================================
+  // EMAIL ACCOUNTS (for send integration)
+  // =============================================
+
+  app.get("/api/relationship-intelligence/email-accounts", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const accounts = await db.select({
+        id: emailAccounts.id,
+        provider: emailAccounts.provider,
+        email: emailAccounts.email,
+        displayName: emailAccounts.displayName,
+      })
+      .from(emailAccounts)
+      .where(eq(emailAccounts.userId, userId));
+
+      res.json(accounts);
+    } catch (error: any) {
+      console.error("[RI] Email accounts error:", error);
+      res.json([]);
+    }
+  });
+
+  // =============================================
+  // SEND EMAIL
+  // =============================================
+
+  app.post("/api/relationship-intelligence/outreach/send-email", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { contactId, alertId, accountId, subject, bodyHtml } = req.body;
+
+      if (!contactId || !accountId || !subject || !bodyHtml) {
+        return res.status(400).json({ message: "contactId, accountId, subject, and bodyHtml are required" });
+      }
+
+      const [contact] = await db.select().from(relationshipContacts).where(
+        and(eq(relationshipContacts.id, contactId), eq(relationshipContacts.userId, userId))
+      );
+      if (!contact) return res.status(404).json({ message: "Contact not found" });
+      if (!contact.email) return res.status(400).json({ message: "Contact does not have an email address on file" });
+
+      const [account] = await db.select().from(emailAccounts).where(
+        and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, userId))
+      );
+      if (!account) return res.status(404).json({ message: "Email account not found" });
+
+      console.log(`[RI] Sending email via ${account.provider} (${account.email}) to ${contact.email} — Subject: "${subject}"`);
+
+      await sendEmail(accountId, {
+        to: [{ email: contact.email, name: contact.fullName }],
+        subject,
+        bodyHtml,
+      });
+
+      const logId = crypto.randomUUID();
+      await db.insert(outreachLog).values({
+        id: logId,
+        userId,
+        contactId,
+        newsAlertId: alertId || null,
+        channel: "email",
+        messageContent: bodyHtml.replace(/<[^>]*>/g, ""),
+        sentAt: new Date(),
+      });
+
+      if (alertId) {
+        await db.update(newsAlerts)
+          .set({ isActedOn: true })
+          .where(and(eq(newsAlerts.id, alertId), eq(newsAlerts.userId, userId)));
+      }
+
+      console.log(`[RI] Email sent successfully to ${contact.email}`);
+      res.json({ success: true, message: `Email sent to ${contact.email}` });
+    } catch (error: any) {
+      console.error("[RI] Send email error:", error);
       res.status(500).json({ message: error.message });
     }
   });
