@@ -973,6 +973,7 @@ export default function RelationshipIntelligence() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [sentimentFilter, setSentimentFilter] = useState("all");
   const [contactFilter, setContactFilter] = useState("all");
+  const [scanMode, setScanMode] = useState<"both" | "person" | "company">("both");
   const [outreachDialog, setOutreachDialog] = useState<{
     open: boolean;
     alert: NewsAlert | null;
@@ -1019,7 +1020,7 @@ export default function RelationshipIntelligence() {
 
   const scanMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/relationship-intelligence/scan", {});
+      const res = await apiRequest("POST", "/api/relationship-intelligence/scan", { searchMode: scanMode });
       return res.json();
     },
     onSuccess: (data: any) => {
@@ -1111,23 +1112,35 @@ export default function RelationshipIntelligence() {
               Monitor your professional network and surface actionable opportunities
             </p>
           </div>
-          <Button
-            onClick={() => scanMutation.mutate()}
-            disabled={scanMutation.isPending}
-            data-testid="button-scan-news"
-          >
-            {scanMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                Scanning contacts...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 mr-1" />
-                Scan News
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={scanMode} onValueChange={(v) => setScanMode(v as any)}>
+              <SelectTrigger className="w-[180px]" data-testid="select-scan-mode">
+                <SelectValue placeholder="Scan Mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="both">Person & Company</SelectItem>
+                <SelectItem value="person">Person Only</SelectItem>
+                <SelectItem value="company">Company Only</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={() => scanMutation.mutate()}
+              disabled={scanMutation.isPending}
+              data-testid="button-scan-news"
+            >
+              {scanMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                  Scanning...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-1" />
+                  Scan News
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         <StatsBar stats={stats} isLoading={statsLoading} />
