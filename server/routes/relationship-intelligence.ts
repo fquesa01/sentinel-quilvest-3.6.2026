@@ -7,6 +7,7 @@ import {
   newsAlerts,
   knowledgeBaseEntries,
   outreachLog,
+  communications,
 } from "@shared/schema";
 import { eq, and, desc, ilike, or, sql, inArray } from "drizzle-orm";
 import multer from "multer";
@@ -978,6 +979,188 @@ Generate 3 variants as JSON:
       res.json(outreach);
     } catch (error: any) {
       console.error("[RI] Outreach generation error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =============================================
+  // DRAFT RESPONSE WITH CONTEXT SEARCH
+  // =============================================
+
+  app.post("/api/relationship-intelligence/outreach/draft-response", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { alertId, contactId } = req.body;
+
+      if (!alertId || !contactId) {
+        return res.status(400).json({ message: "alertId and contactId are required" });
+      }
+
+      const [alert] = await db.select().from(newsAlerts).where(and(eq(newsAlerts.id, alertId), eq(newsAlerts.userId, userId)));
+      if (!alert) return res.status(404).json({ message: "Alert not found" });
+
+      const [contact] = await db.select().from(relationshipContacts).where(
+        and(eq(relationshipContacts.id, contactId), eq(relationshipContacts.userId, userId))
+      );
+      if (!contact) return res.status(404).json({ message: "Contact not found" });
+
+      console.log(`[RI] Draft Response: generating search terms for "${alert.headline}" / ${contact.fullName}`);
+
+      const searchTermsResponse = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [{
+          role: "system",
+          content: `You generate boolean search terms to find relevant emails in a legal/compliance platform. Output JSON only.`
+        }, {
+          role: "user",
+          content: `Generate 3-5 boolean search terms to find emails related to this news article and contact.
+
+Article: "${alert.headline}"
+Summary: ${alert.summary || "N/A"}
+Category: ${alert.category || "general"}
+
+Contact: ${contact.fullName}
+Company: ${contact.company || "unknown"}
+Title: ${contact.jobTitle || "N/A"}
+
+Generate terms that would find:
+1. Direct emails to/from this person
+2. Emails mentioning their company
+3. Emails about the topic of this article
+4. Any shared projects, deals, or history
+
+Return JSON: { "searchTerms": ["term1", "term2", ...] }
+Each term should be a simple keyword or short phrase (not complex boolean syntax). Examples: "USA Water Polo", "Mai Lam", "water polo abuse", "compliance investigation"`
+        }],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 300,
+      });
+
+      const termsData = JSON.parse(searchTermsResponse.choices[0].message.content || '{"searchTerms":[]}');
+      const searchTerms: string[] = termsData.searchTerms || [];
+      console.log(`[RI] Draft Response: ${searchTerms.length} search terms generated:`, searchTerms);
+
+      const contextSources: Array<{
+        communicationId: string;
+        subject: string;
+        snippet: string;
+        body: string;
+        sender: string;
+        recipients: any;
+        timestamp: string;
+        relevanceReason: string;
+      }> = [];
+
+      const seenIds = new Set<string>();
+
+      for (const term of searchTerms.slice(0, 5)) {
+        const trimmedTerm = (term || "").trim();
+        if (!trimmedTerm || trimmedTerm.length < 2) continue;
+        try {
+          const searchPattern = `%${trimmedTerm}%`;
+          const matches = await db.select({
+            id: communications.id,
+            subject: communications.subject,
+            body: communications.body,
+            sender: communications.sender,
+            recipients: communications.recipients,
+            timestamp: communications.timestamp,
+          })
+          .from(communications)
+          .where(
+            or(
+              ilike(communications.subject, searchPattern),
+              ilike(communications.body, searchPattern),
+              ilike(communications.sender, searchPattern)
+            )
+          )
+          .orderBy(desc(communications.timestamp))
+          .limit(3);
+
+          for (const match of matches) {
+            if (seenIds.has(match.id)) continue;
+            seenIds.add(match.id);
+
+            const bodyText = match.body || "";
+            const snippet = bodyText.substring(0, 300).replace(/\n+/g, " ").trim();
+
+            contextSources.push({
+              communicationId: match.id,
+              subject: match.subject || "(No Subject)",
+              snippet,
+              body: bodyText.substring(0, 2000),
+              sender: match.sender || "Unknown",
+              recipients: match.recipients,
+              timestamp: match.timestamp?.toISOString() || "",
+              relevanceReason: `Matched search term: "${trimmedTerm}"`,
+            });
+          }
+        } catch (searchErr) {
+          console.error(`[RI] Draft Response: search error for term "${term}":`, searchErr);
+        }
+      }
+
+      const topSources = contextSources.slice(0, 10);
+      console.log(`[RI] Draft Response: ${topSources.length} context sources found`);
+
+      const contextBlock = topSources.length > 0
+        ? `\n\nRelevant emails found in the system that show a connection to this contact or topic:\n${topSources.map((s, i) =>
+            `${i + 1}. From: ${s.sender} | Subject: "${s.subject}" | Date: ${s.timestamp ? new Date(s.timestamp).toLocaleDateString() : "unknown"}\n   Snippet: ${s.snippet}`
+          ).join("\n")}`
+        : "\n\nNo existing emails found connecting you to this contact or topic.";
+
+      const draftResponse = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [{
+          role: "system",
+          content: `You are a professional relationship intelligence assistant helping a compliance professional craft outreach messages. Write concise, warm but professional messages. Do not use emojis. Output JSON only.`
+        }, {
+          role: "user",
+          content: `Draft a short personalized response (1-5 sentences) to reach out to this contact about the news article below.
+
+Contact: ${contact.fullName}, ${contact.jobTitle || "Professional"} at ${contact.company || "their organization"}
+
+News Article:
+Headline: "${alert.headline}"
+Summary: ${alert.summary || "N/A"}
+Category: ${alert.category || "general"}
+Sentiment: ${alert.sentiment || "neutral"}
+Source: ${alert.sourceName || "news outlet"}
+${contextBlock}
+
+Instructions:
+- Write a natural, professional message as if from a colleague or professional connection
+- If email context was found, weave in a reference to the shared history or connection (e.g., "Since we've been following developments at [Company]..." or "Given our previous correspondence regarding...")
+- Keep it 1-5 sentences maximum
+- Make it feel personal and informed, not generic
+- If the article sentiment is negative (lawsuit, investigation), be tactful and supportive rather than congratulatory
+- Include a subject line suggestion
+
+Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }`
+        }],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 500,
+      });
+
+      const draftData = JSON.parse(draftResponse.choices[0].message.content || '{"draft":"","subjectLine":""}');
+
+      res.json({
+        draft: draftData.draft || "",
+        subjectLine: draftData.subjectLine || "",
+        searchTermsUsed: searchTerms,
+        contextSources: topSources.map(s => ({
+          communicationId: s.communicationId,
+          subject: s.subject,
+          snippet: s.snippet,
+          body: s.body,
+          sender: s.sender,
+          recipients: s.recipients,
+          timestamp: s.timestamp,
+          relevanceReason: s.relevanceReason,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[RI] Draft response error:", error);
       res.status(500).json({ message: error.message });
     }
   });

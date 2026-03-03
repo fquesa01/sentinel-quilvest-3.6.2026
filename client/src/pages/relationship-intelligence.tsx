@@ -210,12 +210,14 @@ function AlertCard({
   alertData,
   onDraftEmail,
   onDraftLinkedIn,
+  onDraftResponse,
   onDismiss,
   onMarkRead,
 }: {
   alertData: AlertWithContact;
   onDraftEmail: () => void;
   onDraftLinkedIn: () => void;
+  onDraftResponse: () => void;
   onDismiss: () => void;
   onMarkRead: () => void;
 }) {
@@ -323,6 +325,15 @@ function AlertCard({
           >
             <Linkedin className="w-3.5 h-3.5 mr-1" />
             Draft LinkedIn
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onDraftResponse}
+            data-testid={`button-draft-response-${alert.id}`}
+          >
+            <Send className="w-3.5 h-3.5 mr-1" />
+            Draft Response
           </Button>
           <div className="flex-1" />
           <Button
@@ -546,6 +557,302 @@ function OutreachDialog({
             {logOutreachMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
             Log as Sent
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type DraftResponseData = {
+  draft: string;
+  subjectLine: string;
+  searchTermsUsed: string[];
+  contextSources: Array<{
+    communicationId: string;
+    subject: string;
+    snippet: string;
+    body: string;
+    sender: string;
+    recipients: any;
+    timestamp: string;
+    relevanceReason: string;
+  }>;
+};
+
+function DraftResponseDialog({
+  open,
+  onOpenChange,
+  alert,
+  contact,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  alert: NewsAlert | null;
+  contact: { id: string; fullName: string; company: string | null } | null;
+}) {
+  const { toast } = useToast();
+  const [editedDraft, setEditedDraft] = useState("");
+  const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
+  const [copied, setCopied] = useState(false);
+
+  const draftMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/relationship-intelligence/outreach/draft-response", {
+        alertId: alert?.id,
+        contactId: contact?.id,
+      });
+      return res.json() as Promise<DraftResponseData>;
+    },
+    onSuccess: (data) => {
+      setEditedDraft(data.draft || "");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const logOutreachMutation = useMutation({
+    mutationFn: async (data: { channel: string; messageContent: string }) => {
+      await apiRequest("POST", "/api/relationship-intelligence/outreach", {
+        contactId: contact?.id,
+        newsAlertId: alert?.id,
+        channel: data.channel,
+        messageContent: data.messageContent,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+      toast({ title: "Outreach Logged", description: "Response logged to outreach history." });
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const hasFiredRef = useRef(false);
+
+  useEffect(() => {
+    if (open && !hasFiredRef.current) {
+      hasFiredRef.current = true;
+      setExpandedSources(new Set());
+      setCopied(false);
+      draftMutation.mutate();
+    }
+    if (!open) {
+      hasFiredRef.current = false;
+    }
+  }, [open]);
+
+  const handleCopy = () => {
+    const text = draftMutation.data?.subjectLine
+      ? `Subject: ${draftMutation.data.subjectLine}\n\n${editedDraft}`
+      : editedDraft;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast({ title: "Copied", description: "Response copied to clipboard." });
+  };
+
+  const handleLogSent = () => {
+    logOutreachMutation.mutate({
+      channel: "email",
+      messageContent: editedDraft,
+    });
+  };
+
+  const toggleSource = (id: string) => {
+    setExpandedSources(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const formatDate = (ts: string) => {
+    if (!ts) return "Unknown date";
+    try { return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
+    catch { return "Unknown date"; }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle data-testid="dialog-title-draft-response">
+            Draft Response
+          </DialogTitle>
+          <DialogDescription>
+            {contact && (
+              <>AI-generated response to {contact.fullName}{contact.company ? ` at ${contact.company}` : ""}</>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        {alert && (
+          <div className="p-3 rounded-md bg-muted/50 space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">News Context</p>
+            <p className="text-sm font-medium">{alert.headline}</p>
+            {alert.summary && (
+              <p className="text-xs text-muted-foreground line-clamp-2">{alert.summary}</p>
+            )}
+          </div>
+        )}
+
+        {draftMutation.isPending && (
+          <div className="flex flex-col items-center justify-center py-8 gap-3">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            <div className="text-center space-y-1">
+              <p className="text-sm text-muted-foreground">Generating personalized response...</p>
+              <p className="text-xs text-muted-foreground">Searching emails for context and drafting response</p>
+            </div>
+          </div>
+        )}
+
+        {draftMutation.isError && (
+          <div className="py-4 text-center space-y-2">
+            <p className="text-sm text-destructive">Failed to generate draft response.</p>
+            <Button variant="outline" size="sm" onClick={() => draftMutation.mutate()} data-testid="button-retry-draft">
+              <RefreshCw className="w-3.5 h-3.5 mr-1" />
+              Retry
+            </Button>
+          </div>
+        )}
+
+        {draftMutation.data && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              {draftMutation.data.subjectLine && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Subject Line</label>
+                  <p className="text-sm font-medium" data-testid="text-draft-subject">{draftMutation.data.subjectLine}</p>
+                </div>
+              )}
+              <div>
+                <label className="text-sm font-medium">Draft Response</label>
+                <Textarea
+                  value={editedDraft}
+                  onChange={(e) => setEditedDraft(e.target.value)}
+                  className="min-h-[120px] mt-1"
+                  data-testid="textarea-draft-response"
+                />
+              </div>
+            </div>
+
+            {draftMutation.data.searchTermsUsed.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <Search className="w-3 h-3" />
+                  Search Terms Used
+                </p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {draftMutation.data.searchTermsUsed.map((term, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs" data-testid={`badge-search-term-${i}`}>
+                      {term}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <Mail className="w-3 h-3" />
+                Context Sources ({draftMutation.data.contextSources.length})
+              </p>
+
+              {draftMutation.data.contextSources.length === 0 ? (
+                <p className="text-xs text-muted-foreground p-2 rounded-md bg-muted/30">
+                  No matching emails found. The draft was generated based on the article content alone.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {draftMutation.data.contextSources.map((source) => (
+                    <Card key={source.communicationId} data-testid={`context-source-${source.communicationId}`}>
+                      <CardContent className="p-3 space-y-2">
+                        <div
+                          className="flex items-start justify-between gap-2 cursor-pointer"
+                          onClick={() => toggleSource(source.communicationId)}
+                          data-testid={`button-toggle-source-${source.communicationId}`}
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <p className="text-sm font-medium truncate">{source.subject}</p>
+                            <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                              <span>From: {source.sender}</span>
+                              <span>{formatDate(source.timestamp)}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">{source.relevanceReason}</p>
+                          </div>
+                          <Button variant="ghost" size="icon" className="shrink-0" data-testid={`button-expand-source-${source.communicationId}`}>
+                            {expandedSources.has(source.communicationId) ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+
+                        {!expandedSources.has(source.communicationId) && (
+                          <p className="text-xs text-muted-foreground line-clamp-2">{source.snippet}</p>
+                        )}
+
+                        {expandedSources.has(source.communicationId) && (
+                          <div className="mt-2 p-3 rounded-md bg-muted/30 space-y-2">
+                            {source.recipients && (
+                              <p className="text-xs text-muted-foreground">
+                                To: {Array.isArray(source.recipients) ? source.recipients.join(", ") : typeof source.recipients === "string" ? source.recipients : JSON.stringify(source.recipients)}
+                              </p>
+                            )}
+                            <p className="text-sm whitespace-pre-wrap" data-testid={`text-source-body-${source.communicationId}`}>
+                              {source.body}
+                            </p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <DialogFooter className="gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-close-draft">
+            Close
+          </Button>
+          {draftMutation.data && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  hasFiredRef.current = false;
+                  setExpandedSources(new Set());
+                  draftMutation.mutate();
+                }}
+                disabled={draftMutation.isPending}
+                data-testid="button-regenerate-draft"
+              >
+                <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                Regenerate
+              </Button>
+              <Button variant="outline" onClick={handleCopy} data-testid="button-copy-draft">
+                {copied ? <Check className="w-3.5 h-3.5 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+              <Button
+                onClick={handleLogSent}
+                disabled={logOutreachMutation.isPending || !editedDraft.trim()}
+                data-testid="button-log-draft-sent"
+              >
+                {logOutreachMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
+                <Send className="w-3.5 h-3.5 mr-1" />
+                Log as Sent
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -981,6 +1288,12 @@ export default function RelationshipIntelligence() {
     channel: string;
   }>({ open: false, alert: null, contact: null, channel: "email" });
 
+  const [draftResponseDialog, setDraftResponseDialog] = useState<{
+    open: boolean;
+    alert: NewsAlert | null;
+    contact: { id: string; fullName: string; company: string | null } | null;
+  }>({ open: false, alert: null, contact: null });
+
   const { data: stats, isLoading: statsLoading } = useQuery<StatsData>({
     queryKey: ["/api/relationship-intelligence/stats"],
   });
@@ -1075,6 +1388,14 @@ export default function RelationshipIntelligence() {
     });
   };
 
+  const openDraftResponseDialog = (alert: NewsAlert, contact: AlertWithContact["contact"]) => {
+    setDraftResponseDialog({
+      open: true,
+      alert,
+      contact: { id: contact.id, fullName: contact.fullName, company: contact.company },
+    });
+  };
+
   const renderAlertGroup = (title: string, alerts: AlertWithContact[], testId: string) => {
     if (alerts.length === 0) return null;
     return (
@@ -1088,6 +1409,7 @@ export default function RelationshipIntelligence() {
             alertData={alertData}
             onDraftEmail={() => openOutreachDialog(alertData.alert, alertData.contact, "email")}
             onDraftLinkedIn={() => openOutreachDialog(alertData.alert, alertData.contact, "linkedin")}
+            onDraftResponse={() => openDraftResponseDialog(alertData.alert, alertData.contact)}
             onDismiss={() =>
               updateAlertMutation.mutate({ id: alertData.alert.id, updates: { isDismissed: true } })
             }
@@ -1254,6 +1576,13 @@ export default function RelationshipIntelligence() {
         alert={outreachDialog.alert}
         contact={outreachDialog.contact}
         channel={outreachDialog.channel}
+      />
+
+      <DraftResponseDialog
+        open={draftResponseDialog.open}
+        onOpenChange={(open) => setDraftResponseDialog((prev) => ({ ...prev, open }))}
+        alert={draftResponseDialog.alert}
+        contact={draftResponseDialog.contact}
       />
     </div>
   );
