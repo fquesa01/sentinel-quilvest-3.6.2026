@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -64,6 +65,10 @@ import {
   Briefcase,
   Link2,
   AlertCircle,
+  FolderOpen,
+  CheckSquare,
+  ArrowLeft,
+  CheckCircle2,
 } from "lucide-react";
 import type { NewsAlert, RelationshipContact } from "@shared/schema";
 
@@ -1067,6 +1072,454 @@ function DraftResponseDialog({
   );
 }
 
+type CaseWithComms = {
+  id: string;
+  title: string;
+  comm_count: number;
+  sender_count: number;
+};
+
+type DiscoveredEntity = {
+  email: string;
+  name: string | null;
+  domain: string;
+  sentCount: number;
+  receivedCount: number;
+  totalCount: number;
+};
+
+type DiscoveredEntitiesResponse = {
+  entities: DiscoveredEntity[];
+  organizations: { domain: string; personCount: number; messageCount: number }[];
+  totalUniqueEntities: number;
+  totalOrganizations: number;
+};
+
+type ImportResult = {
+  message: string;
+  imported: number;
+  skipped: number;
+  totalExtracted: number;
+  caseTitle: string;
+  topCommunicators: string[];
+  organizations: string[];
+};
+
+function CaseImportFeedDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<"select" | "preview" | "result">("select");
+  const [selectedCase, setSelectedCase] = useState<CaseWithComms | null>(null);
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+  const [entitySearch, setEntitySearch] = useState("");
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+  const casesQuery = useQuery<CaseWithComms[]>({
+    queryKey: ["/api/relationship-intelligence/cases-with-comms"],
+    enabled: open,
+  });
+
+  const entitiesQuery = useQuery<DiscoveredEntitiesResponse>({
+    queryKey: [`/api/cases/${selectedCase?.id}/discovered-entities`],
+    enabled: step === "preview" && !!selectedCase,
+  });
+
+  const importAllMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      const resp = await apiRequest("POST", "/api/relationship-intelligence/import-from-case", { caseId });
+      return resp.json();
+    },
+    onSuccess: (data: ImportResult) => {
+      setImportResult(data);
+      setStep("result");
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const importSelectiveMutation = useMutation({
+    mutationFn: async ({ caseId, emails }: { caseId: string; emails: string[] }) => {
+      const resp = await apiRequest("POST", "/api/relationship-intelligence/import-from-case-selective", {
+        caseId,
+        contactEmails: emails,
+      });
+      return resp.json();
+    },
+    onSuccess: (data: ImportResult) => {
+      setImportResult(data);
+      setStep("result");
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const resetDialog = () => {
+    setStep("select");
+    setSelectedCase(null);
+    setSelectedEmails(new Set());
+    setEntitySearch("");
+    setImportResult(null);
+  };
+
+  const handleOpenChange = (o: boolean) => {
+    if (!o) resetDialog();
+    onOpenChange(o);
+  };
+
+  const entities = entitiesQuery.data?.entities || [];
+  const filteredEntities = entitySearch
+    ? entities.filter(
+        (e) =>
+          (e.name || "").toLowerCase().includes(entitySearch.toLowerCase()) ||
+          e.email.toLowerCase().includes(entitySearch.toLowerCase()) ||
+          e.domain.toLowerCase().includes(entitySearch.toLowerCase())
+      )
+    : entities;
+
+  const toggleEntity = (email: string) => {
+    setSelectedEmails((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedEmails.size === filteredEntities.length) {
+      setSelectedEmails(new Set());
+    } else {
+      setSelectedEmails(new Set(filteredEntities.map((e) => e.email)));
+    }
+  };
+
+  const isImporting = importAllMutation.isPending || importSelectiveMutation.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle data-testid="dialog-title-case-import">
+            {step === "select" && "Import Contacts from Case"}
+            {step === "preview" && `People in "${selectedCase?.title}"`}
+            {step === "result" && "Import Complete"}
+          </DialogTitle>
+          <DialogDescription>
+            {step === "select" && "Select a case to import its communicators as monitored contacts."}
+            {step === "preview" && "Choose which individuals to monitor. You can import all or select specific people."}
+            {step === "result" && importResult?.message}
+          </DialogDescription>
+        </DialogHeader>
+
+        {step === "select" && (
+          <div className="space-y-3">
+            {casesQuery.isLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-3 p-3">
+                    <Skeleton className="h-10 w-10 rounded-md" />
+                    <div className="flex-1 space-y-1">
+                      <Skeleton className="h-4 w-48" />
+                      <Skeleton className="h-3 w-32" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : casesQuery.isError ? (
+              <div className="py-6 text-center">
+                <AlertCircle className="w-8 h-8 text-destructive mx-auto mb-2" />
+                <p className="text-sm text-destructive">Failed to load cases. Please try again.</p>
+              </div>
+            ) : casesQuery.data && casesQuery.data.length > 0 ? (
+              <ScrollArea className={casesQuery.data.length > 6 ? "h-[400px]" : ""}>
+                <div className="space-y-1">
+                  {casesQuery.data.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-3 p-3 rounded-md cursor-pointer hover-elevate"
+                      onClick={() => {
+                        setSelectedCase(c);
+                        setStep("preview");
+                      }}
+                      data-testid={`case-row-${c.id}`}
+                    >
+                      <div className="flex items-center justify-center h-10 w-10 rounded-md bg-muted">
+                        <FolderOpen className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{c.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {c.comm_count.toLocaleString()} communications &middot; {c.sender_count.toLocaleString()} unique senders
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            ) : (
+              <div className="py-6 text-center">
+                <FolderOpen className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No cases with communications found.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === "preview" && (
+          <div className="space-y-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStep("select");
+                setSelectedCase(null);
+                setSelectedEmails(new Set());
+                setEntitySearch("");
+              }}
+              data-testid="button-back-to-cases"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+              Back to cases
+            </Button>
+
+            {entitiesQuery.isLoading ? (
+              <div className="flex items-center justify-center py-8 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Loading people from case...</span>
+              </div>
+            ) : entitiesQuery.isError ? (
+              <div className="py-4 text-center">
+                <p className="text-sm text-destructive">Failed to load case entities.</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <p className="text-xl font-bold" data-testid="text-total-people">{entitiesQuery.data?.totalUniqueEntities.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">People</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <p className="text-xl font-bold" data-testid="text-total-orgs">{entitiesQuery.data?.totalOrganizations.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">Organizations</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <p className="text-xl font-bold" data-testid="text-selected-count">{selectedEmails.size}</p>
+                      <p className="text-xs text-muted-foreground">Selected</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name, email, or organization..."
+                      value={entitySearch}
+                      onChange={(e) => setEntitySearch(e.target.value)}
+                      className="pl-9"
+                      data-testid="input-search-entities"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={filteredEntities.length > 0 && selectedEmails.size === filteredEntities.length}
+                      onCheckedChange={toggleAll}
+                      data-testid="checkbox-select-all"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {selectedEmails.size > 0
+                        ? `${selectedEmails.size} of ${filteredEntities.length} selected`
+                        : `Select all (${filteredEntities.length})`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={selectedEmails.size === 0 || isImporting}
+                      onClick={() => {
+                        if (selectedCase) {
+                          importSelectiveMutation.mutate({
+                            caseId: selectedCase.id,
+                            emails: Array.from(selectedEmails),
+                          });
+                        }
+                      }}
+                      data-testid="button-import-selected"
+                    >
+                      {importSelectiveMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
+                      <CheckSquare className="w-3.5 h-3.5 mr-1" />
+                      Import Selected ({selectedEmails.size})
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={isImporting}
+                      onClick={() => {
+                        if (selectedCase) {
+                          importAllMutation.mutate(selectedCase.id);
+                        }
+                      }}
+                      data-testid="button-import-all"
+                    >
+                      {importAllMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
+                      <Users className="w-3.5 h-3.5 mr-1" />
+                      Monitor All
+                    </Button>
+                  </div>
+                </div>
+
+                <ScrollArea className={filteredEntities.length > 8 ? "h-[350px]" : ""}>
+                  <div className="space-y-0.5">
+                    {filteredEntities.map((entity) => (
+                      <div
+                        key={entity.email}
+                        className="flex items-center gap-3 p-2 rounded-md hover-elevate"
+                        data-testid={`entity-row-${entity.email}`}
+                      >
+                        <Checkbox
+                          checked={selectedEmails.has(entity.email)}
+                          onCheckedChange={() => toggleEntity(entity.email)}
+                          data-testid={`checkbox-entity-${entity.email}`}
+                        />
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs">
+                            {(entity.name || entity.email)
+                              .split(/[\s@]/)
+                              .filter(Boolean)
+                              .slice(0, 2)
+                              .map((w) => w[0]?.toUpperCase())
+                              .join("")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {entity.name || entity.email.split("@")[0]}
+                          </p>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                            <span className="truncate">{entity.email}</span>
+                            {entity.domain && (
+                              <span className="flex items-center gap-1">
+                                <Building2 className="w-3 h-3 shrink-0" />
+                                {entity.domain}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                          <span className="flex items-center gap-1">
+                            <Send className="w-3 h-3" />
+                            {entity.sentCount}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Mail className="w-3 h-3" />
+                            {entity.receivedCount}
+                          </span>
+                          <Badge variant="secondary" className="no-default-active-elevate text-xs">{entity.totalCount}</Badge>
+                        </div>
+                      </div>
+                    ))}
+
+                    {filteredEntities.length === 0 && (
+                      <div className="py-6 text-center">
+                        <p className="text-sm text-muted-foreground">
+                          {entitySearch ? "No people match your search." : "No people found in this case."}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </>
+            )}
+          </div>
+        )}
+
+        {step === "result" && importResult && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-center py-4">
+              <CheckCircle2 className="w-12 h-12 text-green-500" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <p className="text-xl font-bold text-green-600" data-testid="text-imported-count">{importResult.imported}</p>
+                  <p className="text-xs text-muted-foreground">Imported</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <p className="text-xl font-bold" data-testid="text-skipped-count">{importResult.skipped}</p>
+                  <p className="text-xs text-muted-foreground">Skipped (duplicates)</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <p className="text-xl font-bold" data-testid="text-total-extracted">{importResult.totalExtracted}</p>
+                  <p className="text-xs text-muted-foreground">Total Found</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {importResult.topCommunicators && importResult.topCommunicators.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Top Communicators</p>
+                <div className="flex flex-wrap gap-1">
+                  {importResult.topCommunicators.map((name, i) => (
+                    <Badge key={i} variant="outline" className="no-default-active-elevate text-xs">{name}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {importResult.organizations && importResult.organizations.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Organizations</p>
+                <div className="flex flex-wrap gap-1">
+                  {importResult.organizations.map((org, i) => (
+                    <Badge key={i} variant="secondary" className="no-default-active-elevate text-xs">{org}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => handleOpenChange(false)} data-testid="button-close-import">
+                Done
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {step !== "result" && (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleOpenChange(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const addContactSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().optional().default(""),
@@ -1246,6 +1699,7 @@ function ContactsPanel() {
   const [expanded, setExpanded] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [caseImportOpen, setCaseImportOpen] = useState(false);
   const [page, setPage] = useState(0);
   const pageSize = 25;
 
@@ -1304,17 +1758,31 @@ function ContactsPanel() {
           </div>
           <div className="flex items-center gap-2">
             {expanded && (
-              <Button
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setAddDialogOpen(true);
-                }}
-                data-testid="button-add-contact"
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                Add Contact
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCaseImportOpen(true);
+                  }}
+                  data-testid="button-import-from-case"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 mr-1" />
+                  Import from Case
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddDialogOpen(true);
+                  }}
+                  data-testid="button-add-contact"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add Contact
+                </Button>
+              </>
             )}
             {expanded ? (
               <ChevronUp className="w-4 h-4 text-muted-foreground" />
@@ -1478,6 +1946,7 @@ function ContactsPanel() {
         )}
       </Card>
       <AddContactDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />
+      <CaseImportFeedDialog open={caseImportOpen} onOpenChange={setCaseImportOpen} />
     </>
   );
 }

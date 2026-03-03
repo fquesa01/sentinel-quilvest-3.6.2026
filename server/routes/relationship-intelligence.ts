@@ -1966,6 +1966,184 @@ Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }
     }
   });
 
+  app.post("/api/relationship-intelligence/import-from-case-selective", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { caseId, contactEmails } = req.body;
+
+      if (!caseId) {
+        return res.status(400).json({ message: "caseId is required" });
+      }
+
+      if (!contactEmails || !Array.isArray(contactEmails) || contactEmails.length === 0) {
+        return res.status(400).json({ message: "contactEmails array is required and must not be empty" });
+      }
+
+      const caseResult = await pool.query("SELECT id, title FROM cases WHERE id = $1", [caseId]);
+      if (caseResult.rows.length === 0) {
+        return res.status(404).json({ message: "Case not found" });
+      }
+      const caseTitle = caseResult.rows[0].title;
+
+      const sendersResult = await pool.query(`
+        SELECT sender, count(*)::int as cnt
+        FROM communications
+        WHERE case_id = $1 AND sender IS NOT NULL AND sender != ''
+        GROUP BY sender
+      `, [caseId]);
+
+      const recipientsResult = await pool.query(`
+        SELECT recipients
+        FROM communications
+        WHERE case_id = $1 AND recipients IS NOT NULL
+      `, [caseId]);
+
+      const contactMap = new Map<string, { name: string; email: string; sendCount: number; recvCount: number }>();
+
+      for (const row of sendersResult.rows) {
+        const parsed = parseEmailContact(row.sender);
+        if (!parsed) continue;
+        const existing = contactMap.get(parsed.email);
+        if (existing) {
+          existing.sendCount += row.cnt;
+          if (parsed.name.length > existing.name.length && !parsed.name.includes("via")) {
+            existing.name = parsed.name;
+          }
+        } else {
+          contactMap.set(parsed.email, { name: parsed.name, email: parsed.email, sendCount: row.cnt, recvCount: 0 });
+        }
+      }
+
+      for (const row of recipientsResult.rows) {
+        let recipients: string[] = [];
+        if (Array.isArray(row.recipients)) {
+          recipients = row.recipients;
+        } else if (typeof row.recipients === "string") {
+          try { recipients = JSON.parse(row.recipients); } catch { recipients = [row.recipients]; }
+        }
+
+        for (const r of recipients) {
+          if (typeof r !== "string") continue;
+          const parts = r.split(/,\s*(?=")/);
+          for (const part of parts) {
+            const parsed = parseEmailContact(part.trim());
+            if (!parsed) continue;
+            const existing = contactMap.get(parsed.email);
+            if (existing) {
+              existing.recvCount += 1;
+              if (parsed.name.length > existing.name.length && !parsed.name.includes("via")) {
+                existing.name = parsed.name;
+              }
+            } else {
+              contactMap.set(parsed.email, { name: parsed.name, email: parsed.email, sendCount: 0, recvCount: 1 });
+            }
+          }
+        }
+      }
+
+      const selectedEmailSet = new Set(contactEmails.map((e: string) => e.toLowerCase().trim()));
+      const allContacts = Array.from(contactMap.values());
+      allContacts.sort((a, b) => (b.sendCount + b.recvCount) - (a.sendCount + a.recvCount));
+      const contacts = allContacts.filter(c => selectedEmailSet.has(c.email));
+
+      const totalContacts = contacts.length;
+      const vipThreshold = Math.ceil(totalContacts * 0.1);
+      const highThreshold = Math.ceil(totalContacts * 0.3);
+
+      const existingResult = await pool.query(
+        "SELECT email FROM relationship_contacts WHERE user_id = $1 AND is_active = true",
+        [userId]
+      );
+      const existingEmails = new Set(existingResult.rows.map((r: any) => r.email?.toLowerCase()));
+
+      const { nanoid } = await import("nanoid");
+      const client = await pool.connect();
+
+      try {
+        await client.query("BEGIN");
+
+        let imported = 0;
+        let skipped = 0;
+        const topPeople: string[] = [];
+        const topCompanies = new Set<string>();
+
+        const toInsert: any[][] = [];
+        for (let i = 0; i < contacts.length; i++) {
+          const c = contacts[i];
+
+          if (existingEmails.has(c.email)) {
+            skipped++;
+            continue;
+          }
+
+          const { firstName, lastName } = splitName(c.name);
+          const domain = c.email.split("@")[1];
+          const company = DOMAIN_TO_COMPANY[domain] || DOMAIN_TO_COMPANY[domain.toLowerCase()] || null;
+          const isPersonalDomain = FILTERED_DOMAINS.has(domain);
+
+          let priority = 3;
+          if (i < vipThreshold) priority = 1;
+          else if (i < highThreshold) priority = 2;
+
+          const tags: string[] = ["case_import"];
+          if (company) tags.push("organization");
+          if (isPersonalDomain) tags.push("personal_email");
+
+          const pgTags = `{${tags.map(t => `"${t.replace(/"/g, '\\"')}"`).join(",")}}`;
+          toInsert.push([nanoid(21), userId, firstName.slice(0, 255), lastName.slice(0, 255), c.name.slice(0, 255), c.email.slice(0, 255), company ? company.slice(0, 255) : null, pgTags, priority]);
+          existingEmails.add(c.email);
+
+          if (i < 20) topPeople.push(c.name);
+          if (company) topCompanies.add(company);
+        }
+
+        const BATCH_SIZE = 50;
+        for (let b = 0; b < toInsert.length; b += BATCH_SIZE) {
+          const batch = toInsert.slice(b, b + BATCH_SIZE);
+          const placeholders: string[] = [];
+          const values: any[] = [];
+          batch.forEach((row, idx) => {
+            const offset = idx * 9;
+            placeholders.push(`($${offset+1},$${offset+2},$${offset+3},$${offset+4},$${offset+5},$${offset+6},$${offset+7},$${offset+8},$${offset+9})`);
+            values.push(...row);
+          });
+          await client.query(
+            `INSERT INTO relationship_contacts (id,user_id,first_name,last_name,full_name,email,company,tags,priority_level) VALUES ${placeholders.join(",")}`,
+            values
+          );
+        }
+        imported = toInsert.length;
+
+        const sourceId = nanoid(21);
+        await client.query(
+          `INSERT INTO contact_sources (id, user_id, source_type, last_synced_at, sync_status, contact_count)
+           VALUES ($1, $2, $3, NOW(), $4, $5)`,
+          [sourceId, userId, "case_import", "completed", imported]
+        );
+
+        await client.query("COMMIT");
+        client.release();
+
+        res.json({
+          message: `Imported ${imported} of ${selectedEmailSet.size} selected contacts from "${caseTitle}"`,
+          imported,
+          skipped,
+          totalExtracted: totalContacts,
+          caseTitle,
+          topCommunicators: topPeople.slice(0, 10),
+          organizations: Array.from(topCompanies).slice(0, 10),
+        });
+      } catch (txError: any) {
+        await client.query("ROLLBACK");
+        client.release();
+        throw txError;
+      }
+    } catch (error: any) {
+      console.error("[RI] Selective import from case error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   console.log("[RelationshipIntelligence] Routes registered");
 }
 
