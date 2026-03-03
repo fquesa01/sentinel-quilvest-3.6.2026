@@ -1,6 +1,6 @@
 import { Express, Request, Response } from "express";
 import { isAuthenticated, requireRole } from "../replitAuth";
-import { db } from "../db";
+import { db, pool } from "../db";
 import {
   relationshipContacts,
   contactSources,
@@ -940,6 +940,118 @@ Generate 3 variants as JSON:
         unreadAlerts: Number(unreadAlerts.count),
       });
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/relationship-intelligence/seed-demo", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const [existing] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(relationshipContacts)
+        .where(eq(relationshipContacts.userId, userId));
+
+      if (Number(existing.count) > 0) {
+        return res.json({ message: "Demo data already exists", seeded: false });
+      }
+
+      const { nanoid } = await import("nanoid");
+      const client = await pool.connect();
+      const q = (text: string, params: any[]) => client.query(text, params);
+
+      try {
+      await client.query("BEGIN");
+
+      const kbEntries = [
+        { id: nanoid(21), type: "deal", title: "Meridian Capital Partners \u2014 Series C Financing", content: "Represented Meridian Capital Partners in their $85M Series C financing round led by Apex Ventures. Key terms included 2x liquidation preference. Key contacts: Victoria Chen (CFO), Marcus Webb (Partner, Apex Ventures).", summary: "$85M Series C for Meridian Capital Partners led by Apex Ventures.", people: "{Victoria Chen,Marcus Webb,Diana Kowalski}", companies: "{Meridian Capital Partners,Apex Ventures}", entities: "{Series C,liquidation preference,fintech}", value: "85000000", date: "2023-09-15", tags: "{venture capital,fintech}" },
+        { id: nanoid(21), type: "litigation", title: "Hargrove v. PacificTech \u2014 Patent Dispute", content: "Represented Hargrove in patent infringement against PacificTech. Opposing counsel: James Whitfield. Expert: Dr. Elena Vasquez. Settled $12.5M with cross-license.", summary: "Patent case settled $12.5M with cross-license.", people: "{James Whitfield,Elena Vasquez}", companies: "{Hargrove Industries,PacificTech Solutions}", entities: "{patent,AI,settlement}", value: "12500000", date: "2024-03-20", tags: "{patent,litigation}" },
+        { id: nanoid(21), type: "transaction", title: "Atlas Healthcare \u2014 Coastal Medical Acquisition", content: "Advised Atlas Healthcare on $142M acquisition of Coastal Medical Associates. Key contacts: Dr. Patricia Morales (CEO), Sandra Kim (founder).", summary: "Atlas Healthcare acquires Coastal Medical for $142M.", people: "{Patricia Morales,Sandra Kim,Franklin Torres}", companies: "{Atlas Healthcare Group,Coastal Medical Associates}", entities: "{acquisition,healthcare,earnout}", value: "142000000", date: "2024-01-10", tags: "{healthcare,M&A}" },
+        { id: nanoid(21), type: "regulatory_filing", title: "SEC Investigation \u2014 Pinnacle Financial Trading", content: "Coordinated SEC inquiry response for Pinnacle Financial Group. Contacts: Nathan Cross (CCO), Isabelle Fontaine (GC). Resolved with $2.3M civil penalty.", summary: "SEC investigation resolved with $2.3M penalty.", people: "{Nathan Cross,Isabelle Fontaine}", companies: "{Pinnacle Financial Group,SEC}", entities: "{front-running,consent decree,compliance}", value: "2300000", date: "2024-06-01", tags: "{SEC,regulatory}" },
+        { id: nanoid(21), type: "contract", title: "Global Logistics \u2014 TechVault Cloud MSA", content: "Negotiated $28M cloud migration MSA. Contacts: Margaret Huang (CTO), Rajesh Patel (VP Sales).", summary: "$28M cloud migration MSA with EU data sovereignty.", people: "{Margaret Huang,Rajesh Patel}", companies: "{Global Logistics Corp,TechVault Cloud}", entities: "{cloud migration,SLA,GDPR}", value: "28000000", date: "2024-08-22", tags: "{technology,cloud}" },
+        { id: nanoid(21), type: "due_diligence", title: "Silverstone Energy \u2014 ESG Due Diligence", content: "ESG compliance due diligence for Silverstone Energy $500M green bond. Identified three Scope 3 emissions remediation items. Contact: Caroline West.", summary: "ESG due diligence for $500M green bond.", people: "{Caroline West,Alex Thornton}", companies: "{Silverstone Energy}", entities: "{ESG,green bond,Scope 3}", value: "500000000", date: "2024-11-05", tags: "{ESG,energy}" },
+      ];
+
+      for (const kb of kbEntries) {
+        await q("INSERT INTO knowledge_base_entries (id,user_id,document_type,title,content,summary,people_mentioned,companies_mentioned,entities_mentioned,deal_value,deal_date,tags) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)", [kb.id, userId, kb.type, kb.title, kb.content, kb.summary, kb.people, kb.companies, kb.entities, kb.value, kb.date, kb.tags]);
+      }
+
+      const contacts = [
+        { id: nanoid(21), fn: "Victoria", ln: "Chen", email: "v.chen@meridiancap.com", co: "Meridian Capital Partners", title: "Chief Financial Officer", city: "San Francisco", st: "CA", ctry: "US", tags: "{client,deal_team}", pri: 1 },
+        { id: nanoid(21), fn: "Marcus", ln: "Webb", email: "m.webb@apexventures.com", co: "Apex Ventures", title: "Managing Partner", city: "Palo Alto", st: "CA", ctry: "US", tags: "{investor}", pri: 1 },
+        { id: nanoid(21), fn: "James", ln: "Whitfield", email: "jwhitfield@prestonsterling.com", co: "Preston & Sterling LLP", title: "Senior Litigation Partner", city: "San Francisco", st: "CA", ctry: "US", tags: "{opposing_counsel}", pri: 2 },
+        { id: nanoid(21), fn: "Patricia", ln: "Morales", email: "p.morales@atlashealthcare.com", co: "Atlas Healthcare Group", title: "Chief Executive Officer", city: "Atlanta", st: "GA", ctry: "US", tags: "{client,healthcare}", pri: 1 },
+        { id: nanoid(21), fn: "Sandra", ln: "Kim", email: "s.kim@coastalmedical.com", co: "Coastal Medical Associates", title: "Founding Partner", city: "Charleston", st: "SC", ctry: "US", tags: "{prospect}", pri: 2 },
+        { id: nanoid(21), fn: "Nathan", ln: "Cross", email: "n.cross@pinnaclefin.com", co: "Pinnacle Financial Group", title: "Chief Compliance Officer", city: "New York", st: "NY", ctry: "US", tags: "{client,compliance}", pri: 2 },
+        { id: nanoid(21), fn: "Isabelle", ln: "Fontaine", email: "i.fontaine@pinnaclefin.com", co: "Pinnacle Financial Group", title: "General Counsel", city: "New York", st: "NY", ctry: "US", tags: "{client,legal}", pri: 1 },
+        { id: nanoid(21), fn: "Margaret", ln: "Huang", email: "m.huang@globallogistics.com", co: "Global Logistics Corp", title: "Chief Technology Officer", city: "Chicago", st: "IL", ctry: "US", tags: "{client,technology}", pri: 2 },
+        { id: nanoid(21), fn: "Caroline", ln: "West", email: "c.west@silverstoneenergy.com", co: "Silverstone Energy", title: "VP Sustainability", city: "Houston", st: "TX", ctry: "US", tags: "{client,ESG}", pri: 2 },
+        { id: nanoid(21), fn: "Rajesh", ln: "Patel", email: "r.patel@techvault.io", co: "TechVault Cloud", title: "VP Enterprise Sales", city: "Seattle", st: "WA", ctry: "US", tags: "{vendor}", pri: 3 },
+        { id: nanoid(21), fn: "Diana", ln: "Kowalski", email: "d.kowalski@kflegal.com", co: "Kowalski & Finch LLP", title: "Partner", city: "Boston", st: "MA", ctry: "US", tags: "{co-counsel}", pri: 3 },
+        { id: nanoid(21), fn: "Franklin", ln: "Torres", email: "f.torres@atlashealthcare.com", co: "Atlas Healthcare Group", title: "CFO", city: "Atlanta", st: "GA", ctry: "US", tags: "{client}", pri: 2 },
+        { id: nanoid(21), fn: "Elena", ln: "Vasquez", email: "evasquez@stanford.edu", co: "Stanford University", title: "Professor of CS", city: "Stanford", st: "CA", ctry: "US", tags: "{expert_witness}", pri: 3 },
+        { id: nanoid(21), fn: "Alex", ln: "Thornton", email: "a.thornton@greenmark.com", co: "GreenMark Verification", title: "Lead Auditor", city: "Denver", st: "CO", ctry: "US", tags: "{vendor}", pri: 3 },
+        { id: nanoid(21), fn: "David", ln: "Rothstein", email: "d.rothstein@eurocounsel.com", co: "EuroCounsel Partners", title: "Of Counsel", city: "London", st: "", ctry: "UK", tags: "{co-counsel}", pri: 3 },
+      ];
+
+      for (const c of contacts) {
+        await q("INSERT INTO relationship_contacts (id,user_id,first_name,last_name,full_name,email,company,job_title,city,state,country,tags,priority_level) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", [c.id, userId, c.fn, c.ln, c.fn + " " + c.ln, c.email, c.co, c.title, c.city, c.st, c.ctry, c.tags, c.pri]);
+      }
+
+      const now = new Date();
+      const hoursAgo = (h: number) => new Date(now.getTime() - h * 3600000);
+      const daysAgo = (d: number) => new Date(now.getTime() - d * 86400000);
+
+      function kbc(kbIdx: number, t: string, dt: string, s: string, rel: number, cs: string) {
+        return JSON.stringify({ entries: [{ id: kbEntries[kbIdx].id, title: t, documentType: dt, summary: s, relevance: rel }], connectionSummary: cs });
+      }
+
+      const stories = [
+        { cIdx: 0, headline: "Meridian Capital Partners CFO Victoria Chen Named to Forbes Finance 50 List", source: "Forbes", url: "https://forbes.com/lists/finance-50", time: hoursAgo(3), summary: "Victoria Chen recognized on Forbes Finance 50 for steering Meridian through successful Series C and achieving profitability.", sentiment: "positive", category: "award", score: 0.95, kb: kbc(0, "Meridian Series C", "deal", "$85M Series C round.", 0.98, "You represented Meridian in their $85M Series C. Victoria was your primary contact. This award validates the trajectory."), outreach: "Congratulate Victoria on the Forbes recognition.", channel: "email" },
+        { cIdx: 1, headline: "Apex Ventures Closes $2.1B Fund VII, Targets AI and Climate Tech", source: "TechCrunch", url: "https://techcrunch.com/apex", time: hoursAgo(8), summary: "Apex Ventures Fund VII at $2.1B. Marcus Webb targets AI infrastructure and climate technology.", sentiment: "positive", category: "funding", score: 0.92, kb: kbc(0, "Meridian Series C", "deal", "Webb led the Series C.", 0.90, "Webb led the Meridian Series C your firm handled. His $2.1B fund is a major deal flow opportunity."), outreach: "Congratulate Marcus on the fund close.", channel: "email" },
+        { cIdx: 2, headline: "Preston & Sterling Partner James Whitfield Elected to ACTL", source: "The American Lawyer", url: "https://americanlawyer.com/whitfield", time: daysAgo(1), summary: "James Whitfield elected Fellow of ACTL for IP litigation expertise.", sentiment: "positive", category: "award", score: 0.82, kb: kbc(1, "Hargrove v. PacificTech", "litigation", "Opposing counsel. Settled $12.5M.", 0.88, "Whitfield was opposing counsel. Professional acknowledgment strengthens relationship."), outreach: "Congratulate Whitfield on ACTL fellowship.", channel: "linkedin" },
+        { cIdx: 3, headline: "Atlas Healthcare Announces $300M Midwest Expansion", source: "Modern Healthcare", url: "https://modernhealthcare.com/atlas", time: hoursAgo(5), summary: "Atlas Healthcare plans $300M expansion acquiring three regional medical networks.", sentiment: "positive", category: "acquisition", score: 0.97, kb: kbc(2, "Atlas Coastal Medical", "transaction", "Advised Atlas on $142M acquisition.", 0.96, "You advised Atlas on $142M Coastal Medical acquisition. $300M expansion is a direct follow-on opportunity."), outreach: "Reach out about expansion, reference Coastal Medical.", channel: "email" },
+        { cIdx: 6, headline: "Pinnacle GC Isabelle Fontaine Keynotes SEC Enforcement Conference", source: "Law360", url: "https://law360.com/sec", time: daysAgo(2), summary: "Fontaine discussed compliance evolution at SEC Enforcement Conference.", sentiment: "neutral", category: "regulatory", score: 0.88, kb: kbc(3, "SEC Pinnacle", "regulatory_filing", "SEC response. $2.3M penalty.", 0.94, "You coordinated Pinnacle SEC response. Could lead to follow-on advisory work."), outreach: "Reference SEC matter, inquire about compliance needs.", channel: "email" },
+        { cIdx: 7, headline: "Global Logistics CTO Margaret Huang Chairs AI Standards Committee", source: "Supply Chain Dive", url: "https://supplychaindive.com/huang", time: daysAgo(1), summary: "Margaret Huang appointed chair of Industry AI Standards Committee.", sentiment: "positive", category: "promotion", score: 0.78, kb: kbc(4, "Global Logistics MSA", "contract", "$28M cloud MSA.", 0.82, "You negotiated the cloud MSA. AI governance may drive compliance needs."), outreach: "Congratulate on committee appointment.", channel: "linkedin" },
+        { cIdx: 8, headline: "Silverstone Energy Receives MSCI ESG AA Rating, Shares Jump 8%", source: "Bloomberg", url: "https://bloomberg.com/silverstone", time: hoursAgo(12), summary: "Silverstone upgraded to MSCI ESG AA citing Scope 3 improvements.", sentiment: "positive", category: "award", score: 0.85, kb: kbc(5, "Silverstone ESG DD", "due_diligence", "Scope 3 items.", 0.93, "Your ESG DD identified the Scope 3 items in this upgrade."), outreach: "Congratulate on MSCI upgrade.", channel: "email" },
+        { cIdx: 4, headline: "Sandra Kim Launches Healthcare Venture Studio", source: "Becker's Hospital Review", url: "https://beckershospitalreview.com/kim", time: daysAgo(3), summary: "Sandra Kim launched Magnolia Health Ventures deploying $25M across digital health startups.", sentiment: "positive", category: "funding", score: 0.80, kb: kbc(2, "Atlas Coastal Medical", "transaction", "Kim was seller.", 0.75, "Kim was sell-side in Coastal Medical deal. Venture studio = new legal work."), outreach: "Congratulate, offer fund formation counsel.", channel: "email" },
+        { cIdx: 9, headline: "TechVault Cloud Achieves FedRAMP High Authorization", source: "GovTech", url: "https://govtech.com/techvault", time: daysAgo(2), summary: "TechVault achieved FedRAMP High authorization.", sentiment: "positive", category: "partnership", score: 0.65, kb: null, outreach: "Acknowledge FedRAMP milestone.", channel: "linkedin" },
+        { cIdx: 12, headline: "Stanford Professor Elena Vasquez Publishes AI Bias Research in Nature", source: "Nature", url: "https://nature.com/vasquez", time: daysAgo(4), summary: "Dr. Vasquez published study on AI bias in patent examination.", sentiment: "neutral", category: "general", score: 0.70, kb: kbc(1, "Hargrove v. PacificTech", "litigation", "Vasquez was expert witness.", 0.80, "Vasquez was your expert witness. Research could inform future IP strategies."), outreach: "Congratulate, explore research implications.", channel: "email" },
+        { cIdx: 5, headline: "Pinnacle CCO Nathan Cross Appointed to FINRA Advisory Committee", source: "Financial Times", url: "https://ft.com/cross-finra", time: hoursAgo(18), summary: "Cross appointed to FINRA Market Regulation Advisory Committee.", sentiment: "positive", category: "promotion", score: 0.86, kb: kbc(3, "SEC Pinnacle", "regulatory_filing", "Cross was key SEC contact.", 0.91, "Cross was your contact during SEC investigation. FINRA appointment validates compliance transformation."), outreach: "Congratulate, reference compliance improvements.", channel: "email" },
+      ];
+
+      for (const s of stories) {
+        const alertId = nanoid(21);
+        if (s.kb) {
+          await q("INSERT INTO news_alerts (id,contact_id,user_id,headline,source_name,source_url,published_at,summary,sentiment,category,relevance_score,knowledge_base_connections,suggested_outreach,outreach_channel) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14)", [alertId, contacts[s.cIdx].id, userId, s.headline, s.source, s.url, s.time, s.summary, s.sentiment, s.category, s.score, s.kb, s.outreach, s.channel]);
+        } else {
+          await q("INSERT INTO news_alerts (id,contact_id,user_id,headline,source_name,source_url,published_at,summary,sentiment,category,relevance_score,suggested_outreach,outreach_channel) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", [alertId, contacts[s.cIdx].id, userId, s.headline, s.source, s.url, s.time, s.summary, s.sentiment, s.category, s.score, s.outreach, s.channel]);
+        }
+      }
+
+      const outreachEntries = [
+        { cIdx: 0, ch: "email", msg: "Victoria, congratulations on the milestone. Wonderful watching Meridian grow since the Series C.", outcome: "replied", sent: daysAgo(14) },
+        { cIdx: 3, ch: "email", msg: "Dr. Morales, the Coastal Medical integration seems to exceed projections. Our team is available.", outcome: "meeting_booked", sent: daysAgo(21) },
+        { cIdx: 1, ch: "linkedin", msg: "Marcus, great to see Apex leading the NovaBridge round. Let me know if we can help.", outcome: "replied", sent: daysAgo(30) },
+      ];
+
+      for (const o of outreachEntries) {
+        await q("INSERT INTO outreach_log (id,user_id,contact_id,channel,message_content,response_received,outcome,sent_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", [nanoid(21), userId, contacts[o.cIdx].id, o.ch, o.msg, true, o.outcome, o.sent]);
+      }
+
+      await q("INSERT INTO contact_sources (id,user_id,source_type,last_synced_at,sync_status,contact_count) VALUES ($1,$2,$3,NOW(),$4,$5)", [nanoid(21), userId, "manual", "completed", 15]);
+
+      await client.query("COMMIT");
+      client.release();
+
+      res.json({ message: "Demo data seeded successfully", seeded: true, contacts: contacts.length, alerts: stories.length, kbEntries: kbEntries.length });
+      } catch (txError: any) {
+        await client.query("ROLLBACK");
+        client.release();
+        throw txError;
+      }
+    } catch (error: any) {
+      console.error("[RI] Seed demo error:", error);
       res.status(500).json({ message: error.message });
     }
   });
