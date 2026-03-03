@@ -1208,7 +1208,7 @@ function CaseImportFeedDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle data-testid="dialog-title-case-import">
             {step === "select" && "Import Contacts from Case"}
@@ -1223,7 +1223,7 @@ function CaseImportFeedDialog({
         </DialogHeader>
 
         {step === "select" && (
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-y-auto">
             {casesQuery.isLoading ? (
               <div className="space-y-2">
                 {[1, 2, 3].map((i) => (
@@ -1277,21 +1277,23 @@ function CaseImportFeedDialog({
         )}
 
         {step === "preview" && (
-          <div className="space-y-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setStep("select");
-                setSelectedCase(null);
-                setSelectedEmails(new Set());
-                setEntitySearch("");
-              }}
-              data-testid="button-back-to-cases"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-              Back to cases
-            </Button>
+          <div className="flex flex-col min-h-0 flex-1">
+            <div className="space-y-3 shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setStep("select");
+                  setSelectedCase(null);
+                  setSelectedEmails(new Set());
+                  setEntitySearch("");
+                }}
+                data-testid="button-back-to-cases"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+                Back to cases
+              </Button>
+            </div>
 
             {entitiesQuery.isLoading ? (
               <div className="flex items-center justify-center py-8 gap-2">
@@ -1304,41 +1306,41 @@ function CaseImportFeedDialog({
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-3 gap-3">
-                  <Card>
-                    <CardContent className="p-3 text-center">
-                      <p className="text-xl font-bold" data-testid="text-total-people">{entitiesQuery.data?.totalUniqueEntities.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground">People</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-3 text-center">
-                      <p className="text-xl font-bold" data-testid="text-total-orgs">{entitiesQuery.data?.totalOrganizations.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground">Organizations</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-3 text-center">
-                      <p className="text-xl font-bold" data-testid="text-selected-count">{selectedEmails.size}</p>
-                      <p className="text-xs text-muted-foreground">Selected</p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search by name, email, or organization..."
-                      value={entitySearch}
-                      onChange={(e) => setEntitySearch(e.target.value)}
-                      className="pl-9"
-                      data-testid="input-search-entities"
-                    />
+                <div className="space-y-3 shrink-0 pt-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <Card>
+                      <CardContent className="p-3 text-center">
+                        <p className="text-xl font-bold" data-testid="text-total-people">{entitiesQuery.data?.totalUniqueEntities.toLocaleString()}</p>
+                        <p className="text-xs text-muted-foreground">People</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-3 text-center">
+                        <p className="text-xl font-bold" data-testid="text-total-orgs">{entitiesQuery.data?.totalOrganizations.toLocaleString()}</p>
+                        <p className="text-xs text-muted-foreground">Organizations</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-3 text-center">
+                        <p className="text-xl font-bold" data-testid="text-selected-count">{selectedEmails.size}</p>
+                        <p className="text-xs text-muted-foreground">Selected</p>
+                      </CardContent>
+                    </Card>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name, email, or organization..."
+                        value={entitySearch}
+                        onChange={(e) => setEntitySearch(e.target.value)}
+                        className="pl-9"
+                        data-testid="input-search-entities"
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-2">
                     <Checkbox
                       checked={filteredEntities.length > 0 && selectedEmails.size === filteredEntities.length}
@@ -1351,43 +1353,9 @@ function CaseImportFeedDialog({
                         : `Select all (${filteredEntities.length})`}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={selectedEmails.size === 0 || isImporting}
-                      onClick={() => {
-                        if (selectedCase) {
-                          importSelectiveMutation.mutate({
-                            caseId: selectedCase.id,
-                            emails: Array.from(selectedEmails),
-                          });
-                        }
-                      }}
-                      data-testid="button-import-selected"
-                    >
-                      {importSelectiveMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
-                      <CheckSquare className="w-3.5 h-3.5 mr-1" />
-                      Import Selected ({selectedEmails.size})
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={isImporting}
-                      onClick={() => {
-                        if (selectedCase) {
-                          importAllMutation.mutate(selectedCase.id);
-                        }
-                      }}
-                      data-testid="button-import-all"
-                    >
-                      {importAllMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
-                      <Users className="w-3.5 h-3.5 mr-1" />
-                      Monitor All
-                    </Button>
-                  </div>
                 </div>
 
-                <ScrollArea className={filteredEntities.length > 8 ? "h-[350px]" : ""}>
+                <ScrollArea className="flex-1 min-h-0 mt-2">
                   <div className="space-y-0.5">
                     {filteredEntities.map((entity) => (
                       <div
@@ -1447,13 +1415,51 @@ function CaseImportFeedDialog({
                     )}
                   </div>
                 </ScrollArea>
+
+                <div className="flex items-center justify-between gap-2 pt-3 mt-2 border-t shrink-0">
+                  <Button variant="outline" onClick={() => handleOpenChange(false)} data-testid="button-cancel-import">
+                    Cancel
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={selectedEmails.size === 0 || isImporting}
+                      onClick={() => {
+                        if (selectedCase) {
+                          importSelectiveMutation.mutate({
+                            caseId: selectedCase.id,
+                            emails: Array.from(selectedEmails),
+                          });
+                        }
+                      }}
+                      data-testid="button-import-selected"
+                    >
+                      {importSelectiveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
+                      <CheckSquare className="w-4 h-4 mr-1.5" />
+                      Import Selected ({selectedEmails.size})
+                    </Button>
+                    <Button
+                      disabled={isImporting}
+                      onClick={() => {
+                        if (selectedCase) {
+                          importAllMutation.mutate(selectedCase.id);
+                        }
+                      }}
+                      data-testid="button-import-all"
+                    >
+                      {importAllMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
+                      <Users className="w-4 h-4 mr-1.5" />
+                      Monitor All
+                    </Button>
+                  </div>
+                </div>
               </>
             )}
           </div>
         )}
 
         {step === "result" && importResult && (
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto">
             <div className="flex items-center justify-center py-4">
               <CheckCircle2 className="w-12 h-12 text-green-500" />
             </div>
@@ -1508,7 +1514,7 @@ function CaseImportFeedDialog({
           </div>
         )}
 
-        {step !== "result" && (
+        {step === "select" && (
           <DialogFooter>
             <Button variant="outline" onClick={() => handleOpenChange(false)}>
               Cancel
