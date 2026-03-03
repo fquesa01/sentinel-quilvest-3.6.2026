@@ -275,6 +275,18 @@ function AlertCard({
         )}
 
         <div className="flex items-center gap-2 flex-wrap pt-1">
+          {alert.sourceUrl && alert.sourceUrl !== "#" && (
+            <Button
+              size="sm"
+              asChild
+              data-testid={`button-read-article-${alert.id}`}
+            >
+              <a href={alert.sourceUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                Read Full Article
+              </a>
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

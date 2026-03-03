@@ -517,7 +517,7 @@ Snippet: ${article.description || ""}
 Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "promotion|funding|acquisition|legal|award|departure|partnership|ipo|bankruptcy|regulatory|general", "sentiment": "positive|negative|neutral", "summary": "1-2 sentence summary" }`
             }],
             response_format: { type: "json_object" },
-            max_tokens: 200,
+            max_completion_tokens: 200,
           });
 
           const analysis = JSON.parse(aiResponse.choices[0].message.content || "{}");
@@ -700,7 +700,7 @@ Content: ${content.substring(0, 4000)}
 Respond with JSON: { "summary": "2-3 sentence summary", "people": ["name1","name2"], "companies": ["company1"], "entities": ["all entities including locations, deals, topics"] }`
           }],
           response_format: { type: "json_object" },
-          max_tokens: 500,
+          max_completion_tokens: 500,
         });
 
         const extracted = JSON.parse(extractionResponse.choices[0].message.content || "{}");
@@ -814,7 +814,7 @@ ${topMatches.map(m => `- ${m.title} (${m.documentType}): ${m.summary || "No summ
 
 Write a 2-3 sentence connection summary explaining how this news relates to the user's history with this person/company, and suggest an outreach angle.`
             }],
-            max_tokens: 200,
+            max_completion_tokens: 200,
           });
           connectionSummary = summaryResponse.choices[0].message.content || connectionSummary;
         } catch {
@@ -903,7 +903,7 @@ Generate 3 variants as JSON:
 }`
         }],
         response_format: { type: "json_object" },
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
       });
 
       const outreach = JSON.parse(outreachResponse.choices[0].message.content || "{}");
