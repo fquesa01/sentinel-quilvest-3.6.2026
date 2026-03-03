@@ -61,7 +61,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)` })
         .from(relationshipContacts)
-        .where(and(eq(relationshipContacts.userId, userId), eq(relationshipContacts.isActive, true)));
+        .where(and(...conditions));
 
       res.json({ contacts, total: Number(countResult.count) });
     } catch (error: any) {
@@ -1052,6 +1052,338 @@ Generate 3 variants as JSON:
       }
     } catch (error: any) {
       console.error("[RI] Seed demo error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =============================================
+  // IMPORT CONTACTS FROM CASE COMMUNICATIONS
+  // =============================================
+
+  const DOMAIN_TO_COMPANY: Record<string, string> = {
+    "usawaterpolo.org": "USA Water Polo",
+    "morganlewis.com": "Morgan Lewis & Bockius",
+    "mckinsey.com": "McKinsey & Company",
+    "warburgpincus.com": "Warburg Pincus",
+    "falconfund.net": "Falcon Fund Management",
+    "freepoint.com": "Freepoint Commodities",
+    "hbs.edu": "Harvard Business School",
+    "roarmedia.com": "Roar Media",
+    "sierracap.com": "Sierra Capital",
+    "crown-chicago.com": "Crown Chicago Industries",
+    "manningllp.com": "Manning LLP",
+    "TysonMendes.com": "Tyson & Mendes",
+    "tysonmendes.com": "Tyson & Mendes",
+    "whitecase.com": "White & Case LLP",
+    "qvlaw.net": "QV Law",
+    "villanova.edu": "Villanova University",
+    "ey.com": "Ernst & Young",
+    "citi.com": "Citigroup",
+    "brown.edu": "Brown University",
+    "stanford.edu": "Stanford University",
+    "belenjesuit.org": "Belen Jesuit Preparatory",
+    "msprecovery.com": "MSP Recovery",
+    "msprecoverylawfirm.com": "MSP Recovery Law Firm",
+  };
+
+  const FILTERED_DOMAINS = new Set([
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com",
+    "sbcglobal.net", "msn.com", "icloud.com", "me.com", "live.com",
+    "protonmail.com", "zoho.com", "mail.com",
+  ]);
+
+  const SYSTEM_EMAILS = new Set([
+    "noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon",
+    "notifications", "subscriptions", "info@", "support@", "membership",
+    "reporting@usawaterpolo.org", "ethicschair@usawaterpolo.org",
+    "membership@usawaterpolo.org", "mmm@usawaterpolo.org",
+  ]);
+
+  const BOT_SENDERS = [
+    "via google docs", "reddit", "bloomberg", "wordpress.com",
+    "sport80.com", "replit.com", "bloomerang", "comment-reply@",
+    "drive-shares-dm-noreply@", "noreply@sport80.com",
+  ];
+
+  function parseEmailContact(raw: string): { name: string; email: string } | null {
+    if (!raw || raw.trim().length === 0) return null;
+    raw = raw.trim();
+
+    let name = "";
+    let email = "";
+
+    const angleMatch = raw.match(/<([^>]+)>/);
+    if (angleMatch) {
+      email = angleMatch[1].trim().toLowerCase();
+      name = raw.substring(0, raw.indexOf("<")).trim();
+      name = name.replace(/^["']+|["']+$/g, "").trim();
+    } else if (raw.includes("@")) {
+      email = raw.trim().toLowerCase();
+    }
+
+    if (!email || !email.includes("@") || email.length > 254) return null;
+
+    const viaMatch = name.match(/^'?(.+?)'?\s+via\s+/i);
+    if (viaMatch) {
+      name = viaMatch[1].trim().replace(/^'|'$/g, "");
+    }
+
+    name = name.replace(/^["']+|["']+$/g, "").trim();
+
+    const localPart = email.split("@")[0];
+    const lowerLocal = localPart.toLowerCase();
+    const domain = email.split("@")[1];
+
+    if (SYSTEM_EMAILS.has(lowerLocal) || SYSTEM_EMAILS.has(email)) return null;
+    if (lowerLocal.startsWith("noreply") || lowerLocal.startsWith("no-reply") || lowerLocal.startsWith("donotreply") || lowerLocal.startsWith("do-not-reply") || lowerLocal.startsWith("mailer-daemon")) return null;
+
+    const lowerRaw = raw.toLowerCase();
+    for (const bot of BOT_SENDERS) {
+      if (lowerRaw.includes(bot) || email.includes(bot)) return null;
+    }
+
+    if (!name || name.length < 2) {
+      const parts = localPart.split(/[._-]/);
+      if (parts.length >= 2) {
+        name = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
+      } else {
+        return null;
+      }
+    }
+
+    if (/^\w{10,}$/.test(name) || /^[0-9]+$/.test(name)) return null;
+
+    return { name, email };
+  }
+
+  function splitName(fullName: string): { firstName: string; lastName: string } {
+    const cleaned = fullName.replace(/\s+/g, " ").trim();
+    const parts = cleaned.split(" ");
+
+    if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+
+    if (parts[parts.length - 1].includes(",")) {
+      const last = parts[parts.length - 1].replace(",", "");
+      return { firstName: parts.slice(0, -1).join(" "), lastName: last };
+    }
+
+    const lastComma = cleaned.match(/^([^,]+),\s*(.+)$/);
+    if (lastComma) {
+      return { firstName: lastComma[2].trim(), lastName: lastComma[1].trim() };
+    }
+
+    return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+  }
+
+  app.get("/api/relationship-intelligence/cases-with-comms", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT c.id, c.title, count(comm.id)::int as comm_count,
+               count(DISTINCT comm.sender)::int as sender_count
+        FROM cases c
+        INNER JOIN communications comm ON comm.case_id = c.id
+        GROUP BY c.id, c.title
+        HAVING count(comm.id) > 0
+        ORDER BY count(comm.id) DESC
+      `);
+      res.json(result.rows);
+    } catch (error: any) {
+      console.error("[RI] Error fetching cases with comms:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/relationship-intelligence/import-from-case", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { caseId } = req.body;
+
+      if (!caseId) {
+        return res.status(400).json({ message: "caseId is required" });
+      }
+
+      const caseResult = await pool.query("SELECT id, title FROM cases WHERE id = $1", [caseId]);
+      if (caseResult.rows.length === 0) {
+        return res.status(404).json({ message: "Case not found" });
+      }
+      const caseTitle = caseResult.rows[0].title;
+
+      const sendersResult = await pool.query(`
+        SELECT sender, count(*)::int as cnt
+        FROM communications
+        WHERE case_id = $1 AND sender IS NOT NULL AND sender != ''
+        GROUP BY sender
+      `, [caseId]);
+
+      const recipientsResult = await pool.query(`
+        SELECT recipients
+        FROM communications
+        WHERE case_id = $1 AND recipients IS NOT NULL
+      `, [caseId]);
+
+      const contactMap = new Map<string, { name: string; email: string; sendCount: number; recvCount: number }>();
+
+      for (const row of sendersResult.rows) {
+        const parsed = parseEmailContact(row.sender);
+        if (!parsed) continue;
+        const existing = contactMap.get(parsed.email);
+        if (existing) {
+          existing.sendCount += row.cnt;
+          if (parsed.name.length > existing.name.length && !parsed.name.includes("via")) {
+            existing.name = parsed.name;
+          }
+        } else {
+          contactMap.set(parsed.email, { name: parsed.name, email: parsed.email, sendCount: row.cnt, recvCount: 0 });
+        }
+      }
+
+      for (const row of recipientsResult.rows) {
+        let recipients: string[] = [];
+        if (Array.isArray(row.recipients)) {
+          recipients = row.recipients;
+        } else if (typeof row.recipients === "string") {
+          try { recipients = JSON.parse(row.recipients); } catch { recipients = [row.recipients]; }
+        }
+
+        for (const r of recipients) {
+          if (typeof r !== "string") continue;
+          const parts = r.split(/,\s*(?=")/);
+          for (const part of parts) {
+            const parsed = parseEmailContact(part.trim());
+            if (!parsed) continue;
+            const existing = contactMap.get(parsed.email);
+            if (existing) {
+              existing.recvCount += 1;
+              if (parsed.name.length > existing.name.length && !parsed.name.includes("via")) {
+                existing.name = parsed.name;
+              }
+            } else {
+              contactMap.set(parsed.email, { name: parsed.name, email: parsed.email, sendCount: 0, recvCount: 1 });
+            }
+          }
+        }
+      }
+
+      const contacts = Array.from(contactMap.values());
+      contacts.sort((a, b) => (b.sendCount + b.recvCount) - (a.sendCount + a.recvCount));
+
+      const totalContacts = contacts.length;
+      const vipThreshold = Math.ceil(totalContacts * 0.1);
+      const highThreshold = Math.ceil(totalContacts * 0.3);
+
+      const existingResult = await pool.query(
+        "SELECT email FROM relationship_contacts WHERE user_id = $1 AND is_active = true",
+        [userId]
+      );
+      const existingEmails = new Set(existingResult.rows.map((r: any) => r.email?.toLowerCase()));
+
+      const { nanoid } = await import("nanoid");
+      const client = await pool.connect();
+
+      try {
+        await client.query("BEGIN");
+
+        let imported = 0;
+        let skipped = 0;
+        const topPeople: string[] = [];
+        const topCompanies = new Set<string>();
+
+        const toInsert: any[][] = [];
+        for (let i = 0; i < contacts.length; i++) {
+          const c = contacts[i];
+
+          if (existingEmails.has(c.email)) {
+            skipped++;
+            continue;
+          }
+
+          const { firstName, lastName } = splitName(c.name);
+          const domain = c.email.split("@")[1];
+          const company = DOMAIN_TO_COMPANY[domain] || DOMAIN_TO_COMPANY[domain.toLowerCase()] || null;
+          const isPersonalDomain = FILTERED_DOMAINS.has(domain);
+
+          let priority = 3;
+          if (i < vipThreshold) priority = 1;
+          else if (i < highThreshold) priority = 2;
+
+          const tags: string[] = ["case_import"];
+          if (company) tags.push("organization");
+          if (isPersonalDomain) tags.push("personal_email");
+
+          const pgTags = `{${tags.map(t => `"${t.replace(/"/g, '\\"')}"`).join(",")}}`;
+          toInsert.push([nanoid(21), userId, firstName.slice(0, 255), lastName.slice(0, 255), c.name.slice(0, 255), c.email.slice(0, 255), company ? company.slice(0, 255) : null, pgTags, priority]);
+          existingEmails.add(c.email);
+
+          if (i < 20) topPeople.push(c.name);
+          if (company) topCompanies.add(company);
+        }
+
+        const BATCH_SIZE = 50;
+        for (let b = 0; b < toInsert.length; b += BATCH_SIZE) {
+          const batch = toInsert.slice(b, b + BATCH_SIZE);
+          const placeholders: string[] = [];
+          const values: any[] = [];
+          batch.forEach((row, idx) => {
+            const offset = idx * 9;
+            placeholders.push(`($${offset+1},$${offset+2},$${offset+3},$${offset+4},$${offset+5},$${offset+6},$${offset+7},$${offset+8},$${offset+9})`);
+            values.push(...row);
+          });
+          await client.query(
+            `INSERT INTO relationship_contacts (id,user_id,first_name,last_name,full_name,email,company,tags,priority_level) VALUES ${placeholders.join(",")}`,
+            values
+          );
+        }
+        imported = toInsert.length;
+
+        const sourceId = nanoid(21);
+        await client.query(
+          `INSERT INTO contact_sources (id, user_id, source_type, last_synced_at, sync_status, contact_count)
+           VALUES ($1, $2, $3, NOW(), $4, $5)`,
+          [sourceId, userId, "case_import", "completed", imported]
+        );
+
+        const topPeopleArr = topPeople.slice(0, 15);
+        const topCompaniesArr = Array.from(topCompanies).slice(0, 10);
+        const kbId = nanoid(21);
+        const kbContent = `Case "${caseTitle}" — ${totalContacts} unique contacts extracted from communications. Top communicators: ${topPeopleArr.join(", ")}. Organizations involved: ${topCompaniesArr.join(", ")}.`;
+        const kbSummary = `${totalContacts} contacts extracted from "${caseTitle}" case communications.`;
+        const safeCaseTag = caseTitle.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 50);
+
+        await client.query(
+          `INSERT INTO knowledge_base_entries
+           (id, user_id, document_type, title, content, summary, people_mentioned, companies_mentioned, entities_mentioned, tags)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::text[], $8::text[], $9::text[], $10::text[])`,
+          [
+            kbId, userId, "litigation",
+            `${caseTitle} — Contact Network Analysis`.slice(0, 500),
+            kbContent, kbSummary,
+            topPeopleArr,
+            topCompaniesArr,
+            ["case_import", "communications", "contact_network"],
+            ["case_import", safeCaseTag]
+          ]
+        );
+
+        await client.query("COMMIT");
+        client.release();
+
+        res.json({
+          message: `Imported ${imported} contacts from "${caseTitle}"`,
+          imported,
+          skipped,
+          totalExtracted: totalContacts,
+          caseTitle,
+          topCommunicators: topPeople.slice(0, 10),
+          organizations: Array.from(topCompanies).slice(0, 10),
+          knowledgeBaseEntryId: kbId,
+        });
+      } catch (txError: any) {
+        await client.query("ROLLBACK");
+        client.release();
+        throw txError;
+      }
+    } catch (error: any) {
+      console.error("[RI] Import from case error:", error);
       res.status(500).json({ message: error.message });
     }
   });

@@ -42,6 +42,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Star,
   Search,
@@ -61,6 +62,9 @@ import {
   Send,
   Users,
   Loader2,
+  FolderOpen,
+  CheckCircle2,
+  Building2,
 } from "lucide-react";
 
 const contactFormSchema = z.object({
@@ -751,6 +755,175 @@ function ContactDetailPanel({
   );
 }
 
+interface CaseWithComms {
+  id: string;
+  title: string;
+  comm_count: number;
+  sender_count: number;
+}
+
+interface ImportResult {
+  message: string;
+  imported: number;
+  skipped: number;
+  totalExtracted: number;
+  caseTitle: string;
+  topCommunicators: string[];
+  organizations: string[];
+}
+
+function CaseImportDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+
+  const casesQuery = useQuery<CaseWithComms[]>({
+    queryKey: ["/api/relationship-intelligence/cases-with-comms"],
+    enabled: open,
+  });
+
+  const importMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      const res = await apiRequest("POST", "/api/relationship-intelligence/import-from-case", { caseId });
+      return res.json() as Promise<ImportResult>;
+    },
+    onSuccess: (data) => {
+      setResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+      toast({ title: `Imported ${data.imported} contacts from "${data.caseTitle}"` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleClose = () => {
+    setSelectedCaseId(null);
+    setResult(null);
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Import Contacts from Case</DialogTitle>
+          <DialogDescription>
+            Extract contacts from case communications and add them to your intelligence feed.
+          </DialogDescription>
+        </DialogHeader>
+
+        {result ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+              <CheckCircle2 className="h-5 w-5" />
+              <span className="font-medium" data-testid="text-import-success">Import Complete</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Card className="p-3 text-center">
+                <p className="text-2xl font-bold" data-testid="text-import-extracted">{result.totalExtracted}</p>
+                <p className="text-xs text-muted-foreground">Extracted</p>
+              </Card>
+              <Card className="p-3 text-center">
+                <p className="text-2xl font-bold" data-testid="text-import-imported">{result.imported}</p>
+                <p className="text-xs text-muted-foreground">Imported</p>
+              </Card>
+              <Card className="p-3 text-center">
+                <p className="text-2xl font-bold" data-testid="text-import-skipped">{result.skipped}</p>
+                <p className="text-xs text-muted-foreground">Skipped</p>
+              </Card>
+            </div>
+            {result.organizations.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-1">Organizations Found</p>
+                <div className="flex flex-wrap gap-1">
+                  {result.organizations.map((org) => (
+                    <Badge key={org} variant="secondary" className="no-default-active-elevate text-xs">
+                      <Building2 className="h-3 w-3 mr-1" />
+                      {org}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {result.topCommunicators.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-1">Top Communicators</p>
+                <div className="flex flex-wrap gap-1">
+                  {result.topCommunicators.slice(0, 8).map((name) => (
+                    <Badge key={name} variant="outline" className="no-default-active-elevate text-xs">{name}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={handleClose} data-testid="button-import-done">Done</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {casesQuery.isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !casesQuery.data || casesQuery.data.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center" data-testid="text-no-cases">
+                No cases with communications found.
+              </p>
+            ) : (
+              <ScrollArea className="max-h-[300px]">
+                <div className="space-y-2">
+                  {casesQuery.data.map((c) => (
+                    <Card
+                      key={c.id}
+                      className={`p-3 cursor-pointer hover-elevate ${
+                        selectedCaseId === c.id ? "ring-2 ring-primary" : ""
+                      }`}
+                      onClick={() => setSelectedCaseId(c.id)}
+                      data-testid={`card-case-${c.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate" data-testid={`text-case-title-${c.id}`}>{c.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {c.comm_count.toLocaleString()} communications · {c.sender_count} unique senders
+                          </p>
+                        </div>
+                        <FolderOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={handleClose} data-testid="button-import-cancel">Cancel</Button>
+              <Button
+                onClick={() => selectedCaseId && importMutation.mutate(selectedCaseId)}
+                disabled={!selectedCaseId || importMutation.isPending}
+                data-testid="button-import-contacts"
+              >
+                {importMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Importing...</>
+                ) : (
+                  <><FolderOpen className="h-4 w-4" /> Import Contacts</>
+                )}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function RelationshipContactsPage() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -759,13 +932,18 @@ export default function RelationshipContactsPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showCSVDialog, setShowCSVDialog] = useState(false);
+  const [showCaseImport, setShowCaseImport] = useState(false);
   const [editingContact, setEditingContact] = useState<RelationshipContact | null>(null);
   const [selectedContact, setSelectedContact] = useState<RelationshipContact | null>(null);
+  const [page, setPage] = useState(0);
+  const pageSize = 50;
 
   const queryParams = new URLSearchParams();
   if (searchQuery) queryParams.set("search", searchQuery);
   if (companyFilter) queryParams.set("company", companyFilter);
   if (priorityFilter) queryParams.set("priority", priorityFilter);
+  queryParams.set("limit", String(pageSize));
+  queryParams.set("offset", String(page * pageSize));
 
   const contactsQuery = useQuery<{ contacts: RelationshipContact[]; total: number }>({
     queryKey: ["/api/relationship-intelligence/contacts", `?${queryParams.toString()}`],
@@ -836,6 +1014,9 @@ export default function RelationshipContactsPage() {
             </Badge>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => setShowCaseImport(true)} data-testid="button-import-case-open">
+              <FolderOpen /> Import from Case
+            </Button>
             <Button variant="outline" onClick={() => setShowCSVDialog(true)} data-testid="button-import-csv-open">
               <Upload /> Import CSV
             </Button>
@@ -906,6 +1087,9 @@ export default function RelationshipContactsPage() {
               Add contacts manually or import from a CSV file.
             </p>
             <div className="flex gap-2 mt-4 flex-wrap">
+              <Button variant="outline" onClick={() => setShowCaseImport(true)} data-testid="button-import-case-empty">
+                <FolderOpen /> Import from Case
+              </Button>
               <Button variant="outline" onClick={() => setShowCSVDialog(true)} data-testid="button-import-csv-empty">
                 <Upload /> Import CSV
               </Button>
@@ -1039,6 +1223,37 @@ export default function RelationshipContactsPage() {
             </TableBody>
           </Table>
         )}
+
+        {total > pageSize && (
+          <div className="flex items-center justify-between gap-2 p-3 border-t flex-wrap">
+            <p className="text-sm text-muted-foreground" data-testid="text-page-info">
+              Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 0}
+                onClick={() => setPage(p => p - 1)}
+                data-testid="button-page-prev"
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {page + 1} of {Math.ceil(total / pageSize)}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={(page + 1) * pageSize >= total}
+                onClick={() => setPage(p => p + 1)}
+                data-testid="button-page-next"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <ContactFormDialog
@@ -1060,6 +1275,7 @@ export default function RelationshipContactsPage() {
       )}
 
       <CSVUploadDialog open={showCSVDialog} onOpenChange={setShowCSVDialog} />
+      <CaseImportDialog open={showCaseImport} onOpenChange={setShowCaseImport} />
     </div>
   );
 }

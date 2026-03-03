@@ -12457,6 +12457,7 @@ export const contactSourceTypeEnum = pgEnum("contact_source_type", [
   "salesforce",
   "linkedin",
   "manual",
+  "case_import",
 ]);
 
 export const newsSentimentEnum = pgEnum("news_sentiment", [
