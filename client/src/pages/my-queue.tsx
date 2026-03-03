@@ -9,8 +9,6 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { 
   LayoutDashboard, 
   Bookmark, 
@@ -39,7 +37,6 @@ import {
   Lightbulb,
   Target,
   Activity,
-  Menu
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { Link, useLocation } from "wouter";
@@ -56,7 +53,6 @@ import {
 export default function MyQueue() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [selectedCase, setSelectedCase] = useState<string>("all");
   const [bookmarkFilter, setBookmarkFilter] = useState<string>("all");
 
   const { data: cases } = useQuery<Case[]>({
@@ -64,7 +60,7 @@ export default function MyQueue() {
   });
 
   const { data: bookmarks, isLoading: bookmarksLoading } = useQuery<BookmarkType[]>({
-    queryKey: ["/api/bookmarks", selectedCase !== "all" ? selectedCase : undefined],
+    queryKey: ["/api/bookmarks", undefined],
   });
 
   const { data: recentActivity, isLoading: activityLoading } = useQuery<UserActivity[]>({
@@ -72,16 +68,7 @@ export default function MyQueue() {
   });
 
   const { data: savedSearches, isLoading: searchesLoading } = useQuery<SavedSearch[]>({
-    queryKey: ["/api/saved-searches", selectedCase !== "all" ? selectedCase : undefined],
-  });
-
-  const { data: queue } = useQuery<{
-    cases: any[];
-    alerts: any[];
-    communications: any[];
-    totalItems: number;
-  }>({
-    queryKey: ["/api/attorney-review-queue"],
+    queryKey: ["/api/saved-searches", undefined],
   });
 
   // AI Intelligence Features
@@ -108,7 +95,7 @@ export default function MyQueue() {
       activeCases: number;
     };
   }>({
-    queryKey: ["/api/ai/smart-digest", selectedCase !== "all" ? selectedCase : undefined],
+    queryKey: ["/api/ai/smart-digest", undefined],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
@@ -133,7 +120,7 @@ export default function MyQueue() {
     };
     generatedAt: string;
   }>({
-    queryKey: ["/api/ai/insights", selectedCase !== "all" ? selectedCase : undefined],
+    queryKey: ["/api/ai/insights", undefined],
     staleTime: 5 * 60 * 1000,
   });
 
@@ -167,7 +154,7 @@ export default function MyQueue() {
     };
     generatedAt: string;
   }>({
-    queryKey: ["/api/ai/attention-radar", selectedCase !== "all" ? selectedCase : undefined],
+    queryKey: ["/api/ai/attention-radar", undefined],
     staleTime: 5 * 60 * 1000,
   });
 
@@ -260,82 +247,11 @@ export default function MyQueue() {
     return b.bookmarkType === bookmarkFilter;
   }) || [];
 
-  const pendingCases = queue?.cases?.filter(c => c.status !== "closed") || [];
-  const flaggedAlerts = queue?.alerts?.filter(a => a.status === "flagged" || a.status === "new") || [];
 
-  const SIDEBAR_STORAGE_KEY = "my-queue-sidebar-width";
-  const [sidebarSize] = useState(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-      return stored ? parseFloat(stored) : 22;
-    }
-    return 22;
-  });
-
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
-  const handleSidebarResize = (sizes: number[]) => {
-    if (sizes[0] && typeof window !== "undefined") {
-      localStorage.setItem(SIDEBAR_STORAGE_KEY, sizes[0].toString());
-    }
-  };
-
-  const handleCaseSelect = (caseId: string) => {
-    setSelectedCase(caseId);
-    setMobileSidebarOpen(false);
-  };
-
-  const renderSidebarList = () => (
-    <div className="p-2 space-y-1">
-      <Button
-        variant={selectedCase === "all" ? "secondary" : "ghost"}
-        className="w-full justify-start"
-        onClick={() => handleCaseSelect("all")}
-        data-testid="button-case-all"
-      >
-        <Folder className="h-4 w-4 mr-2" />
-        All Matters
-      </Button>
-      <Separator className="my-2" />
-      {cases?.map((caseItem) => (
-        <Button
-          key={caseItem.id}
-          variant={selectedCase === caseItem.id ? "secondary" : "ghost"}
-          className="w-full justify-start text-left h-auto py-2 min-h-9"
-          onClick={() => handleCaseSelect(caseItem.id)}
-          data-testid={`button-case-${caseItem.id}`}
-        >
-          <Folder className="h-4 w-4 mr-2 flex-shrink-0 self-start mt-0.5" />
-          <span className="break-words whitespace-normal text-left leading-tight">{caseItem.title}</span>
-        </Button>
-      ))}
-    </div>
-  );
-
-  const renderPageHeader = (showMobileToggle: boolean) => (
+  const renderPageHeader = () => (
     <div className="border-b p-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          {showMobileToggle && (
-            <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" data-testid="button-mobile-sidebar-toggle">
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-[280px] p-0">
-                <SheetTitle className="sr-only">Matter Quick-Switch</SheetTitle>
-                <div className="flex flex-col h-full bg-muted/30">
-                  <div className="p-4 border-b">
-                    <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Matter Quick-Switch</h2>
-                  </div>
-                  <div className="flex-1 overflow-y-auto">
-                    {renderSidebarList()}
-                  </div>
-                </div>
-              </SheetContent>
-            </Sheet>
-          )}
           <LayoutDashboard className="h-6 w-6" />
           <div>
             <h1 className="text-xl md:text-2xl font-semibold">My Queue</h1>
@@ -344,11 +260,6 @@ export default function MyQueue() {
             </p>
           </div>
         </div>
-        {selectedCase !== "all" && (
-          <Badge variant="outline" className="text-sm hidden sm:flex">
-            Viewing: {cases?.find(c => c.id === selectedCase)?.title}
-          </Badge>
-        )}
       </div>
     </div>
   );
@@ -357,68 +268,6 @@ export default function MyQueue() {
     <ScrollArea className="flex-1 p-4 md:p-6">
           <div className="max-w-6xl mx-auto space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-5 w-5 text-amber-500" />
-                      <CardTitle className="text-lg">Priority Tasks</CardTitle>
-                    </div>
-                    <Badge variant="secondary">{(pendingCases.length + flaggedAlerts.length)} items</Badge>
-                  </div>
-                  <CardDescription>Cases and alerts requiring your attention</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[200px]">
-                    {pendingCases.length === 0 && flaggedAlerts.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                        <CheckCircle className="h-8 w-8 mb-2" />
-                        <p className="text-sm">No urgent tasks pending</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {pendingCases.slice(0, 3).map((caseItem: any) => (
-                          <Link
-                            key={caseItem.id}
-                            href={`/cases/${caseItem.id}`}
-                            className="block"
-                          >
-                            <div className="flex items-center justify-between p-3 rounded-lg hover-elevate bg-muted/50 cursor-pointer">
-                              <div className="flex items-center gap-3">
-                                <Folder className="h-4 w-4 text-muted-foreground" />
-                                <div>
-                                  <p className="font-medium text-sm">{caseItem.name}</p>
-                                  <p className="text-xs text-muted-foreground">Case</p>
-                                </div>
-                              </div>
-                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                          </Link>
-                        ))}
-                        {flaggedAlerts.slice(0, 3).map((alert: any) => (
-                          <Link
-                            key={alert.id}
-                            href="/alerts"
-                            className="block"
-                          >
-                            <div className="flex items-center justify-between p-3 rounded-lg hover-elevate bg-muted/50 cursor-pointer">
-                              <div className="flex items-center gap-3">
-                                <Flag className="h-4 w-4 text-amber-500" />
-                                <div>
-                                  <p className="font-medium text-sm">{alert.title || "Alert"}</p>
-                                  <p className="text-xs text-muted-foreground">Flagged Alert</p>
-                                </div>
-                              </div>
-                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
@@ -1021,44 +870,9 @@ export default function MyQueue() {
   );
 
   return (
-    <>
-      {/* Mobile Layout */}
-      <div className="md:hidden flex flex-col h-screen">
-        {renderPageHeader(true)}
-        {renderPageContent()}
-      </div>
-
-      {/* Desktop Layout */}
-      <div className="hidden md:block h-screen">
-        <ResizablePanelGroup 
-          direction="horizontal" 
-          className="h-full"
-          onLayout={handleSidebarResize}
-        >
-          <ResizablePanel 
-            defaultSize={sidebarSize} 
-            minSize={18} 
-            maxSize={35}
-            className="bg-muted/30"
-          >
-            <div className="flex flex-col h-full">
-              <div className="p-4 border-b">
-                <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Matter Quick-Switch</h2>
-              </div>
-              <ScrollArea className="flex-1">
-                {renderSidebarList()}
-              </ScrollArea>
-            </div>
-          </ResizablePanel>
-
-          <ResizableHandle withHandle />
-
-          <ResizablePanel defaultSize={78} className="flex flex-col overflow-hidden">
-            {renderPageHeader(false)}
-            {renderPageContent()}
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </div>
-    </>
+    <div className="flex flex-col h-screen">
+      {renderPageHeader()}
+      {renderPageContent()}
+    </div>
   );
 }
