@@ -1355,7 +1355,7 @@ function CaseImportFeedDialog({
                   </div>
                 </div>
 
-                <ScrollArea className="flex-1 min-h-0 mt-2">
+                <ScrollArea className="h-[35vh] mt-2">
                   <div className="space-y-0.5">
                     {filteredEntities.map((entity) => (
                       <div
