@@ -63,6 +63,8 @@ import {
   Search,
   FileCheck,
   Mic,
+  Radar,
+  Contact,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
@@ -121,6 +123,24 @@ export function AppSidebar() {
 
   // Menu sections - Clients pinned first, then Litigation
   const menuSections: MenuSection[] = [
+    {
+      title: "Relationship Intelligence",
+      defaultOpen: true,
+      items: [
+        {
+          title: "Intelligence Feed",
+          url: "/relationship-intelligence",
+          icon: Radar,
+          roles: ["admin", "attorney", "compliance_officer"],
+        },
+        {
+          title: "Contacts",
+          url: "/relationship-contacts",
+          icon: Contact,
+          roles: ["admin", "attorney", "compliance_officer"],
+        },
+      ],
+    },
     {
       title: "Clients",
       defaultOpen: true,

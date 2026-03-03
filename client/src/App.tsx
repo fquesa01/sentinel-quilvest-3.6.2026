@@ -79,6 +79,8 @@ import StatementDetailPage from "@/pages/statement-detail";
 import PEDealPipeline from "@/pages/pe-deal-pipeline";
 import PEDealDetail from "@/pages/pe-deal-detail";
 import PEDealIntelligence from "@/pages/pe-deal-intelligence";
+import RelationshipIntelligence from "@/pages/relationship-intelligence";
+import RelationshipContacts from "@/pages/relationship-contacts";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { NotificationBell } from "@/components/notification-bell";
@@ -195,6 +197,8 @@ function AuthenticatedApp() {
               <Route path="/business-intelligence" component={BusinessIntelligence} />
               <Route path="/ingestion" component={DocumentIngestion} />
               <Route path="/reports-productions" component={ReportsProductions} />
+              <Route path="/relationship-intelligence" component={RelationshipIntelligence} />
+              <Route path="/relationship-contacts" component={RelationshipContacts} />
               <Route component={NotFound} />
             </Switch>
           </main>

@@ -12448,3 +12448,268 @@ export const calendarEventsRelations = relations(calendarEvents, ({ one }) => ({
     references: [clients.id],
   }),
 }));
+
+export const contactSourceTypeEnum = pgEnum("contact_source_type", [
+  "csv_upload",
+  "outlook",
+  "google",
+  "icloud",
+  "salesforce",
+  "linkedin",
+  "manual",
+]);
+
+export const newsSentimentEnum = pgEnum("news_sentiment", [
+  "positive",
+  "negative",
+  "neutral",
+]);
+
+export const newsCategoryEnum = pgEnum("news_category", [
+  "promotion",
+  "funding",
+  "acquisition",
+  "legal",
+  "award",
+  "departure",
+  "partnership",
+  "ipo",
+  "bankruptcy",
+  "regulatory",
+  "general",
+]);
+
+export const outreachChannelEnum = pgEnum("outreach_channel", [
+  "email",
+  "linkedin",
+  "sms",
+  "phone",
+]);
+
+export const outreachOutcomeEnum = pgEnum("outreach_outcome", [
+  "meeting_booked",
+  "replied",
+  "no_response",
+  "deal_opened",
+  "other",
+]);
+
+export const kbDocumentTypeEnum = pgEnum("kb_document_type", [
+  "deal",
+  "transaction",
+  "conversation",
+  "memo",
+  "contract",
+  "email_thread",
+  "meeting_notes",
+  "litigation",
+  "regulatory_filing",
+  "business_plan",
+  "due_diligence",
+  "other",
+]);
+
+export const contactSources = pgTable("contact_sources", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sourceType: contactSourceTypeEnum("source_type").notNull(),
+  lastSyncedAt: timestamp("last_synced_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  syncStatus: varchar("sync_status", { length: 50 }).default("idle"),
+  contactCount: integer("contact_count").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ContactSource = typeof contactSources.$inferSelect;
+export const insertContactSourceSchema = createInsertSchema(contactSources).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertContactSource = z.infer<typeof insertContactSourceSchema>;
+
+export const relationshipContacts = pgTable("relationship_contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sourceId: varchar("source_id").references(() => contactSources.id),
+  firstName: varchar("first_name", { length: 255 }),
+  lastName: varchar("last_name", { length: 255 }),
+  fullName: varchar("full_name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  company: varchar("company", { length: 255 }),
+  jobTitle: varchar("job_title", { length: 255 }),
+  linkedinUrl: varchar("linkedin_url", { length: 500 }),
+  city: varchar("city", { length: 255 }),
+  state: varchar("state", { length: 100 }),
+  country: varchar("country", { length: 100 }),
+  tags: text("tags").array(),
+  priorityLevel: integer("priority_level").notNull().default(3),
+  lastNewsScanAt: timestamp("last_news_scan_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdx: index("idx_rel_contacts_user").on(table.userId, table.isActive),
+  fullNameIdx: index("idx_rel_contacts_fullname").on(table.fullName),
+  companyIdx: index("idx_rel_contacts_company").on(table.company),
+  emailIdx: index("idx_rel_contacts_email").on(table.email),
+}));
+
+export type RelationshipContact = typeof relationshipContacts.$inferSelect;
+export const insertRelationshipContactSchema = createInsertSchema(relationshipContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertRelationshipContact = z.infer<typeof insertRelationshipContactSchema>;
+
+export const newsAlerts = pgTable("news_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").notNull().references(() => relationshipContacts.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  headline: text("headline").notNull(),
+  sourceName: varchar("source_name", { length: 255 }),
+  sourceUrl: text("source_url"),
+  publishedAt: timestamp("published_at"),
+  summary: text("summary"),
+  sentiment: newsSentimentEnum("sentiment"),
+  category: newsCategoryEnum("category"),
+  relevanceScore: real("relevance_score"),
+  isRead: boolean("is_read").notNull().default(false),
+  isDismissed: boolean("is_dismissed").notNull().default(false),
+  isActedOn: boolean("is_acted_on").notNull().default(false),
+  knowledgeBaseConnections: jsonb("knowledge_base_connections").$type<{
+    entries: Array<{
+      id: string;
+      title: string;
+      documentType: string;
+      summary: string;
+      relevance: number;
+    }>;
+    connectionSummary: string;
+  }>(),
+  suggestedOutreach: text("suggested_outreach"),
+  outreachChannel: outreachChannelEnum("outreach_channel"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  userDateIdx: index("idx_news_alerts_user_date").on(table.userId, table.createdAt),
+  contactIdx: index("idx_news_alerts_contact").on(table.contactId),
+  categoryIdx: index("idx_news_alerts_category").on(table.category),
+}));
+
+export type NewsAlert = typeof newsAlerts.$inferSelect;
+export const insertNewsAlertSchema = createInsertSchema(newsAlerts).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertNewsAlert = z.infer<typeof insertNewsAlertSchema>;
+
+export const knowledgeBaseEntries = pgTable("knowledge_base_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  documentType: kbDocumentTypeEnum("document_type").notNull(),
+  title: varchar("title", { length: 500 }),
+  content: text("content").notNull(),
+  summary: text("summary"),
+  entitiesMentioned: text("entities_mentioned").array(),
+  companiesMentioned: text("companies_mentioned").array(),
+  peopleMentioned: text("people_mentioned").array(),
+  dealValue: numeric("deal_value", { precision: 15, scale: 2 }),
+  dealDate: date("deal_date"),
+  tags: text("tags").array(),
+  sourceFilePath: text("source_file_path"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdx: index("idx_kb_entries_user").on(table.userId),
+  docTypeIdx: index("idx_kb_entries_doc_type").on(table.documentType),
+  entitiesIdx: index("idx_kb_entries_entities").on(table.entitiesMentioned),
+  companiesIdx: index("idx_kb_entries_companies").on(table.companiesMentioned),
+  peopleIdx: index("idx_kb_entries_people").on(table.peopleMentioned),
+}));
+
+export type KnowledgeBaseEntry = typeof knowledgeBaseEntries.$inferSelect;
+export const insertKnowledgeBaseEntrySchema = createInsertSchema(knowledgeBaseEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertKnowledgeBaseEntry = z.infer<typeof insertKnowledgeBaseEntrySchema>;
+
+export const outreachLog = pgTable("outreach_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").references(() => relationshipContacts.id),
+  newsAlertId: varchar("news_alert_id").references(() => newsAlerts.id),
+  channel: outreachChannelEnum("channel"),
+  messageContent: text("message_content"),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  responseReceived: boolean("response_received").notNull().default(false),
+  responseAt: timestamp("response_at"),
+  outcome: outreachOutcomeEnum("outcome"),
+  notes: text("notes"),
+}, (table) => ({
+  userIdx: index("idx_outreach_log_user").on(table.userId),
+  contactIdx: index("idx_outreach_log_contact").on(table.contactId),
+}));
+
+export type OutreachLogEntry = typeof outreachLog.$inferSelect;
+export const insertOutreachLogSchema = createInsertSchema(outreachLog).omit({
+  id: true,
+  sentAt: true,
+});
+export type InsertOutreachLog = z.infer<typeof insertOutreachLogSchema>;
+
+export const contactSourcesRelations = relations(contactSources, ({ one, many }) => ({
+  user: one(users, {
+    fields: [contactSources.userId],
+    references: [users.id],
+  }),
+  contacts: many(relationshipContacts),
+}));
+
+export const relationshipContactsRelations = relations(relationshipContacts, ({ one, many }) => ({
+  user: one(users, {
+    fields: [relationshipContacts.userId],
+    references: [users.id],
+  }),
+  source: one(contactSources, {
+    fields: [relationshipContacts.sourceId],
+    references: [contactSources.id],
+  }),
+  newsAlerts: many(newsAlerts),
+  outreachLogs: many(outreachLog),
+}));
+
+export const newsAlertsRelations = relations(newsAlerts, ({ one }) => ({
+  contact: one(relationshipContacts, {
+    fields: [newsAlerts.contactId],
+    references: [relationshipContacts.id],
+  }),
+  user: one(users, {
+    fields: [newsAlerts.userId],
+    references: [users.id],
+  }),
+}));
+
+export const knowledgeBaseEntriesRelations = relations(knowledgeBaseEntries, ({ one }) => ({
+  user: one(users, {
+    fields: [knowledgeBaseEntries.userId],
+    references: [users.id],
+  }),
+}));
+
+export const outreachLogRelations = relations(outreachLog, ({ one }) => ({
+  user: one(users, {
+    fields: [outreachLog.userId],
+    references: [users.id],
+  }),
+  contact: one(relationshipContacts, {
+    fields: [outreachLog.contactId],
+    references: [relationshipContacts.id],
+  }),
+  newsAlert: one(newsAlerts, {
+    fields: [outreachLog.newsAlertId],
+    references: [newsAlerts.id],
+  }),
+}));
