@@ -404,7 +404,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
       const userId = req.user?.id;
       const { contactId } = req.body;
 
-      const newsApiKey = process.env.NEWS_API_KEY;
+      const newsApiKey = process.env.NEWS_API_KEY || process.env.NewsAPI_API;
       if (!newsApiKey) {
         return res.status(400).json({ message: "NEWS_API_KEY is not configured. Please add it to your environment variables." });
       }
