@@ -1014,7 +1014,7 @@ Generate 3 variants as JSON:
       );
       if (!contact) return res.status(404).json({ message: "Contact not found" });
 
-      console.log(`[RI] Draft Response: generating search terms for "${alert.headline}" / ${contact.fullName}`);
+      console.log(`[RI] Draft Response: generating search terms for "${alert.headline}" / ${contact.fullName} (tone: ${tone})`);
 
       const searchTermsResponse = await openai.chat.completions.create({
         model: "gpt-5",
@@ -1139,35 +1139,31 @@ Each term should be a simple keyword or short phrase (not complex boolean syntax
         model: "gpt-5",
         messages: [{
           role: "system",
-          content: `You are a relationship intelligence assistant helping a compliance professional craft outreach messages. ${selectedToneInstruction} Do not use emojis. Output JSON only.`
+          content: `You draft outreach messages for a compliance professional. ${selectedToneInstruction} Never use emojis. You MUST return valid JSON with a non-empty "draft" field containing the full message and a non-empty "subjectLine" field.`
         }, {
           role: "user",
-          content: `Draft a short personalized response (1-5 sentences) to reach out to this contact about the news article below.
-
-Tone: ${tone}
+          content: `Write a ${tone} outreach message (1-5 sentences) to this contact about the news article below.
 
 Contact: ${contact.fullName}, ${contact.jobTitle || "Professional"} at ${contact.company || "their organization"}
 
-News Article:
-Headline: "${alert.headline}"
+Article: "${alert.headline}"
 Summary: ${alert.summary || "N/A"}
-Category: ${alert.category || "general"}
 Sentiment: ${alert.sentiment || "neutral"}
-Source: ${alert.sourceName || "news outlet"}
 ${contextBlock}
 
-Instructions:
-- ${selectedToneInstruction}
-- If email context was found, weave in a reference to the shared history or connection
-- Keep it 1-5 sentences maximum
-- Make it feel personal and informed, not generic
-- If the article sentiment is negative (lawsuit, investigation), be tactful and supportive rather than congratulatory
-- Include a subject line suggestion that matches the ${tone} tone
+Rules:
+1. ${selectedToneInstruction}
+2. If email context exists, reference the shared history
+3. 1-5 sentences, personal and specific
+4. If negative news, be tactful not congratulatory
+5. The "draft" field MUST contain the complete message text — never leave it empty
+6. The "subjectLine" must match the ${tone} tone
 
-Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }`
+Example response format:
+{"draft": "Hi [Name],\\n\\nI noticed the recent article about... [rest of message]", "subjectLine": "Regarding recent developments at [Company]"}`
         }],
         response_format: { type: "json_object" },
-        max_completion_tokens: 500,
+        max_completion_tokens: 600,
       });
 
       const rawDraftContent = draftResponse.choices[0].message.content || '{"draft":"","subjectLine":""}';
@@ -1184,9 +1180,21 @@ Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }
       let finalSubject = draftData.subjectLine || draftData.subject_line || draftData.subject || "";
 
       if (!finalDraft.trim()) {
-        console.log(`[RI] Draft Response: empty draft, generating fallback`);
-        finalDraft = `Hi ${contact.fullName.split(",")[0].split(" ")[0]},\n\nI came across the article "${alert.headline}" and thought of you. I'd welcome the chance to connect and discuss any developments that may be relevant to your work${contact.company ? ` at ${contact.company}` : ""}.\n\nPlease let me know if you'd like to catch up.`;
-        finalSubject = finalSubject || `Following up: ${(alert.headline || "Recent News").substring(0, 60)}`;
+        console.log(`[RI] Draft Response: empty draft, generating ${tone} fallback`);
+        const firstName = contact.fullName.split(",")[0].split(" ")[0];
+        const companyRef = contact.company ? ` at ${contact.company}` : "";
+        const headline = alert.headline || "Recent News";
+
+        if (tone === "informal") {
+          finalDraft = `Hey ${firstName},\n\nJust saw the article "${headline}" and immediately thought of you. Would love to hear your take on it — let me know if you have a few minutes to chat sometime soon.`;
+          finalSubject = finalSubject || `Saw this and thought of you: ${headline.substring(0, 50)}`;
+        } else if (tone === "playful") {
+          finalDraft = `Hi ${firstName},\n\nWell, "${headline}" just landed in my news feed and guess who came to mind? I'd love to swap notes on this one — always good to have a reason to reconnect${companyRef}.\n\nWhat do you say, worth a quick call?`;
+          finalSubject = finalSubject || `Guess what just hit the news: ${headline.substring(0, 45)}`;
+        } else {
+          finalDraft = `Dear ${firstName},\n\nI came across the article "${headline}" and thought it may be of interest given your work${companyRef}. I would welcome the opportunity to connect and discuss any developments that may be relevant.\n\nPlease let me know if you would be available for a brief conversation.`;
+          finalSubject = finalSubject || `Following up: ${headline.substring(0, 60)}`;
+        }
       }
 
       if (!finalSubject.trim()) {
