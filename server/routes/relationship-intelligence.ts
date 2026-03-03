@@ -1206,6 +1206,111 @@ Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }
   });
 
   // =============================================
+  // ALERT DETAIL & OVERLAP
+  // =============================================
+
+  app.get("/api/relationship-intelligence/alerts/:alertId/overlap", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { alertId } = req.params;
+      const { contactId } = req.query;
+
+      const [alert] = await db.select().from(newsAlerts).where(
+        and(eq(newsAlerts.id, alertId), eq(newsAlerts.userId, userId))
+      );
+      if (!alert) return res.status(404).json({ message: "Alert not found" });
+
+      let contact: any = null;
+      if (contactId) {
+        const [c] = await db.select().from(relationshipContacts).where(
+          and(eq(relationshipContacts.id, contactId as string), eq(relationshipContacts.userId, userId))
+        );
+        contact = c;
+      }
+
+      const searchTerms: string[] = [];
+      if (contact?.fullName) searchTerms.push(contact.fullName);
+      if (contact?.company) searchTerms.push(contact.company);
+      const headlineWords = (alert.headline || "").split(/[\s\-–—:,|]+/).filter((w: string) => w.length > 4);
+      if (headlineWords.length > 0) {
+        searchTerms.push(headlineWords.slice(0, 3).join(" "));
+      }
+
+      const overlapResults: Array<{
+        id: string;
+        type: "email";
+        subject: string;
+        snippet: string;
+        sender: string;
+        timestamp: string;
+        matchReason: string;
+      }> = [];
+
+      const seenIds = new Set<string>();
+
+      for (const term of searchTerms) {
+        const trimmed = (term || "").trim();
+        if (!trimmed || trimmed.length < 2) continue;
+        try {
+          const pattern = `%${trimmed}%`;
+          const matches = await db.select({
+            id: communications.id,
+            subject: communications.subject,
+            body: communications.body,
+            sender: communications.sender,
+            timestamp: communications.timestamp,
+          })
+          .from(communications)
+          .where(
+            or(
+              ilike(communications.subject, pattern),
+              ilike(communications.body, pattern),
+              ilike(communications.sender, pattern)
+            )
+          )
+          .orderBy(desc(communications.timestamp))
+          .limit(5);
+
+          for (const match of matches) {
+            if (seenIds.has(match.id)) continue;
+            seenIds.add(match.id);
+            const bodyText = match.body || "";
+            overlapResults.push({
+              id: match.id,
+              type: "email",
+              subject: match.subject || "(No Subject)",
+              snippet: bodyText.substring(0, 250).replace(/\n+/g, " ").trim(),
+              sender: match.sender || "Unknown",
+              timestamp: match.timestamp?.toISOString() || "",
+              matchReason: `Matched: "${trimmed}"`,
+            });
+          }
+        } catch (err) {
+          console.error(`[RI] Overlap search error for "${term}":`, err);
+        }
+      }
+
+      res.json({
+        alert: {
+          id: alert.id,
+          headline: alert.headline,
+          summary: alert.summary,
+          sourceUrl: alert.sourceUrl,
+          sourceName: alert.sourceName,
+          publishedAt: alert.publishedAt,
+          sentiment: alert.sentiment,
+          category: alert.category,
+        },
+        overlap: overlapResults.slice(0, 15),
+        searchTermsUsed: searchTerms,
+      });
+    } catch (error: any) {
+      console.error("[RI] Alert overlap error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =============================================
   // EMAIL ACCOUNTS (for send integration)
   // =============================================
 

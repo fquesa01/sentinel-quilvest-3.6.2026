@@ -65,7 +65,12 @@ import {
   FolderOpen,
   CheckCircle2,
   Building2,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Clock,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
 const contactFormSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -570,6 +575,211 @@ function CSVUploadDialog({
   );
 }
 
+type OverlapData = {
+  alert: {
+    id: string;
+    headline: string;
+    summary: string | null;
+    sourceUrl: string | null;
+    sourceName: string | null;
+    publishedAt: string | null;
+    sentiment: string | null;
+    category: string | null;
+  };
+  overlap: Array<{
+    id: string;
+    type: string;
+    subject: string;
+    snippet: string;
+    sender: string;
+    timestamp: string;
+    matchReason: string;
+  }>;
+  searchTermsUsed: string[];
+};
+
+function ArticleDetailDialog({
+  open,
+  onOpenChange,
+  alertId,
+  contactId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  alertId: string | null;
+  contactId: string;
+}) {
+  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
+  const prevAlertIdRef = useRef<string | null>(null);
+
+  if (alertId !== prevAlertIdRef.current) {
+    prevAlertIdRef.current = alertId;
+    if (expandedEmails.size > 0) setExpandedEmails(new Set());
+  }
+
+  const overlapQuery = useQuery<OverlapData>({
+    queryKey: [`/api/relationship-intelligence/alerts/${alertId}/overlap?contactId=${contactId}`],
+    enabled: open && !!alertId,
+  });
+
+  const toggleEmail = (id: string) => {
+    setExpandedEmails(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const formatDate = (ts: string | null) => {
+    if (!ts) return "Unknown date";
+    try {
+      return new Date(ts).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    } catch {
+      return "Unknown date";
+    }
+  };
+
+  const alert = overlapQuery.data?.alert;
+  const overlap = overlapQuery.data?.overlap || [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle data-testid="dialog-title-article-detail">Article Detail</DialogTitle>
+          <DialogDescription>
+            {alert?.sourceName && <>From {alert.sourceName}</>}
+          </DialogDescription>
+        </DialogHeader>
+
+        {overlapQuery.isLoading && (
+          <div className="flex items-center justify-center py-8 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading article details...</span>
+          </div>
+        )}
+
+        {overlapQuery.isError && (
+          <div className="py-4 text-center">
+            <p className="text-sm text-destructive">Failed to load article details.</p>
+          </div>
+        )}
+
+        {alert && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold" data-testid="text-article-headline">{alert.headline}</h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                {alert.sentiment && (
+                  <Badge variant="outline" className="no-default-active-elevate text-xs">{alert.sentiment}</Badge>
+                )}
+                {alert.category && (
+                  <Badge variant="secondary" className="no-default-active-elevate text-xs">{alert.category}</Badge>
+                )}
+                {alert.publishedAt && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatDate(alert.publishedAt)}
+                  </span>
+                )}
+                {alert.sourceName && (
+                  <span className="text-xs text-muted-foreground">{alert.sourceName}</span>
+                )}
+              </div>
+            </div>
+
+            {alert.summary && (
+              <div className="p-3 rounded-md bg-muted/50 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Summary</p>
+                <p className="text-sm" data-testid="text-article-summary">{alert.summary}</p>
+              </div>
+            )}
+
+            {alert.sourceUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(alert.sourceUrl!, "_blank")}
+                data-testid="button-read-full-article"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                Read Full Article
+              </Button>
+            )}
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold flex items-center gap-1">
+                <Mail className="w-4 h-4" />
+                Email Overlap ({overlap.length})
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Emails that may connect you to this contact or topic.
+              </p>
+
+              {overlap.length === 0 ? (
+                <div className="p-3 rounded-md bg-muted/30">
+                  <p className="text-xs text-muted-foreground">
+                    No matching emails found for this contact and article.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {overlap.map((item) => (
+                    <Card key={item.id} data-testid={`overlap-item-${item.id}`}>
+                      <CardContent className="p-3 space-y-1">
+                        <div
+                          className="flex items-start justify-between gap-2 cursor-pointer"
+                          onClick={() => toggleEmail(item.id)}
+                          data-testid={`button-toggle-overlap-${item.id}`}
+                        >
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <p className="text-sm font-medium truncate">{item.subject}</p>
+                            <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                              <span>From: {item.sender}</span>
+                              {item.timestamp && <span>{formatDate(item.timestamp)}</span>}
+                            </div>
+                            <p className="text-xs text-muted-foreground">{item.matchReason}</p>
+                          </div>
+                          <Button variant="ghost" size="icon" className="shrink-0">
+                            {expandedEmails.has(item.id) ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+
+                        {!expandedEmails.has(item.id) && (
+                          <p className="text-xs text-muted-foreground line-clamp-2">{item.snippet}</p>
+                        )}
+
+                        {expandedEmails.has(item.id) && (
+                          <div className="mt-2 p-3 rounded-md bg-muted/30">
+                            <p className="text-sm whitespace-pre-wrap" data-testid={`text-overlap-body-${item.id}`}>
+                              {item.snippet}
+                            </p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-close-article-detail">
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ContactDetailPanel({
   contact,
   onClose,
@@ -579,6 +789,8 @@ function ContactDetailPanel({
   onClose: () => void;
   onEdit: () => void;
 }) {
+  const [articleDialog, setArticleDialog] = useState<{ open: boolean; alertId: string | null }>({ open: false, alertId: null });
+
   const alertsQuery = useQuery<{
     alerts: Array<{ alert: NewsAlert; contact: any }>;
     total: number;
@@ -687,7 +899,12 @@ function ContactDetailPanel({
           ) : alertsQuery.data?.alerts && alertsQuery.data.alerts.length > 0 ? (
             <div className="space-y-2">
               {alertsQuery.data.alerts.map(({ alert }) => (
-                <Card key={alert.id} className="p-3">
+                <Card
+                  key={alert.id}
+                  className="p-3 cursor-pointer hover-elevate"
+                  onClick={() => setArticleDialog({ open: true, alertId: alert.id })}
+                  data-testid={`card-alert-${alert.id}`}
+                >
                   <div className="flex items-start gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium line-clamp-2" data-testid={`text-alert-headline-${alert.id}`}>
@@ -716,7 +933,11 @@ function ContactDetailPanel({
                           {alert.sourceName}
                         </span>
                       </div>
+                      {alert.summary && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{alert.summary}</p>
+                      )}
                     </div>
+                    <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                   </div>
                 </Card>
               ))}
@@ -751,6 +972,13 @@ function ContactDetailPanel({
           )}
         </div>
       </div>
+
+      <ArticleDetailDialog
+        open={articleDialog.open}
+        onOpenChange={(open) => setArticleDialog(prev => ({ ...prev, open }))}
+        alertId={articleDialog.alertId}
+        contactId={contact.id}
+      />
     </div>
   );
 }
