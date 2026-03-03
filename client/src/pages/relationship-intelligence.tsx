@@ -340,7 +340,7 @@ function AlertCard({
             data-testid={`button-draft-response-${alert.id}`}
           >
             <Send className="w-3.5 h-3.5 mr-1" />
-            Draft Response
+            Draft Note
           </Button>
           <div className="flex-1" />
           <Button
