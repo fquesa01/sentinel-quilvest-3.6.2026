@@ -1039,9 +1039,25 @@ Each term should be a simple keyword or short phrase (not complex boolean syntax
         max_completion_tokens: 300,
       });
 
-      const termsData = JSON.parse(searchTermsResponse.choices[0].message.content || '{"searchTerms":[]}');
-      const searchTerms: string[] = termsData.searchTerms || [];
-      console.log(`[RI] Draft Response: ${searchTerms.length} search terms generated:`, searchTerms);
+      const rawTermsContent = searchTermsResponse.choices[0].message.content || '{"searchTerms":[]}';
+      console.log(`[RI] Draft Response: raw search terms response:`, rawTermsContent.substring(0, 500));
+      let termsData: any;
+      try {
+        termsData = JSON.parse(rawTermsContent);
+      } catch (parseErr) {
+        console.error(`[RI] Draft Response: failed to parse search terms JSON:`, parseErr);
+        termsData = { searchTerms: [] };
+      }
+      let searchTerms: string[] = termsData.searchTerms || termsData.terms || termsData.search_terms || [];
+      if (searchTerms.length === 0) {
+        console.log(`[RI] Draft Response: GPT returned no terms, using fallback terms from contact/article`);
+        searchTerms = [
+          contact.fullName,
+          contact.company || "",
+          (alert.headline || "").split(/\s+/).slice(0, 3).join(" "),
+        ].filter(t => t && t.length >= 2);
+      }
+      console.log(`[RI] Draft Response: ${searchTerms.length} search terms:`, searchTerms);
 
       const contextSources: Array<{
         communicationId: string;
@@ -1145,11 +1161,32 @@ Return JSON: { "draft": "the message text", "subjectLine": "suggested subject" }
         max_completion_tokens: 500,
       });
 
-      const draftData = JSON.parse(draftResponse.choices[0].message.content || '{"draft":"","subjectLine":""}');
+      const rawDraftContent = draftResponse.choices[0].message.content || '{"draft":"","subjectLine":""}';
+      console.log(`[RI] Draft Response: raw draft response:`, rawDraftContent.substring(0, 500));
+      let draftData: any;
+      try {
+        draftData = JSON.parse(rawDraftContent);
+      } catch (parseErr) {
+        console.error(`[RI] Draft Response: failed to parse draft JSON, using raw content`);
+        draftData = { draft: rawDraftContent, subjectLine: "" };
+      }
+
+      let finalDraft = draftData.draft || draftData.message || draftData.response || "";
+      let finalSubject = draftData.subjectLine || draftData.subject_line || draftData.subject || "";
+
+      if (!finalDraft.trim()) {
+        console.log(`[RI] Draft Response: empty draft, generating fallback`);
+        finalDraft = `Hi ${contact.fullName.split(",")[0].split(" ")[0]},\n\nI came across the article "${alert.headline}" and thought of you. I'd welcome the chance to connect and discuss any developments that may be relevant to your work${contact.company ? ` at ${contact.company}` : ""}.\n\nPlease let me know if you'd like to catch up.`;
+        finalSubject = finalSubject || `Following up: ${(alert.headline || "Recent News").substring(0, 60)}`;
+      }
+
+      if (!finalSubject.trim()) {
+        finalSubject = `Re: ${(alert.headline || "Recent News").substring(0, 80)}`;
+      }
 
       res.json({
-        draft: draftData.draft || "",
-        subjectLine: draftData.subjectLine || "",
+        draft: finalDraft,
+        subjectLine: finalSubject,
         searchTermsUsed: searchTerms,
         contextSources: topSources.map(s => ({
           communicationId: s.communicationId,
