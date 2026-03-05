@@ -458,7 +458,7 @@ export default function CalendarPage() {
     
     createEventMutation.mutate({
       ...newEvent,
-      eventType: newEvent.eventType !== "none" ? newEvent.eventType : null,
+      eventType: newEvent.eventType !== "none" ? newEvent.eventType : "meeting",
       startTime: startDate.toISOString(),
       endTime: endDate.toISOString(),
       isAllDay: newEvent.duration === "all_day",

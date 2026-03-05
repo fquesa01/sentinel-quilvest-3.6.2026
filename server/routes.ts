@@ -1018,6 +1018,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const eventData = {
         ...req.body,
         createdBy: req.user.id,
+        eventType: req.body.eventType || "meeting",
         startTime: new Date(req.body.startTime),
         endTime: new Date(req.body.endTime),
         meetingRoomId,
