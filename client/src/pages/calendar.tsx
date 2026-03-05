@@ -98,7 +98,7 @@ export default function CalendarPage() {
   const extractEventFromImageMutation = useMutation({
     mutationFn: async (imageData: string) => {
       const response = await apiRequest("POST", "/api/calendar/extract-from-image", { image: imageData });
-      return response as {
+      return await response.json() as {
         title?: string;
         eventType?: string;
         startTime?: string;
@@ -224,10 +224,13 @@ export default function CalendarPage() {
   const { data: events = [], isLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/calendar/events", startDate.toISOString(), endDate.toISOString()],
     queryFn: async () => {
-      const response = await fetch(`/api/calendar/events?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`);
+      const response = await fetch(`/api/calendar/events?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`, {
+        credentials: "include",
+      });
       if (!response.ok) throw new Error("Failed to fetch events");
       return response.json();
     },
+    staleTime: 0,
   });
 
   const { data: cases = [] } = useQuery<Case[]>({
@@ -275,7 +278,8 @@ export default function CalendarPage() {
 
   const createCalendarMutation = useMutation({
     mutationFn: async (data: { name: string; color: string }) => {
-      return await apiRequest("POST", "/api/user-calendars", data) as unknown as UserCalendar;
+      const response = await apiRequest("POST", "/api/user-calendars", data);
+      return await response.json() as UserCalendar;
     },
     onSuccess: (newCal) => {
       queryClient.invalidateQueries({ queryKey: ["/api/user-calendars"] });
@@ -349,7 +353,7 @@ export default function CalendarPage() {
   const sendInvitationsMutation = useMutation({
     mutationFn: async ({ eventId, invitees }: { eventId: string; invitees: typeof newEvent.invitees }) => {
       const response = await apiRequest("POST", `/api/calendar/events/${eventId}/send-invitations`, { invitees });
-      return response;
+      return await response.json();
     },
     onSuccess: (data: any) => {
       toast({ 
@@ -365,10 +369,10 @@ export default function CalendarPage() {
   const createEventMutation = useMutation({
     mutationFn: async (eventData: any) => {
       const response = await apiRequest("POST", "/api/calendar/events", eventData);
-      return response as CalendarEvent;
+      return await response.json() as CalendarEvent;
     },
     onSuccess: (createdEvent, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"], refetchType: "all" });
       toast({ title: "Event created successfully" });
       
       // Send invitations if there are invitees with valid contact info (use variables to avoid race condition)
@@ -389,10 +393,10 @@ export default function CalendarPage() {
   const updateEventMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
       const response = await apiRequest("PATCH", `/api/calendar/events/${id}`, updates);
-      return response;
+      return await response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"], refetchType: "all" });
       toast({ title: "Event updated successfully" });
       setIsEventDialogOpen(false);
     },
@@ -406,7 +410,7 @@ export default function CalendarPage() {
       await apiRequest("DELETE", `/api/calendar/events/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"], refetchType: "all" });
       toast({ title: "Event deleted successfully" });
       setIsEventDialogOpen(false);
     },
