@@ -265,18 +265,6 @@ export function AppSidebar() {
       ],
     },
     {
-      title: "Knowledge Center",
-      defaultOpen: true,
-      items: [
-        {
-          title: "Knowledge Base",
-          url: "/knowledge-base",
-          icon: BookOpen,
-          roles: ["admin", "compliance_officer", "attorney", "auditor"],
-        },
-      ],
-    },
-    {
       title: "Administration",
       defaultOpen: false,
       items: [

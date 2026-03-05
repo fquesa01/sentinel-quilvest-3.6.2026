@@ -15,7 +15,6 @@ import Alerts from "@/pages/alerts";
 import ClientsPage from "@/pages/clients";
 import CalendarPage from "@/pages/calendar";
 import AttorneyQueue from "@/pages/attorney-queue";
-import KnowledgeBase from "@/pages/knowledge-base";
 import Analytics from "@/pages/analytics";
 import UserManagement from "@/pages/user-management";
 import EmployeeDashboard from "@/pages/employee-dashboard";
@@ -128,7 +127,6 @@ function AuthenticatedApp() {
               <Route path="/privileged-research/:sessionId" component={PrivilegedResearch} />
               <Route path="/calendar" component={CalendarPage} />
               <Route path="/attorney-queue" component={AttorneyQueue} />
-              <Route path="/knowledge-base" component={KnowledgeBase} />
               <Route path="/analytics" component={Analytics} />
               <Route path="/executive-analytics" component={ExecutiveAnalytics} />
               <Route path="/management-analytics" component={ManagementAnalytics} />
