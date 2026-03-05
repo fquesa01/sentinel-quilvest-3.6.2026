@@ -474,10 +474,9 @@ export default function CalendarPage() {
 
   const handleDateClick = (date: Date) => {
     setSelectedDate(date);
-    const dateStr = format(date, "yyyy-MM-dd");
     setNewEvent(prev => ({
       ...prev,
-      startTime: `${dateStr}T09:00`,
+      startTime: getNextHourDefault(date),
       duration: "60",
     }));
     setIsCreateDialogOpen(true);
@@ -508,6 +507,20 @@ export default function CalendarPage() {
   };
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  const getNextHourDefault = (baseDate?: Date) => {
+    const now = new Date();
+    const base = baseDate || now;
+    const result = new Date(base);
+    if (isSameDay(base, now) || base.getTime() <= now.getTime()) {
+      result.setTime(now.getTime());
+      result.setMinutes(0, 0, 0);
+      result.setHours(result.getHours() + 1);
+    } else {
+      result.setHours(9, 0, 0, 0);
+    }
+    return format(result, "yyyy-MM-dd'T'HH:mm");
+  };
 
   const renderMonthView = () => {
     const days = eachDayOfInterval({ start: startDate, end: endDate });
@@ -960,11 +973,9 @@ export default function CalendarPage() {
             size="icon"
             onClick={() => {
               resetNewEvent();
-              const now = new Date();
-              const dateStr = format(now, "yyyy-MM-dd");
               setNewEvent(prev => ({
                 ...prev,
-                startTime: `${dateStr}T09:00`,
+                startTime: getNextHourDefault(),
                 duration: "60",
               }));
               setIsCreateDialogOpen(true);
@@ -1140,10 +1151,9 @@ export default function CalendarPage() {
             size="icon"
             onClick={() => {
               resetNewEvent();
-              const dateStr = format(currentDate, "yyyy-MM-dd");
               setNewEvent(prev => ({
                 ...prev,
-                startTime: `${dateStr}T09:00`,
+                startTime: getNextHourDefault(currentDate),
                 duration: "60",
               }));
               setIsCreateDialogOpen(true);
@@ -1394,12 +1404,11 @@ export default function CalendarPage() {
           <p className="text-muted-foreground">Manage hearings, depositions, deadlines, and court dates</p>
         </div>
         <Button onClick={() => {
-          const now = new Date();
-          const dateStr = format(now, "yyyy-MM-dd");
+          resetNewEvent();
           setNewEvent(prev => ({
             ...prev,
-            startTime: `${dateStr}T09:00`,
-            endTime: `${dateStr}T10:00`,
+            startTime: getNextHourDefault(),
+            duration: "60",
           }));
           setIsCreateDialogOpen(true);
         }} data-testid="button-create-event">
