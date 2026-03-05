@@ -94,9 +94,6 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
 
-  // Extract current case ID from URL if viewing a case (e.g., /cases/abc-123)
-  const currentCaseId = location.match(/^\/cases\/([^/?]+)/)?.[1] || null;
-
   // Fetch unread message count
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/messages/unread-count"],
@@ -156,36 +153,6 @@ export function AppSidebar() {
           url: "/business-intelligence",
           icon: Briefcase,
           roles: ["admin", "attorney", "external_counsel", "auditor"],
-        },
-      ],
-    },
-    {
-      title: "Litigation",
-      defaultOpen: true,
-      items: [
-        {
-          title: "Cases",
-          url: "/cases",
-          icon: Folder,
-          roles: ["admin", "compliance_officer", "attorney", "auditor"],
-        },
-        {
-          title: "Interviews",
-          url: "/interviews",
-          icon: Calendar,
-          roles: ["admin", "compliance_officer", "attorney"],
-        },
-        {
-          title: "Forms & Templates",
-          url: "/litigation-templates",
-          icon: FileText,
-          roles: ["admin", "compliance_officer", "attorney", "external_counsel"],
-        },
-        {
-          title: "Document Sets",
-          url: "/document-sets",
-          icon: Folder,
-          roles: ["admin", "attorney", "compliance_officer", "external_counsel", "auditor"],
         },
       ],
     },
@@ -355,20 +322,7 @@ export function AppSidebar() {
   };
 
   const renderMenuItem = (item: MenuItem) => {
-    // Modify URL for case-scoped pages when viewing a case
     let itemUrl = item.url;
-    if (currentCaseId && item.url === "/document-review") {
-      itemUrl = `/cases/${currentCaseId}/document-review`;
-    }
-    if (currentCaseId && item.url === "/interviews") {
-      itemUrl = `/interviews?caseId=${currentCaseId}`;
-    }
-    if (currentCaseId && item.url === "/chat-review") {
-      itemUrl = `/cases/${currentCaseId}/chat-review`;
-    }
-    if (currentCaseId && item.url === "/issue-heatmap") {
-      itemUrl = `/cases/${currentCaseId}/issue-heatmap`;
-    }
     
     const isActive = location === item.url || location.startsWith(item.url + "?");
     const showBadge = item.showBadge && item.title === "Mailbox" && unreadCount > 0;

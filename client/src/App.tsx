@@ -12,14 +12,10 @@ import Communications from "@/pages/communications";
 import CommunicationDetail from "@/pages/communication-detail";
 import CommunicationAnalytics from "@/pages/communication-analytics";
 import Alerts from "@/pages/alerts";
-import CasesPage from "@/pages/cases";
 import ClientsPage from "@/pages/clients";
-import LitigationTemplatesPage from "@/pages/litigation-templates";
 import CalendarPage from "@/pages/calendar";
-import CaseDetail from "@/pages/case-detail";
 import AttorneyQueue from "@/pages/attorney-queue";
 import KnowledgeBase from "@/pages/knowledge-base";
-import Interviews from "@/pages/interviews";
 import Analytics from "@/pages/analytics";
 import UserManagement from "@/pages/user-management";
 import EmployeeDashboard from "@/pages/employee-dashboard";
@@ -35,7 +31,6 @@ import WhistleblowerReport from "@/pages/whistleblower-report";
 import WhistleblowerConfirmation from "@/pages/whistleblower-confirmation";
 import WhistleblowerLookup from "@/pages/whistleblower-lookup";
 import TagManagement from "@/pages/tag-management";
-import DocumentSets from "@/pages/document-sets";
 import AdminDashboard from "@/pages/admin-dashboard";
 import MonitoringDirectory from "@/pages/monitoring-directory";
 import MonitoringProfile from "@/pages/monitoring-profile";
@@ -46,8 +41,6 @@ import CrisisIntake from "@/pages/crisis-intake";
 import BusinessIntelligence from "@/pages/business-intelligence";
 import DocumentIngestion from "@/pages/document-ingestion";
 import ReportsProductions from "@/pages/reports-productions";
-import CommunicationsHeatmap from "@/pages/communications-heatmap";
-import IssueHeatmap from "@/pages/issue-heatmap";
 import IssueHeatmapLanding from "@/pages/issue-heatmap-landing";
 import MyQueue from "@/pages/my-queue";
 import TransactionsDashboard from "@/pages/transactions-dashboard";
@@ -66,16 +59,10 @@ import TransactionsDocumentSearch from "@/pages/transactions-document-search";
 import TransactionsTemplates from "@/pages/transactions-templates";
 import BackgroundResearch from "@/pages/background-research";
 import BackgroundResearchDetail from "@/pages/background-research-detail";
-import LiveInterviewPage from "@/pages/live-interview";
 import AmbientIntelligence from "@/pages/ambient-intelligence";
 import VideoMeetingPage from "@/pages/video-meeting";
-import CreateVideoMeetingPage from "@/pages/create-video-meeting";
 import AmbientSession from "@/pages/ambient-session";
 import PrivilegedResearch from "@/pages/privileged-research";
-import InterviewReviewPage from "@/pages/interview-review";
-import JoinInterview from "@/pages/join-interview";
-import WitnessInterview from "@/pages/witness-interview";
-import StatementDetailPage from "@/pages/statement-detail";
 import PEDealPipeline from "@/pages/pe-deal-pipeline";
 import PEDealDetail from "@/pages/pe-deal-detail";
 import PEDealIntelligence from "@/pages/pe-deal-intelligence";
@@ -88,7 +75,6 @@ import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const InterviewSession = lazy(() => import("@/pages/interview-session"));
 
 function AuthenticatedApp() {
   const style = {
@@ -134,11 +120,6 @@ function AuthenticatedApp() {
               <Route path="/communication-analytics" component={CommunicationAnalytics} />
               <Route path="/alerts" component={Alerts} />
               <Route path="/clients" component={ClientsPage} />
-              <Route path="/cases" component={CasesPage} />
-              <Route path="/cases/:id" component={CaseDetail} />
-              <Route path="/cases/:caseId/communications-heatmap" component={CommunicationsHeatmap} />
-              <Route path="/cases/:caseId/issue-heatmap" component={IssueHeatmap} />
-              <Route path="/cases/:caseId/statements/:statementId" component={StatementDetailPage} />
               <Route path="/issue-heatmap" component={IssueHeatmapLanding} />
               <Route path="/my-queue" component={MyQueue} />
               <Route path="/ambient-intelligence" component={AmbientIntelligence} />
@@ -148,10 +129,6 @@ function AuthenticatedApp() {
               <Route path="/calendar" component={CalendarPage} />
               <Route path="/attorney-queue" component={AttorneyQueue} />
               <Route path="/knowledge-base" component={KnowledgeBase} />
-              <Route path="/interviews" component={Interviews} />
-              <Route path="/create-video-meeting" component={CreateVideoMeetingPage} />
-              <Route path="/live-interview/:sessionId" component={LiveInterviewPage} />
-              <Route path="/interviews/:sessionId/review" component={InterviewReviewPage} />
               <Route path="/analytics" component={Analytics} />
               <Route path="/executive-analytics" component={ExecutiveAnalytics} />
               <Route path="/management-analytics" component={ManagementAnalytics} />
@@ -186,8 +163,6 @@ function AuthenticatedApp() {
               <Route path="/report/confirmation" component={WhistleblowerConfirmation} />
               <Route path="/report/lookup" component={WhistleblowerLookup} />
               <Route path="/tags" component={TagManagement} />
-              <Route path="/document-sets" component={DocumentSets} />
-              <Route path="/litigation-templates" component={LitigationTemplatesPage} />
               <Route path="/monitoring/directory" component={MonitoringDirectory} />
               <Route path="/monitoring/profile/:type/:id" component={MonitoringProfile} />
               <Route path="/monitoring/communications/:type/:personId/:contactType/:contactId" component={PersonToPersonCommunications} />
@@ -222,29 +197,8 @@ function App() {
   return (
     <>
       <Switch>
-        {/* Short interview link redirects to full interview session (AI invites) */}
-        <Route path="/interview/:token">
-          {(params) => <Redirect to={`/interview-session/${params.token}`} />}
-        </Route>
-        {/* Join scheduled interview by access token */}
-        <Route path="/join-interview/:token" component={JoinInterview} />
-        {/* Witness video interview recording */}
-        <Route path="/witness-interview/:token" component={WitnessInterview} />
         {/* Video meeting room - accessible to guests without authentication */}
         <Route path="/video-meeting/:roomId" component={VideoMeetingPage} />
-        <Route path="/interview-session/:token">
-          {() => (
-            <Suspense
-              fallback={
-                <div className="flex items-center justify-center h-screen">
-                  <div className="text-lg">Loading interview session...</div>
-                </div>
-              }
-            >
-              <InterviewSession />
-            </Suspense>
-          )}
-        </Route>
         {/* Start page - Emma-powered landing after login */}
         <Route path="/start">
           {() => isAuthenticated ? <StartPage /> : <Landing />}
@@ -252,10 +206,6 @@ function App() {
         {/* Document Review has its own sidebar management */}
         <Route path="/document-review">
           {() => isAuthenticated ? <DocumentReviewPage /> : <Landing />}
-        </Route>
-        {/* Case-scoped Document Review (from heatmap navigation) */}
-        <Route path="/cases/:caseId/document-review">
-          {(params) => isAuthenticated ? <DocumentReviewPage routeParams={params} /> : <Landing />}
         </Route>
         <Route>
           {() =>
