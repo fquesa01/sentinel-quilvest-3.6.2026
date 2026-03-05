@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay, endOfDay, isToday, parseISO, setHours, setMinutes } from "date-fns";
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay, endOfDay, isToday, parseISO, setHours, setMinutes, differenceInMinutes } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import { SiGooglemeet, SiZoom } from "react-icons/si";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { CalendarEvent, Case, Client, UserCalendar, ConnectedCalendarAccount } from "@shared/schema";
 import { SiGoogle } from "react-icons/si";
 import { Link2, Unlink, RefreshCw, Settings2, Mail, Phone, UserPlus, Send, ExternalLink } from "lucide-react";
@@ -50,10 +51,14 @@ const eventTypeIcons: Record<string, any> = {
   other: CalendarIcon,
 };
 
+type MobileViewType = "month" | "day";
+
 export default function CalendarPage() {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<ViewType>("month");
+  const [mobileView, setMobileView] = useState<MobileViewType>("month");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -62,6 +67,8 @@ export default function CalendarPage() {
   const [isCreateCalendarOpen, setIsCreateCalendarOpen] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState("");
   const [newCalendarColor, setNewCalendarColor] = useState("#3b82f6");
+  const mobileTouchStart = useRef<{ x: number; y: number } | null>(null);
+  const mobileDayScrollRef = useRef<HTMLDivElement>(null);
   
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -198,6 +205,11 @@ export default function CalendarPage() {
   };
 
   const { startDate, endDate } = useMemo(() => {
+    if (isMobile) {
+      const start = startOfWeek(startOfMonth(currentDate));
+      const end = endOfWeek(endOfMonth(currentDate));
+      return { startDate: start, endDate: end };
+    }
     if (view === "month") {
       const start = startOfWeek(startOfMonth(currentDate));
       const end = endOfWeek(endOfMonth(currentDate));
@@ -207,7 +219,7 @@ export default function CalendarPage() {
     } else {
       return { startDate: startOfDay(currentDate), endDate: endOfDay(currentDate) };
     }
-  }, [currentDate, view]);
+  }, [currentDate, view, isMobile]);
 
   const { data: events = [], isLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/calendar/events", startDate.toISOString(), endDate.toISOString()],
@@ -794,6 +806,368 @@ export default function CalendarPage() {
     );
   };
 
+  const scrollDayViewToCurrentHour = useCallback(() => {
+    setTimeout(() => {
+      if (mobileDayScrollRef.current) {
+        const scrollEl = mobileDayScrollRef.current.querySelector("[data-radix-scroll-area-viewport]");
+        if (scrollEl) {
+          const currentHour = new Date().getHours();
+          const targetScroll = Math.max(0, (currentHour - 1) * 60);
+          scrollEl.scrollTop = targetScroll;
+        }
+      }
+    }, 100);
+  }, []);
+
+  const handleMobileDayTap = useCallback((day: Date) => {
+    setCurrentDate(day);
+    setMobileView("day");
+    scrollDayViewToCurrentHour();
+  }, [scrollDayViewToCurrentHour]);
+
+  const handleMobileSwipe = useCallback((direction: "left" | "right") => {
+    if (mobileView === "month") {
+      setCurrentDate(prev => direction === "left" ? addMonths(prev, 1) : subMonths(prev, 1));
+    } else {
+      setCurrentDate(prev => direction === "left" ? addDays(prev, 1) : subDays(prev, 1));
+    }
+  }, [mobileView]);
+
+  const renderMobileMonthView = () => {
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+    const calendarStart = startOfWeek(monthStart);
+    const calendarEnd = endOfWeek(monthEnd);
+    const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+    const weeks: Date[][] = [];
+    for (let i = 0; i < days.length; i += 7) {
+      weeks.push(days.slice(i, i + 7));
+    }
+
+    return (
+      <div
+        className="flex-1 flex flex-col"
+        onTouchStart={(e) => { mobileTouchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+        onTouchEnd={(e) => {
+          if (mobileTouchStart.current !== null) {
+            const dx = e.changedTouches[0].clientX - mobileTouchStart.current.x;
+            const dy = e.changedTouches[0].clientY - mobileTouchStart.current.y;
+            if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+              handleMobileSwipe(dx < 0 ? "left" : "right");
+            }
+            mobileTouchStart.current = null;
+          }
+        }}
+      >
+        <div className="px-4 pt-4 pb-2">
+          <div className="flex items-center gap-3 mb-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+              data-testid="button-mobile-prev-month"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+            <h2 className="text-xl font-bold" data-testid="text-mobile-month-year">
+              {format(currentDate, "yyyy")}
+            </h2>
+          </div>
+          <h1 className="text-3xl font-bold mb-3" data-testid="text-mobile-month-name">
+            {format(currentDate, "MMMM")}
+          </h1>
+        </div>
+
+        <div className="grid grid-cols-7 px-2">
+          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+            <div key={i} className="text-center text-xs font-semibold text-muted-foreground py-1">
+              {d}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex-1 px-2 pb-2">
+          {weeks.map((week, weekIdx) => (
+            <div
+              key={weekIdx}
+              className="grid grid-cols-7 border-b border-border/30 last:border-b-0"
+            >
+              {week.map((day, dayIdx) => {
+                const dayEvents = getEventsForDay(day);
+                const isCurrentMonth = isSameMonth(day, currentDate);
+                const isTodayDate = isToday(day);
+                return (
+                  <div
+                    key={dayIdx}
+                    className={cn(
+                      "py-1.5 px-0.5 min-h-[72px] cursor-pointer",
+                      !isCurrentMonth && "opacity-30"
+                    )}
+                    onClick={() => handleMobileDayTap(day)}
+                    data-testid={`mobile-day-${format(day, "yyyy-MM-dd")}`}
+                  >
+                    <div className="flex justify-center mb-1">
+                      <span
+                        className={cn(
+                          "w-7 h-7 flex items-center justify-center text-sm font-semibold rounded-full",
+                          isTodayDate && "bg-primary text-primary-foreground",
+                          !isTodayDate && isSameDay(day, currentDate) && "bg-accent"
+                        )}
+                      >
+                        {format(day, "d")}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5 overflow-hidden">
+                      {dayEvents.slice(0, 2).map(event => (
+                        <div
+                          key={event.id}
+                          className={cn(
+                            "text-[9px] leading-tight px-1 py-0.5 rounded truncate text-white font-medium",
+                            eventTypeColors[event.eventType] || "bg-gray-500"
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEventClick(event);
+                          }}
+                          data-testid={`mobile-event-pill-${event.id}`}
+                        >
+                          {event.title}
+                        </div>
+                      ))}
+                      {dayEvents.length > 2 && (
+                        <div className="text-[9px] text-muted-foreground text-center font-medium">
+                          +{dayEvents.length - 2}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        <div className="sticky bottom-0 flex items-center justify-between px-4 py-3 border-t bg-background z-50">
+          <Button
+            variant="outline"
+            onClick={goToToday}
+            className="font-semibold"
+            data-testid="button-mobile-today"
+          >
+            Today
+          </Button>
+          <Button
+            size="icon"
+            onClick={() => {
+              resetNewEvent();
+              const now = new Date();
+              const dateStr = format(now, "yyyy-MM-dd");
+              setNewEvent(prev => ({
+                ...prev,
+                startTime: `${dateStr}T09:00`,
+                duration: "60",
+              }));
+              setIsCreateDialogOpen(true);
+            }}
+            data-testid="button-mobile-create-event"
+          >
+            <Plus className="w-5 h-5" />
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMobileDayView = () => {
+    const dayEvents = getEventsForDay(currentDate);
+    const weekStart = startOfWeek(currentDate);
+    const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(weekStart) });
+
+    return (
+      <div
+        className="flex-1 flex flex-col"
+        onTouchStart={(e) => { mobileTouchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+        onTouchEnd={(e) => {
+          if (mobileTouchStart.current !== null) {
+            const dx = e.changedTouches[0].clientX - mobileTouchStart.current.x;
+            const dy = e.changedTouches[0].clientY - mobileTouchStart.current.y;
+            if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+              handleMobileSwipe(dx < 0 ? "left" : "right");
+            }
+            mobileTouchStart.current = null;
+          }
+        }}
+      >
+        <div className="px-4 pt-3 pb-2">
+          <Button
+            variant="ghost"
+            className="gap-1 px-2 -ml-2 text-primary font-semibold"
+            onClick={() => setMobileView("month")}
+            data-testid="button-mobile-back-month"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            {format(currentDate, "MMMM")}
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-7 px-2 gap-1 pb-2">
+          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+            <div key={i} className="text-center text-xs font-semibold text-muted-foreground">
+              {d}
+            </div>
+          ))}
+          {weekDays.map((day, idx) => {
+            const hasEvents = getEventsForDay(day).length > 0;
+            const isTodayDate = isToday(day);
+            const isSelected = isSameDay(day, currentDate);
+            return (
+              <button
+                key={idx}
+                className={cn(
+                  "flex flex-col items-center py-1 rounded-lg min-h-[44px] justify-center",
+                  isSelected && isTodayDate && "bg-primary text-primary-foreground",
+                  isSelected && !isTodayDate && "bg-accent",
+                  !isSelected && "hover-elevate"
+                )}
+                onClick={() => setCurrentDate(day)}
+                data-testid={`mobile-week-day-${format(day, "yyyy-MM-dd")}`}
+              >
+                <span className={cn(
+                  "text-base font-semibold",
+                  isSelected && isTodayDate && "text-primary-foreground",
+                  isTodayDate && !isSelected && "text-primary"
+                )}>
+                  {format(day, "d")}
+                </span>
+                {hasEvents && !isSelected && (
+                  <span className="w-1 h-1 rounded-full bg-primary mt-0.5" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="px-4 py-2 border-t">
+          <h2 className="text-base font-semibold text-center" data-testid="text-mobile-day-header">
+            {format(currentDate, "EEEE")} &ndash; {format(currentDate, "MMM d, yyyy")}
+          </h2>
+        </div>
+
+        <div ref={mobileDayScrollRef} className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="relative">
+            {hours.map(hour => {
+              const hourEvents = dayEvents.filter(event => {
+                const eventDate = new Date(event.startTime);
+                return eventDate.getHours() === hour;
+              });
+              return (
+                <div key={hour} className="flex border-b border-border/30 min-h-[60px]">
+                  <div className="w-16 py-2 pr-2 text-xs text-muted-foreground text-right flex-shrink-0">
+                    {format(setHours(new Date(), hour), "h a")}
+                  </div>
+                  <div
+                    className="flex-1 relative border-l border-border/30 px-1 py-0.5"
+                    onClick={() => {
+                      const date = setMinutes(setHours(currentDate, hour), 0);
+                      const dateStr = format(date, "yyyy-MM-dd");
+                      const timeStr = format(date, "HH:mm");
+                      setNewEvent(prev => ({
+                        ...prev,
+                        startTime: `${dateStr}T${timeStr}`,
+                        duration: "60",
+                      }));
+                      setIsCreateDialogOpen(true);
+                    }}
+                  >
+                    {hourEvents.map(event => {
+                      const eventStart = new Date(event.startTime);
+                      const eventEnd = new Date(event.endTime);
+                      const durationMins = Math.max(differenceInMinutes(eventEnd, eventStart), 30);
+                      const heightPx = Math.min(durationMins, 120);
+                      const Icon = eventTypeIcons[event.eventType] || CalendarIcon;
+                      return (
+                        <div
+                          key={event.id}
+                          className={cn(
+                            "rounded p-2 text-white cursor-pointer mb-0.5",
+                            eventTypeColors[event.eventType] || "bg-gray-500"
+                          )}
+                          style={{ minHeight: `${heightPx}px` }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEventClick(event);
+                          }}
+                          data-testid={`mobile-day-event-${event.id}`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="font-semibold text-sm truncate">{event.title}</span>
+                          </div>
+                          <div className="text-xs opacity-90 mt-0.5">
+                            {format(eventStart, "h:mm a")} - {format(eventEnd, "h:mm a")}
+                          </div>
+                          {event.location && (
+                            <div className="text-xs opacity-80 flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3" />
+                              <span className="truncate">{event.location}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </ScrollArea>
+        </div>
+
+        <div className="sticky bottom-0 flex items-center justify-between px-4 py-3 border-t bg-background z-50">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setCurrentDate(new Date());
+              scrollDayViewToCurrentHour();
+            }}
+            className="font-semibold"
+            data-testid="button-mobile-day-today"
+          >
+            Today
+          </Button>
+          <Button
+            size="icon"
+            onClick={() => {
+              resetNewEvent();
+              const dateStr = format(currentDate, "yyyy-MM-dd");
+              setNewEvent(prev => ({
+                ...prev,
+                startTime: `${dateStr}T09:00`,
+                duration: "60",
+              }));
+              setIsCreateDialogOpen(true);
+            }}
+            data-testid="button-mobile-day-create"
+          >
+            <Plus className="w-5 h-5" />
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMobileLayout = () => {
+    if (isLoading) {
+      return (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      );
+    }
+    return mobileView === "month" ? renderMobileMonthView() : renderMobileDayView();
+  };
+
   const renderMiniCalendar = () => {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
@@ -835,6 +1209,182 @@ export default function CalendarPage() {
       </div>
     );
   };
+
+  if (isMobile) {
+    return (
+      <div className="h-full flex flex-col">
+        {renderMobileLayout()}
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogContent
+            className="max-w-[95vw] max-h-[90vh] overflow-y-auto rounded-lg"
+            onPaste={(e) => {
+              if (!eventImage && !isExtractingFromImage) {
+                handlePaste(e as unknown as ClipboardEvent);
+              }
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Create New Event</DialogTitle>
+              <DialogDescription>Add a new event to your calendar</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="mobile-title">Event Title *</Label>
+                <Input
+                  id="mobile-title"
+                  value={newEvent.title}
+                  onChange={(e) => setNewEvent(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="e.g., Motion Hearing - Smith v. Jones"
+                  data-testid="input-mobile-event-title"
+                />
+              </div>
+              <div>
+                <Label htmlFor="mobile-eventType">Event Type</Label>
+                <Select value={newEvent.eventType} onValueChange={(v) => setNewEvent(prev => ({ ...prev, eventType: v }))}>
+                  <SelectTrigger data-testid="select-mobile-event-type">
+                    <SelectValue placeholder="Select event type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none"><span className="text-muted-foreground">No type</span></SelectItem>
+                    <SelectItem value="hearing">Hearing</SelectItem>
+                    <SelectItem value="deposition">Deposition</SelectItem>
+                    <SelectItem value="deadline">Deadline</SelectItem>
+                    <SelectItem value="trial">Trial</SelectItem>
+                    <SelectItem value="meeting">Meeting</SelectItem>
+                    <SelectItem value="filing">Filing</SelectItem>
+                    <SelectItem value="mediation">Mediation</SelectItem>
+                    <SelectItem value="conference">Conference</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="mobile-startTime">Start Time *</Label>
+                <Input
+                  id="mobile-startTime"
+                  type="datetime-local"
+                  value={newEvent.startTime}
+                  onChange={(e) => setNewEvent(prev => ({ ...prev, startTime: e.target.value }))}
+                  data-testid="input-mobile-start-time"
+                />
+              </div>
+              <div>
+                <Label htmlFor="mobile-duration">Duration</Label>
+                <Select value={newEvent.duration} onValueChange={(v) => setNewEvent(prev => ({ ...prev, duration: v }))}>
+                  <SelectTrigger data-testid="select-mobile-duration">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30">30 minutes</SelectItem>
+                    <SelectItem value="60">1 hour</SelectItem>
+                    <SelectItem value="90">1.5 hours</SelectItem>
+                    <SelectItem value="120">2 hours</SelectItem>
+                    <SelectItem value="180">3 hours</SelectItem>
+                    <SelectItem value="240">4 hours</SelectItem>
+                    <SelectItem value="half_day">Half Day</SelectItem>
+                    <SelectItem value="all_day">All Day</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="mobile-location">Location</Label>
+                <Input
+                  id="mobile-location"
+                  value={newEvent.location}
+                  onChange={(e) => setNewEvent(prev => ({ ...prev, location: e.target.value }))}
+                  placeholder="Courtroom, office, etc."
+                  data-testid="input-mobile-location"
+                />
+              </div>
+              <div>
+                <Label htmlFor="mobile-description">Description</Label>
+                <Textarea
+                  id="mobile-description"
+                  value={newEvent.description}
+                  onChange={(e) => setNewEvent(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Additional details..."
+                  rows={3}
+                  data-testid="input-mobile-description"
+                />
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => { setIsCreateDialogOpen(false); resetNewEvent(); }} data-testid="button-mobile-cancel-event">
+                Cancel
+              </Button>
+              <Button onClick={handleCreateEvent} disabled={createEventMutation.isPending} data-testid="button-mobile-save-event">
+                {createEventMutation.isPending ? "Creating..." : "Create Event"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {selectedEvent && (
+          <Dialog open={isEventDialogOpen} onOpenChange={setIsEventDialogOpen}>
+            <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-y-auto rounded-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  {(() => {
+                    const Icon = eventTypeIcons[selectedEvent.eventType] || CalendarIcon;
+                    return <Icon className="w-5 h-5" />;
+                  })()}
+                  {selectedEvent.title}
+                </DialogTitle>
+                <DialogDescription>Event details</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Badge className={cn("capitalize text-white", eventTypeColors[selectedEvent.eventType])}>
+                    {selectedEvent.eventType}
+                  </Badge>
+                  {selectedEvent.isBillable && (
+                    <Badge variant="secondary">
+                      <DollarSign className="w-3 h-3 mr-1" />
+                      Billable
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <span>
+                    {format(new Date(selectedEvent.startTime), "EEEE, MMM d, yyyy")}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <span>
+                    {format(new Date(selectedEvent.startTime), "h:mm a")} - {format(new Date(selectedEvent.endTime), "h:mm a")}
+                  </span>
+                </div>
+                {selectedEvent.location && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <MapPin className="w-4 h-4 text-muted-foreground" />
+                    <span>{selectedEvent.location}</span>
+                  </div>
+                )}
+                {selectedEvent.description && (
+                  <p className="text-sm text-muted-foreground">{selectedEvent.description}</p>
+                )}
+              </div>
+              <DialogFooter className="gap-2">
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    deleteEventMutation.mutate(selectedEvent.id);
+                    setIsEventDialogOpen(false);
+                  }}
+                  data-testid="button-mobile-delete-event"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col p-4 gap-4">
