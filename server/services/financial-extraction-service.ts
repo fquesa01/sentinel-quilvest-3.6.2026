@@ -309,12 +309,14 @@ export async function persistExtraction(
   dealId: string,
   extraction: ExtractionResult
 ): Promise<void> {
+  const truncYear = (y?: string) => y ? y.substring(0, 50) : undefined;
+
   for (const stmt of extraction.incomeStatements) {
     await db.insert(extractedFinancials).values({
       memoId,
       dealId,
       dataType: "income_statement",
-      fiscalYear: stmt.year,
+      fiscalYear: truncYear(stmt.year),
       structuredData: stmt,
       confidence: 0.85,
     });
@@ -325,7 +327,7 @@ export async function persistExtraction(
       memoId,
       dealId,
       dataType: "balance_sheet",
-      fiscalYear: bs.year,
+      fiscalYear: truncYear(bs.year),
       structuredData: bs,
       confidence: 0.85,
     });
@@ -336,7 +338,7 @@ export async function persistExtraction(
       memoId,
       dealId,
       dataType: "cash_flow",
-      fiscalYear: cf.year,
+      fiscalYear: truncYear(cf.year),
       structuredData: cf,
       confidence: 0.85,
     });

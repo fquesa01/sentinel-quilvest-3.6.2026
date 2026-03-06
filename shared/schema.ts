@@ -12861,7 +12861,7 @@ export const extractedFinancials = pgTable("extracted_financials", {
   documentId: varchar("document_id"),
   documentName: varchar("document_name", { length: 500 }),
   dataType: varchar("data_type", { length: 100 }).notNull(),
-  fiscalYear: varchar("fiscal_year", { length: 10 }),
+  fiscalYear: varchar("fiscal_year", { length: 50 }),
   fiscalPeriod: varchar("fiscal_period", { length: 20 }),
 
   structuredData: jsonb("structured_data").$type<Record<string, any>>().notNull(),
