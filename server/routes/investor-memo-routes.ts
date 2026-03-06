@@ -260,9 +260,19 @@ router.post("/api/deals/:dealId/memos/auto-generate", async (req: Request, res: 
   try {
     const { dealId } = req.params;
     const userId = getUserId(req);
+    console.log(`[MemoRoutes] Auto-generate requested for deal ${dealId} by user ${userId}`);
 
     const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
     if (!deal) return res.status(404).json({ error: "Deal not found" });
+
+    const existingGenerating = await db.select({ id: investorMemos.id })
+      .from(investorMemos)
+      .where(and(eq(investorMemos.dealId, dealId), eq(investorMemos.status, "generating")));
+    for (const stuck of existingGenerating) {
+      console.log(`[MemoRoutes] Cleaning up stuck memo ${stuck.id}`);
+      await db.delete(memoGenerationRuns).where(eq(memoGenerationRuns.memoId, stuck.id));
+      await db.delete(investorMemos).where(eq(investorMemos.id, stuck.id));
+    }
 
     const settings = (deal.settings || {}) as Record<string, any>;
 

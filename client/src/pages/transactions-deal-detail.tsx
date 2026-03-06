@@ -2092,6 +2092,20 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
   const hasDocumentsReady = memoReadiness?.ready || memoStatus === "ready_to_generate";
   const documentCount = memoReadiness?.documentCount || 0;
 
+  const isStuckGenerating = latestMemo?.status === "generating" && latestMemo?.createdAt &&
+    (Date.now() - new Date(latestMemo.createdAt).getTime() > 10 * 60 * 1000);
+  const isFailedMemo = latestMemo?.status === "failed";
+
+  const handleRetryGeneration = async () => {
+    if (latestMemo) {
+      try {
+        await fetch(`/api/memos/${latestMemo.id}`, { method: "DELETE" });
+        queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "memos"] });
+      } catch {}
+    }
+    setTimeout(() => handleAutoGenerate(), 500);
+  };
+
   const handleAutoGenerate = async () => {
     setIsGenerating(true);
     setGenerationProgress({ stage: "starting", progress: 0, message: "Starting memo generation..." });
@@ -2213,6 +2227,28 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
                 <Button size="sm" onClick={handleAutoGenerate} data-testid="button-update-memo">
                   <Sparkles className="h-4 w-4 mr-2" />
                   Update Memo
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!isGenerating && (isStuckGenerating || isFailedMemo) && (
+            <div className="text-center py-8">
+              <div className="space-y-4">
+                <div className="p-3 rounded-full bg-destructive/10 w-fit mx-auto">
+                  <AlertTriangle className="h-8 w-8 text-destructive" />
+                </div>
+                <div>
+                  <p className="font-medium">{isStuckGenerating ? "Generation Timed Out" : "Generation Failed"}</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {isStuckGenerating
+                      ? "The previous generation was interrupted. You can retry to generate a fresh memo."
+                      : "The memo generation encountered an error. Please try again."}
+                  </p>
+                </div>
+                <Button onClick={handleRetryGeneration} data-testid="button-retry-stuck-memo">
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Retry Generation
                 </Button>
               </div>
             </div>

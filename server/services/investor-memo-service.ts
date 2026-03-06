@@ -97,6 +97,8 @@ export async function generateInvestorMemo(
     documents = allDocs;
   }
 
+  console.log(`[MemoGen] Starting generation for deal "${dealName}" (${dealId}), sourceType=${sourceType}, ${documents.length} documents`);
+
   if (documents.length === 0) {
     throw new Error("No documents found for this deal. Upload documents before generating a memo.");
   }
@@ -120,6 +122,7 @@ export async function generateInvestorMemo(
 
   try {
     // Stage 1: Classification
+    console.log(`[MemoGen] Stage 1: Classifying ${documents.length} documents...`);
     progress("classification", 10, `Classifying ${documents.length} documents...`);
     await updateRunStage(run.id, "classification", "running");
 
@@ -140,7 +143,10 @@ export async function generateInvestorMemo(
       progress: 15,
     }).where(eq(memoGenerationRuns.id, run.id));
 
+    console.log(`[MemoGen] Classification complete: ${classifications.length} documents classified`);
+
     // Stages 2-4 run in parallel
+    console.log(`[MemoGen] Stages 2-4: Extraction, research, and tech assessment (parallel)...`);
     progress("extraction", 20, "Extracting financials, researching industry, assessing technology...");
     await updateRunStage(run.id, "extraction", "running");
     await updateRunStage(run.id, "research", "running");
@@ -177,6 +183,7 @@ export async function generateInvestorMemo(
     ]);
 
     // Stage 4: Tech assessment (needs extraction results)
+    console.log(`[MemoGen] Stage 4: Tech assessment...`);
     progress("tech_assessment", 55, "Assessing technology and platform synergies...");
     const techAssessment = await assessTechInnovation(
       classifiedDocs,
@@ -191,6 +198,7 @@ export async function generateInvestorMemo(
     progress("tech_assessment", 65, "Technology assessment complete");
 
     // Stage 5: Financial Model
+    console.log(`[MemoGen] Stage 5: Building financial model...`);
     progress("modeling", 70, "Building financial model with 3 scenarios...");
     await updateRunStage(run.id, "modeling", "running");
 
@@ -203,6 +211,7 @@ export async function generateInvestorMemo(
     progress("modeling", 80, "Financial model complete");
 
     // Stage 6: Write the memo
+    console.log(`[MemoGen] Stage 6: Writing memo sections...`);
     progress("writing", 85, "Writing investor memo...");
     await updateRunStage(run.id, "writing", "running");
 
