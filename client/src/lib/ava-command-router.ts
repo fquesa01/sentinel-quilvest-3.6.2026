@@ -547,10 +547,7 @@ export async function executeAvaCommand(
       return { errorMessage: "Please specify which transaction's data room you want to view." };
     }
 
-    case "navigate_to_data_room_document": {
-      // This intent is fully resolved by the server-side interpreter
-      // It already finds the document and creates the navigation link
-      // We just need to navigate to the resolved URL if available
+    case "navigate_to_data_room_document_resolved": {
       const documentId = parameters.documentId;
       const dataRoomId = parameters.dataRoomId;
       const resolvedDocumentName = parameters.resolvedDocumentName;
@@ -565,7 +562,6 @@ export async function executeAvaCommand(
         };
       }
       
-      // Document wasn't found - the server already set an error message
       return {
         errorMessage: parameters.errorMessage || "I couldn't find that document. Please check the document name and try again.",
         actionLink: {
