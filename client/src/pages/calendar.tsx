@@ -38,6 +38,16 @@ export default function CalendarPage() {
   const [mobileView, setMobileView] = useState<MobileViewType>("month");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    startTime: "",
+    endTime: "",
+    location: "",
+    description: "",
+    videoConferenceType: "none" as string,
+    invitees: [] as { name: string; email: string; phone: string; notifyVia: "email" | "sms" | "both" }[],
+  });
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [visibleCalendarIds, setVisibleCalendarIds] = useState<Set<string>>(new Set());
@@ -395,6 +405,88 @@ export default function CalendarPage() {
       toast({ title: "Failed to delete event", description: error.message, variant: "destructive" });
     },
   });
+
+  const enterEditMode = (event: CalendarEvent) => {
+    setEditForm({
+      title: event.title,
+      startTime: format(new Date(event.startTime), "yyyy-MM-dd'T'HH:mm"),
+      endTime: format(new Date(event.endTime), "yyyy-MM-dd'T'HH:mm"),
+      location: event.location || "",
+      description: event.description || "",
+      videoConferenceType: event.videoConferenceType || "none",
+      invitees: (event.externalAttendees || []).map((a: any, idx: number) => {
+        const notifications = (event as any).inviteeNotifications || [];
+        const n = notifications[idx];
+        return {
+          name: a.name || "",
+          email: a.email || n?.email || "",
+          phone: n?.phone || "",
+          notifyVia: (n?.method as "email" | "sms" | "both") || "email",
+        };
+      }),
+    });
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!selectedEvent) return;
+    if (!editForm.title || !editForm.startTime || !editForm.endTime) {
+      toast({ title: "Title, start time, and end time are required", variant: "destructive" });
+      return;
+    }
+    const validInvitees = editForm.invitees.filter(i => i.email || i.name);
+    const updates: any = {
+      title: editForm.title,
+      startTime: new Date(editForm.startTime).toISOString(),
+      endTime: new Date(editForm.endTime).toISOString(),
+      location: editForm.location || null,
+      description: editForm.description || null,
+      videoConferenceType: editForm.videoConferenceType === "none" ? null : editForm.videoConferenceType,
+      externalAttendees: validInvitees.map(i => ({ name: i.name, email: i.email })),
+      inviteeNotifications: validInvitees.map(i => ({ email: i.email, phone: i.phone, method: i.notifyVia })),
+    };
+    updateEventMutation.mutate({ id: selectedEvent.id, updates }, {
+      onSuccess: () => {
+        setIsEditing(false);
+      },
+    });
+  };
+
+  const handleEmailAllParticipants = () => {
+    if (!selectedEvent) return;
+    const attendees = selectedEvent.externalAttendees || [];
+    const emails = attendees.map((a: any) => a.email).filter(Boolean);
+    if (emails.length === 0) {
+      toast({ title: "No participant emails available", variant: "destructive" });
+      return;
+    }
+    const subject = encodeURIComponent(selectedEvent.title || "Meeting");
+    const body = encodeURIComponent(
+      `Regarding: ${selectedEvent.title}\nDate: ${format(new Date(selectedEvent.startTime), "EEEE, MMMM d, yyyy")}\nTime: ${format(new Date(selectedEvent.startTime), "h:mm a")} - ${format(new Date(selectedEvent.endTime), "h:mm a")}${selectedEvent.location ? `\nLocation: ${selectedEvent.location}` : ""}`
+    );
+    window.open(`mailto:${emails.join(",")}?subject=${subject}&body=${body}`, "_self");
+  };
+
+  const addEditInvitee = () => {
+    setEditForm(prev => ({
+      ...prev,
+      invitees: [...prev.invitees, { name: "", email: "", phone: "", notifyVia: "email" }],
+    }));
+  };
+
+  const removeEditInvitee = (idx: number) => {
+    setEditForm(prev => ({
+      ...prev,
+      invitees: prev.invitees.filter((_, i) => i !== idx),
+    }));
+  };
+
+  const updateEditInvitee = (idx: number, field: string, value: string) => {
+    setEditForm(prev => ({
+      ...prev,
+      invitees: prev.invitees.map((inv, i) => i === idx ? { ...inv, [field]: value } : inv),
+    }));
+  };
 
   const resetNewEvent = () => {
     setNewEvent({
@@ -1266,50 +1358,183 @@ export default function CalendarPage() {
         </Dialog>
 
         {selectedEvent && (
-          <Dialog open={isEventDialogOpen} onOpenChange={setIsEventDialogOpen}>
+          <Dialog open={isEventDialogOpen} onOpenChange={(open) => { setIsEventDialogOpen(open); if (!open) setIsEditing(false); }}>
             <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-y-auto rounded-lg">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <CalendarIcon className="w-5 h-5" />
-                  {selectedEvent.title}
+                  {isEditing ? "Edit Event" : selectedEvent.title}
                 </DialogTitle>
-                <DialogDescription>Event details</DialogDescription>
+                <DialogDescription>{isEditing ? "Update event details" : "Event details"}</DialogDescription>
               </DialogHeader>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <Clock className="w-4 h-4 text-muted-foreground" />
-                  <span>
-                    {format(new Date(selectedEvent.startTime), "EEEE, MMM d, yyyy")}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Clock className="w-4 h-4 text-muted-foreground" />
-                  <span>
-                    {format(new Date(selectedEvent.startTime), "h:mm a")} - {format(new Date(selectedEvent.endTime), "h:mm a")}
-                  </span>
-                </div>
-                {selectedEvent.location && (
+
+              {!isEditing && (
+                <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm">
-                    <MapPin className="w-4 h-4 text-muted-foreground" />
-                    <span>{selectedEvent.location}</span>
+                    <Clock className="w-4 h-4 text-muted-foreground" />
+                    <span>{format(new Date(selectedEvent.startTime), "EEEE, MMM d, yyyy")}</span>
                   </div>
-                )}
-                {selectedEvent.description && (
-                  <p className="text-sm text-muted-foreground">{selectedEvent.description}</p>
-                )}
-              </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="w-4 h-4 text-muted-foreground" />
+                    <span>{format(new Date(selectedEvent.startTime), "h:mm a")} - {format(new Date(selectedEvent.endTime), "h:mm a")}</span>
+                  </div>
+                  {selectedEvent.location && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <MapPin className="w-4 h-4 text-muted-foreground" />
+                      <span>{selectedEvent.location}</span>
+                    </div>
+                  )}
+                  {selectedEvent.videoConferenceType && selectedEvent.videoConferenceType !== "none" && (
+                    <div className="p-3 rounded-md bg-primary/10 border border-primary/20">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Video className="w-4 h-4 text-primary" />
+                          <span className="text-sm font-medium">
+                            {selectedEvent.videoConferenceType === "sentinel" && "Sentinel Video"}
+                            {selectedEvent.videoConferenceType === "google_meet" && "Google Meet"}
+                            {selectedEvent.videoConferenceType === "zoom" && "Zoom"}
+                            {selectedEvent.videoConferenceType === "teams" && "Teams"}
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const baseUrl = window.location.origin;
+                            const roomId = (selectedEvent as any).meetingRoomId || selectedEvent.id;
+                            const meetingUrl = selectedEvent.videoConferenceUrl || 
+                              `${baseUrl}/video-meeting/${roomId}?eventId=${selectedEvent.id}&type=${selectedEvent.videoConferenceType}`;
+                            window.open(meetingUrl, "_blank");
+                          }}
+                          data-testid="button-mobile-start-meeting"
+                        >
+                          <Video className="w-4 h-4 mr-1" />
+                          Join
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {selectedEvent.description && (
+                    <p className="text-sm text-muted-foreground">{selectedEvent.description}</p>
+                  )}
+                  {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && (
+                    <div className="pt-2 border-t space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium flex items-center gap-2">
+                          <Users className="w-4 h-4" />
+                          Participants ({selectedEvent.externalAttendees.length})
+                        </span>
+                        <Button size="sm" variant="ghost" onClick={handleEmailAllParticipants} data-testid="button-mobile-email-participants">
+                          <Mail className="w-4 h-4 mr-1" />
+                          Email All
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedEvent.externalAttendees.map((attendee, idx) => (
+                          <Badge key={idx} variant="secondary" className="flex items-center gap-1" data-testid={`badge-mobile-invitee-${idx}`}>
+                            <Users className="w-3 h-3" />
+                            {attendee.name || attendee.email}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {isEditing && (
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="mobile-edit-title">Title</Label>
+                    <Input id="mobile-edit-title" value={editForm.title} onChange={(e) => setEditForm(prev => ({ ...prev, title: e.target.value }))} data-testid="input-mobile-edit-title" />
+                  </div>
+                  <div>
+                    <Label htmlFor="mobile-edit-start">Start Time</Label>
+                    <Input id="mobile-edit-start" type="datetime-local" value={editForm.startTime} onChange={(e) => setEditForm(prev => ({ ...prev, startTime: e.target.value }))} data-testid="input-mobile-edit-start" />
+                  </div>
+                  <div>
+                    <Label htmlFor="mobile-edit-end">End Time</Label>
+                    <Input id="mobile-edit-end" type="datetime-local" value={editForm.endTime} onChange={(e) => setEditForm(prev => ({ ...prev, endTime: e.target.value }))} data-testid="input-mobile-edit-end" />
+                  </div>
+                  <div>
+                    <Label htmlFor="mobile-edit-location">Location</Label>
+                    <Input id="mobile-edit-location" value={editForm.location} onChange={(e) => setEditForm(prev => ({ ...prev, location: e.target.value }))} placeholder="Add a location" data-testid="input-mobile-edit-location" />
+                  </div>
+                  <div>
+                    <Label htmlFor="mobile-edit-desc">Description</Label>
+                    <Textarea id="mobile-edit-desc" value={editForm.description} onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))} placeholder="Add a description" rows={2} data-testid="input-mobile-edit-description" />
+                  </div>
+                  <div>
+                    <Label>Video Meeting</Label>
+                    <Select value={editForm.videoConferenceType} onValueChange={(val) => setEditForm(prev => ({ ...prev, videoConferenceType: val }))}>
+                      <SelectTrigger data-testid="select-mobile-edit-video">
+                        <SelectValue placeholder="No video meeting" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No Video Meeting</SelectItem>
+                        <SelectItem value="sentinel">Sentinel Video Meeting</SelectItem>
+                        <SelectItem value="zoom">Zoom</SelectItem>
+                        <SelectItem value="teams">Microsoft Teams</SelectItem>
+                        <SelectItem value="google_meet">Google Meet</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="pt-2 border-t">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <Label className="flex items-center gap-2"><Users className="w-4 h-4" /> Participants</Label>
+                      <Button size="sm" variant="ghost" onClick={addEditInvitee} data-testid="button-mobile-add-invitee">
+                        <UserPlus className="w-4 h-4 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+                    {editForm.invitees.length === 0 && <p className="text-sm text-muted-foreground">No participants added yet.</p>}
+                    <div className="space-y-3">
+                      {editForm.invitees.map((inv, idx) => (
+                        <div key={idx} className="space-y-2 p-2 rounded-md border">
+                          <div className="flex items-center gap-2">
+                            <Input value={inv.name} onChange={(e) => updateEditInvitee(idx, "name", e.target.value)} placeholder="Name" className="flex-1" data-testid={`input-mobile-invitee-name-${idx}`} />
+                            <Button size="icon" variant="ghost" onClick={() => removeEditInvitee(idx)} data-testid={`button-mobile-remove-invitee-${idx}`}>
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          <Input value={inv.email} onChange={(e) => updateEditInvitee(idx, "email", e.target.value)} placeholder="Email" data-testid={`input-mobile-invitee-email-${idx}`} />
+                          <Input value={inv.phone} onChange={(e) => updateEditInvitee(idx, "phone", e.target.value)} placeholder="Phone" data-testid={`input-mobile-invitee-phone-${idx}`} />
+                          <Select value={inv.notifyVia} onValueChange={(val) => updateEditInvitee(idx, "notifyVia", val)}>
+                            <SelectTrigger data-testid={`select-mobile-invitee-notify-${idx}`}>
+                              <SelectValue placeholder="Notify via" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="email">Notify via Email</SelectItem>
+                              <SelectItem value="sms">Notify via SMS</SelectItem>
+                              <SelectItem value="both">Notify via Both</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <DialogFooter className="gap-2">
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    deleteEventMutation.mutate(selectedEvent.id);
-                    setIsEventDialogOpen(false);
-                  }}
-                  data-testid="button-mobile-delete-event"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
-                </Button>
+                {!isEditing ? (
+                  <>
+                    <Button variant="destructive" onClick={() => { deleteEventMutation.mutate(selectedEvent.id); setIsEventDialogOpen(false); }} data-testid="button-mobile-delete-event">
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Delete
+                    </Button>
+                    <Button variant="outline" onClick={() => enterEditMode(selectedEvent)} data-testid="button-mobile-edit-event">
+                      <Edit2 className="w-4 h-4 mr-1" />
+                      Edit
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="outline" onClick={() => setIsEditing(false)} data-testid="button-mobile-cancel-edit">Cancel</Button>
+                    <Button onClick={handleSaveEdit} disabled={updateEventMutation.isPending} data-testid="button-mobile-save-edit">
+                      {updateEventMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                  </>
+                )}
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -1970,28 +2195,25 @@ export default function CalendarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={isEventDialogOpen} onOpenChange={setIsEventDialogOpen}>
+      <Dialog open={isEventDialogOpen} onOpenChange={(open) => { setIsEventDialogOpen(open); if (!open) setIsEditing(false); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5" />
-              {selectedEvent?.title}
+              {isEditing ? "Edit Event" : selectedEvent?.title}
             </DialogTitle>
+            <DialogDescription>{isEditing ? "Update event details" : "Event details"}</DialogDescription>
           </DialogHeader>
           
-          {selectedEvent && (
+          {selectedEvent && !isEditing && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Clock className="w-4 h-4" />
-                <span>
-                  {format(new Date(selectedEvent.startTime), "EEEE, MMMM d, yyyy")}
-                </span>
+                <span>{format(new Date(selectedEvent.startTime), "EEEE, MMMM d, yyyy")}</span>
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Clock className="w-4 h-4" />
-                <span>
-                  {format(new Date(selectedEvent.startTime), "h:mm a")} - {format(new Date(selectedEvent.endTime), "h:mm a")}
-                </span>
+                <span>{format(new Date(selectedEvent.startTime), "h:mm a")} - {format(new Date(selectedEvent.endTime), "h:mm a")}</span>
               </div>
               
               {selectedEvent.location && (
@@ -2001,15 +2223,6 @@ export default function CalendarPage() {
                 </div>
               )}
               
-              {selectedEvent.courtName && (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Gavel className="w-4 h-4" />
-                  <span>{selectedEvent.courtName}</span>
-                  {selectedEvent.judgeName && <span>({selectedEvent.judgeName})</span>}
-                </div>
-              )}
-              
-              {/* Video Meeting Quick Start */}
               {selectedEvent.videoConferenceType && selectedEvent.videoConferenceType !== "none" && (
                 <div className="p-3 rounded-md bg-primary/10 border border-primary/20">
                   <div className="flex items-center justify-between gap-3">
@@ -2022,18 +2235,11 @@ export default function CalendarPage() {
                           {selectedEvent.videoConferenceType === "zoom" && "Zoom Meeting"}
                           {selectedEvent.videoConferenceType === "teams" && "Microsoft Teams"}
                         </p>
-                        {selectedEvent.enableAmbientIntelligence && (
-                          <p className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Brain className="w-3 h-3" />
-                            Ambient Intelligence enabled
-                          </p>
-                        )}
                       </div>
                     </div>
                     <Button
                       size="sm"
                       onClick={() => {
-                        // Use absolute URL with meetingRoomId for consistent meeting links
                         const baseUrl = window.location.origin;
                         const roomId = (selectedEvent as any).meetingRoomId || selectedEvent.id;
                         const meetingUrl = selectedEvent.videoConferenceUrl || 
@@ -2055,38 +2261,46 @@ export default function CalendarPage() {
                 </div>
               )}
               
-              
-              {/* Invitees Section */}
               {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && (
                 <div className="pt-2 border-t space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium flex items-center gap-2">
                       <Users className="w-4 h-4" />
-                      Invitees ({selectedEvent.externalAttendees.length})
+                      Participants ({selectedEvent.externalAttendees.length})
                     </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        // Use stored inviteeNotifications to preserve preferences
-                        const storedNotifications = (selectedEvent as any).inviteeNotifications || [];
-                        const invitees = selectedEvent.externalAttendees?.map((a, idx) => {
-                          const notification = storedNotifications[idx];
-                          return {
-                            name: a.name,
-                            email: a.email || notification?.email || "",
-                            phone: notification?.phone || "",
-                            notifyVia: (notification?.method as "email" | "sms" | "both") || "email"
-                          };
-                        }) || [];
-                        sendInvitationsMutation.mutate({ eventId: selectedEvent.id, invitees });
-                      }}
-                      disabled={sendInvitationsMutation.isPending}
-                      data-testid="button-resend-invitations"
-                    >
-                      <Send className="w-4 h-4 mr-1" />
-                      {sendInvitationsMutation.isPending ? "Sending..." : "Resend"}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleEmailAllParticipants}
+                        data-testid="button-email-all-participants"
+                      >
+                        <Mail className="w-4 h-4 mr-1" />
+                        Email All
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          const storedNotifications = (selectedEvent as any).inviteeNotifications || [];
+                          const invitees = selectedEvent.externalAttendees?.map((a, idx) => {
+                            const notification = storedNotifications[idx];
+                            return {
+                              name: a.name,
+                              email: a.email || notification?.email || "",
+                              phone: notification?.phone || "",
+                              notifyVia: (notification?.method as "email" | "sms" | "both") || "email"
+                            };
+                          }) || [];
+                          sendInvitationsMutation.mutate({ eventId: selectedEvent.id, invitees });
+                        }}
+                        disabled={sendInvitationsMutation.isPending}
+                        data-testid="button-resend-invitations"
+                      >
+                        <Send className="w-4 h-4 mr-1" />
+                        {sendInvitationsMutation.isPending ? "Sending..." : "Send Invites"}
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {selectedEvent.externalAttendees.map((attendee, idx) => (
@@ -2100,21 +2314,186 @@ export default function CalendarPage() {
               )}
             </div>
           )}
+
+          {selectedEvent && isEditing && (
+            <ScrollArea className="max-h-[60vh]">
+              <div className="space-y-4 pr-4">
+                <div>
+                  <Label htmlFor="edit-title">Title</Label>
+                  <Input
+                    id="edit-title"
+                    value={editForm.title}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                    data-testid="input-edit-title"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="edit-start">Start Time</Label>
+                    <Input
+                      id="edit-start"
+                      type="datetime-local"
+                      value={editForm.startTime}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, startTime: e.target.value }))}
+                      data-testid="input-edit-start-time"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-end">End Time</Label>
+                    <Input
+                      id="edit-end"
+                      type="datetime-local"
+                      value={editForm.endTime}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, endTime: e.target.value }))}
+                      data-testid="input-edit-end-time"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-location">Location</Label>
+                  <Input
+                    id="edit-location"
+                    value={editForm.location}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, location: e.target.value }))}
+                    placeholder="Add a location"
+                    data-testid="input-edit-location"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-description">Description</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={editForm.description}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Add a description"
+                    rows={3}
+                    data-testid="input-edit-description"
+                  />
+                </div>
+
+                <div>
+                  <Label>Video Meeting</Label>
+                  <Select
+                    value={editForm.videoConferenceType}
+                    onValueChange={(val) => setEditForm(prev => ({ ...prev, videoConferenceType: val }))}
+                  >
+                    <SelectTrigger data-testid="select-edit-video-type">
+                      <SelectValue placeholder="No video meeting" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Video Meeting</SelectItem>
+                      <SelectItem value="sentinel">Sentinel Video Meeting</SelectItem>
+                      <SelectItem value="zoom">Zoom</SelectItem>
+                      <SelectItem value="teams">Microsoft Teams</SelectItem>
+                      <SelectItem value="google_meet">Google Meet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="pt-2 border-t">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <Label className="flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Participants
+                    </Label>
+                    <Button size="sm" variant="ghost" onClick={addEditInvitee} data-testid="button-add-edit-invitee">
+                      <UserPlus className="w-4 h-4 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                  {editForm.invitees.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No participants added yet.</p>
+                  )}
+                  <div className="space-y-3">
+                    {editForm.invitees.map((inv, idx) => (
+                      <div key={idx} className="space-y-2 p-2 rounded-md border">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={inv.name}
+                            onChange={(e) => updateEditInvitee(idx, "name", e.target.value)}
+                            placeholder="Name"
+                            className="flex-1"
+                            data-testid={`input-edit-invitee-name-${idx}`}
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => removeEditInvitee(idx)}
+                            data-testid={`button-remove-edit-invitee-${idx}`}
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={inv.email}
+                            onChange={(e) => updateEditInvitee(idx, "email", e.target.value)}
+                            placeholder="Email"
+                            className="flex-1"
+                            data-testid={`input-edit-invitee-email-${idx}`}
+                          />
+                          <Input
+                            value={inv.phone}
+                            onChange={(e) => updateEditInvitee(idx, "phone", e.target.value)}
+                            placeholder="Phone"
+                            className="flex-1"
+                            data-testid={`input-edit-invitee-phone-${idx}`}
+                          />
+                        </div>
+                        <Select value={inv.notifyVia} onValueChange={(val) => updateEditInvitee(idx, "notifyVia", val)}>
+                          <SelectTrigger className="w-full" data-testid={`select-edit-invitee-notify-${idx}`}>
+                            <SelectValue placeholder="Notify via" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="email">Notify via Email</SelectItem>
+                            <SelectItem value="sms">Notify via SMS</SelectItem>
+                            <SelectItem value="both">Notify via Both</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+          )}
           
-          <DialogFooter className="flex-row justify-between sm:justify-between">
-            <Button 
-              variant="destructive" 
-              size="sm"
-              onClick={() => selectedEvent && deleteEventMutation.mutate(selectedEvent.id)}
-              disabled={deleteEventMutation.isPending}
-              data-testid="button-delete-event"
-            >
-              <Trash2 className="w-4 h-4 mr-1" />
-              Delete
-            </Button>
-            <Button variant="outline" onClick={() => setIsEventDialogOpen(false)} data-testid="button-close-event">
-              Close
-            </Button>
+          <DialogFooter className="flex-row justify-between sm:justify-between gap-2">
+            {!isEditing ? (
+              <>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => selectedEvent && deleteEventMutation.mutate(selectedEvent.id)}
+                  disabled={deleteEventMutation.isPending}
+                  data-testid="button-delete-event"
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Delete
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => selectedEvent && enterEditMode(selectedEvent)} data-testid="button-edit-event">
+                    <Edit2 className="w-4 h-4 mr-1" />
+                    Edit
+                  </Button>
+                  <Button variant="outline" onClick={() => setIsEventDialogOpen(false)} data-testid="button-close-event">
+                    Close
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setIsEditing(false)} data-testid="button-cancel-edit">
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveEdit} disabled={updateEventMutation.isPending} data-testid="button-save-edit">
+                  {updateEventMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
