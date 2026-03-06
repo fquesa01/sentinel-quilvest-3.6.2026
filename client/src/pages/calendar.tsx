@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel, Users, FileText, AlertCircle, DollarSign, MapPin, Trash2, Edit2, X, Video, MonitorPlay, Brain, Upload, Camera, Image as ImageIcon, Loader2, Sparkles } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, Gavel, Users, FileText, AlertCircle, DollarSign, MapPin, Trash2, Edit2, X, Video, MonitorPlay, Brain, Upload, Camera, Image as ImageIcon, Loader2, Sparkles, Shield, Briefcase, MessageSquare, AlertTriangle, Building2, History } from "lucide-react";
 import { SiGooglemeet, SiZoom } from "react-icons/si";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -56,6 +56,7 @@ export default function CalendarPage() {
   const [newCalendarColor, setNewCalendarColor] = useState("#3b82f6");
   const mobileTouchStart = useRef<{ x: number; y: number } | null>(null);
   const mobileDayScrollRef = useRef<HTMLDivElement>(null);
+  const [intelTab, setIntelTab] = useState<"people" | "past" | "news">("people");
   
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -349,6 +350,20 @@ export default function CalendarPage() {
     },
     onError: (error: any) => {
       toast({ title: "Failed to sync calendar", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const seedDemoMeetingsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/seed-demo-meetings");
+      return await response.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"], refetchType: "all" });
+      toast({ title: "Demo meetings created", description: data.message });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create demo meetings", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1458,28 +1473,113 @@ export default function CalendarPage() {
                     </div>
                   )}
 
-                  {(selectedEvent as any).meetingIntelligence && (
+                  {(selectedEvent as any).meetingIntelligence?.peopleBrief && (
                     <div className="pt-2 border-t space-y-2" data-testid="section-mobile-meeting-intelligence">
                       <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-medium">Intelligence Brief</span>
+                        <Badge variant="secondary" className="text-[10px]">Private</Badge>
+                      </div>
+
+                      <div className="flex gap-1 border-b">
+                        {(["people", "past", "news"] as const).map((tab) => (
+                          <button
+                            key={tab}
+                            className={cn(
+                              "px-2 py-1.5 text-xs font-medium border-b-2 transition-colors",
+                              intelTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+                            )}
+                            onClick={() => setIntelTab(tab)}
+                            data-testid={`tab-mobile-${tab}`}
+                          >
+                            {tab === "people" ? "People" : tab === "past" ? "History" : "News"}
+                          </button>
+                        ))}
+                      </div>
+
+                      {intelTab === "people" && (selectedEvent as any).meetingIntelligence.peopleBrief.map((person: any, idx: number) => (
+                        <div key={idx} className="space-y-2 pb-2">
+                          <div className="flex items-start gap-2">
+                            <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-semibold text-primary flex-shrink-0">
+                              {person.initials}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span className="text-sm font-semibold">{person.name}</span>
+                                <Badge
+                                  variant={person.badge.includes("Active") ? "default" : person.badge.includes("Opposing") ? "destructive" : "outline"}
+                                  className="text-[9px]"
+                                >{person.badge}</Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground">{person.title}, {person.company}</div>
+                            </div>
+                          </div>
+                          <p className="text-xs">{person.bio}</p>
+                          {person.keyIntel?.length > 0 && (
+                            <div className="rounded-md bg-amber-500/10 p-2 space-y-0.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Key Intel</span>
+                              {person.keyIntel.map((intel: string, i: number) => (
+                                <div key={i} className="text-xs flex items-start gap-1"><span className="text-muted-foreground">·</span>{intel}</div>
+                              ))}
+                            </div>
+                          )}
+                          {person.riskFlags?.length > 0 && (
+                            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-2 space-y-0.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-destructive flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" /> Risk Flags
+                              </span>
+                              {person.riskFlags.map((flag: string, i: number) => (
+                                <div key={i} className="text-xs flex items-start gap-1"><span className="text-destructive">·</span>{flag}</div>
+                              ))}
+                            </div>
+                          )}
+                          {idx < (selectedEvent as any).meetingIntelligence.peopleBrief.length - 1 && <div className="border-b" />}
+                        </div>
+                      ))}
+
+                      {intelTab === "past" && (
+                        <div className="space-y-2">
+                          {(selectedEvent as any).meetingIntelligence.pastMeetings?.map((m: any, idx: number) => (
+                            <div key={idx} className="p-2 rounded-md bg-muted/50 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-medium">{m.title}</span>
+                                <span className="text-[10px] text-muted-foreground">{new Date(m.date).toLocaleDateString()}</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{m.outcome}</p>
+                            </div>
+                          )) || <p className="text-xs text-muted-foreground">No past meetings.</p>}
+                        </div>
+                      )}
+
+                      {intelTab === "news" && (
+                        <div className="space-y-2">
+                          {(selectedEvent as any).meetingIntelligence.newsInsights?.map((insight: any, idx: number) => (
+                            insight.articles?.length > 0 && (
+                              <div key={idx} className="space-y-1">
+                                <span className="text-xs font-medium">{insight.name}</span>
+                                {insight.articles.map((a: any, aIdx: number) => (
+                                  <a key={aIdx} href={a.url} target="_blank" rel="noopener noreferrer" className="block p-2 rounded-md bg-muted/50 text-xs">
+                                    <div className="font-medium">{a.title}</div>
+                                    <div className="text-muted-foreground mt-0.5">{a.summary}</div>
+                                    <div className="text-[10px] text-muted-foreground mt-1">{a.source}{a.publishedAt ? ` · ${new Date(a.publishedAt).toLocaleDateString()}` : ""}</div>
+                                  </a>
+                                ))}
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(selectedEvent as any).meetingIntelligence && !(selectedEvent as any).meetingIntelligence.peopleBrief && (
+                    <div className="pt-2 border-t space-y-2">
+                      <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-medium">Meeting Intelligence</span>
+                        <span className="text-sm font-medium">Intelligence</span>
                         <Badge variant="secondary" className="text-[10px]">Private</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">{(selectedEvent as any).meetingIntelligence.attendeeSummary}</p>
-                      {(selectedEvent as any).meetingIntelligence.newsInsights?.map((insight: any, idx: number) => (
-                        insight.articles?.length > 0 && (
-                          <div key={idx} className="space-y-1">
-                            <span className="text-xs font-medium">{insight.name}</span>
-                            {insight.articles.map((article: any, aIdx: number) => (
-                              <a key={aIdx} href={article.url} target="_blank" rel="noopener noreferrer" className="block p-2 rounded-md bg-muted/50 text-xs" data-testid={`link-mobile-news-${idx}-${aIdx}`}>
-                                <div className="font-medium truncate">{article.title}</div>
-                                <div className="text-muted-foreground">{article.summary}</div>
-                                <div className="text-[10px] text-muted-foreground mt-1">{article.source}</div>
-                              </a>
-                            ))}
-                          </div>
-                        )
-                      ))}
                     </div>
                   )}
 
@@ -1797,6 +1897,18 @@ export default function CalendarPage() {
               )}
             </CardContent>
           </Card>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => seedDemoMeetingsMutation.mutate()}
+            disabled={seedDemoMeetingsMutation.isPending}
+            data-testid="button-seed-demo-meetings"
+          >
+            <Sparkles className="w-3 h-3 mr-1" />
+            {seedDemoMeetingsMutation.isPending ? "Creating..." : "Load Demo Meetings"}
+          </Button>
 
           <Card>
             <CardHeader className="pb-2">
@@ -2262,8 +2374,11 @@ export default function CalendarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={isEventDialogOpen} onOpenChange={(open) => { setIsEventDialogOpen(open); if (!open) setIsEditing(false); }}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={isEventDialogOpen} onOpenChange={(open) => { setIsEventDialogOpen(open); if (!open) { setIsEditing(false); setIntelTab("people"); } }}>
+        <DialogContent className={cn(
+          "transition-all",
+          (selectedEvent as any)?.meetingIntelligence?.peopleBrief && !isEditing ? "max-w-5xl" : "max-w-lg"
+        )}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5" />
@@ -2273,115 +2388,344 @@ export default function CalendarPage() {
           </DialogHeader>
           
           {selectedEvent && !isEditing && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Clock className="w-4 h-4" />
-                <span>{format(new Date(selectedEvent.startTime), "EEEE, MMMM d, yyyy")}</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Clock className="w-4 h-4" />
-                <span>{format(new Date(selectedEvent.startTime), "h:mm a")} - {format(new Date(selectedEvent.endTime), "h:mm a")}</span>
-              </div>
-              
-              {selectedEvent.location && (
+            <div className={cn(
+              (selectedEvent as any).meetingIntelligence?.peopleBrief ? "flex gap-6" : ""
+            )}>
+              <div className={cn(
+                "space-y-4",
+                (selectedEvent as any).meetingIntelligence?.peopleBrief ? "w-[320px] flex-shrink-0" : ""
+              )}>
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <MapPin className="w-4 h-4" />
-                  <span>{selectedEvent.location}</span>
+                  <CalendarIcon className="w-4 h-4 flex-shrink-0 text-primary" />
+                  <span className="text-sm">{format(new Date(selectedEvent.startTime), "EEEE, MMMM d, yyyy")}</span>
                 </div>
-              )}
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="w-4 h-4 flex-shrink-0 text-primary" />
+                  <span className="text-sm">
+                    {format(new Date(selectedEvent.startTime), "h:mm a")} · {(() => {
+                      const mins = differenceInMinutes(new Date(selectedEvent.endTime), new Date(selectedEvent.startTime));
+                      const hrs = Math.floor(mins / 60);
+                      const rem = mins % 60;
+                      return hrs > 0 ? `${hrs}${rem > 0 ? `.${rem}` : ""} hours` : `${mins} min`;
+                    })()}
+                  </span>
+                </div>
               
-              {selectedEvent.videoConferenceType && selectedEvent.videoConferenceType !== "none" && (
-                <div className="p-3 rounded-md bg-primary/10 border border-primary/20">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Video className="w-5 h-5 text-primary" />
-                      <div>
-                        <p className="font-medium text-sm">
-                          {selectedEvent.videoConferenceType === "sentinel" && "Sentinel Video Meeting"}
-                          {selectedEvent.videoConferenceType === "google_meet" && "Google Meet"}
-                          {selectedEvent.videoConferenceType === "zoom" && "Zoom Meeting"}
-                          {selectedEvent.videoConferenceType === "teams" && "Microsoft Teams"}
-                        </p>
+                {selectedEvent.location && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <MapPin className="w-4 h-4 flex-shrink-0 text-red-500" />
+                    <span className="text-sm">{selectedEvent.location}</span>
+                  </div>
+                )}
+
+                {selectedEvent.caseId && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Sparkles className="w-4 h-4 flex-shrink-0 text-primary" />
+                    <span className="text-sm font-medium">{selectedEvent.title.split("—")[0]?.trim()}</span>
+                  </div>
+                )}
+
+                {selectedEvent.videoConferenceType && selectedEvent.videoConferenceType !== "none" && (
+                  <div className="p-3 rounded-md bg-primary/10 border border-primary/20">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Video className="w-5 h-5 text-primary" />
+                        <div>
+                          <p className="font-medium text-sm">
+                            {selectedEvent.videoConferenceType === "sentinel" && "Sentinel Video Meeting"}
+                            {selectedEvent.videoConferenceType === "google_meet" && "Google Meet"}
+                            {selectedEvent.videoConferenceType === "zoom" && "Zoom Meeting"}
+                            {selectedEvent.videoConferenceType === "teams" && "Microsoft Teams"}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const baseUrl = window.location.origin;
+                          const roomId = (selectedEvent as any).meetingRoomId || selectedEvent.id;
+                          const meetingUrl = selectedEvent.videoConferenceUrl || 
+                            `${baseUrl}/video-meeting/${roomId}?eventId=${selectedEvent.id}&type=${selectedEvent.videoConferenceType}`;
+                          window.open(meetingUrl, "_blank");
+                        }}
+                        data-testid="button-start-meeting"
+                      >
+                        <Video className="w-4 h-4 mr-1" />
+                        Start Meeting
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              
+                {selectedEvent.description && (
+                  <div className="pt-2 border-t">
+                    <p className="text-sm text-muted-foreground">{selectedEvent.description}</p>
+                  </div>
+                )}
+              
+                {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && (
+                  <div className="pt-2 border-t space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-sm font-medium flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        Invitees ({selectedEvent.externalAttendees.length})
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={handleEmailAllParticipants}
+                          data-testid="button-email-all-participants"
+                        >
+                          <Mail className="w-4 h-4 mr-1" />
+                          Email All
+                        </Button>
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        const baseUrl = window.location.origin;
-                        const roomId = (selectedEvent as any).meetingRoomId || selectedEvent.id;
-                        const meetingUrl = selectedEvent.videoConferenceUrl || 
-                          `${baseUrl}/video-meeting/${roomId}?eventId=${selectedEvent.id}&type=${selectedEvent.videoConferenceType}`;
-                        window.open(meetingUrl, "_blank");
-                      }}
-                      data-testid="button-start-meeting"
-                    >
-                      <Video className="w-4 h-4 mr-1" />
-                      Start Meeting
-                    </Button>
-                  </div>
-                </div>
-              )}
-              
-              {selectedEvent.description && (
-                <div className="pt-2 border-t">
-                  <p className="text-sm">{selectedEvent.description}</p>
-                </div>
-              )}
-              
-              {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && (
-                <div className="pt-2 border-t space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      Participants ({selectedEvent.externalAttendees.length})
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={handleEmailAllParticipants}
-                        data-testid="button-email-all-participants"
-                      >
-                        <Mail className="w-4 h-4 mr-1" />
-                        Email All
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          const storedNotifications = (selectedEvent as any).inviteeNotifications || [];
-                          const invitees = selectedEvent.externalAttendees?.map((a, idx) => {
-                            const notification = storedNotifications[idx];
-                            return {
-                              name: a.name,
-                              email: a.email || notification?.email || "",
-                              phone: notification?.phone || "",
-                              notifyVia: (notification?.method as "email" | "sms" | "both") || "email"
-                            };
-                          }) || [];
-                          sendInvitationsMutation.mutate({ eventId: selectedEvent.id, invitees });
-                        }}
-                        disabled={sendInvitationsMutation.isPending}
-                        data-testid="button-resend-invitations"
-                      >
-                        <Send className="w-4 h-4 mr-1" />
-                        {sendInvitationsMutation.isPending ? "Sending..." : "Send Invites"}
-                      </Button>
+                    <div className="space-y-2">
+                      {selectedEvent.externalAttendees.map((attendee, idx) => {
+                        const personBrief = (selectedEvent as any).meetingIntelligence?.peopleBrief?.find((p: any) => p.name === attendee.name);
+                        return (
+                          <div key={idx} className="flex items-center gap-3" data-testid={`invitee-row-${idx}`}>
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary flex-shrink-0">
+                              {personBrief?.initials || (attendee.name || "?").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium">{attendee.name || attendee.email}</div>
+                              {personBrief && (
+                                <div className="text-xs text-muted-foreground">{personBrief.title}, {personBrief.company}</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedEvent.externalAttendees.map((attendee, idx) => (
-                      <Badge key={idx} variant="secondary" className="flex items-center gap-1" data-testid={`badge-invitee-${idx}`}>
-                        <Users className="w-3 h-3" />
-                        {attendee.name || attendee.email}
-                      </Badge>
-                    ))}
+                )}
+
+                {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && !(selectedEvent as any).meetingIntelligence && (
+                  <div className="pt-2 border-t">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Generating meeting intelligence...</span>
+                    </div>
                   </div>
+                )}
+              </div>
+
+              {(selectedEvent as any).meetingIntelligence?.peopleBrief && (
+                <div className="flex-1 min-w-0 border-l pl-6" data-testid="section-meeting-intelligence">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Shield className="w-5 h-5 text-primary" />
+                    <div>
+                      <h3 className="font-semibold text-sm">Meeting Intelligence Brief</h3>
+                      <p className="text-xs text-muted-foreground">Auto-generated · Visible only to you</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-1 border-b mb-4">
+                    <button
+                      className={cn(
+                        "px-3 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5",
+                        intelTab === "people" ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+                      )}
+                      onClick={() => setIntelTab("people")}
+                      data-testid="tab-people-brief"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      People Brief
+                    </button>
+                    <button
+                      className={cn(
+                        "px-3 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5",
+                        intelTab === "past" ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+                      )}
+                      onClick={() => setIntelTab("past")}
+                      data-testid="tab-past-meetings"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      Past Meetings
+                    </button>
+                    <button
+                      className={cn(
+                        "px-3 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5",
+                        intelTab === "news" ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+                      )}
+                      onClick={() => setIntelTab("news")}
+                      data-testid="tab-news-intel"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      News Intel
+                    </button>
+                  </div>
+
+                  <ScrollArea className="h-[420px]">
+                    {intelTab === "people" && (
+                      <div className="space-y-6 pr-4">
+                        {(selectedEvent as any).meetingIntelligence.peopleBrief.map((person: any, idx: number) => (
+                          <div key={idx} className="space-y-3" data-testid={`person-brief-${idx}`}>
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-sm font-semibold text-primary flex-shrink-0">
+                                {person.initials}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold">{person.name}</span>
+                                  <Badge
+                                    variant={person.badge.includes("Active") ? "default" : person.badge.includes("Prospective") ? "secondary" : person.badge.includes("Opposing") ? "destructive" : "outline"}
+                                    className="text-[10px]"
+                                    data-testid={`badge-person-type-${idx}`}
+                                  >
+                                    {person.badge}
+                                  </Badge>
+                                </div>
+                                <div className="text-sm text-muted-foreground">{person.title}, {person.company}</div>
+                                <div className="text-xs text-muted-foreground flex items-center gap-3 flex-wrap mt-0.5">
+                                  <span>{person.email}</span>
+                                  {person.phone && <span>· {person.phone}</span>}
+                                </div>
+                              </div>
+                            </div>
+
+                            <p className="text-sm">{person.bio}</p>
+
+                            {person.keyIntel && person.keyIntel.length > 0 && (
+                              <div className="rounded-md bg-amber-500/10 p-3 space-y-1">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Key Intel</span>
+                                <ul className="space-y-0.5">
+                                  {person.keyIntel.map((intel: string, iIdx: number) => (
+                                    <li key={iIdx} className="text-sm flex items-start gap-2">
+                                      <span className="text-muted-foreground mt-1.5">·</span>
+                                      <span>{intel}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {person.sentinelRelationship && (
+                              <div className="rounded-md bg-primary/5 border border-primary/10 p-3 space-y-1">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-primary">Sentinel Relationship</span>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Since: </span>
+                                    <span className="font-medium">{person.sentinelRelationship.since}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Billings: </span>
+                                    <span className="font-medium">{person.sentinelRelationship.billings}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Lead Partner: </span>
+                                    <span className="font-medium">{person.sentinelRelationship.leadPartner}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Matters: </span>
+                                    <span className="font-medium">{person.sentinelRelationship.matters}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {person.communicationStyle && (
+                              <div className="rounded-md bg-green-500/10 p-3 space-y-1">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Communication Style</span>
+                                <p className="text-sm">{person.communicationStyle}</p>
+                              </div>
+                            )}
+
+                            {person.riskFlags && person.riskFlags.length > 0 && (
+                              <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 space-y-1">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-destructive flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Risk Flags
+                                </span>
+                                <ul className="space-y-0.5">
+                                  {person.riskFlags.map((flag: string, fIdx: number) => (
+                                    <li key={fIdx} className="text-sm flex items-start gap-2">
+                                      <span className="text-destructive mt-1.5">·</span>
+                                      <span>{flag}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {idx < (selectedEvent as any).meetingIntelligence.peopleBrief.length - 1 && (
+                              <div className="border-b" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {intelTab === "past" && (
+                      <div className="space-y-3 pr-4">
+                        {(selectedEvent as any).meetingIntelligence.pastMeetings && (selectedEvent as any).meetingIntelligence.pastMeetings.length > 0 ? (
+                          (selectedEvent as any).meetingIntelligence.pastMeetings.map((meeting: any, idx: number) => (
+                            <div key={idx} className="p-3 rounded-md bg-muted/50 space-y-1" data-testid={`past-meeting-${idx}`}>
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <span className="text-sm font-medium">{meeting.title}</span>
+                                <span className="text-xs text-muted-foreground">{new Date(meeting.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {meeting.attendees.map((a: string, aIdx: number) => (
+                                  <Badge key={aIdx} variant="outline" className="text-[10px]">{a}</Badge>
+                                ))}
+                              </div>
+                              <p className="text-sm text-muted-foreground">{meeting.outcome}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No past meeting history available.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {intelTab === "news" && (
+                      <div className="space-y-4 pr-4">
+                        {(selectedEvent as any).meetingIntelligence.newsInsights?.map((insight: any, idx: number) => (
+                          insight.articles?.length > 0 && (
+                            <div key={idx} className="space-y-2" data-testid={`news-section-${idx}`}>
+                              <span className="text-sm font-medium flex items-center gap-2">
+                                <Building2 className="w-3.5 h-3.5" />
+                                {insight.name}
+                              </span>
+                              {insight.articles.map((article: any, aIdx: number) => (
+                                <a
+                                  key={aIdx}
+                                  href={article.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block p-3 rounded-md bg-muted/50 hover-elevate"
+                                  data-testid={`link-news-article-${idx}-${aIdx}`}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <ExternalLink className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary" />
+                                    <div className="min-w-0">
+                                      <div className="font-medium text-sm">{article.title}</div>
+                                      <div className="text-sm text-muted-foreground mt-1">{article.summary}</div>
+                                      <div className="text-xs text-muted-foreground mt-1.5">
+                                        {article.source}{article.publishedAt ? ` · ${new Date(article.publishedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </a>
+                              ))}
+                            </div>
+                          )
+                        ))}
+                        {(!((selectedEvent as any).meetingIntelligence.newsInsights?.some((i: any) => i.articles?.length > 0))) && (
+                          <p className="text-sm text-muted-foreground">No recent news articles found for meeting participants.</p>
+                        )}
+                      </div>
+                    )}
+                  </ScrollArea>
                 </div>
               )}
 
-              {(selectedEvent as any).meetingIntelligence && (
-                <div className="pt-3 border-t space-y-3" data-testid="section-meeting-intelligence">
+              {(selectedEvent as any).meetingIntelligence && !(selectedEvent as any).meetingIntelligence.peopleBrief && (
+                <div className="pt-3 border-t space-y-3" data-testid="section-meeting-intelligence-simple">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-primary" />
                     <span className="text-sm font-medium">Meeting Intelligence</span>
@@ -2393,20 +2737,12 @@ export default function CalendarPage() {
                       <div key={idx} className="space-y-1">
                         <span className="text-xs font-medium">{insight.name}</span>
                         {insight.articles.map((article: any, aIdx: number) => (
-                          <a
-                            key={aIdx}
-                            href={article.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block p-2 rounded-md bg-muted/50 hover-elevate text-sm"
-                            data-testid={`link-news-article-${idx}-${aIdx}`}
-                          >
+                          <a key={aIdx} href={article.url} target="_blank" rel="noopener noreferrer" className="block p-2 rounded-md bg-muted/50 hover-elevate text-sm" data-testid={`link-news-article-simple-${idx}-${aIdx}`}>
                             <div className="flex items-start gap-2">
                               <ExternalLink className="w-3 h-3 mt-0.5 flex-shrink-0 text-primary" />
                               <div className="min-w-0">
                                 <div className="font-medium text-xs truncate">{article.title}</div>
                                 <div className="text-xs text-muted-foreground">{article.summary}</div>
-                                <div className="text-[10px] text-muted-foreground mt-1">{article.source}{article.publishedAt ? ` — ${new Date(article.publishedAt).toLocaleDateString()}` : ""}</div>
                               </div>
                             </div>
                           </a>
@@ -2414,15 +2750,6 @@ export default function CalendarPage() {
                       </div>
                     )
                   ))}
-                </div>
-              )}
-
-              {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && !(selectedEvent as any).meetingIntelligence && (
-                <div className="pt-2 border-t">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>Generating meeting intelligence...</span>
-                  </div>
                 </div>
               )}
             </div>

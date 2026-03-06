@@ -9967,6 +9967,284 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  app.post("/api/seed-demo-meetings", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const now = new Date();
+      const demoMeetings = [
+        {
+          title: "Quilvest Fund VII — Co-Invest Structure Call",
+          eventType: "meeting" as const,
+          startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 4, 10, 0),
+          endTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 4, 11, 30),
+          location: "Conference Room 12A / Zoom",
+          description: "Review revised co-investment structure for Fund VII side vehicles. Address LP pushback on allocation methodology. Prepare board presentation for March 18 fund advisory committee meeting.",
+          videoConferenceType: "zoom",
+          createdBy: userId,
+          externalAttendees: [
+            { name: "John Harris", email: "john.harris@quilvestcapital.com" },
+            { name: "Sarah Chen", email: "sarah.chen@whiteshoe.com" },
+          ],
+          meetingIntelligence: {
+            attendeeSummary: "Meeting with John Harris (Managing Director, Quilvest Private Equity) and Sarah Chen (Partner, White & Shoe LLP). Harris is a senior PE dealmaker with deep cross-border M&A experience. Chen is a leading securities litigation specialist frequently retained as co-counsel.",
+            newsInsights: [
+              {
+                name: "John Harris",
+                articles: [
+                  { title: "Quilvest Capital Closes $2.1B Fund VII", url: "https://example.com/quilvest-fund-vii", summary: "Quilvest Capital announced final close of its seventh flagship PE fund at $2.1B, exceeding its $1.8B target. Harris led fundraising across LP base.", source: "Private Equity International", publishedAt: "2026-02-15" },
+                  { title: "Cross-Border M&A Activity Surges in Q1 2026", url: "https://example.com/ma-surge", summary: "Industry report cites Quilvest among top 10 most active mid-market PE firms in cross-border transactions.", source: "Mergermarket", publishedAt: "2026-01-28" }
+                ]
+              },
+              {
+                name: "Sarah Chen",
+                articles: [
+                  { title: "Super Lawyers 2026: Securities Litigation Rising Stars", url: "https://example.com/super-lawyers-chen", summary: "Sarah Chen named to Super Lawyers for third consecutive year. Noted for her work on SEC v. DataCorp at both district and appellate levels.", source: "Super Lawyers", publishedAt: "2026-01-10" }
+                ]
+              }
+            ],
+            peopleBrief: [
+              {
+                name: "John Harris",
+                initials: "JH",
+                title: "Managing Director",
+                company: "Quilvest Private Equity",
+                email: "john.harris@quilvestcapital.com",
+                phone: "+1 (212) 555-0134",
+                badge: "Active Client",
+                bio: "25+ years in private equity and cross-border M&A. Previously Managing Director at Goldman Sachs (2004\u20132016) and VP at Blackstone (1998\u20132004). Yale BA, Wharton MBA. Board member of 3 active portfolio companies. Known for aggressive deal timelines.",
+                keyIntel: [
+                  "Decision-maker on all deals >$200M",
+                  "Prefers 60-day exclusivity windows",
+                  "Close personal relationship with SEC Commissioner Williams",
+                  "Avid sailor \u2014 best approached casually on Fridays"
+                ],
+                sentinelRelationship: {
+                  since: "2019",
+                  leadPartner: "Frank Quesada",
+                  billings: "$4.2M lifetime",
+                  matters: 7
+                },
+                communicationStyle: "Direct and fast-paced. Expects responses within 2 hours during business hours. Prefers bullet-point memos over lengthy narratives. Will call directly if email isn't answered promptly.",
+                riskFlags: null
+              },
+              {
+                name: "Sarah Chen",
+                initials: "SC",
+                title: "Partner, Litigation",
+                company: "White & Shoe LLP",
+                email: "sarah.chen@whiteshoe.com",
+                phone: "+1 (212) 555-0891",
+                badge: "Co-Counsel / Referral Partner",
+                bio: "Corporate litigation specialist with focus on securities fraud and shareholder disputes. Harvard Law '08, Order of the Coif. Named to Super Lawyers 2024\u20132025. Previously clerked for Judge Rakoff, SDNY. Co-chair of ABA Securities Litigation Committee.",
+                keyIntel: [
+                  "Lead counsel on SEC v. DataCorp \u2014 won at both district and appellate levels",
+                  "Frequently retained as co-counsel by Sentinel on complex matters",
+                  "Published extensively on insider trading enforcement trends",
+                  "Runs the NYC Bar Association Securities Law CLE each October"
+                ],
+                sentinelRelationship: {
+                  since: "2021",
+                  leadPartner: "Frank Quesada",
+                  billings: "N/A (referral relationship)",
+                  matters: 4
+                },
+                communicationStyle: "Thorough and methodical. Prefers written briefs with full citations. Responds within 24 hours. Very collaborative on joint matters \u2014 will share research proactively.",
+                riskFlags: null
+              }
+            ],
+            pastMeetings: [
+              { title: "Quilvest Fund VI \u2014 Final Distribution Call", date: "2025-11-14", attendees: ["John Harris"], outcome: "Agreed on waterfall calculation methodology. Harris confirmed carry distribution timeline." },
+              { title: "Co-Counsel Strategy Session \u2014 DataCorp Appeal", date: "2025-09-22", attendees: ["Sarah Chen"], outcome: "Aligned on appellate brief structure. Chen to lead oral arguments." },
+              { title: "Quilvest LP Advisory Board", date: "2025-06-10", attendees: ["John Harris", "Sarah Chen"], outcome: "Presented fund performance review. Discussed upcoming Fund VII formation timeline." }
+            ],
+            generatedAt: new Date().toISOString()
+          }
+        },
+        {
+          title: "FundCo \u2014 Cayman Restructuring Kickoff",
+          eventType: "meeting" as const,
+          startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 6, 14, 0),
+          endTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 6, 16, 0),
+          location: "Sentinel Main Office \u2014 5th Floor War Room",
+          description: "Initial engagement meeting for FundCo's Cayman-domiciled fund restructuring. Scope of work, timeline, fee structure. Rodriguez wants flat-fee proposal. Bring conflicts check results.",
+          videoConferenceType: "none",
+          createdBy: userId,
+          externalAttendees: [
+            { name: "Miguel Rodriguez", email: "m.rodriguez@fundco.com" },
+          ],
+          meetingIntelligence: {
+            attendeeSummary: "Meeting with Miguel Rodriguez (CFO, FundCo Holdings). Rodriguez is a seasoned fund accounting executive with deep Cayman and offshore expertise, previously at Deloitte for 12 years.",
+            newsInsights: [
+              {
+                name: "Miguel Rodriguez",
+                articles: [
+                  { title: "FundCo Holdings Completes $2B Fund Restructuring", url: "https://example.com/fundco-restructuring", summary: "FundCo Holdings announced completion of a $2B Cayman fund restructuring in January 2026, led by CFO Miguel Rodriguez.", source: "Hedge Fund Journal", publishedAt: "2026-01-18" },
+                  { title: "AIFMD II Compliance: What CFOs Need to Know", url: "https://example.com/aifmd-compliance", summary: "Industry article citing Rodriguez as a vocal critic of new AIFMD II compliance burdens on mid-market fund managers.", source: "Compliance Week", publishedAt: "2025-12-05" }
+                ]
+              }
+            ],
+            peopleBrief: [
+              {
+                name: "Miguel Rodriguez",
+                initials: "MR",
+                title: "Chief Financial Officer",
+                company: "FundCo Holdings",
+                email: "m.rodriguez@fundco.com",
+                phone: "+1 (305) 555-0267",
+                badge: "Prospective Client (warm lead)",
+                bio: "Former Big 4 audit partner (Deloitte, 12 years). CPA, CFA, CAIA. Expert in fund accounting, NAV calculations, and regulatory compliance across US, EU, and Cayman jurisdictions. Born in Bogot\u00e1, educated at University of Miami (BS Accounting) and NYU Stern (MBA). Fluent in English and Spanish.",
+                keyIntel: [
+                  "Led FundCo's $2B fund restructuring in Jan 2026",
+                  "Vocal critic of AIFMD II compliance burden \u2014 may be receptive to regulatory advisory pitch",
+                  "Close to retirement discussions per industry rumors \u2014 may affect FundCo engagement continuity",
+                  "Active member of CFA Society South Florida \u2014 frequently speaks at their events"
+                ],
+                sentinelRelationship: {
+                  since: "2025",
+                  leadPartner: "Frank Quesada",
+                  billings: "$85K (single engagement)",
+                  matters: 1
+                },
+                communicationStyle: "Numbers-driven. Appreciates financial modeling and data-backed arguments. Prefers face-to-face or video over phone calls. Formal in written communication but warm in person. Tends to be cautious \u2014 needs time to evaluate proposals before committing.",
+                riskFlags: [
+                  "Retirement rumors \u2014 verify FundCo contact continuity",
+                  "FundCo under informal SEC inquiry re: valuation practices (non-public) \u2014 handle with discretion"
+                ]
+              }
+            ],
+            pastMeetings: [
+              { title: "FundCo \u2014 Initial Consultation", date: "2025-10-08", attendees: ["Miguel Rodriguez"], outcome: "Exploratory discussion on Cayman restructuring needs. Rodriguez expressed interest in flat-fee engagement model." }
+            ],
+            generatedAt: new Date().toISOString()
+          }
+        },
+        {
+          title: "Meridian Capital \u2014 LP Terms Negotiation",
+          eventType: "meeting" as const,
+          startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 9, 0),
+          endTime: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 10, 30),
+          location: "Video Conference / Google Meet",
+          description: "Negotiate side letter terms for Meridian's anchor LP commitment to Sentinel Growth Fund II. Key issues: MFN clause scope, co-invest rights, reporting frequency, key person provisions.",
+          videoConferenceType: "google_meet",
+          createdBy: userId,
+          externalAttendees: [
+            { name: "Victoria Blackwood", email: "v.blackwood@meridiancap.com" },
+            { name: "David Park", email: "d.park@meridiancap.com" },
+            { name: "Rebecca Torres", email: "r.torres@kl-law.com" },
+          ],
+          meetingIntelligence: {
+            attendeeSummary: "Meeting with Victoria Blackwood (CIO, Meridian Capital), David Park (General Counsel, Meridian Capital), and Rebecca Torres (Partner, Kirkland & Lewis). Blackwood controls $8B+ AUM and is lead decision-maker on PE allocations. Park handles all side letter negotiations. Torres is outside counsel advising Meridian on fund investments.",
+            newsInsights: [
+              {
+                name: "Victoria Blackwood",
+                articles: [
+                  { title: "Meridian Capital Expands PE Allocation to 35%", url: "https://example.com/meridian-pe", summary: "Meridian Capital CIO Victoria Blackwood announces strategic shift increasing PE allocation from 25% to 35% of total AUM, citing strong risk-adjusted returns.", source: "Institutional Investor", publishedAt: "2026-02-20" },
+                  { title: "Women in PE: Top 50 Allocators", url: "https://example.com/women-pe", summary: "Victoria Blackwood ranked #12 among top female allocators in private equity globally.", source: "PEI Women in PE Report", publishedAt: "2026-01-15" }
+                ]
+              },
+              {
+                name: "Rebecca Torres",
+                articles: [
+                  { title: "Kirkland & Lewis Launches Dedicated Fund Formation Practice", url: "https://example.com/kl-fund-formation", summary: "Rebecca Torres named co-head of new fund formation group at Kirkland & Lewis, signaling the firm's push into PE fund advisory.", source: "The American Lawyer", publishedAt: "2025-11-30" }
+                ]
+              }
+            ],
+            peopleBrief: [
+              {
+                name: "Victoria Blackwood",
+                initials: "VB",
+                title: "Chief Investment Officer",
+                company: "Meridian Capital",
+                email: "v.blackwood@meridiancap.com",
+                phone: "+1 (617) 555-0412",
+                badge: "Active Client",
+                bio: "20+ years in institutional investing. Previously Deputy CIO at CalPERS (2012\u20132020) and portfolio manager at PIMCO. Stanford MBA, CFA Charterholder. Controls $8.2B AUM with significant PE and credit allocations. Known as tough but fair negotiator.",
+                keyIntel: [
+                  "Final decision authority on all PE commitments >$50M",
+                  "Recently increased PE allocation to 35% \u2014 actively deploying capital",
+                  "Prefers quarterly reporting with attribution analysis",
+                  "Close relationship with Meridian board chair \u2014 influential beyond CIO role",
+                  "Known to walk away from deals if MFN terms aren't satisfactory"
+                ],
+                sentinelRelationship: {
+                  since: "2022",
+                  leadPartner: "Frank Quesada",
+                  billings: "$1.8M lifetime",
+                  matters: 3
+                },
+                communicationStyle: "Analytical and data-driven. Wants quantitative support for every recommendation. Prefers concise slide decks over memos. Very punctual \u2014 meetings start on time. Will push back on vague language in legal documents.",
+                riskFlags: null
+              },
+              {
+                name: "David Park",
+                initials: "DP",
+                title: "General Counsel",
+                company: "Meridian Capital",
+                email: "d.park@meridiancap.com",
+                phone: "+1 (617) 555-0389",
+                badge: "Active Client",
+                bio: "15 years in fund legal and regulatory compliance. Georgetown Law, previously at Simpson Thacher. Expert in side letter negotiations, ERISA issues, and regulatory filings. Known for detailed redlines and aggressive LP protections.",
+                keyIntel: [
+                  "Handles all side letter negotiations personally \u2014 no delegation",
+                  "Will request MFN parity with top 3 LPs as baseline",
+                  "Insists on quarterly unaudited financials + annual audited",
+                  "Very thorough on key person provisions \u2014 expects named individuals"
+                ],
+                sentinelRelationship: {
+                  since: "2022",
+                  leadPartner: "Frank Quesada",
+                  billings: "$620K lifetime",
+                  matters: 3
+                },
+                communicationStyle: "Precise and legal-minded. Prefers email with tracked changes for document review. Responds methodically within 48 hours. Will flag every ambiguity in draft documents.",
+                riskFlags: null
+              },
+              {
+                name: "Rebecca Torres",
+                initials: "RT",
+                title: "Partner, Fund Formation",
+                company: "Kirkland & Lewis LLP",
+                email: "r.torres@kl-law.com",
+                phone: "+1 (212) 555-0756",
+                badge: "Opposing Counsel",
+                bio: "Fund formation specialist, 18 years experience. Columbia Law, previously at Debevoise. Named co-head of K&L's new fund formation practice in 2025. Represents several large institutional LPs in PE fund negotiations.",
+                keyIntel: [
+                  "Represents Meridian on all fund investment legal matters",
+                  "Known for aggressive side letter demands on behalf of LP clients",
+                  "Recently launched dedicated fund formation practice at K&L",
+                  "Published article advocating for standardized LP reporting frameworks"
+                ],
+                sentinelRelationship: null,
+                communicationStyle: "Professional but assertive. Will challenge every clause that doesn't meet LP market standard. Sends detailed comment letters. Prefers video calls for substantive negotiations.",
+                riskFlags: [
+                  "Has previously opposed Sentinel positions in two prior fund negotiations",
+                  "Known to advise Meridian to seek competitive bids from other fund counsel"
+                ]
+              }
+            ],
+            pastMeetings: [
+              { title: "Meridian \u2014 Growth Fund I Side Letter Execution", date: "2024-08-15", attendees: ["Victoria Blackwood", "David Park"], outcome: "Successfully closed side letter with enhanced MFN provisions. Meridian committed $75M to Fund I." },
+              { title: "Meridian Annual Portfolio Review", date: "2025-05-20", attendees: ["Victoria Blackwood"], outcome: "Positive review of Fund I performance. Blackwood signaled strong interest in Fund II anchor commitment." },
+              { title: "Side Letter Framework Discussion", date: "2025-09-12", attendees: ["David Park", "Rebecca Torres"], outcome: "Preliminary discussion on Fund II side letter template. Torres flagged 6 provisions for negotiation." }
+            ],
+            generatedAt: new Date().toISOString()
+          }
+        }
+      ];
+
+      const created = [];
+      for (const meeting of demoMeetings) {
+        const event = await storage.createCalendarEvent(meeting as any);
+        created.push(event);
+      }
+      
+      res.json({ message: `Created ${created.length} demo meetings with intelligence briefs`, meetings: created.map(e => ({ id: e.id, title: e.title })) });
+    } catch (error: any) {
+      console.error("Error seeding demo meetings:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Analytics routes
   app.get("/api/analytics/dashboard", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req: any, res) => {
     try {

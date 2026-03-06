@@ -12422,6 +12422,31 @@ export const calendarEvents = pgTable("calendar_events", {
       name: string;
       articles: { title: string; url: string; summary: string; source: string; publishedAt: string }[];
     }[];
+    peopleBrief?: {
+      name: string;
+      initials: string;
+      title: string;
+      company: string;
+      email: string;
+      phone: string;
+      badge: string;
+      bio: string;
+      keyIntel: string[];
+      sentinelRelationship: {
+        since: string;
+        leadPartner: string;
+        billings: string;
+        matters: number;
+      } | null;
+      communicationStyle: string | null;
+      riskFlags: string[] | null;
+    }[];
+    pastMeetings?: {
+      title: string;
+      date: string;
+      attendees: string[];
+      outcome: string;
+    }[];
     generatedAt: string;
   }>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
