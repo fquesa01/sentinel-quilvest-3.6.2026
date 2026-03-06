@@ -21,23 +21,28 @@ import {
   Building,
   Handshake,
   Landmark,
+  TrendingUp,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import type { DealTemplate } from "@shared/schema";
 
 const transactionTypes = [
   { value: "all", label: "All Types" },
+  { value: "equity", label: "PE Equity" },
+  { value: "debt", label: "Debt Transaction" },
   { value: "real_estate", label: "Real Estate" },
   { value: "ma_asset", label: "M&A (Asset Purchase)" },
   { value: "ma_stock", label: "M&A (Stock Purchase)" },
   { value: "merger", label: "Merger" },
   { value: "investment", label: "Investment" },
-  { value: "debt", label: "Debt Transaction" },
   { value: "jv", label: "Joint Venture" },
   { value: "franchise", label: "Franchise" },
   { value: "other", label: "Other" },
 ];
 
 const typeIcons: Record<string, typeof Building> = {
+  equity: TrendingUp,
   real_estate: Building,
   ma_asset: Handshake,
   ma_stock: Handshake,
@@ -53,7 +58,7 @@ export default function TransactionsTemplates() {
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
 
-  const { data: templates, isLoading } = useQuery<DealTemplate[]>({
+  const { data: templates, isLoading, isError, error, refetch } = useQuery<DealTemplate[]>({
     queryKey: ["/api/deal-templates"],
   });
 
@@ -77,6 +82,33 @@ export default function TransactionsTemplates() {
             <Skeleton key={i} className="h-48" />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center gap-3">
+          <FileStack className="h-8 w-8 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold">Deal Templates</h1>
+            <p className="text-muted-foreground">Pre-built transaction checklists for common deal types</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <AlertCircle className="h-12 w-12 mx-auto text-destructive mb-4" />
+            <p className="text-lg font-medium" data-testid="text-error-title">Failed to load templates</p>
+            <p className="text-muted-foreground mb-4" data-testid="text-error-message">
+              {error instanceof Error ? error.message : "An unexpected error occurred"}
+            </p>
+            <Button variant="outline" onClick={() => refetch()} data-testid="button-retry-templates">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -122,11 +154,11 @@ export default function TransactionsTemplates() {
         </CardContent>
       </Card>
 
-      {filteredTemplates?.length === 0 ? (
+      {!filteredTemplates || filteredTemplates.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <FileStack className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-lg font-medium">No templates found</p>
+            <p className="text-lg font-medium" data-testid="text-no-templates">No templates found</p>
             <p className="text-muted-foreground">
               {searchTerm || typeFilter !== "all" 
                 ? "Try adjusting your search or filter criteria"
@@ -136,7 +168,7 @@ export default function TransactionsTemplates() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTemplates?.map((template) => {
+          {filteredTemplates.map((template) => {
             const Icon = typeIcons[template.transactionType || 'other'] || FileText;
             return (
               <Card 
@@ -169,7 +201,7 @@ export default function TransactionsTemplates() {
                     {template.description || "No description available"}
                   </CardDescription>
                   
-                  <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
+                  <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground mb-4">
                     <span>Version {template.version}</span>
                     <span>Used {template.usageCount || 0} times</span>
                   </div>
