@@ -208,30 +208,6 @@ export function AppSidebar() {
           icon: Eye,
           roles: ["admin", "attorney", "compliance_officer"],
         },
-        {
-          title: "Sharing Documents",
-          url: "/ediscovery",
-          icon: FileSearch,
-          roles: ["admin", "attorney", "compliance_officer"],
-        },
-        {
-          title: "Discovery Reports",
-          url: "/reports/discovery",
-          icon: FileText,
-          roles: ["admin", "attorney", "compliance_officer", "external_counsel", "auditor"],
-        },
-        {
-          title: "Privilege Review",
-          url: "/privilege-review",
-          icon: Shield,
-          roles: ["admin", "attorney", "external_counsel"],
-        },
-        {
-          title: "Privilege Log",
-          url: "/privilege-log",
-          icon: Scale,
-          roles: ["admin", "attorney", "external_counsel", "compliance_officer"],
-        },
       ],
     },
     {
