@@ -337,6 +337,21 @@ export default function CalendarPage() {
     },
   });
 
+  const syncCalendarMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/calendar/sync");
+      return await response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/connected-accounts"] });
+      toast({ title: "Calendar synced successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to sync calendar", description: error.message, variant: "destructive" });
+    },
+  });
+
   const sendInvitationsMutation = useMutation({
     mutationFn: async ({ eventId, invitees }: { eventId: string; invitees: typeof newEvent.invitees }) => {
       const response = await apiRequest("POST", `/api/calendar/events/${eventId}/send-invitations`, { invitees });
@@ -1442,6 +1457,40 @@ export default function CalendarPage() {
                       </div>
                     </div>
                   )}
+
+                  {(selectedEvent as any).meetingIntelligence && (
+                    <div className="pt-2 border-t space-y-2" data-testid="section-mobile-meeting-intelligence">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-medium">Meeting Intelligence</span>
+                        <Badge variant="secondary" className="text-[10px]">Private</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{(selectedEvent as any).meetingIntelligence.attendeeSummary}</p>
+                      {(selectedEvent as any).meetingIntelligence.newsInsights?.map((insight: any, idx: number) => (
+                        insight.articles?.length > 0 && (
+                          <div key={idx} className="space-y-1">
+                            <span className="text-xs font-medium">{insight.name}</span>
+                            {insight.articles.map((article: any, aIdx: number) => (
+                              <a key={aIdx} href={article.url} target="_blank" rel="noopener noreferrer" className="block p-2 rounded-md bg-muted/50 text-xs" data-testid={`link-mobile-news-${idx}-${aIdx}`}>
+                                <div className="font-medium truncate">{article.title}</div>
+                                <div className="text-muted-foreground">{article.summary}</div>
+                                <div className="text-[10px] text-muted-foreground mt-1">{article.source}</div>
+                              </a>
+                            ))}
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && !(selectedEvent as any).meetingIntelligence && (
+                    <div className="pt-2 border-t">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Generating intelligence...</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1687,15 +1736,29 @@ export default function CalendarPage() {
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-sm">Connected Calendars</CardTitle>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6"
-                onClick={() => setIsConnectAccountsOpen(true)}
-                data-testid="button-connect-calendar"
-              >
-                <Link2 className="w-3 h-3" />
-              </Button>
+              <div className="flex items-center gap-1">
+                {connectedAccounts.length > 0 && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6"
+                    onClick={() => syncCalendarMutation.mutate()}
+                    disabled={syncCalendarMutation.isPending}
+                    data-testid="button-sync-calendars"
+                  >
+                    <RefreshCw className={cn("w-3 h-3", syncCalendarMutation.isPending && "animate-spin")} />
+                  </Button>
+                )}
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6"
+                  onClick={() => setIsConnectAccountsOpen(true)}
+                  data-testid="button-connect-calendar"
+                >
+                  <Link2 className="w-3 h-3" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-2">
               {connectedAccounts.length === 0 ? (
@@ -2316,6 +2379,52 @@ export default function CalendarPage() {
                   </div>
                 </div>
               )}
+
+              {(selectedEvent as any).meetingIntelligence && (
+                <div className="pt-3 border-t space-y-3" data-testid="section-meeting-intelligence">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium">Meeting Intelligence</span>
+                    <Badge variant="secondary" className="text-[10px]">Private</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{(selectedEvent as any).meetingIntelligence.attendeeSummary}</p>
+                  {(selectedEvent as any).meetingIntelligence.newsInsights?.map((insight: any, idx: number) => (
+                    insight.articles?.length > 0 && (
+                      <div key={idx} className="space-y-1">
+                        <span className="text-xs font-medium">{insight.name}</span>
+                        {insight.articles.map((article: any, aIdx: number) => (
+                          <a
+                            key={aIdx}
+                            href={article.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block p-2 rounded-md bg-muted/50 hover-elevate text-sm"
+                            data-testid={`link-news-article-${idx}-${aIdx}`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <ExternalLink className="w-3 h-3 mt-0.5 flex-shrink-0 text-primary" />
+                              <div className="min-w-0">
+                                <div className="font-medium text-xs truncate">{article.title}</div>
+                                <div className="text-xs text-muted-foreground">{article.summary}</div>
+                                <div className="text-[10px] text-muted-foreground mt-1">{article.source}{article.publishedAt ? ` — ${new Date(article.publishedAt).toLocaleDateString()}` : ""}</div>
+                              </div>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    )
+                  ))}
+                </div>
+              )}
+
+              {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && !(selectedEvent as any).meetingIntelligence && (
+                <div className="pt-2 border-t">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Generating meeting intelligence...</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2642,7 +2751,18 @@ export default function CalendarPage() {
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-row justify-between sm:justify-between gap-2">
+            {connectedAccounts.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => syncCalendarMutation.mutate()}
+                disabled={syncCalendarMutation.isPending}
+                data-testid="button-dialog-sync"
+              >
+                <RefreshCw className={cn("w-4 h-4 mr-1", syncCalendarMutation.isPending && "animate-spin")} />
+                {syncCalendarMutation.isPending ? "Syncing..." : "Sync Now"}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setIsConnectAccountsOpen(false)}>
               Close
             </Button>

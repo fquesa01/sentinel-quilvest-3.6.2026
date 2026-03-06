@@ -12416,6 +12416,14 @@ export const calendarEvents = pgTable("calendar_events", {
   externalEventId: varchar("external_event_id", { length: 255 }),
   externalCalendarAccountId: varchar("external_calendar_account_id").references(() => connectedCalendarAccounts.id, { onDelete: "set null" }),
   syncedToExternal: boolean("synced_to_external").default(false),
+  meetingIntelligence: jsonb("meeting_intelligence").$type<{
+    attendeeSummary: string;
+    newsInsights: {
+      name: string;
+      articles: { title: string; url: string; summary: string; source: string; publishedAt: string }[];
+    }[];
+    generatedAt: string;
+  }>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

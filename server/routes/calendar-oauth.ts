@@ -588,7 +588,17 @@ router.patch("/api/calendar/connected-accounts/:id", isAuthenticated, async (req
   }
 });
 
-// Check integration status (for UI to show if APIs are configured)
+router.post("/api/calendar/sync", isAuthenticated, async (req: any, res: Response) => {
+  try {
+    const { syncAllAccountsForUser } = await import("../services/calendar-sync-service");
+    await syncAllAccountsForUser(req.user.id);
+    res.json({ success: true, message: "Calendar sync completed" });
+  } catch (error: any) {
+    console.error("[CalendarSync] Sync failed:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get("/api/calendar/integration-status", isAuthenticated, async (req: Request, res: Response) => {
   res.json({
     google: {

@@ -23,6 +23,7 @@ import { ObjectStorageService, objectStorageClient } from "./objectStorage";
 import type { BusinessSummary, EntityInvolvement, EntityInvolvementEntry } from "@shared/business-summary-types";
 import { generateRealtimeToken, transcribeVideoFile } from "./elevenlabs";
 import { emailService } from "./services/email-service";
+import { generateMeetingIntelligence } from "./services/meeting-intelligence-service";
 import { smsService } from "./services/sms-service";
 import * as fileSearchService from "./services/file-search-service";
 import { conductCompanyResearch } from "./services/web-research-service";
@@ -1035,6 +1036,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const event = await storage.createCalendarEvent(eventData);
       await logAction(req, "create", "calendar_event", event.id, { title: event.title });
+      
+      const attendeesForIntel = (event.externalAttendees || []).filter((a: any) => a.name || a.email);
+      if (attendeesForIntel.length > 0) {
+        generateMeetingIntelligence(attendeesForIntel).then(async (intelligence) => {
+          try {
+            await storage.updateCalendarEvent(event.id, { meetingIntelligence: intelligence });
+            console.log(`[MeetingIntelligence] Generated for event ${event.id} with ${attendeesForIntel.length} attendees`);
+          } catch (err) {
+            console.error(`[MeetingIntelligence] Failed to save for event ${event.id}:`, err);
+          }
+        }).catch(err => {
+          console.error(`[MeetingIntelligence] Generation failed for event ${event.id}:`, err);
+        });
+      }
+      
       res.status(201).json(event);
     } catch (error: any) {
       console.error("Error creating calendar event:", error);
@@ -1253,6 +1269,25 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
       if (updates.endTime) updates.endTime = new Date(updates.endTime);
       const event = await storage.updateCalendarEvent(req.params.id, updates);
       await logAction(req, "update", "calendar_event", event.id, updates);
+      
+      if (updates.externalAttendees) {
+        const attendeesForIntel = (event.externalAttendees || []).filter((a: any) => a.name || a.email);
+        if (attendeesForIntel.length > 0) {
+          generateMeetingIntelligence(attendeesForIntel).then(async (intelligence) => {
+            try {
+              await storage.updateCalendarEvent(event.id, { meetingIntelligence: intelligence });
+              console.log(`[MeetingIntelligence] Regenerated for event ${event.id}`);
+            } catch (err) {
+              console.error(`[MeetingIntelligence] Failed to save for event ${event.id}:`, err);
+            }
+          }).catch(err => {
+            console.error(`[MeetingIntelligence] Generation failed for event ${event.id}:`, err);
+          });
+        } else {
+          await storage.updateCalendarEvent(event.id, { meetingIntelligence: null });
+        }
+      }
+      
       res.json(event);
     } catch (error: any) {
       console.error("Error updating calendar event:", error);
