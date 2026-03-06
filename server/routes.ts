@@ -13259,6 +13259,34 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  // Check if a deal has enough processed documents for memo generation
+  app.get("/api/deals/:dealId/memo-readiness", isAuthenticated, async (req: any, res) => {
+    try {
+      const rooms = await db.select({ id: schema.dataRooms.id })
+        .from(schema.dataRooms)
+        .where(eq(schema.dataRooms.dealId, req.params.dealId));
+
+      if (rooms.length === 0) {
+        return res.json({ documentCount: 0, ready: false });
+      }
+
+      const roomIds = rooms.map(r => r.id);
+      const docs = await db.select({ id: schema.dataRoomDocuments.id })
+        .from(schema.dataRoomDocuments)
+        .where(
+          and(
+            inArray(schema.dataRoomDocuments.dataRoomId, roomIds),
+            eq(schema.dataRoomDocuments.ocrStatus, "completed")
+          )
+        );
+
+      res.json({ documentCount: docs.length, ready: docs.length > 0 });
+    } catch (error: any) {
+      console.error("Error checking memo readiness:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Apply AI-detected deal type and optionally auto-apply matching template
   app.post("/api/deals/:dealId/apply-detected-type", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {

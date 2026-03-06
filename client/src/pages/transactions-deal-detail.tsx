@@ -2082,8 +2082,15 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
     enabled: !!dealId,
   });
 
+  const { data: memoReadiness } = useQuery<{ documentCount: number; ready: boolean }>({
+    queryKey: ["/api/deals", dealId, "memo-readiness"],
+    enabled: !!dealId,
+  });
+
   const memoStatus = dealSettings?.memoStatus as string | undefined;
   const latestMemo = memos.length > 0 ? memos[0] : null;
+  const hasDocumentsReady = memoReadiness?.ready || memoStatus === "ready_to_generate";
+  const documentCount = memoReadiness?.documentCount || 0;
 
   const handleAutoGenerate = async () => {
     setIsGenerating(true);
@@ -2213,15 +2220,15 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
 
           {!isGenerating && !latestMemo && memoStatus !== "generating" && !memosLoading && (
             <div className="text-center py-8">
-              {memoStatus === "ready_to_generate" ? (
+              {hasDocumentsReady ? (
                 <div className="space-y-4">
                   <div className="p-3 rounded-full bg-primary/10 w-fit mx-auto">
                     <Sparkles className="h-8 w-8 text-primary" />
                   </div>
                   <div>
                     <p className="font-medium">Ready to Generate</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Documents have been processed and are ready for memo generation.
+                    <p className="text-sm text-muted-foreground mt-1" data-testid="text-doc-count">
+                      {documentCount} document{documentCount !== 1 ? "s" : ""} processed and ready for analysis.
                     </p>
                   </div>
                   <Button onClick={handleAutoGenerate} data-testid="button-generate-memo">
