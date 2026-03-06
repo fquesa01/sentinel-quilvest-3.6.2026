@@ -21,11 +21,9 @@ import UserManagement from "@/pages/user-management";
 import EmployeeDashboard from "@/pages/employee-dashboard";
 import ExecutiveAnalytics from "@/pages/executive-analytics";
 import ManagementAnalytics from "@/pages/management-analytics";
-import EDiscoveryPage from "@/pages/ediscovery";
 import DocumentReviewPage from "@/pages/document-review";
 import CollectionsPage from "@/pages/collections";
-import PrivilegeReviewQueue from "@/pages/privilege-review-queue";
-import PrivilegeLog from "@/pages/privilege-log";
+import MyDataLakePage from "@/pages/my-data-lake";
 import AttorneyReviewQueue from "@/pages/attorney-review-queue";
 import WhistleblowerReport from "@/pages/whistleblower-report";
 import WhistleblowerConfirmation from "@/pages/whistleblower-confirmation";
@@ -156,10 +154,8 @@ function AuthenticatedApp() {
               <Route path="/investor-memo/:memoId" component={InvestorMemoBuilder} />
               <Route path="/background-research" component={BackgroundResearch} />
               <Route path="/background-research/:id" component={BackgroundResearchDetail} />
-              <Route path="/ediscovery" component={EDiscoveryPage} />
+              <Route path="/my-data-lake" component={MyDataLakePage} />
               <Route path="/collections" component={CollectionsPage} />
-              <Route path="/privilege-review" component={PrivilegeReviewQueue} />
-              <Route path="/privilege-log" component={PrivilegeLog} />
               <Route path="/attorney-review" component={AttorneyReviewQueue} />
               <Route path="/report" component={WhistleblowerReport} />
               <Route path="/report/confirmation" component={WhistleblowerConfirmation} />

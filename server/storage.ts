@@ -348,6 +348,12 @@ import {
   userCalendars,
   type UserCalendar,
   type InsertUserCalendar,
+  dataLakeItems,
+  dataLakeConnectors,
+  type DataLakeItem,
+  type InsertDataLakeItem,
+  type DataLakeConnector,
+  type InsertDataLakeConnector,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -956,6 +962,14 @@ export interface IStorage {
   updateUserCalendar(id: string, updates: Partial<UserCalendar>): Promise<UserCalendar>;
   deleteUserCalendar(id: string): Promise<void>;
   getDefaultUserCalendar(userId: string): Promise<UserCalendar | undefined>;
+
+  getDataLakeItems(userId: string, filters?: { source?: string; itemType?: string; search?: string; limit?: number; offset?: number }): Promise<DataLakeItem[]>;
+  createDataLakeItem(item: InsertDataLakeItem): Promise<DataLakeItem>;
+  deleteDataLakeItem(id: string, userId: string): Promise<void>;
+  getDataLakeStats(userId: string): Promise<{ totalItems: number; emailsIngested: number; filesIndexed: number; activeConnectors: number; totalConnectors: number }>;
+  getDataLakeConnectors(userId: string): Promise<DataLakeConnector[]>;
+  upsertDataLakeConnector(connector: InsertDataLakeConnector): Promise<DataLakeConnector>;
+  searchDataLakeItems(userId: string, query: string): Promise<DataLakeItem[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -6449,6 +6463,70 @@ export class DatabaseStorage implements IStorage {
   async getDefaultUserCalendar(userId: string): Promise<UserCalendar | undefined> {
     const [calendar] = await db.select().from(userCalendars).where(and(eq(userCalendars.userId, userId), eq(userCalendars.isDefault, true)));
     return calendar;
+  }
+
+  async getDataLakeItems(userId: string, filters?: { source?: string; itemType?: string; search?: string; limit?: number; offset?: number }): Promise<DataLakeItem[]> {
+    const conditions = [eq(dataLakeItems.userId, userId)];
+    if (filters?.source) conditions.push(eq(dataLakeItems.source, filters.source));
+    if (filters?.itemType === "file") {
+      conditions.push(sql`${dataLakeItems.itemType} != 'email'`);
+    } else if (filters?.itemType) {
+      conditions.push(eq(dataLakeItems.itemType, filters.itemType));
+    }
+    if (filters?.search) conditions.push(ilike(dataLakeItems.name, `%${filters.search}%`));
+    return db.select().from(dataLakeItems)
+      .where(and(...conditions))
+      .orderBy(desc(dataLakeItems.indexedAt))
+      .limit(filters?.limit ?? 50)
+      .offset(filters?.offset ?? 0);
+  }
+
+  async createDataLakeItem(item: InsertDataLakeItem): Promise<DataLakeItem> {
+    const [created] = await db.insert(dataLakeItems).values(item).returning();
+    return created;
+  }
+
+  async deleteDataLakeItem(id: string, userId: string): Promise<void> {
+    await db.delete(dataLakeItems).where(and(eq(dataLakeItems.id, id), eq(dataLakeItems.userId, userId)));
+  }
+
+  async getDataLakeStats(userId: string): Promise<{ totalItems: number; emailsIngested: number; filesIndexed: number; activeConnectors: number; totalConnectors: number }> {
+    const items = await db.select().from(dataLakeItems).where(eq(dataLakeItems.userId, userId));
+    const connectors = await db.select().from(dataLakeConnectors).where(eq(dataLakeConnectors.userId, userId));
+    const emailTypes = ['email'];
+    const fileTypes = ['pdf', 'docx', 'xlsx', 'other'];
+    return {
+      totalItems: items.length,
+      emailsIngested: items.filter(i => emailTypes.includes(i.itemType)).length,
+      filesIndexed: items.filter(i => fileTypes.includes(i.itemType)).length,
+      activeConnectors: connectors.filter(c => c.status === 'connected').length,
+      totalConnectors: 4,
+    };
+  }
+
+  async getDataLakeConnectors(userId: string): Promise<DataLakeConnector[]> {
+    return db.select().from(dataLakeConnectors).where(eq(dataLakeConnectors.userId, userId));
+  }
+
+  async upsertDataLakeConnector(connector: InsertDataLakeConnector): Promise<DataLakeConnector> {
+    const existing = await db.select().from(dataLakeConnectors)
+      .where(and(eq(dataLakeConnectors.userId, connector.userId), eq(dataLakeConnectors.connectorType, connector.connectorType)));
+    if (existing.length > 0) {
+      const [updated] = await db.update(dataLakeConnectors)
+        .set(connector)
+        .where(eq(dataLakeConnectors.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(dataLakeConnectors).values(connector).returning();
+    return created;
+  }
+
+  async searchDataLakeItems(userId: string, query: string): Promise<DataLakeItem[]> {
+    return db.select().from(dataLakeItems)
+      .where(and(eq(dataLakeItems.userId, userId), ilike(dataLakeItems.name, `%${query}%`)))
+      .orderBy(desc(dataLakeItems.indexedAt))
+      .limit(50);
   }
 }
 

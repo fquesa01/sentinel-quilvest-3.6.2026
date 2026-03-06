@@ -12980,3 +12980,53 @@ export const memoChatMessagesRelations = relations(memoChatMessages, ({ one }) =
     references: [investorMemos.id],
   }),
 }));
+
+export const dataLakeItems = pgTable("data_lake_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  source: varchar("source", { length: 50 }).notNull(),
+  itemType: varchar("item_type", { length: 50 }).notNull(),
+  name: text("name").notNull(),
+  filePath: text("file_path"),
+  indexedAt: timestamp("indexed_at").defaultNow().notNull(),
+  lastSynced: timestamp("last_synced"),
+  fileSize: integer("file_size"),
+  geminiIndexed: boolean("gemini_indexed").default(false).notNull(),
+  metadata: jsonb("metadata"),
+});
+
+export const dataLakeConnectors = pgTable("data_lake_connectors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  connectorType: varchar("connector_type", { length: 50 }).notNull(),
+  status: varchar("status", { length: 50 }).default("disconnected").notNull(),
+  accessTokenEncrypted: text("access_token_encrypted"),
+  refreshTokenEncrypted: text("refresh_token_encrypted"),
+  tokenExpiry: timestamp("token_expiry"),
+  lastSync: timestamp("last_sync"),
+  itemsIndexed: integer("items_indexed").default(0).notNull(),
+  liveSyncEnabled: boolean("live_sync_enabled").default(false).notNull(),
+  providerEmail: text("provider_email"),
+});
+
+export const insertDataLakeItemSchema = createInsertSchema(dataLakeItems).omit({ id: true, indexedAt: true });
+export type InsertDataLakeItem = z.infer<typeof insertDataLakeItemSchema>;
+export type DataLakeItem = typeof dataLakeItems.$inferSelect;
+
+export const insertDataLakeConnectorSchema = createInsertSchema(dataLakeConnectors).omit({ id: true });
+export type InsertDataLakeConnector = z.infer<typeof insertDataLakeConnectorSchema>;
+export type DataLakeConnector = typeof dataLakeConnectors.$inferSelect;
+
+export const dataLakeItemsRelations = relations(dataLakeItems, ({ one }) => ({
+  user: one(users, {
+    fields: [dataLakeItems.userId],
+    references: [users.id],
+  }),
+}));
+
+export const dataLakeConnectorsRelations = relations(dataLakeConnectors, ({ one }) => ({
+  user: one(users, {
+    fields: [dataLakeConnectors.userId],
+    references: [users.id],
+  }),
+}));

@@ -199,11 +199,17 @@ export function AppSidebar() {
       ],
     },
     {
-      title: "Discovery & Productions",
+      title: "My Data Lake",
       defaultOpen: true,
       items: [
         {
-          title: "Doc Review",
+          title: "My Data Lake",
+          url: "/my-data-lake",
+          icon: Brain,
+          roles: ["admin", "attorney", "compliance_officer", "external_counsel"],
+        },
+        {
+          title: "Document Review",
           url: "/document-review",
           icon: Eye,
           roles: ["admin", "attorney", "compliance_officer"],

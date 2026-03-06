@@ -27391,6 +27391,165 @@ Guidelines:
   });
 
   
+
+
+  // =============================================
+  // Data Lake API Routes
+  // =============================================
+
+  app.get("/api/data-lake/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const stats = await storage.getDataLakeStats(req.user.id);
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Error fetching data lake stats:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/data-lake/items", isAuthenticated, async (req: any, res) => {
+    try {
+      const { source, itemType, search, limit, offset } = req.query;
+      const items = await storage.getDataLakeItems(req.user.id, {
+        source: source as string,
+        itemType: itemType as string,
+        search: search as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+        offset: offset ? parseInt(offset as string) : undefined,
+      });
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error fetching data lake items:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/data-lake/upload", isAuthenticated, upload.single("file"), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file provided" });
+      }
+      const file = req.file;
+      const ext = file.originalname.split(".").pop()?.toLowerCase() || "other";
+      const typeMap: Record<string, string> = {
+        pdf: "pdf", docx: "docx", doc: "docx", xlsx: "xlsx", xls: "xlsx",
+        msg: "email", eml: "email", pst: "email",
+      };
+      const itemType = typeMap[ext] || "other";
+      let filePath: string | null = null;
+      try {
+        const objectStorageService = new ObjectStorageService();
+        const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+        const uploadPath = `data-lake/${Date.now()}-${safeName}`;
+        filePath = await objectStorageService.uploadBuffer(uploadPath, file.buffer, file.mimetype);
+      } catch (storageError) {
+        console.error("Object storage upload failed, continuing without file path:", storageError);
+      }
+      const item = await storage.createDataLakeItem({
+        userId: req.user.id,
+        source: "upload",
+        itemType,
+        name: file.originalname,
+        filePath,
+        fileSize: file.size,
+        geminiIndexed: false,
+        metadata: { mimetype: file.mimetype, uploadedAt: new Date().toISOString() },
+      });
+      res.json(item);
+    } catch (error: any) {
+      console.error("Error uploading data lake file:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/data-lake/items/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteDataLakeItem(req.params.id, req.user.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting data lake item:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/data-lake/connectors", isAuthenticated, async (req: any, res) => {
+    try {
+      const connectors = await storage.getDataLakeConnectors(req.user.id);
+      const allTypes = ["outlook", "gmail", "onedrive", "gdrive"];
+      const result = allTypes.map(type => {
+        const existing = connectors.find(c => c.connectorType === type);
+        if (existing) {
+          return {
+            id: existing.id,
+            connectorType: existing.connectorType,
+            status: existing.status,
+            lastSync: existing.lastSync,
+            itemsIndexed: existing.itemsIndexed,
+            liveSyncEnabled: existing.liveSyncEnabled,
+            providerEmail: existing.providerEmail,
+          };
+        }
+        return {
+          id: null,
+          connectorType: type,
+          status: "disconnected",
+          lastSync: null,
+          itemsIndexed: 0,
+          liveSyncEnabled: false,
+          providerEmail: null,
+        };
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error fetching data lake connectors:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/data-lake/connectors/:type/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      const connectorType = req.params.type;
+      const validTypes = ["outlook", "gmail", "onedrive", "gdrive"];
+      if (!validTypes.includes(connectorType)) {
+        return res.status(400).json({ message: "Invalid connector type" });
+      }
+      const connectors = await storage.getDataLakeConnectors(req.user.id);
+      const connector = connectors.find(c => c.connectorType === connectorType);
+      if (!connector || connector.status !== "connected") {
+        return res.status(400).json({ message: "Connector not connected" });
+      }
+      const updated = await storage.upsertDataLakeConnector({
+        userId: req.user.id,
+        connectorType,
+        status: "connected",
+        lastSync: new Date(),
+        itemsIndexed: connector.itemsIndexed,
+        liveSyncEnabled: connector.liveSyncEnabled,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error syncing connector:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/data-lake/search", isAuthenticated, async (req: any, res) => {
+    try {
+      const { q, source } = req.query;
+      if (!q) {
+        return res.json([]);
+      }
+      let items = await storage.searchDataLakeItems(req.user.id, q as string);
+      if (source && source !== "all") {
+        items = items.filter(i => i.source === source);
+      }
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error searching data lake:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup WebRTC signaling for live interview sessions
