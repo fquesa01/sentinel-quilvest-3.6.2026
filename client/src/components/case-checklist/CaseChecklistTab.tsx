@@ -186,10 +186,15 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       formData.append("filingParty", "plaintiff");
       formData.append("filingStatus", "court_filing");
       
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeaders: Record<string, string> = {};
+      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
+
       const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
         method: "POST",
         body: formData,
-        credentials: "include",
+        headers: authHeaders,
       });
       
       if (!uploadRes.ok) {
@@ -198,7 +203,6 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       
       const uploadedDoc = await uploadRes.json();
       
-      // Now generate checklist from the uploaded document
       return apiRequest("POST", `/api/cases/${caseId}/checklist/generate`, {
         sourceDocumentId: uploadedDoc.id,
         sourceDocumentType: "court_filing",
@@ -259,10 +263,15 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       formData.append("filingParty", "plaintiff");
       formData.append("filingStatus", "court_filing");
       
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeaders: Record<string, string> = {};
+      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
+
       const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
         method: "POST",
         body: formData,
-        credentials: "include",
+        headers: authHeaders,
       });
       
       if (!uploadRes.ok) {
@@ -271,7 +280,6 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       
       const uploadedDoc = await uploadRes.json();
       
-      // Now regenerate checklist (deletes old, creates new)
       return apiRequest("POST", `/api/cases/${caseId}/checklist/regenerate`, {
         sourceDocumentId: uploadedDoc.id,
         sourceDocumentType: "court_filing",
@@ -925,10 +933,15 @@ function ElementCard({
       formData.append("filingParty", "plaintiff");
       formData.append("filingStatus", "draft");
       
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeaders: Record<string, string> = {};
+      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
+
       const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
         method: "POST",
         body: formData,
-        credentials: "include",
+        headers: authHeaders,
       });
       
       if (!uploadRes.ok) {

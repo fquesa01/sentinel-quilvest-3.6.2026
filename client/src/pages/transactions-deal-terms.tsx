@@ -157,11 +157,15 @@ export default function TransactionsDealTerms() {
       const formData = new FormData();
       formData.append("files", file);
       
-      // Note: Using fetch for FormData (apiRequest only supports JSON body)
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeaders: Record<string, string> = {};
+      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
+
       const res = await fetch(`/api/data-rooms/${firstDataRoom.id}/documents`, {
         method: "POST",
         body: formData,
-        credentials: "include",
+        headers: authHeaders,
       });
       
       if (!res.ok) {
