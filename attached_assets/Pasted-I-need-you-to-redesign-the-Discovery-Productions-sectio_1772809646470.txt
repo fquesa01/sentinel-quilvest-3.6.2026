@@ -1,0 +1,181 @@
+I need you to redesign the "Discovery & Productions" section of the Sentinel Counsel LLP platform and replace it with a new section called "My Data Lake." This is a private equity and debt investor-focused platform, so the redesign should serve that user persona specifically.
+
+---
+
+## 1. SIDEBAR NAVIGATION CHANGE
+
+Rename the "Discovery & Productions" nav section to "My Data Lake" throughout the entire codebase — sidebar label, route names, page titles, and any breadcrumbs. The nav item should use a database or brain-style icon.
+
+---
+
+## 2. NEW ROUTE: /my-data-lake
+
+Create a new full page at /my-data-lake with the following structure:
+
+### PAGE HEADER
+- Title: "My Data Lake"
+- Subtitle: "Your personal knowledge base — emails, files, and past deals, unified and instantly searchable."
+- A gradient icon (blue to indigo) using a brain or database SVG
+
+### USE CASE BANNER (3 cards across the top)
+Display three cards explaining why this section exists:
+1. **Ambient Intelligence** (indigo) — "Your files and emails are instantly searchable during live calls and video meetings — no context switching."
+2. **Relationship Intelligence** (sky blue) — "Surface shared history, past deals, and warm introductions when reaching out to contacts."
+3. **Transaction Benchmarking** (emerald) — "When evaluating new deals, reference comparable past transactions directly from your own data."
+
+### STATS ROW (4 stat cards)
+- Total Items Indexed
+- Emails Ingested
+- Files Indexed
+- Active Connectors (e.g. "2 / 4")
+All stats should be pulled live from the database.
+
+### TABBED INTERFACE
+Four tabs: Overview | Connectors | Recent Ingestions | Search
+
+---
+
+## 3. TAB: OVERVIEW
+
+Left column — Connected Sources card:
+- List all 4 connectors (Outlook, Gmail, OneDrive/SharePoint, Google Drive)
+- Show connection status (Connected / Available)
+- For connected sources: show item count indexed, last sync time, and a "Live" badge if live sync is active
+- "Connect" button for unconnected sources
+- "+ Add Source" button in the card header
+
+Right column — two stacked cards:
+1. **Upload Files Directly** — drag-and-drop zone supporting PDF, DOCX, XLSX, MSG, EML, PST, ZIP. On drop, trigger the existing ingestion pipeline (OCR, RAG indexing via Gemini).
+2. **Quick Search** — search input with 3 suggested saved queries pre-populated. Queries should execute against the full data lake index.
+
+---
+
+## 4. TAB: CONNECTORS
+
+Show 4 connector cards in a 2x2 grid:
+
+**Microsoft Outlook**
+- OAuth 2.0 connect with Microsoft 365
+- On connect: ingest full historical email archive AND set up live/ongoing sync
+- Show: emails indexed count, last sync timestamp, live sync toggle
+- Re-sync button
+
+**Gmail**
+- OAuth 2.0 connect with Google
+- On connect: ingest full historical Gmail archive AND set up live/ongoing sync
+- Show: emails indexed count, last sync timestamp, live sync toggle
+- Re-sync button
+
+**OneDrive / SharePoint**
+- OAuth 2.0 connect with Microsoft 365
+- On connect: let user select folders to sync, then ingest all files
+- Show: files indexed count, last sync timestamp
+- Manage folders button
+
+**Google Drive**
+- OAuth 2.0 connect with Google
+- On connect: let user select folders/drives to sync, then ingest all files
+- Show: files indexed count, last sync timestamp
+- Manage folders button
+
+Each connector card should show:
+- Service name and icon
+- Connection status badge (Connected / Available)
+- If connected: indexed item count + last sync time in a stats sub-card
+- Action buttons: Sync Now | Manage (if connected) OR Connect (if not)
+
+---
+
+## 5. TAB: RECENT INGESTIONS
+
+A sortable/filterable table with columns:
+- Name (filename or email subject)
+- Type (PDF, DOCX, XLSX, Email — with color-coded badges)
+- Source (Outlook, OneDrive, Gmail, Google Drive, Uploaded)
+- Indexed (relative timestamp)
+- Size
+
+Add filter buttons: All | Emails | Files | Uploaded
+Include a search bar to filter by name.
+Rows should be clickable to open the document/email in context.
+
+---
+
+## 6. TAB: SEARCH
+
+Full semantic search across the entire data lake using the existing Gemini RAG indexing pipeline.
+
+- Large search input bar at the top
+- Source filter toggle buttons: All Sources | Outlook | Gmail | OneDrive | Google Drive | Uploaded
+- Date range filter
+- Type filter: All | Emails | Documents | Spreadsheets
+- Suggested searches shown when input is empty (pulled from user's recent searches or pre-seeded)
+- Search results show: document/email name, source, date, a short AI-generated snippet/summary of why it matched, and a link to open it
+
+---
+
+## 7. BACKEND / DATA MODEL CHANGES
+
+### New DB table: data_lake_items
+- id, user_id, source (outlook | gmail | onedrive | gdrive | upload), item_type (email | pdf | docx | xlsx | other), name, file_path (object storage), indexed_at, last_synced, file_size, gemini_indexed (boolean), metadata (JSON)
+
+### New DB table: data_lake_connectors
+- id, user_id, connector_type, status (connected | disconnected), access_token (encrypted AES-256-GCM), refresh_token (encrypted), token_expiry, last_sync, items_indexed, live_sync_enabled
+
+### Ingestion pipeline (reuse/extend existing):
+- On file upload: run OCR if needed → chunk → embed → store in Gemini RAG index tagged with user_id and source
+- On email sync: parse email headers/body → chunk → embed → store in Gemini RAG index
+- All items tagged with user_id so searches are scoped to the individual user only
+
+---
+
+## 8. INTEGRATION WITH EXISTING FEATURES
+
+### Ambient Intelligence (video meetings)
+- When Ambient Intelligence is active on a call, the real-time search queries should include the user's Data Lake as a search scope
+- Add a toggle in the Ambient Intelligence settings: "Include My Data Lake" (default: ON)
+- Results from the Data Lake should be labeled with a "Your Data" badge to distinguish from case documents
+
+### Relationship Intelligence / Intelligence Feed
+- When viewing a contact or drafting outreach, add a "From Your Data Lake" section that surfaces:
+  - Past emails with that contact (matched by email address)
+  - Files/documents mentioning that contact's name or company
+  - Past transactions involving that contact
+- This should use the Gemini RAG search scoped to the user's data lake
+
+### Transactions / Deal Detail Pages
+- On any Deal Detail page, add a "Comparable Deals" tab or sidebar section that searches the user's Data Lake for past transactions with similar characteristics (industry, deal type, size range)
+- Label these results "From Your Past Deals"
+
+---
+
+## 9. SECURITY & PRIVACY
+
+- All data lake items must be scoped strictly to the individual user (user_id isolation)
+- No data lake content should be visible to other users, attorneys, or admins
+- Tokens must be encrypted at rest using AES-256-GCM (same pattern as calendar integration)
+- Add audit log entries for: connect, disconnect, sync, upload, search, delete
+
+---
+
+## 10. UI / DESIGN
+
+- Match existing app theme system (Light, Dark, Sentinel, Navy, Linear, Orange)
+- Use the same sidebar nav component pattern — the "My Data Lake" section replaces "Discovery & Productions" in the sidebar
+- Use the existing card, button, badge, and table component styles
+- The page layout should use the same main content area padding and structure as other pages (e.g. My Queue, Intelligence Feed)
+- Keep the existing Doc Review page accessible but move it under My Data Lake as a sub-item: "My Data Lake > Document Review"
+
+---
+
+## 11. SIDEBAR STRUCTURE (after change)
+
+Replace the current "DISCOVERY & PRODUCTIONS" section with:
+
+MY DATA LAKE
+- My Data Lake (main page, /my-data-lake)
+- Document Review (/document-review) [existing page, moved here]
+
+---
+
+Please implement all of the above. Start with: (1) the sidebar rename and routing, (2) the new /my-data-lake page with all four tabs and UI, (3) the database schema, (4) the connector OAuth flows reusing the existing Microsoft/Google OAuth infrastructure from the Calendar integration, and (5) the Gemini RAG ingestion pipeline extension. Then wire in the Ambient Intelligence and Relationship Intelligence integrations.

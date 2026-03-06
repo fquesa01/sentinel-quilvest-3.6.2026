@@ -1,0 +1,507 @@
+import { useState } from "react";
+
+const icons = {
+  email: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+    </svg>
+  ),
+  folder: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>
+  ),
+  search: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    </svg>
+  ),
+  lightning: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>
+    </svg>
+  ),
+  link: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+    </svg>
+  ),
+  upload: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+  ),
+  check: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  ),
+  sync: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+    </svg>
+  ),
+  brain: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66Z"/>
+      <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66Z"/>
+    </svg>
+  ),
+  transaction: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+    </svg>
+  ),
+  dots: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+    </svg>
+  ),
+  chevronRight: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="9 18 15 12 9 6"/>
+    </svg>
+  ),
+  filter: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+    </svg>
+  ),
+  outlook: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2" y="4" width="20" height="16" rx="2"/>
+      <circle cx="12" cy="12" r="4"/>
+    </svg>
+  ),
+  gmail: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2" y="4" width="20" height="16" rx="2"/>
+      <path d="m22 7-10 7L2 7"/>
+    </svg>
+  ),
+  drive: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 2L2 19.5h20L12 2z"/><path d="M12 2 6 12h12L12 2z" fill="currentColor" opacity="0.2"/>
+    </svg>
+  ),
+  sharepoint: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <path d="M3 9h18M9 21V9"/>
+    </svg>
+  ),
+};
+
+const connectors = [
+  {
+    id: "outlook",
+    name: "Microsoft Outlook",
+    desc: "Sync historical & live email",
+    icon: icons.outlook,
+    color: "#0078d4",
+    status: "connected",
+    stats: { count: "14,823", label: "emails indexed" },
+    lastSync: "2 min ago",
+    liveSync: true,
+  },
+  {
+    id: "gmail",
+    name: "Gmail",
+    desc: "Sync historical & live email",
+    icon: icons.gmail,
+    color: "#ea4335",
+    status: "available",
+    stats: null,
+  },
+  {
+    id: "onedrive",
+    name: "OneDrive / SharePoint",
+    desc: "Sync work folders & files",
+    icon: icons.sharepoint,
+    color: "#0078d4",
+    status: "connected",
+    stats: { count: "3,201", label: "files indexed" },
+    lastSync: "1 hr ago",
+    liveSync: false,
+  },
+  {
+    id: "gdrive",
+    name: "Google Drive",
+    desc: "Sync work folders & files",
+    icon: icons.drive,
+    color: "#34a853",
+    status: "available",
+    stats: null,
+  },
+];
+
+const useCases = [
+  {
+    icon: icons.brain,
+    title: "Ambient Intelligence",
+    desc: "Your files and emails are instantly searchable during live calls and video meetings — no context switching.",
+    color: "#6366f1",
+  },
+  {
+    icon: icons.link,
+    title: "Relationship Intelligence",
+    desc: "Surface shared history, past deals, and warm introductions when reaching out to contacts.",
+    color: "#0ea5e9",
+  },
+  {
+    icon: icons.transaction,
+    title: "Transaction Benchmarking",
+    desc: "When evaluating new deals, reference comparable past transactions directly from your own data.",
+    color: "#10b981",
+  },
+];
+
+const recentFiles = [
+  { name: "Project Atlas – CIM.pdf", type: "PDF", source: "OneDrive", indexed: "Today", size: "4.2 MB" },
+  { name: "Re: NDA – Redwood Partners", type: "Email", source: "Outlook", indexed: "Today", size: "—" },
+  { name: "Q3 IC Memo – Bainbridge.docx", type: "DOCX", source: "OneDrive", indexed: "Yesterday", size: "892 KB" },
+  { name: "Fwd: Term Sheet v3 – Clearway", type: "Email", source: "Outlook", indexed: "Yesterday", size: "—" },
+  { name: "Portfolio Review FY2023.xlsx", type: "XLSX", source: "OneDrive", indexed: "Mar 4", size: "1.1 MB" },
+  { name: "Re: Diligence Call – KKR", type: "Email", source: "Outlook", indexed: "Mar 3", size: "—" },
+];
+
+const typeColors = {
+  PDF: { bg: "#fef2f2", text: "#dc2626" },
+  Email: { bg: "#eff6ff", text: "#2563eb" },
+  DOCX: { bg: "#f0fdf4", text: "#16a34a" },
+  XLSX: { bg: "#f0fdf4", text: "#059669" },
+};
+
+const stats = [
+  { label: "Total Items Indexed", value: "18,024" },
+  { label: "Emails Ingested", value: "14,823" },
+  { label: "Files Indexed", value: "3,201" },
+  { label: "Active Connectors", value: "2 / 4" },
+];
+
+export default function MyDataLake() {
+  const [tab, setTab] = useState("overview");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [uploadDragging, setUploadDragging] = useState(false);
+
+  return (
+    <div style={{
+      fontFamily: "'Inter', -apple-system, sans-serif",
+      background: "#f8f9fc",
+      minHeight: "100vh",
+      padding: "32px 40px",
+      color: "#111827",
+    }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 8,
+            background: "linear-gradient(135deg, #1e40af, #6366f1)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff",
+          }}>
+            {icons.brain}
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.3px" }}>My Data Lake</h1>
+        </div>
+        <p style={{ margin: 0, fontSize: 14, color: "#6b7280" }}>
+          Your personal knowledge base — emails, files, and past deals, unified and instantly searchable.
+        </p>
+      </div>
+
+      {/* Use Case Banner */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 28,
+      }}>
+        {useCases.map(uc => (
+          <div key={uc.title} style={{
+            background: "#fff", borderRadius: 10, padding: "14px 16px",
+            border: "1px solid #e5e7eb", display: "flex", gap: 12, alignItems: "flex-start",
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 7, flexShrink: 0,
+              background: uc.color + "15",
+              color: uc.color,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>{uc.icon}</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{uc.title}</div>
+              <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>{uc.desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Stats Row */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 28,
+      }}>
+        {stats.map(s => (
+          <div key={s.label} style={{
+            background: "#fff", borderRadius: 10, padding: "14px 18px",
+            border: "1px solid #e5e7eb",
+          }}>
+            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.5px", color: "#111827" }}>{s.value}</div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid #e5e7eb" }}>
+        {["overview", "connectors", "files", "search"].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            padding: "8px 16px", fontSize: 13, fontWeight: 500,
+            background: "none", border: "none", cursor: "pointer",
+            color: tab === t ? "#1e40af" : "#6b7280",
+            borderBottom: tab === t ? "2px solid #1e40af" : "2px solid transparent",
+            marginBottom: -1, textTransform: "capitalize",
+          }}>
+            {t === "overview" ? "Overview" : t === "connectors" ? "Connectors" : t === "files" ? "Recent Ingestions" : "Search"}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {tab === "overview" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          {/* Connected Sources */}
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", overflow: "hidden" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>Connected Sources</div>
+              <button style={{
+                fontSize: 12, color: "#1e40af", background: "#eff6ff", border: "none",
+                padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontWeight: 500,
+              }}>+ Add Source</button>
+            </div>
+            {connectors.map(c => (
+              <div key={c.id} style={{ padding: "14px 20px", borderBottom: "1px solid #f9fafb", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ color: c.color, flexShrink: 0 }}>{c.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
+                  {c.status === "connected" ? (
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>
+                      {c.stats.count} {c.stats.label} · Synced {c.lastSync}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: "#9ca3af" }}>Not connected</div>
+                  )}
+                </div>
+                {c.status === "connected" ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {c.liveSync && (
+                      <span style={{ fontSize: 11, background: "#dcfce7", color: "#16a34a", padding: "2px 7px", borderRadius: 20, fontWeight: 500 }}>
+                        Live
+                      </span>
+                    )}
+                    <span style={{ color: "#16a34a" }}>{icons.check}</span>
+                  </div>
+                ) : (
+                  <button style={{
+                    fontSize: 12, color: "#fff", background: "#1e40af", border: "none",
+                    padding: "4px 12px", borderRadius: 6, cursor: "pointer", fontWeight: 500,
+                  }}>Connect</button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Upload Files */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: 20 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Upload Files Directly</div>
+              <div
+                onDragOver={e => { e.preventDefault(); setUploadDragging(true); }}
+                onDragLeave={() => setUploadDragging(false)}
+                onDrop={() => setUploadDragging(false)}
+                style={{
+                  border: `2px dashed ${uploadDragging ? "#1e40af" : "#d1d5db"}`,
+                  borderRadius: 10,
+                  padding: "28px 20px",
+                  textAlign: "center",
+                  background: uploadDragging ? "#eff6ff" : "#f9fafb",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}>
+                <div style={{ color: "#9ca3af", marginBottom: 8 }}>{icons.upload}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Drop files here or browse</div>
+                <div style={{ fontSize: 12, color: "#9ca3af" }}>PDF, DOCX, XLSX, MSG, EML, PST supported</div>
+                <button style={{
+                  marginTop: 12, fontSize: 12, background: "#1e40af", color: "#fff",
+                  border: "none", padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontWeight: 500,
+                }}>Browse Files</button>
+              </div>
+            </div>
+
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: 20 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Quick Search Your Data Lake</div>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }}>{icons.search}</span>
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder='e.g. "Bainbridge term sheet" or "KKR diligence"'
+                  style={{
+                    width: "100%", padding: "9px 12px 9px 34px",
+                    fontSize: 13, border: "1px solid #e5e7eb", borderRadius: 8,
+                    outline: "none", boxSizing: "border-box", background: "#f9fafb",
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                {["Project Atlas", "NDA emails", "Term sheets 2024"].map(s => (
+                  <button key={s} onClick={() => setSearchQuery(s)} style={{
+                    fontSize: 11, background: "#f3f4f6", border: "none", padding: "4px 10px",
+                    borderRadius: 20, cursor: "pointer", color: "#374151",
+                  }}>{s}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "connectors" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+          {connectors.map(c => (
+            <div key={c.id} style={{
+              background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb",
+              padding: 20, display: "flex", flexDirection: "column", gap: 14,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10, background: c.color + "12",
+                  color: c.color, display: "flex", alignItems: "center", justifyContent: "center",
+                }}>{c.icon}</div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{c.name}</div>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>{c.desc}</div>
+                </div>
+                <div style={{ marginLeft: "auto" }}>
+                  {c.status === "connected" ? (
+                    <span style={{ fontSize: 12, background: "#dcfce7", color: "#15803d", padding: "3px 10px", borderRadius: 20, fontWeight: 500 }}>Connected</span>
+                  ) : (
+                    <span style={{ fontSize: 12, background: "#f3f4f6", color: "#6b7280", padding: "3px 10px", borderRadius: 20 }}>Available</span>
+                  )}
+                </div>
+              </div>
+              {c.status === "connected" && (
+                <div style={{ background: "#f9fafb", borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>{c.stats.count}</div>
+                    <div style={{ fontSize: 11, color: "#6b7280" }}>{c.stats.label}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>Last sync</div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{c.lastSync}</div>
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                {c.status === "connected" ? (
+                  <>
+                    <button style={{
+                      flex: 1, fontSize: 12, background: "#eff6ff", color: "#1e40af",
+                      border: "none", padding: "7px", borderRadius: 7, cursor: "pointer", fontWeight: 500,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                    }}>{icons.sync} Sync Now</button>
+                    <button style={{
+                      flex: 1, fontSize: 12, background: "#f9fafb", color: "#374151",
+                      border: "1px solid #e5e7eb", padding: "7px", borderRadius: 7, cursor: "pointer",
+                    }}>Manage</button>
+                  </>
+                ) : (
+                  <button style={{
+                    flex: 1, fontSize: 13, background: "#1e40af", color: "#fff",
+                    border: "none", padding: "8px", borderRadius: 7, cursor: "pointer", fontWeight: 600,
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  }}>{icons.link} Connect {c.name}</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "files" && (
+        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Recently Ingested</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ background: "#f3f4f6", border: "none", padding: "5px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer", display: "flex", gap: 5, alignItems: "center" }}>
+                {icons.filter} Filter
+              </button>
+            </div>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                {["Name", "Type", "Source", "Indexed", "Size"].map(h => (
+                  <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 12, color: "#6b7280", fontWeight: 500 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {recentFiles.map((f, i) => (
+                <tr key={i} style={{ borderTop: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "12px 20px", fontSize: 13, fontWeight: 500 }}>{f.name}</td>
+                  <td style={{ padding: "12px 20px" }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+                      background: typeColors[f.type]?.bg, color: typeColors[f.type]?.text,
+                    }}>{f.type}</span>
+                  </td>
+                  <td style={{ padding: "12px 20px", fontSize: 12, color: "#6b7280" }}>{f.source}</td>
+                  <td style={{ padding: "12px 20px", fontSize: 12, color: "#6b7280" }}>{f.indexed}</td>
+                  <td style={{ padding: "12px 20px", fontSize: 12, color: "#6b7280" }}>{f.size}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "search" && (
+        <div>
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Search Across Your Entire Data Lake</div>
+            <div style={{ position: "relative", marginBottom: 12 }}>
+              <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }}>{icons.search}</span>
+              <input
+                placeholder="Search emails, files, deals, contacts..."
+                style={{
+                  width: "100%", padding: "11px 14px 11px 40px",
+                  fontSize: 14, border: "1px solid #d1d5db", borderRadius: 9,
+                  outline: "none", boxSizing: "border-box",
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "#6b7280", marginRight: 4 }}>Suggested:</span>
+              {["NDA templates", "KKR correspondence", "IC memos Q4", "Term sheets 2024", "Clearway deal files"].map(s => (
+                <button key={s} style={{
+                  fontSize: 12, background: "#f3f4f6", border: "none", padding: "4px 12px",
+                  borderRadius: 20, cursor: "pointer", color: "#374151",
+                }}>{s}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: 24 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "#6b7280" }}>FILTER BY SOURCE</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {["All Sources", "Outlook", "OneDrive", "Uploaded Files"].map(f => (
+                <button key={f} style={{
+                  fontSize: 12, background: f === "All Sources" ? "#1e40af" : "#f3f4f6",
+                  color: f === "All Sources" ? "#fff" : "#374151",
+                  border: "none", padding: "6px 14px", borderRadius: 7, cursor: "pointer", fontWeight: 500,
+                }}>{f}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
