@@ -23,16 +23,17 @@ import {
   Trash2,
   Filter,
   Database,
+  Cloud,
 } from "lucide-react";
-import { SiMicrosoftoutlook, SiGmail, SiMicrosoftonedrive, SiGoogledrive } from "react-icons/si";
+import { SiGmail, SiGoogledrive } from "react-icons/si";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { DataLakeItem } from "@shared/schema";
 
 const CONNECTOR_META: Record<string, { name: string; desc: string; icon: any; color: string }> = {
-  outlook: { name: "Microsoft Outlook", desc: "Sync historical & live email", icon: SiMicrosoftoutlook, color: "text-blue-600" },
+  outlook: { name: "Microsoft Outlook", desc: "Sync historical & live email", icon: Mail, color: "text-blue-600" },
   gmail: { name: "Gmail", desc: "Sync historical & live email", icon: SiGmail, color: "text-red-500" },
-  onedrive: { name: "OneDrive / SharePoint", desc: "Sync work folders & files", icon: SiMicrosoftonedrive, color: "text-blue-600" },
+  onedrive: { name: "OneDrive / SharePoint", desc: "Sync work folders & files", icon: Cloud, color: "text-blue-600" },
   gdrive: { name: "Google Drive", desc: "Sync work folders & files", icon: SiGoogledrive, color: "text-green-600" },
 };
 
