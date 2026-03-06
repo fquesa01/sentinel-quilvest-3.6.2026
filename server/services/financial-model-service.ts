@@ -99,7 +99,7 @@ export async function buildFinancialModel(
   ].filter((s) => s.applicabilityScore >= 6);
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 16000,
     system: `You are a senior PE financial modeler. Build a complete 5-year projection model with three scenarios, DCF valuation, and sensitivity analysis.
 

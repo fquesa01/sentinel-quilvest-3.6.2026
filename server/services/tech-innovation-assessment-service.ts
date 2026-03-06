@@ -168,7 +168,7 @@ export async function assessTechInnovation(
   const platformContext = JSON.stringify(PLATFORM_CAPABILITIES, null, 2);
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 12000,
     system: `You are a technology due diligence specialist and platform strategy consultant. You are evaluating a target company's technology for a PE acquisition.
 

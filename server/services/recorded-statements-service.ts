@@ -423,7 +423,7 @@ Please provide a comprehensive summary of this statement that includes:
 Format your response as a structured summary suitable for legal review.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 2000,
     messages: [{ role: "user", content: prompt }],
   });
@@ -487,7 +487,7 @@ Respond in JSON format:
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5",
       max_tokens: 2000,
       messages: [{ role: "user", content: prompt }],
     });
@@ -553,7 +553,7 @@ Respond in JSON format:
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5",
       max_tokens: 2000,
       messages: [{ role: "user", content: prompt }],
     });

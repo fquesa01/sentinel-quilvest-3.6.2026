@@ -223,7 +223,7 @@ export async function generateInvestorMemo(
       metadata: {
         documentsProcessed: documents.length,
         totalProcessingTimeMs: Date.now() - (run.startedAt?.getTime() || Date.now()),
-        aiModelsUsed: ["claude-sonnet-4-20250514"],
+        aiModelsUsed: ["claude-sonnet-4-5"],
         researchSourcesCount: industryResearch?.totalSourcesConsulted || 0,
         confidenceScore: industryResearch?.researchConfidence || 70,
       },
@@ -296,7 +296,7 @@ async function writeMemoSections(
   };
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 16000,
     system: `You are a senior investment professional writing an investor memo for a PE deal. Write in a professional, analytical tone suitable for an investment committee presentation.
 
@@ -395,7 +395,7 @@ export async function regenerateSection(
   const currentContent = currentSections[section]?.content || "";
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 4000,
     system: `You are rewriting a section of an investor memo. ${prompt ? `User instruction: ${prompt}` : "Improve the section with more detail and better analysis."}`,
     messages: [
@@ -438,7 +438,7 @@ export async function chatAboutMemo(
   if (!memo) throw new Error("Memo not found");
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 4000,
     system: `You are an AI assistant helping refine an investor memo for "${memo.dealName}". You can answer questions about the memo, suggest improvements, or modify sections when asked.
 

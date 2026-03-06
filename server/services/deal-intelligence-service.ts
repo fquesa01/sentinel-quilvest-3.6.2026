@@ -70,7 +70,7 @@ async function classifyDealType(
     const textSnippet = (doc.extractedText || "").slice(0, 8000);
     
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5",
       max_tokens: 500,
       messages: [{
         role: "user",

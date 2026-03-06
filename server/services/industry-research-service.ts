@@ -160,7 +160,7 @@ export async function conductIndustryResearch(
   const totalSources = searchResults.reduce((acc, sr) => acc + sr.results.length, 0);
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 12000,
     system: `You are a senior PE research analyst conducting industry due diligence. Synthesize web research results into a structured industry analysis.
 

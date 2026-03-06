@@ -240,7 +240,7 @@ export async function extractFinancialData(
   const contextWindow = combinedText.slice(0, 180000);
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 16000,
     system: `You are a senior financial analyst specializing in PE due diligence. Extract all financial data from the provided deal documents with extreme precision.
 

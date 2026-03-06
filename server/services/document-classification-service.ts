@@ -91,7 +91,7 @@ async function classifyBatch(
   }));
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-5",
     max_tokens: 8000,
     system: `You are a PE due diligence document classification specialist. Classify deal documents for an investor memo pipeline.
 
