@@ -1,6 +1,8 @@
 import { Storage, File } from "@google-cloud/storage";
 import { Response } from "express";
 import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 import {
   ObjectAclPolicy,
   ObjectPermission,
@@ -10,6 +12,7 @@ import {
 } from "./objectAcl";
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+const LOCAL_STORAGE_ROOT = path.join(process.cwd(), ".local-object-storage");
 
 // The object storage client is used to interact with the object storage service.
 export const objectStorageClient = new Storage({
@@ -92,6 +95,20 @@ export class ObjectStorageService {
     }
 
     return null;
+  }
+
+  // Downloads a locally stored object to the response (fallback when sidecar is down)
+  downloadLocalObject(objectPath: string, res: Response, cacheTtlSec: number = 3600): boolean {
+    const localBuffer = this.tryLocalRead(objectPath);
+    if (!localBuffer) return false;
+    const meta = this.tryLocalMeta(objectPath);
+    res.set({
+      "Content-Type": meta?.contentType || "application/octet-stream",
+      "Content-Length": localBuffer.length.toString(),
+      "Cache-Control": `private, max-age=${cacheTtlSec}`,
+    });
+    res.send(localBuffer);
+    return true;
   }
 
   // Downloads an object to the response.
@@ -183,6 +200,12 @@ export class ObjectStorageService {
 
   // Creates a read stream directly from object storage (for streaming processing)
   async createObjectReadStream(objectPath: string): Promise<{ stream: NodeJS.ReadableStream; size: number }> {
+    const localBuffer = this.tryLocalRead(objectPath);
+    if (localBuffer) {
+      console.log(`[ObjectStorage] Creating local read stream for: ${objectPath} (${localBuffer.length} bytes)`);
+      const { Readable } = require("stream");
+      return { stream: Readable.from(localBuffer), size: localBuffer.length };
+    }
     const objectFile = await this.getObjectEntityFile(objectPath);
     const [metadata] = await objectFile.getMetadata();
     const size = parseInt(metadata.size as string, 10) || 0;
@@ -195,6 +218,8 @@ export class ObjectStorageService {
 
   // Get file size metadata for an object
   async getObjectSize(objectPath: string): Promise<number> {
+    const meta = this.tryLocalMeta(objectPath);
+    if (meta) return meta.size;
     const objectFile = await this.getObjectEntityFile(objectPath);
     const [metadata] = await objectFile.getMetadata();
     return parseInt(metadata.size as string, 10) || 0;
@@ -202,9 +227,41 @@ export class ObjectStorageService {
 
   // Download an object as a Buffer
   async downloadAsBuffer(objectPath: string): Promise<Buffer> {
+    const localBuffer = this.tryLocalRead(objectPath);
+    if (localBuffer) return localBuffer;
     const objectFile = await this.getObjectEntityFile(objectPath);
     const [contents] = await objectFile.download();
     return contents;
+  }
+
+  private safeLocalPath(objectPath: string): string | null {
+    if (!objectPath.startsWith("/objects/")) return null;
+    const relativePath = objectPath.slice("/objects/".length);
+    const resolved = path.resolve(LOCAL_STORAGE_ROOT, relativePath);
+    const root = path.resolve(LOCAL_STORAGE_ROOT);
+    if (!resolved.startsWith(root + path.sep) && resolved !== root) return null;
+    return resolved;
+  }
+
+  private tryLocalRead(objectPath: string): Buffer | null {
+    const localPath = this.safeLocalPath(objectPath);
+    if (!localPath || !fs.existsSync(localPath)) return null;
+    return fs.readFileSync(localPath);
+  }
+
+  private tryLocalMeta(objectPath: string): { contentType: string; size: number } | null {
+    const localPath = this.safeLocalPath(objectPath);
+    if (!localPath) return null;
+    const metaPath = localPath + ".meta";
+    if (fs.existsSync(metaPath)) {
+      try { return JSON.parse(fs.readFileSync(metaPath, "utf-8")); } catch { return null; }
+    }
+    return null;
+  }
+
+  localFileExists(objectPath: string): boolean {
+    const localPath = this.safeLocalPath(objectPath);
+    return !!localPath && fs.existsSync(localPath);
   }
 
   normalizeObjectEntityPath(
@@ -288,39 +345,49 @@ export class ObjectStorageService {
       );
     }
 
-    // Construct full path - targetPath should be relative to uploads folder
-    // If targetPath starts with /objects/, extract the relative part
     let relativePath = targetPath;
     if (targetPath.startsWith('/objects/')) {
       relativePath = targetPath.slice('/objects/'.length);
     }
-    
-    const fullPath = `${privateObjectDir}/${relativePath}`;
-    const { bucketName, objectName } = parseObjectPath(fullPath);
 
-    // Get signed URL for upload
-    const signedUrl = await signObjectURL({
-      bucketName,
-      objectName,
-      method: "PUT",
-      ttlSec: 900,
-    });
+    try {
+      const fullPath = `${privateObjectDir}/${relativePath}`;
+      const { bucketName, objectName } = parseObjectPath(fullPath);
 
-    // Upload the buffer
-    const response = await fetch(signedUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': buffer.length.toString(),
-      },
-      body: buffer,
-    });
+      const signedUrl = await signObjectURL({
+        bucketName,
+        objectName,
+        method: "PUT",
+        ttlSec: 900,
+      });
 
-    if (!response.ok) {
-      throw new Error(`Failed to upload buffer: ${response.status} ${response.statusText}`);
+      const response = await fetch(signedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': buffer.length.toString(),
+        },
+        body: buffer,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Signed URL upload failed: ${response.status}`);
+      }
+    } catch (signedErr: any) {
+      console.log(`[ObjectStorage] Signed URL upload failed (${signedErr.message}), using local filesystem fallback`);
+      const resolved = path.resolve(LOCAL_STORAGE_ROOT, relativePath);
+      const root = path.resolve(LOCAL_STORAGE_ROOT);
+      if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+        throw new Error("Invalid upload path");
+      }
+      const localDir = path.dirname(resolved);
+      fs.mkdirSync(localDir, { recursive: true });
+      fs.writeFileSync(resolved, buffer);
+      const metaPath = resolved + ".meta";
+      fs.writeFileSync(metaPath, JSON.stringify({ contentType, size: buffer.length, createdAt: new Date().toISOString() }));
+      console.log(`[ObjectStorage] Saved to local filesystem: ${resolved} (${buffer.length} bytes)`);
     }
 
-    // Return the normalized path for database storage
     return `/objects/${relativePath}`;
   }
 }

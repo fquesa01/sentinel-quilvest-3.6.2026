@@ -14566,8 +14566,11 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
       }
 
       const objectStorageService = new ObjectStorageService();
-      const objectFile = await objectStorageService.getObjectEntityFile(doc.storagePath);
       res.setHeader("Content-Disposition", `attachment; filename="${doc.fileName}"`);
+      if (objectStorageService.downloadLocalObject(doc.storagePath, res)) {
+        return;
+      }
+      const objectFile = await objectStorageService.getObjectEntityFile(doc.storagePath);
       await objectStorageService.downloadObject(objectFile, res);
     } catch (error: any) {
       console.error("Error downloading document:", error);
@@ -14616,7 +14619,6 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
       }
 
       const objectStorageService = new ObjectStorageService();
-      const objectFile = await objectStorageService.getObjectEntityFile(doc.storagePath);
       
       // Set content type based on file extension
       const ext = doc.fileName.split('.').pop()?.toLowerCase() || '';
@@ -14644,6 +14646,10 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
       res.setHeader("X-Frame-Options", "SAMEORIGIN");
       res.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
       
+      if (objectStorageService.downloadLocalObject(doc.storagePath, res)) {
+        return;
+      }
+      const objectFile = await objectStorageService.getObjectEntityFile(doc.storagePath);
       await objectStorageService.downloadObject(objectFile, res);
     } catch (error: any) {
       console.error("Error previewing document:", error);
