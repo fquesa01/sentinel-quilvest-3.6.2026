@@ -1006,6 +1006,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/calendar/events/:id/attendee-communications", isAuthenticated, async (req: any, res) => {
+    try {
+      const event = await storage.getCalendarEvent(req.params.id);
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      if (event.createdBy !== req.user.claims.sub) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const attendees = (event.externalAttendees || []) as { name: string; email: string }[];
+      if (attendees.length === 0) {
+        return res.json({});
+      }
+      
+      const result: Record<string, { emails: any[]; totalCount: number }> = {};
+      
+      for (const attendee of attendees) {
+        const searchTerms = [attendee.email, attendee.name].filter(Boolean);
+        if (searchTerms.length === 0) continue;
+        
+        try {
+          const comms = await storage.getCommunications({
+            participants: searchTerms,
+          });
+          const limited = comms.slice(0, 10);
+          result[attendee.name || attendee.email] = {
+            emails: limited.map(c => ({
+              id: c.id,
+              subject: c.subject,
+              sender: c.sender,
+              recipients: c.recipients,
+              communicationType: c.communicationType,
+              timestamp: c.timestamp,
+              bodySnippet: c.body ? c.body.substring(0, 200) : null,
+              caseId: c.caseId,
+            })),
+            totalCount: comms.length,
+          };
+        } catch (err) {
+          result[attendee.name || attendee.email] = { emails: [], totalCount: 0 };
+        }
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error fetching attendee communications:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Create calendar event
   app.post("/api/calendar/events", isAuthenticated, async (req: any, res) => {
     try {
@@ -10237,8 +10287,69 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
         const event = await storage.createCalendarEvent(meeting as any);
         created.push(event);
       }
+
+      const demoCommunications = [
+        {
+          subject: "Re: Quilvest Fund VII — Co-Investment Side Vehicle Structure",
+          body: "Frank,\n\nFollowing up on our discussion regarding the co-investment side vehicle. We've reviewed the proposed allocation methodology and have some concerns about the waterfall structure for the side vehicles.\n\nSpecifically:\n1. The 80/20 carry split needs to align with the main fund LPA\n2. We need clarity on the GP commit for the side vehicle\n3. The fee offset mechanism should mirror Fund VI terms\n\nCan we schedule a call this week to discuss? I'd like to have Sarah Chen from White & Shoe join as well to review the legal framework.\n\nBest regards,\nJohn Harris\nManaging Director, Quilvest Private Equity",
+          sender: '"John Harris" <john.harris@quilvestcapital.com>',
+          recipients: ['"Frank Quesada" <frank.quesada@gmail.com>', '"Sarah Chen" <sarah.chen@whiteshoe.com>'],
+          communicationType: "email",
+          timestamp: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 5, 14, 30),
+        },
+        {
+          subject: "Fund VII Formation — Draft Side Letter Template",
+          body: "John, Frank,\n\nAttached please find the revised side letter template for Fund VII. Key changes from Fund VI:\n\n- Updated MFN clause to reflect current market standards\n- Enhanced co-investment rights section per LP feedback\n- New reporting provisions aligned with ILPA guidelines\n- Modified key person provisions with 90-day cure period\n\nPlease review and provide comments by end of week. We should align on the template before the LP advisory committee meeting.\n\nRegards,\nSarah Chen\nPartner, White & Shoe LLP",
+          sender: '"Sarah Chen" <sarah.chen@whiteshoe.com>',
+          recipients: ['"John Harris" <john.harris@quilvestcapital.com>', '"Frank Quesada" <frank.quesada@gmail.com>'],
+          communicationType: "email",
+          timestamp: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3, 9, 15),
+        },
+        {
+          subject: "FundCo Cayman Restructuring — Preliminary Scope",
+          body: "Dear Mr. Quesada,\n\nThank you for your time during our initial consultation. As discussed, FundCo Holdings is looking to restructure our Cayman-domiciled fund to optimize for the new regulatory landscape.\n\nKey priorities:\n- AIFMD II compliance readiness\n- NAV calculation methodology review\n- Cayman DITC economic substance requirements\n- Investor reporting framework upgrade\n\nWe would prefer a flat-fee engagement structure. Could you prepare a proposal covering scope, timeline, and fee estimate? I'd like to present this to our board by month-end.\n\nI'm also attaching our current fund structure diagram and last year's audit report for reference.\n\nBest regards,\nMiguel Rodriguez\nCFO, FundCo Holdings",
+          sender: '"Miguel Rodriguez" <m.rodriguez@fundco.com>',
+          recipients: ['"Frank Quesada" <frank.quesada@gmail.com>'],
+          communicationType: "email",
+          timestamp: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 14, 11, 0),
+        },
+        {
+          subject: "Re: Meridian Capital — Growth Fund II Term Sheet Review",
+          body: "Frank,\n\nWe've completed our initial review of the Growth Fund II term sheet. A few items we'd like to flag for negotiation:\n\n1. Management fee: We'd like to see a step-down after the investment period (2.0% to 1.5%)\n2. Preferred return: 8% is standard but we want compound vs. simple interest\n3. GP clawback: Need escrow provisions\n4. Co-invest rights: Meridian expects pro rata rights on all deals >$100M\n5. Key person: Victoria Blackwood and I both need to be named\n\nRebecca Torres from K&L will be sending a detailed comment letter separately. Let's plan to discuss in our upcoming meeting.\n\nDavid Park\nGeneral Counsel, Meridian Capital",
+          sender: '"David Park" <d.park@meridiancap.com>',
+          recipients: ['"Frank Quesada" <frank.quesada@gmail.com>', '"Victoria Blackwood" <v.blackwood@meridiancap.com>'],
+          communicationType: "email",
+          timestamp: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7, 16, 45),
+        },
+        {
+          subject: "Meridian Capital — Fund II Side Letter Comments",
+          body: "Mr. Quesada,\n\nOn behalf of Meridian Capital, please find our detailed comments on the proposed Growth Fund II side letter. We have identified the following provisions requiring revision:\n\n1. MFN Clause (Section 4.2): Scope must include economic and governance terms\n2. Reporting (Section 7): Quarterly unaudited + annual audited financials required\n3. Transfer Rights (Section 9): Needs broader assignability for fund-of-funds structures\n4. Excuse Rights (Section 11): Geographic restrictions to be expanded\n\nWe look forward to discussing these at our upcoming negotiation session.\n\nRebecca Torres\nPartner, Kirkland & Lewis LLP",
+          sender: '"Rebecca Torres" <r.torres@kl-law.com>',
+          recipients: ['"Frank Quesada" <frank.quesada@gmail.com>', '"David Park" <d.park@meridiancap.com>'],
+          communicationType: "email",
+          timestamp: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 10, 30),
+        },
+        {
+          subject: "PE Allocation Strategy Update — Q1 2026",
+          body: "Frank,\n\nWanted to share an update on our allocation strategy for the quarter. As you may have seen, we've increased our PE allocation to 35% of total AUM. This means we're actively looking to deploy capital across several new fund relationships.\n\nGrowth Fund II is a priority commitment for us. I've asked David to work closely with your team on the side letter. We'd like to finalize terms before our board meeting in April.\n\nAlso — I'd like to discuss the possibility of a separate managed account for our largest LP. Can we add this to the agenda for our next call?\n\nBest,\nVictoria Blackwood\nCIO, Meridian Capital",
+          sender: '"Victoria Blackwood" <v.blackwood@meridiancap.com>',
+          recipients: ['"Frank Quesada" <frank.quesada@gmail.com>'],
+          communicationType: "email",
+          timestamp: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 10, 8, 0),
+        },
+      ];
+
+      let commsCreated = 0;
+      for (const comm of demoCommunications) {
+        try {
+          await storage.createCommunication(comm as any);
+          commsCreated++;
+        } catch (err) {
+          console.log("[SeedDemo] Skipped communication:", (err as any).message?.substring(0, 100));
+        }
+      }
       
-      res.json({ message: `Created ${created.length} demo meetings with intelligence briefs`, meetings: created.map(e => ({ id: e.id, title: e.title })) });
+      res.json({ message: `Created ${created.length} demo meetings and ${commsCreated} demo emails`, meetings: created.map(e => ({ id: e.id, title: e.title })) });
     } catch (error: any) {
       console.error("Error seeding demo meetings:", error);
       res.status(500).json({ message: error.message });

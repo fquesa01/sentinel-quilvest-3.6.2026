@@ -56,7 +56,7 @@ export default function CalendarPage() {
   const [newCalendarColor, setNewCalendarColor] = useState("#3b82f6");
   const mobileTouchStart = useRef<{ x: number; y: number } | null>(null);
   const mobileDayScrollRef = useRef<HTMLDivElement>(null);
-  const [intelTab, setIntelTab] = useState<"people" | "past" | "news">("people");
+  const [intelTab, setIntelTab] = useState<"people" | "past" | "news" | "docs">("people");
   
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -235,6 +235,18 @@ export default function CalendarPage() {
 
   const { data: connectedAccounts = [] } = useQuery<ConnectedCalendarAccount[]>({
     queryKey: ["/api/calendar/connected-accounts"],
+  });
+
+  const { data: attendeeComms, isLoading: isLoadingComms } = useQuery<Record<string, { emails: any[]; totalCount: number }>>({
+    queryKey: ["/api/calendar/events", selectedEvent?.id, "attendee-communications"],
+    queryFn: async () => {
+      if (!selectedEvent?.id) return {};
+      const response = await fetch(`/api/calendar/events/${selectedEvent.id}/attendee-communications`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch communications");
+      return response.json();
+    },
+    enabled: !!selectedEvent?.id && intelTab === "docs" && !!(selectedEvent?.externalAttendees?.length),
+    staleTime: 60000,
   });
 
   const { data: integrationStatus } = useQuery<{
@@ -1482,7 +1494,7 @@ export default function CalendarPage() {
                       </div>
 
                       <div className="flex gap-1 border-b">
-                        {(["people", "past", "news"] as const).map((tab) => (
+                        {(["people", "past", "news", "docs"] as const).map((tab) => (
                           <button
                             key={tab}
                             className={cn(
@@ -1492,7 +1504,7 @@ export default function CalendarPage() {
                             onClick={() => setIntelTab(tab)}
                             data-testid={`tab-mobile-${tab}`}
                           >
-                            {tab === "people" ? "People" : tab === "past" ? "History" : "News"}
+                            {tab === "people" ? "People" : tab === "past" ? "History" : tab === "news" ? "News" : "Emails"}
                           </button>
                         ))}
                       </div>
@@ -1567,6 +1579,39 @@ export default function CalendarPage() {
                               </div>
                             )
                           ))}
+                        </div>
+                      )}
+
+                      {intelTab === "docs" && (
+                        <div className="space-y-3">
+                          {isLoadingComms ? (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>Searching emails...</span>
+                            </div>
+                          ) : attendeeComms && Object.keys(attendeeComms).length > 0 ? (
+                            Object.entries(attendeeComms).map(([name, data]) => (
+                              <div key={name} className="space-y-1.5">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-medium">{name}</span>
+                                  <Badge variant="outline" className="text-[9px]">{data.totalCount}</Badge>
+                                </div>
+                                {data.emails.length > 0 ? data.emails.map((email: any) => (
+                                  <div key={email.id} className="p-2 rounded-md bg-muted/50 space-y-0.5">
+                                    <div className="text-xs font-medium truncate">{email.subject}</div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {typeof email.sender === "string" ? email.sender.replace(/<[^>]+>/g, "").replace(/"/g, "").trim() : ""} · {email.timestamp ? new Date(email.timestamp).toLocaleDateString() : ""}
+                                    </div>
+                                    {email.bodySnippet && <p className="text-[10px] text-muted-foreground line-clamp-2">{email.bodySnippet}</p>}
+                                  </div>
+                                )) : (
+                                  <p className="text-[10px] text-muted-foreground">No communications found.</p>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-muted-foreground text-center py-3">No ingested communications found.</p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2557,6 +2602,17 @@ export default function CalendarPage() {
                       <FileText className="w-3.5 h-3.5" />
                       News Intel
                     </button>
+                    <button
+                      className={cn(
+                        "px-3 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5",
+                        intelTab === "docs" ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+                      )}
+                      onClick={() => setIntelTab("docs")}
+                      data-testid="tab-docs-emails"
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      Docs & Emails
+                    </button>
                   </div>
 
                   <ScrollArea className="h-[420px]">
@@ -2717,6 +2773,65 @@ export default function CalendarPage() {
                         ))}
                         {(!((selectedEvent as any).meetingIntelligence.newsInsights?.some((i: any) => i.articles?.length > 0))) && (
                           <p className="text-sm text-muted-foreground">No recent news articles found for meeting participants.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {intelTab === "docs" && (
+                      <div className="space-y-4 pr-4" data-testid="section-docs-emails">
+                        {isLoadingComms ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Searching ingested communications...</span>
+                          </div>
+                        ) : attendeeComms && Object.keys(attendeeComms).length > 0 ? (
+                          Object.entries(attendeeComms).map(([name, data]) => {
+                            const personBrief = (selectedEvent as any).meetingIntelligence?.peopleBrief?.find((p: any) => p.name === name);
+                            return (
+                              <div key={name} className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-xs font-semibold text-primary flex-shrink-0">
+                                    {personBrief?.initials || name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
+                                  </div>
+                                  <div>
+                                    <span className="text-sm font-medium">{name}</span>
+                                    {personBrief && <span className="text-xs text-muted-foreground ml-1">· {personBrief.company}</span>}
+                                  </div>
+                                  <Badge variant="outline" className="text-[10px] ml-auto">{data.totalCount} found</Badge>
+                                </div>
+                                {data.emails.length > 0 ? (
+                                  <div className="space-y-1.5 pl-9">
+                                    {data.emails.map((email: any) => (
+                                      <div key={email.id} className="p-2.5 rounded-md bg-muted/50 space-y-1" data-testid={`doc-email-${email.id}`}>
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-medium truncate">{email.subject}</div>
+                                            <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
+                                              <span>From: {typeof email.sender === "string" ? email.sender.replace(/<[^>]+>/g, "").replace(/"/g, "").trim() : "Unknown"}</span>
+                                              <span>·</span>
+                                              <span>{email.timestamp ? new Date(email.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}</span>
+                                            </div>
+                                          </div>
+                                          <Badge variant="outline" className="text-[9px] flex-shrink-0">{email.communicationType}</Badge>
+                                        </div>
+                                        {email.bodySnippet && (
+                                          <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{email.bodySnippet}</p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-muted-foreground pl-9">No ingested communications found.</p>
+                                )}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="text-center py-6">
+                            <Mail className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">No ingested communications found for meeting participants.</p>
+                            <p className="text-xs text-muted-foreground mt-1">Communications will appear here once emails are ingested into the system.</p>
+                          </div>
                         )}
                       </div>
                     )}
