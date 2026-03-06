@@ -27,29 +27,6 @@ interface CalendarWithEvents extends UserCalendar {
   eventCount?: number;
 }
 
-const eventTypeColors: Record<string, string> = {
-  hearing: "bg-blue-500",
-  deposition: "bg-purple-500",
-  deadline: "bg-red-500",
-  trial: "bg-orange-500",
-  meeting: "bg-green-500",
-  filing: "bg-yellow-500",
-  mediation: "bg-teal-500",
-  conference: "bg-indigo-500",
-  other: "bg-gray-500",
-};
-
-const eventTypeIcons: Record<string, any> = {
-  hearing: Gavel,
-  deposition: Users,
-  deadline: AlertCircle,
-  trial: Gavel,
-  meeting: Users,
-  filing: FileText,
-  mediation: Users,
-  conference: Users,
-  other: CalendarIcon,
-};
 
 type MobileViewType = "month" | "day";
 
@@ -74,7 +51,7 @@ export default function CalendarPage() {
     title: "",
     eventType: "none" as string,
     startTime: "",
-    duration: "60" as string,
+    duration: "30" as string,
     description: "",
     location: "",
     courtName: "",
@@ -424,7 +401,7 @@ export default function CalendarPage() {
       title: "",
       eventType: "none",
       startTime: "",
-      duration: "60",
+      duration: "30",
       description: "",
       location: "",
       courtName: "",
@@ -481,7 +458,7 @@ export default function CalendarPage() {
     setNewEvent(prev => ({
       ...prev,
       startTime: getNextHourDefault(date),
-      duration: "60",
+      duration: "30",
     }));
     setIsCreateDialogOpen(true);
   };
@@ -568,21 +545,17 @@ export default function CalendarPage() {
                     </div>
                     <div className="space-y-0.5">
                       {dayEvents.slice(0, 3).map(event => {
-                        const Icon = eventTypeIcons[event.eventType] || CalendarIcon;
                         return (
                           <div
                             key={event.id}
-                            className={cn(
-                              "text-xs p-1 rounded truncate text-white flex items-center gap-1 cursor-pointer",
-                              eventTypeColors[event.eventType]
-                            )}
+                            className="text-xs p-1 rounded truncate text-white flex items-center gap-1 cursor-pointer bg-primary"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleEventClick(event);
                             }}
                             data-testid={`event-${event.id}`}
                           >
-                            <Icon className="w-3 h-3 flex-shrink-0" />
+                            <CalendarIcon className="w-3 h-3 flex-shrink-0" />
                             <span className="truncate">{event.title}</span>
                           </div>
                         );
@@ -641,10 +614,7 @@ export default function CalendarPage() {
                       {hourEvents.map(event => (
                         <div
                           key={event.id}
-                          className={cn(
-                            "absolute inset-x-0 mx-0.5 p-1 rounded text-xs text-white cursor-pointer",
-                            eventTypeColors[event.eventType]
-                          )}
+                          className="absolute inset-x-0 mx-0.5 p-1 rounded text-xs text-white cursor-pointer bg-primary"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleEventClick(event);
@@ -693,21 +663,17 @@ export default function CalendarPage() {
                     }}
                   >
                     {hourEvents.map(event => {
-                      const Icon = eventTypeIcons[event.eventType] || CalendarIcon;
                       return (
                         <div
                           key={event.id}
-                          className={cn(
-                            "p-2 rounded text-white cursor-pointer mb-1",
-                            eventTypeColors[event.eventType]
-                          )}
+                          className="p-2 rounded text-white cursor-pointer mb-1 bg-primary"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleEventClick(event);
                           }}
                         >
                           <div className="flex items-center gap-2">
-                            <Icon className="w-4 h-4" />
+                            <CalendarIcon className="w-4 h-4" />
                             <span className="font-medium">{event.title}</span>
                           </div>
                           <div className="text-sm opacity-80 mt-1">
@@ -774,7 +740,6 @@ export default function CalendarPage() {
                   </div>
                   <div className="space-y-2">
                     {dayEvents.map(event => {
-                      const Icon = eventTypeIcons[event.eventType] || CalendarIcon;
                       return (
                         <div
                           key={event.id}
@@ -782,8 +747,8 @@ export default function CalendarPage() {
                           onClick={() => handleEventClick(event)}
                           data-testid={`list-event-${event.id}`}
                         >
-                          <div className={cn("p-2 rounded text-white flex-shrink-0", eventTypeColors[event.eventType])}>
-                            <Icon className="w-5 h-5" />
+                          <div className="p-2 rounded text-white flex-shrink-0 bg-primary">
+                            <CalendarIcon className="w-5 h-5" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="font-medium">{event.title}</div>
@@ -802,7 +767,6 @@ export default function CalendarPage() {
                             )}
                           </div>
                           <div className="flex-shrink-0 flex flex-col items-end gap-1">
-                            <Badge variant="outline" className="capitalize text-xs">{event.eventType}</Badge>
                             {event.isBillable && (
                               <Badge variant="secondary" className="text-xs">
                                 <DollarSign className="w-3 h-3 mr-1" />
@@ -940,7 +904,7 @@ export default function CalendarPage() {
                           key={event.id}
                           className={cn(
                             "text-[9px] leading-tight px-1 py-0.5 rounded truncate text-white font-medium",
-                            eventTypeColors[event.eventType] || "bg-gray-500"
+                            "bg-primary"
                           )}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -980,7 +944,7 @@ export default function CalendarPage() {
               setNewEvent(prev => ({
                 ...prev,
                 startTime: getNextHourDefault(),
-                duration: "60",
+                duration: "30",
               }));
               setIsCreateDialogOpen(true);
             }}
@@ -1090,7 +1054,7 @@ export default function CalendarPage() {
                       setNewEvent(prev => ({
                         ...prev,
                         startTime: `${dateStr}T${timeStr}`,
-                        duration: "60",
+                        duration: "30",
                       }));
                       setIsCreateDialogOpen(true);
                     }}
@@ -1100,14 +1064,10 @@ export default function CalendarPage() {
                       const eventEnd = new Date(event.endTime);
                       const durationMins = Math.max(differenceInMinutes(eventEnd, eventStart), 30);
                       const heightPx = Math.min(durationMins, 120);
-                      const Icon = eventTypeIcons[event.eventType] || CalendarIcon;
                       return (
                         <div
                           key={event.id}
-                          className={cn(
-                            "rounded p-2 text-white cursor-pointer mb-0.5",
-                            eventTypeColors[event.eventType] || "bg-gray-500"
-                          )}
+                          className="rounded p-2 text-white cursor-pointer mb-0.5 bg-primary"
                           style={{ minHeight: `${heightPx}px` }}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1116,7 +1076,7 @@ export default function CalendarPage() {
                           data-testid={`mobile-day-event-${event.id}`}
                         >
                           <div className="flex items-center gap-1.5">
-                            <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                            <CalendarIcon className="w-3.5 h-3.5 flex-shrink-0" />
                             <span className="font-semibold text-sm truncate">{event.title}</span>
                           </div>
                           <div className="text-xs opacity-90 mt-0.5">
@@ -1158,7 +1118,7 @@ export default function CalendarPage() {
               setNewEvent(prev => ({
                 ...prev,
                 startTime: getNextHourDefault(currentDate),
-                duration: "60",
+                duration: "30",
               }));
               setIsCreateDialogOpen(true);
             }}
@@ -1253,26 +1213,6 @@ export default function CalendarPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="mobile-eventType">Event Type</Label>
-                <Select value={newEvent.eventType} onValueChange={(v) => setNewEvent(prev => ({ ...prev, eventType: v }))}>
-                  <SelectTrigger data-testid="select-mobile-event-type">
-                    <SelectValue placeholder="Select event type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none"><span className="text-muted-foreground">No type</span></SelectItem>
-                    <SelectItem value="hearing">Hearing</SelectItem>
-                    <SelectItem value="deposition">Deposition</SelectItem>
-                    <SelectItem value="deadline">Deadline</SelectItem>
-                    <SelectItem value="trial">Trial</SelectItem>
-                    <SelectItem value="meeting">Meeting</SelectItem>
-                    <SelectItem value="filing">Filing</SelectItem>
-                    <SelectItem value="mediation">Mediation</SelectItem>
-                    <SelectItem value="conference">Conference</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
                 <Label htmlFor="mobile-startTime">Start Time *</Label>
                 <Input
                   id="mobile-startTime"
@@ -1338,19 +1278,13 @@ export default function CalendarPage() {
             <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-y-auto rounded-lg">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  {(() => {
-                    const Icon = eventTypeIcons[selectedEvent.eventType] || CalendarIcon;
-                    return <Icon className="w-5 h-5" />;
-                  })()}
+                  <CalendarIcon className="w-5 h-5" />
                   {selectedEvent.title}
                 </DialogTitle>
                 <DialogDescription>Event details</DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <Badge className={cn("capitalize text-white", eventTypeColors[selectedEvent.eventType])}>
-                    {selectedEvent.eventType}
-                  </Badge>
                   {selectedEvent.isBillable && (
                     <Badge variant="secondary">
                       <DollarSign className="w-3 h-3 mr-1" />
@@ -1412,7 +1346,7 @@ export default function CalendarPage() {
           setNewEvent(prev => ({
             ...prev,
             startTime: getNextHourDefault(),
-            duration: "60",
+            duration: "30",
           }));
           setIsCreateDialogOpen(true);
         }} data-testid="button-create-event">
@@ -1516,24 +1450,6 @@ export default function CalendarPage() {
                   </div>
                 ))
               )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Event Types</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {Object.entries(eventTypeColors).map(([type, color]) => {
-                const Icon = eventTypeIcons[type];
-                return (
-                  <div key={type} className="flex items-center gap-2 text-sm">
-                    <div className={cn("w-3 h-3 rounded", color)} />
-                    <Icon className="w-4 h-4 text-muted-foreground" />
-                    <span className="capitalize">{type}</span>
-                  </div>
-                );
-              })}
             </CardContent>
           </Card>
 
@@ -1663,29 +1579,6 @@ export default function CalendarPage() {
               </div>
               
               <div>
-                <Label htmlFor="eventType">Event Type</Label>
-                <Select value={newEvent.eventType} onValueChange={(v) => setNewEvent(prev => ({ ...prev, eventType: v as any }))}>
-                  <SelectTrigger data-testid="select-event-type">
-                    <SelectValue placeholder="Select event type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      <span className="text-muted-foreground">No type</span>
-                    </SelectItem>
-                    <SelectItem value="hearing">Hearing</SelectItem>
-                    <SelectItem value="deposition">Deposition</SelectItem>
-                    <SelectItem value="deadline">Deadline</SelectItem>
-                    <SelectItem value="trial">Trial</SelectItem>
-                    <SelectItem value="meeting">Meeting</SelectItem>
-                    <SelectItem value="filing">Filing</SelectItem>
-                    <SelectItem value="mediation">Mediation</SelectItem>
-                    <SelectItem value="conference">Conference</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div>
                 <Label htmlFor="startTime">Start Time *</Label>
                 <Input
                   id="startTime"
@@ -1697,7 +1590,7 @@ export default function CalendarPage() {
               </div>
               
               <div>
-                <Label htmlFor="duration">Duration *</Label>
+                <Label htmlFor="duration">Duration</Label>
                 <Select value={newEvent.duration} onValueChange={(v) => setNewEvent(prev => ({ ...prev, duration: v }))}>
                   <SelectTrigger data-testid="select-duration">
                     <SelectValue />
@@ -1716,26 +1609,6 @@ export default function CalendarPage() {
                     <SelectItem value="480">8 hours</SelectItem>
                     <SelectItem value="half_day">Half day</SelectItem>
                     <SelectItem value="all_day">All day</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="calendarId">Calendar</Label>
-                <Select value={newEvent.calendarId} onValueChange={(v) => setNewEvent(prev => ({ ...prev, calendarId: v }))}>
-                  <SelectTrigger data-testid="select-calendar">
-                    <SelectValue placeholder="Select a calendar" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No calendar</SelectItem>
-                    {userCalendars.map(cal => (
-                      <SelectItem key={cal.id} value={cal.id}>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cal.color }} />
-                          {cal.name}
-                        </div>
-                      </SelectItem>
-                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1983,30 +1856,6 @@ export default function CalendarPage() {
                 ))}
               </div>
 
-              {(newEvent.eventType === "hearing" || newEvent.eventType === "trial") && (
-                <>
-                  <div>
-                    <Label htmlFor="courtName">Court Name</Label>
-                    <Input
-                      id="courtName"
-                      value={newEvent.courtName}
-                      onChange={(e) => setNewEvent(prev => ({ ...prev, courtName: e.target.value }))}
-                      placeholder="e.g., Superior Court of California"
-                      data-testid="input-court-name"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="judgeName">Judge Name</Label>
-                    <Input
-                      id="judgeName"
-                      value={newEvent.judgeName}
-                      onChange={(e) => setNewEvent(prev => ({ ...prev, judgeName: e.target.value }))}
-                      placeholder="e.g., Hon. Jane Smith"
-                      data-testid="input-judge-name"
-                    />
-                  </div>
-                </>
-              )}
 
               <div className="col-span-2">
                 <Label htmlFor="description">Description</Label>
@@ -2173,11 +2022,7 @@ export default function CalendarPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {selectedEvent && eventTypeIcons[selectedEvent.eventType] && (
-                <span className={cn("p-1.5 rounded text-white", eventTypeColors[selectedEvent.eventType])}>
-                  {(() => { const Icon = eventTypeIcons[selectedEvent.eventType]; return <Icon className="w-4 h-4" />; })()}
-                </span>
-              )}
+              <CalendarIcon className="w-5 h-5" />
               {selectedEvent?.title}
             </DialogTitle>
           </DialogHeader>
@@ -2259,7 +2104,6 @@ export default function CalendarPage() {
               )}
               
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="outline" className="capitalize">{selectedEvent.eventType}</Badge>
                 {selectedEvent.isBillable && (
                   <Badge variant="outline" className="flex items-center gap-1">
                     <DollarSign className="w-3 h-3" />
