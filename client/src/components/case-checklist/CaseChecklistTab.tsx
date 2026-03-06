@@ -186,15 +186,10 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       formData.append("filingParty", "plaintiff");
       formData.append("filingStatus", "court_filing");
       
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const authHeaders: Record<string, string> = {};
-      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-
       const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
         method: "POST",
         body: formData,
-        headers: authHeaders,
+        credentials: "include",
       });
       
       if (!uploadRes.ok) {
@@ -263,15 +258,10 @@ export function CaseChecklistTab({ caseId }: CaseChecklistTabProps) {
       formData.append("filingParty", "plaintiff");
       formData.append("filingStatus", "court_filing");
       
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const authHeaders: Record<string, string> = {};
-      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-
       const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
         method: "POST",
         body: formData,
-        headers: authHeaders,
+        credentials: "include",
       });
       
       if (!uploadRes.ok) {
@@ -933,15 +923,10 @@ function ElementCard({
       formData.append("filingParty", "plaintiff");
       formData.append("filingStatus", "draft");
       
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const authHeaders: Record<string, string> = {};
-      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-
       const uploadRes = await fetch(`/api/cases/${caseId}/court-pleadings`, {
         method: "POST",
         body: formData,
-        headers: authHeaders,
+        credentials: "include",
       });
       
       if (!uploadRes.ok) {

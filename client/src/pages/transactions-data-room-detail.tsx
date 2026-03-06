@@ -522,17 +522,10 @@ export default function TransactionsDataRoomDetail() {
         formData.append("folderId", selectedFolderId);
       }
 
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers: Record<string, string> = {};
-      if (session?.access_token) {
-        headers["Authorization"] = `Bearer ${session.access_token}`;
-      }
-
       const response = await fetch(`/api/data-rooms/${roomId}/upload`, {
         method: "POST",
         body: formData,
-        headers,
+        credentials: "include",
       });
 
       if (!response.ok) {

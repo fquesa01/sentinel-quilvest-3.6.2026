@@ -78,7 +78,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 
 function AuthenticatedApp() {
-  const { signOut } = useAuth();
+  const signOut = () => { window.location.href = "/api/logout"; };
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",

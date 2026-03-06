@@ -123,15 +123,10 @@ export default function LitigationTemplatesPage() {
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const authHeaders: Record<string, string> = {};
-      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-
       const res = await fetch('/api/litigation-templates', {
         method: 'POST',
         body: formData,
-        headers: authHeaders,
+        credentials: "include",
       });
       if (!res.ok) {
         const error = await res.json();

@@ -313,15 +313,10 @@ export function RecordingsTab({ caseId }: RecordingsTabProps) {
       data.append("file", file);
 
       try {
-        const { supabase } = await import("@/lib/supabase");
-        const { data: { session } } = await supabase.auth.getSession();
-        const authHeaders: Record<string, string> = {};
-        if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-
         const response = await fetch("/api/recorded-statements", {
           method: "POST",
           body: data,
-          headers: authHeaders,
+          credentials: "include",
         });
         if (!response.ok) {
           failCount++;

@@ -274,15 +274,10 @@ function DiscoveryResponseTab({
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const authHeaders: Record<string, string> = {};
-      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-
       const response = await fetch(`/api/cases/${caseId}/search-term-sets/upload-rfp`, {
         method: "POST",
         body: formData,
-        headers: authHeaders,
+        credentials: "include",
       });
       return response.json();
     },
@@ -582,15 +577,10 @@ function ProveYourCaseTab({
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const authHeaders: Record<string, string> = {};
-      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-
       const response = await fetch(`/api/cases/${caseId}/search-term-sets/upload-complaint`, {
         method: "POST",
         body: formData,
-        headers: authHeaders,
+        credentials: "include",
       });
       return response.json();
     },
@@ -1714,15 +1704,10 @@ function CustomSearchTab({ caseId }: { caseId: string }) {
   // Upload reference document mutation
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const authHeaders: Record<string, string> = {};
-      if (session?.access_token) authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-
       const response = await fetch(`/api/cases/${caseId}/search-term-sets/upload-reference`, {
         method: "POST",
         body: formData,
-        headers: authHeaders,
+        credentials: "include",
       });
       return response.json();
     },

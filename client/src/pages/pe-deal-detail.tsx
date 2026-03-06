@@ -1090,15 +1090,10 @@ function GenerateMemoButton({ dealId, dealName }: { dealId: string; dealName: st
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
-      const authHeaders = await (async () => {
-        const { supabase } = await import("@/lib/supabase");
-        const { data: { session } } = await supabase.auth.getSession();
-        return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-      })();
-
       const response = await fetch(`/api/deals/${dealId}/memos/generate`, {
         method: "POST",
-        headers: { ...authHeaders, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ sourceType: "pe_deal" }),
       });
 
