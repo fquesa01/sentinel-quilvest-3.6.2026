@@ -130,7 +130,9 @@ export async function generateInvestorMemo(
       documents,
       { dealName, sector, dealType }
     );
-    await updateDocumentCategories(classifications);
+    if (sourceType === "pe_deal") {
+      await updateDocumentCategories(classifications);
+    }
 
     const classifiedDocs = documents.map((doc) => {
       const classified = classifications.find((c) => c.documentId === doc.id);
@@ -304,6 +306,10 @@ async function writeMemoSections(
     },
   };
 
+  const payloadStr = JSON.stringify(dataPayload);
+  const truncatedPayload = payloadStr.length > 80000 ? payloadStr.slice(0, 80000) + "...[truncated]" : payloadStr;
+  console.log(`[MemoGen] Writing memo with payload size: ${payloadStr.length} chars (${truncatedPayload.length > 80000 ? 'truncated' : 'full'})`);
+
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 16000,
@@ -319,7 +325,7 @@ Description: ${context.targetDescription || "N/A"}`,
     messages: [
       {
         role: "user",
-        content: `Write all 13 sections of the investor memo using this data:\n\n${JSON.stringify(dataPayload)}`,
+        content: `Write all 13 sections of the investor memo using this data:\n\n${truncatedPayload}`,
       },
     ],
     tools: [

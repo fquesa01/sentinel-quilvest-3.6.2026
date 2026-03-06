@@ -23,11 +23,14 @@ router.post("/api/deals/:dealId/memos/generate", async (req: Request, res: Respo
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     });
+    res.flushHeaders();
 
     const sendProgress = (stage: string, progress: number, message: string) => {
       res.write(`data: ${JSON.stringify({ stage, progress, message })}\n\n`);
+      if (typeof (res as any).flush === "function") (res as any).flush();
     };
 
     try {
@@ -288,11 +291,14 @@ router.post("/api/deals/:dealId/memos/auto-generate", async (req: Request, res: 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     });
+    res.flushHeaders();
 
     const sendProgress = (stage: string, progress: number, message: string) => {
       res.write(`data: ${JSON.stringify({ stage, progress, message })}\n\n`);
+      if (typeof (res as any).flush === "function") (res as any).flush();
     };
 
     try {
