@@ -1,0 +1,269 @@
+import { Router, type Request, type Response } from "express";
+import { db } from "../db";
+import {
+  investorMemos, memoGenerationRuns, extractedFinancials,
+  financialModels, memoSectionEdits, memoChatMessages,
+} from "@shared/schema";
+import { eq, desc, and } from "drizzle-orm";
+import { generateInvestorMemo, regenerateSection, chatAboutMemo } from "../services/investor-memo-service";
+import { generateMemoPDF, generateMemoExcel } from "../services/memo-export-service";
+
+const router = Router();
+
+function getUserId(req: Request): string {
+  return (req as any).user?.id || (req as any).userId || "unknown";
+}
+
+router.post("/api/deals/:dealId/memos/generate", async (req: Request, res: Response) => {
+  try {
+    const { dealId } = req.params;
+    const { sourceType = "pe_deal" } = req.body;
+    const userId = getUserId(req);
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+
+    const sendProgress = (stage: string, progress: number, message: string) => {
+      res.write(`data: ${JSON.stringify({ stage, progress, message })}\n\n`);
+    };
+
+    try {
+      const memoId = await generateInvestorMemo(dealId, sourceType, userId, sendProgress);
+      res.write(`data: ${JSON.stringify({ stage: "complete", progress: 100, message: "Done", memoId })}\n\n`);
+    } catch (err: any) {
+      res.write(`data: ${JSON.stringify({ stage: "error", progress: 0, message: err.message })}\n\n`);
+    }
+
+    res.end();
+  } catch (err: any) {
+    console.error("[MemoRoutes] Generate error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/deals/:dealId/memos", async (req: Request, res: Response) => {
+  try {
+    const { dealId } = req.params;
+    const memos = await db.select().from(investorMemos)
+      .where(eq(investorMemos.dealId, dealId))
+      .orderBy(desc(investorMemos.createdAt));
+    res.json(memos);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/memos/:memoId", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const [memo] = await db.select().from(investorMemos)
+      .where(eq(investorMemos.id, memoId));
+    if (!memo) return res.status(404).json({ error: "Memo not found" });
+    res.json(memo);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/memos/:memoId/model", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const models = await db.select().from(financialModels)
+      .where(eq(financialModels.memoId, memoId));
+    res.json(models[0] || null);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/memos/:memoId/financials", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const data = await db.select().from(extractedFinancials)
+      .where(eq(extractedFinancials.memoId, memoId));
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/memos/:memoId/progress", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const [run] = await db.select().from(memoGenerationRuns)
+      .where(eq(memoGenerationRuns.memoId, memoId))
+      .orderBy(desc(memoGenerationRuns.startedAt))
+      .limit(1);
+    res.json(run || null);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/api/memos/:memoId/sections/:section", async (req: Request, res: Response) => {
+  try {
+    const { memoId, section } = req.params;
+    const { content } = req.body;
+    const userId = getUserId(req);
+
+    const [memo] = await db.select().from(investorMemos)
+      .where(eq(investorMemos.id, memoId));
+    if (!memo) return res.status(404).json({ error: "Memo not found" });
+
+    const sections = (memo.sections || {}) as Record<string, any>;
+    const previousContent = sections[section]?.content || "";
+
+    sections[section] = {
+      ...sections[section],
+      content,
+      isEdited: true,
+      editedAt: new Date().toISOString(),
+      editedBy: userId,
+    };
+
+    await db.update(investorMemos).set({
+      sections: sections as any,
+      updatedAt: new Date(),
+    }).where(eq(investorMemos.id, memoId));
+
+    await db.insert(memoSectionEdits).values({
+      memoId,
+      section,
+      previousContent,
+      newContent: content,
+      editedBy: userId,
+      editType: "manual",
+    });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/memos/:memoId/regenerate/:section", async (req: Request, res: Response) => {
+  try {
+    const { memoId, section } = req.params;
+    const { prompt } = req.body;
+
+    const newContent = await regenerateSection(memoId, section, prompt);
+    res.json({ content: newContent });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/memos/:memoId/chat", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const { message } = req.body;
+
+    await db.insert(memoChatMessages).values({
+      memoId,
+      role: "user",
+      content: message,
+    });
+
+    const result = await chatAboutMemo(memoId, message);
+
+    await db.insert(memoChatMessages).values({
+      memoId,
+      role: "assistant",
+      content: result.response,
+      actionTaken: result.actionTaken as any,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/memos/:memoId/chat", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const messages = await db.select().from(memoChatMessages)
+      .where(eq(memoChatMessages.memoId, memoId))
+      .orderBy(memoChatMessages.createdAt);
+    res.json(messages);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/api/memos/:memoId/model/assumptions", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const { assumptions } = req.body;
+
+    const [model] = await db.select().from(financialModels)
+      .where(eq(financialModels.memoId, memoId));
+    if (!model) return res.status(404).json({ error: "Model not found" });
+
+    await db.update(financialModels).set({
+      assumptions: assumptions as any,
+      updatedAt: new Date(),
+    }).where(eq(financialModels.id, model.id));
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/memos/:memoId/export/pdf", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const [memo] = await db.select().from(investorMemos)
+      .where(eq(investorMemos.id, memoId));
+    if (!memo) return res.status(404).json({ error: "Memo not found" });
+
+    const [model] = await db.select().from(financialModels)
+      .where(eq(financialModels.memoId, memoId));
+
+    const pdfBuffer = await generateMemoPDF(memo, model);
+    const filename = `Investor_Memo_${memo.dealName.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/memos/:memoId/export/excel", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const [memo] = await db.select().from(investorMemos)
+      .where(eq(investorMemos.id, memoId));
+    if (!memo) return res.status(404).json({ error: "Memo not found" });
+
+    const [model] = await db.select().from(financialModels)
+      .where(eq(financialModels.memoId, memoId));
+
+    const excelBuffer = await generateMemoExcel(memo, model);
+    const filename = `Financial_Model_${memo.dealName.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`;
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(excelBuffer);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/api/memos/:memoId", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    await db.delete(investorMemos).where(eq(investorMemos.id, memoId));
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;

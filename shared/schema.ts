@@ -12714,3 +12714,269 @@ export const outreachLogRelations = relations(outreachLog, ({ one }) => ({
     references: [newsAlerts.id],
   }),
 }));
+
+// =============================================
+// INVESTOR MEMO ENGINE
+// =============================================
+
+export const memoStatusEnum = pgEnum("memo_status", [
+  "draft",
+  "generating",
+  "extracting",
+  "researching",
+  "modeling",
+  "writing",
+  "review",
+  "final",
+  "failed",
+]);
+
+export const memoStageEnum = pgEnum("memo_stage", [
+  "classification",
+  "extraction",
+  "research",
+  "tech_assessment",
+  "modeling",
+  "writing",
+  "complete",
+]);
+
+export const investorMemos = pgTable("investor_memos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").notNull(),
+  sourceType: dealIntelligenceSourceTypeEnum("source_type").default("pe_deal").notNull(),
+  dealName: varchar("deal_name", { length: 500 }).notNull(),
+  status: memoStatusEnum("status").default("draft").notNull(),
+  version: integer("version").default(1).notNull(),
+  generatedBy: varchar("generated_by").notNull().references(() => users.id),
+
+  sections: jsonb("sections").$type<Record<string, {
+    title: string;
+    content: string;
+    isEdited: boolean;
+    generatedAt: string;
+    editedAt?: string;
+    editedBy?: string;
+  }>>(),
+
+  executiveSummary: text("executive_summary"),
+  investmentThesis: text("investment_thesis"),
+  innovationScore: integer("innovation_score"),
+  overallScore: integer("overall_score"),
+
+  industryResearch: jsonb("industry_research").$type<Record<string, any>>(),
+  techAssessment: jsonb("tech_assessment").$type<Record<string, any>>(),
+
+  pdfUrl: text("pdf_url"),
+  excelUrl: text("excel_url"),
+  pdfData: text("pdf_data"),
+
+  metadata: jsonb("metadata").$type<{
+    documentsProcessed: number;
+    totalProcessingTimeMs: number;
+    aiModelsUsed: string[];
+    researchSourcesCount: number;
+    confidenceScore: number;
+  }>(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  dealIdx: index("idx_investor_memos_deal").on(table.dealId),
+  statusIdx: index("idx_investor_memos_status").on(table.status),
+  generatedByIdx: index("idx_investor_memos_generated_by").on(table.generatedBy),
+}));
+
+export type InvestorMemo = typeof investorMemos.$inferSelect;
+export const insertInvestorMemoSchema = createInsertSchema(investorMemos).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertInvestorMemo = z.infer<typeof insertInvestorMemoSchema>;
+
+export const memoGenerationRuns = pgTable("memo_generation_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  memoId: varchar("memo_id").notNull().references(() => investorMemos.id, { onDelete: "cascade" }),
+  dealId: varchar("deal_id").notNull(),
+  currentStage: memoStageEnum("current_stage").default("classification").notNull(),
+  status: varchar("status", { length: 50 }).default("running").notNull(),
+  progress: integer("progress").default(0).notNull(),
+  documentsClassified: integer("documents_classified").default(0),
+  documentsTotal: integer("documents_total").default(0),
+  stageDetails: jsonb("stage_details").$type<Record<string, {
+    status: string;
+    startedAt?: string;
+    completedAt?: string;
+    error?: string;
+    itemsProcessed?: number;
+  }>>(),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+}, (table) => ({
+  memoIdx: index("idx_memo_gen_runs_memo").on(table.memoId),
+  dealIdx: index("idx_memo_gen_runs_deal").on(table.dealId),
+}));
+
+export type MemoGenerationRun = typeof memoGenerationRuns.$inferSelect;
+
+export const extractedFinancials = pgTable("extracted_financials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  memoId: varchar("memo_id").notNull().references(() => investorMemos.id, { onDelete: "cascade" }),
+  dealId: varchar("deal_id").notNull(),
+  documentId: varchar("document_id"),
+  documentName: varchar("document_name", { length: 500 }),
+  dataType: varchar("data_type", { length: 100 }).notNull(),
+  fiscalYear: varchar("fiscal_year", { length: 10 }),
+  fiscalPeriod: varchar("fiscal_period", { length: 20 }),
+
+  structuredData: jsonb("structured_data").$type<Record<string, any>>().notNull(),
+
+  confidence: real("confidence"),
+  validationNotes: text("validation_notes"),
+  hasDiscrepancy: boolean("has_discrepancy").default(false),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  memoIdx: index("idx_extracted_fin_memo").on(table.memoId),
+  dealIdx: index("idx_extracted_fin_deal").on(table.dealId),
+  typeIdx: index("idx_extracted_fin_type").on(table.dataType),
+}));
+
+export type ExtractedFinancial = typeof extractedFinancials.$inferSelect;
+
+export const financialModels = pgTable("financial_models", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  memoId: varchar("memo_id").notNull().references(() => investorMemos.id, { onDelete: "cascade" }),
+  dealId: varchar("deal_id").notNull(),
+  modelType: varchar("model_type", { length: 50 }).notNull(),
+
+  assumptions: jsonb("assumptions").$type<{
+    revenueGrowthRates: Record<string, number>;
+    marginAssumptions: Record<string, number>;
+    capexPercent: number;
+    wcPercent: number;
+    taxRate: number;
+    discountRate: number;
+    terminalGrowth: number;
+    entryMultiple?: number;
+    exitMultiple?: number;
+    debtToEquity?: number;
+    interestRate?: number;
+  }>(),
+
+  scenarios: jsonb("scenarios").$type<{
+    base: Record<string, any>;
+    upside: Record<string, any>;
+    downside: Record<string, any>;
+  }>(),
+
+  output: jsonb("output").$type<{
+    projections: Array<Record<string, any>>;
+    valuation: Record<string, any>;
+    sensitivityTable: Array<Array<number>>;
+    irr?: number;
+    moic?: number;
+    impliedValue: Record<string, number>;
+  }>(),
+
+  techValueCreation: jsonb("tech_value_creation").$type<{
+    year1: number;
+    year2: number;
+    year3: number;
+    synergies: Array<{ name: string; value: number; timeline: string }>;
+  }>(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  memoIdx: index("idx_fin_models_memo").on(table.memoId),
+  dealIdx: index("idx_fin_models_deal").on(table.dealId),
+}));
+
+export type FinancialModel = typeof financialModels.$inferSelect;
+
+export const memoSectionEdits = pgTable("memo_section_edits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  memoId: varchar("memo_id").notNull().references(() => investorMemos.id, { onDelete: "cascade" }),
+  section: varchar("section", { length: 100 }).notNull(),
+  previousContent: text("previous_content"),
+  newContent: text("new_content").notNull(),
+  editedBy: varchar("edited_by").notNull().references(() => users.id),
+  editType: varchar("edit_type", { length: 50 }).default("manual").notNull(),
+  aiPrompt: text("ai_prompt"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  memoIdx: index("idx_memo_edits_memo").on(table.memoId),
+  sectionIdx: index("idx_memo_edits_section").on(table.section),
+}));
+
+export type MemoSectionEdit = typeof memoSectionEdits.$inferSelect;
+
+export const memoChatMessages = pgTable("memo_chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  memoId: varchar("memo_id").notNull().references(() => investorMemos.id, { onDelete: "cascade" }),
+  role: varchar("role", { length: 20 }).notNull(),
+  content: text("content").notNull(),
+  section: varchar("section", { length: 100 }),
+  actionTaken: jsonb("action_taken").$type<{
+    type: string;
+    section?: string;
+    description: string;
+  }>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type MemoChatMessage = typeof memoChatMessages.$inferSelect;
+
+export const investorMemosRelations = relations(investorMemos, ({ one, many }) => ({
+  generatedByUser: one(users, {
+    fields: [investorMemos.generatedBy],
+    references: [users.id],
+  }),
+  generationRuns: many(memoGenerationRuns),
+  financials: many(extractedFinancials),
+  models: many(financialModels),
+  edits: many(memoSectionEdits),
+  chatMessages: many(memoChatMessages),
+}));
+
+export const memoGenerationRunsRelations = relations(memoGenerationRuns, ({ one }) => ({
+  memo: one(investorMemos, {
+    fields: [memoGenerationRuns.memoId],
+    references: [investorMemos.id],
+  }),
+}));
+
+export const extractedFinancialsRelations = relations(extractedFinancials, ({ one }) => ({
+  memo: one(investorMemos, {
+    fields: [extractedFinancials.memoId],
+    references: [investorMemos.id],
+  }),
+}));
+
+export const financialModelsRelations = relations(financialModels, ({ one }) => ({
+  memo: one(investorMemos, {
+    fields: [financialModels.memoId],
+    references: [investorMemos.id],
+  }),
+}));
+
+export const memoSectionEditsRelations = relations(memoSectionEdits, ({ one }) => ({
+  memo: one(investorMemos, {
+    fields: [memoSectionEdits.memoId],
+    references: [investorMemos.id],
+  }),
+  editor: one(users, {
+    fields: [memoSectionEdits.editedBy],
+    references: [users.id],
+  }),
+}));
+
+export const memoChatMessagesRelations = relations(memoChatMessages, ({ one }) => ({
+  memo: one(investorMemos, {
+    fields: [memoChatMessages.memoId],
+    references: [investorMemos.id],
+  }),
+}));

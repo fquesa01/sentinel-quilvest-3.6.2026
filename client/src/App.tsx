@@ -66,6 +66,7 @@ import PrivilegedResearch from "@/pages/privileged-research";
 import PEDealPipeline from "@/pages/pe-deal-pipeline";
 import PEDealDetail from "@/pages/pe-deal-detail";
 import PEDealIntelligence from "@/pages/pe-deal-intelligence";
+import InvestorMemoBuilder from "@/pages/investor-memo-builder";
 import RelationshipIntelligence from "@/pages/relationship-intelligence";
 import RelationshipContacts from "@/pages/relationship-contacts";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -152,6 +153,7 @@ function AuthenticatedApp() {
               <Route path="/pe/deals" component={PEDealPipeline} />
               <Route path="/pe/deals/:id" component={PEDealDetail} />
               <Route path="/pe/deal-intelligence" component={PEDealIntelligence} />
+              <Route path="/investor-memo/:memoId" component={InvestorMemoBuilder} />
               <Route path="/background-research" component={BackgroundResearch} />
               <Route path="/background-research/:id" component={BackgroundResearchDetail} />
               <Route path="/ediscovery" component={EDiscoveryPage} />

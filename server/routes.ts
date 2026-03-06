@@ -48,6 +48,7 @@ import { RedactionService } from "./services/redaction-service";
 import { PrivilegeLogService } from "./services/privilege-log-service";
 import { ProcessingJobsService } from "./services/processing-jobs-service";
 import { registerPEDealIntelligenceRoutes } from "./routes-pe-intelligence";
+import investorMemoRouter from "./routes/investor-memo-routes";
 import { registerSearchTermsRoutes } from "./routes/search-terms-routes";
 import { registerPrivilegeLogRoutes } from "./routes/privilege-log-routes";
 import { registerChecklistRoutes } from "./routes/checklist-routes";
@@ -309,6 +310,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPrivilegeLogRoutes(app);
   registerChecklistRoutes(app);
   registerRelationshipIntelligenceRoutes(app);
+
+  // Investor memo engine routes
+  app.use(investorMemoRouter);
+
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {

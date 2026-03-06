@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Link, useParams, useLocation } from "wouter";
+import { Link, useParams, useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft,
   Building2,
@@ -365,6 +365,7 @@ export default function PEDealDetail() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <GenerateMemoButton dealId={id!} dealName={deal.name} />
           {isEditingStage ? (
             <div className="flex items-center gap-2">
               <Select value={selectedStage} onValueChange={setSelectedStage}>
@@ -1072,6 +1073,92 @@ export default function PEDealDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function GenerateMemoButton({ dealId, dealName }: { dealId: string; dealName: string }) {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const { data: existingMemos } = useQuery({
+    queryKey: ["/api/deals", dealId, "memos"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+
+  const handleGenerate = async () => {
+    setIsGenerating(true);
+    try {
+      const authHeaders = await (async () => {
+        const { supabase } = await import("@/lib/supabase");
+        const { data: { session } } = await supabase.auth.getSession();
+        return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+      })();
+
+      const response = await fetch(`/api/deals/${dealId}/memos/generate`, {
+        method: "POST",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceType: "pe_deal" }),
+      });
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let memoId = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value);
+        const lines = text.split("\n").filter((l) => l.startsWith("data: "));
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.memoId) memoId = data.memoId;
+            if (data.stage === "error") {
+              toast({ title: "Generation failed", description: data.message, variant: "destructive" });
+              setIsGenerating(false);
+              return;
+            }
+          } catch {}
+        }
+      }
+
+      if (memoId) {
+        navigate(`/investor-memo/${memoId}`);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+    setIsGenerating(false);
+  };
+
+  const latestMemo = (existingMemos as any[])?.[0];
+
+  return (
+    <div className="flex items-center gap-2">
+      {latestMemo && (
+        <Link href={`/investor-memo/${latestMemo.id}`}>
+          <Button variant="outline" size="sm">
+            <FileText className="h-4 w-4 mr-2" />
+            View Memo
+          </Button>
+        </Link>
+      )}
+      <Button
+        size="sm"
+        onClick={handleGenerate}
+        disabled={isGenerating}
+        className="gap-2"
+      >
+        {isGenerating ? (
+          <><Sparkles className="h-4 w-4 animate-pulse" /> Generating...</>
+        ) : (
+          <><Sparkles className="h-4 w-4" /> Generate Investor Memo</>
+        )}
+      </Button>
     </div>
   );
 }
