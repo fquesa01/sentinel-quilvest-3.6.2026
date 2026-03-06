@@ -766,14 +766,6 @@ export default function CalendarPage() {
                               <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{event.description}</p>
                             )}
                           </div>
-                          <div className="flex-shrink-0 flex flex-col items-end gap-1">
-                            {event.isBillable && (
-                              <Badge variant="secondary" className="text-xs">
-                                <DollarSign className="w-3 h-3 mr-1" />
-                                {event.estimatedHours || 0}h
-                              </Badge>
-                            )}
-                          </div>
                         </div>
                       );
                     })}
@@ -1284,14 +1276,6 @@ export default function CalendarPage() {
                 <DialogDescription>Event details</DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  {selectedEvent.isBillable && (
-                    <Badge variant="secondary">
-                      <DollarSign className="w-3 h-3 mr-1" />
-                      Billable
-                    </Badge>
-                  )}
-                </div>
                 <div className="flex items-center gap-2 text-sm">
                   <Clock className="w-4 h-4 text-muted-foreground" />
                   <span>
@@ -1869,37 +1853,6 @@ export default function CalendarPage() {
                 />
               </div>
 
-              <div className="col-span-2 flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="isBillable"
-                    checked={newEvent.isBillable}
-                    onCheckedChange={(v) => setNewEvent(prev => ({ ...prev, isBillable: !!v }))}
-                    data-testid="checkbox-billable"
-                  />
-                  <Label htmlFor="isBillable" className="flex items-center gap-1">
-                    <DollarSign className="w-4 h-4" />
-                    Billable Time
-                  </Label>
-                </div>
-                
-                {newEvent.isBillable && (
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="estimatedHours">Hours:</Label>
-                    <Input
-                      id="estimatedHours"
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      className="w-20"
-                      value={newEvent.estimatedHours}
-                      onChange={(e) => setNewEvent(prev => ({ ...prev, estimatedHours: parseFloat(e.target.value) || 0 }))}
-                      data-testid="input-estimated-hours"
-                    />
-                  </div>
-                )}
-              </div>
-
               <div>
                 <Label htmlFor="reminder">Reminder</Label>
                 <Select value={String(newEvent.reminderMinutes)} onValueChange={(v) => setNewEvent(prev => ({ ...prev, reminderMinutes: parseInt(v) }))}>
@@ -1907,7 +1860,6 @@ export default function CalendarPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">No reminder</SelectItem>
                     <SelectItem value="5">5 minutes before</SelectItem>
                     <SelectItem value="15">15 minutes before</SelectItem>
                     <SelectItem value="30">30 minutes before</SelectItem>
@@ -2103,14 +2055,6 @@ export default function CalendarPage() {
                 </div>
               )}
               
-              <div className="flex items-center gap-2 flex-wrap">
-                {selectedEvent.isBillable && (
-                  <Badge variant="outline" className="flex items-center gap-1">
-                    <DollarSign className="w-3 h-3" />
-                    {selectedEvent.estimatedHours || 0}h
-                  </Badge>
-                )}
-              </div>
               
               {/* Invitees Section */}
               {selectedEvent.externalAttendees && selectedEvent.externalAttendees.length > 0 && (
