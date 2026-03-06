@@ -289,6 +289,41 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
       }
     }
     
+    // Handle Excel/spreadsheet documents
+    const isExcel = fileType.includes('spreadsheet') || fileType.includes('excel') ||
+                    fileType.includes('ms-excel') || doc.fileName.toLowerCase().match(/\.(xlsx?|xls|xlsm|xlsb|csv)$/);
+
+    if (isExcel && fileBuffer && (!extractedText || extractedText.trim().length < 50)) {
+      console.log(`[OCR] Extracting text from spreadsheet: ${doc.fileName}`);
+      try {
+        const XLSX = await import("xlsx");
+        const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true, cellNF: true });
+        const parts: string[] = [];
+
+        for (const sheetName of workbook.SheetNames) {
+          const ws = workbook.Sheets[sheetName];
+          if (!ws) continue;
+          parts.push(`=== Sheet: ${sheetName} ===`);
+          const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+          for (let r = range.s.r; r <= range.e.r; r++) {
+            const cells: string[] = [];
+            for (let c = range.s.c; c <= range.e.c; c++) {
+              const cell = ws[XLSX.utils.encode_cell({ r, c })];
+              cells.push(cell ? (cell.t === "n" && cell.z ? XLSX.utils.format_cell(cell) : String(cell.v ?? "")) : "");
+            }
+            if (cells.some(v => v.trim() !== "")) {
+              parts.push(cells.join(" | "));
+            }
+          }
+          parts.push("");
+        }
+        extractedText = parts.join("\n");
+        console.log(`[OCR] Successfully extracted ${extractedText.length} chars from spreadsheet (${workbook.SheetNames.length} sheets)`);
+      } catch (xlErr: any) {
+        console.error(`[OCR] Excel extraction failed for ${doc.fileName}:`, xlErr.message);
+      }
+    }
+
     // Handle image-based OCR (Gemini only)
     const imageTypes = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp'];
     const isImage = imageTypes.some(t => fileType.includes(t));

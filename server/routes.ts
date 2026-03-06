@@ -15851,6 +15851,25 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
         const result = await mammoth.extractRawText({ buffer: fileBuffer });
         extractedText = result.value;
         pageCount = Math.ceil(extractedText.length / 3000); // Estimate
+      } else if (['xlsx', 'xls', 'xlsm', 'xlsb'].includes(fileType)) {
+        const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true, cellNF: true });
+        const parts: string[] = [];
+        for (const sheetName of workbook.SheetNames) {
+          const ws = workbook.Sheets[sheetName];
+          if (!ws) continue;
+          parts.push(`=== Sheet: ${sheetName} ===`);
+          const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+          for (let r = range.s.r; r <= range.e.r; r++) {
+            const cells: string[] = [];
+            for (let c = range.s.c; c <= range.e.c; c++) {
+              const cell = ws[XLSX.utils.encode_cell({ r, c })];
+              cells.push(cell ? (cell.t === "n" && cell.z ? XLSX.utils.format_cell(cell) : String(cell.v ?? "")) : "");
+            }
+            if (cells.some(v => v.trim() !== "")) parts.push(cells.join(" | "));
+          }
+        }
+        extractedText = parts.join("\n");
+        pageCount = workbook.SheetNames.length;
       } else if (['txt', 'csv', 'json', 'md'].includes(fileType)) {
         extractedText = fileBuffer.toString('utf-8');
         pageCount = 1;

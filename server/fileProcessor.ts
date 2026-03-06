@@ -218,6 +218,72 @@ async function processDOCXFile(buffer: Buffer, fileName: string): Promise<Proces
   };
 }
 
+// Process an Excel file (.xlsx, .xls, .csv with structured data)
+async function processExcelFile(buffer: Buffer, fileName: string): Promise<ProcessedEmail> {
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, cellNF: true });
+
+  const textParts: string[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
+
+    textParts.push(`=== Sheet: ${sheetName} ===`);
+
+    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+    const rows: string[][] = [];
+
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const row: string[] = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cellRef = XLSX.utils.encode_cell({ r, c });
+        const cell = worksheet[cellRef];
+        if (cell) {
+          if (cell.t === "n" && cell.z) {
+            row.push(XLSX.utils.format_cell(cell));
+          } else {
+            row.push(String(cell.v ?? ""));
+          }
+        } else {
+          row.push("");
+        }
+      }
+      if (row.some((v) => v.trim() !== "")) {
+        rows.push(row);
+      }
+    }
+
+    const colWidths = rows[0]?.map((_, colIdx) =>
+      Math.max(...rows.map((row) => (row[colIdx] || "").length), 4)
+    ) || [];
+
+    for (const row of rows) {
+      const formatted = row
+        .map((val, i) => val.padEnd(colWidths[i] || 4))
+        .join(" | ");
+      textParts.push(formatted);
+    }
+    textParts.push("");
+  }
+
+  const fullText = textParts.join("\n");
+  const fileNameWithoutExt = fileName.replace(/\.(xlsx?|xls)$/i, "");
+
+  return {
+    subject: fileNameWithoutExt,
+    body: fullText,
+    sender: "Document Upload",
+    recipients: [],
+    timestamp: new Date(),
+    metadata: {
+      sheetCount: workbook.SheetNames.length,
+      sheetNames: workbook.SheetNames,
+      isSpreadsheet: true,
+    },
+  };
+}
+
 // Process a text file
 async function processTextFile(buffer: Buffer, fileName: string): Promise<ProcessedEmail> {
   const text = buffer.toString('utf-8');
@@ -515,6 +581,10 @@ export async function processFile(
       emails = [await processPDFFile(buffer, fileName)];
     } else if (ext === "docx") {
       emails = [await processDOCXFile(buffer, fileName)];
+    } else if (ext === "xlsx" || ext === "xls" || ext === "xlsm" || ext === "xlsb") {
+      emails = [await processExcelFile(buffer, fileName)];
+    } else if (ext === "csv") {
+      emails = [await processExcelFile(buffer, fileName)];
     } else if (ext === "txt") {
       emails = [await processTextFile(buffer, fileName)];
     } else if (imageExtensions.includes(ext)) {
@@ -532,6 +602,10 @@ export async function processFile(
       'pdf': 'application/pdf',
       'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'doc': 'application/msword',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'xls': 'application/vnd.ms-excel',
+      'xlsm': 'application/vnd.ms-excel.sheet.macroEnabled.12',
+      'csv': 'text/csv',
       'txt': 'text/plain',
       // Images
       'jpg': 'image/jpeg',
