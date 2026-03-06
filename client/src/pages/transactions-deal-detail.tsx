@@ -143,6 +143,8 @@ export default function TransactionsDealDetail() {
     select: (rooms) => rooms.filter((r: any) => r.dealId === id),
   });
 
+  const [isDealTypeDismissed, setIsDealTypeDismissed] = useState(false);
+
   const updateDealMutation = useMutation({
     mutationFn: async (data: Partial<Deal>) => {
       const res = await apiRequest("PATCH", `/api/deals/${id}`, data);
@@ -316,6 +318,43 @@ export default function TransactionsDealDetail() {
         description: error.message || "Failed to create data room",
         variant: "destructive",
       });
+    },
+  });
+
+  const applyDetectedTypeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${id}/apply-detected-type`);
+      return res.json();
+    },
+    onSuccess: async (data) => {
+      await refetchDeal();
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "checklists"] });
+      toast({
+        title: "Deal type applied",
+        description: data.message || "Deal type has been updated.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to apply deal type.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const dismissDetectedTypeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${id}/dismiss-detected-type`);
+      return res.json();
+    },
+    onSuccess: async () => {
+      setIsDealTypeDismissed(true);
+      await refetchDeal();
+      toast({ title: "Suggestion dismissed" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to dismiss suggestion.", variant: "destructive" });
     },
   });
 
@@ -516,6 +555,68 @@ export default function TransactionsDealDetail() {
           </ScrollArea>
 
           <TabsContent value="overview" className="mt-6 space-y-6 stagger-3">
+            {(() => {
+              const settings = (deal.settings || {}) as Record<string, any>;
+              const detectedType = settings.detectedDealType;
+              const confidence = settings.detectedConfidence;
+              const reason = settings.detectedReason;
+              const confirmed = settings.dealTypeConfirmed;
+              const detectedLabel: Record<string, string> = {
+                debt: "Debt Financing",
+                equity: "Equity / Investment",
+                real_estate: "Real Estate",
+              };
+              if (detectedType && !confirmed && !isDealTypeDismissed) {
+                return (
+                  <Card className="border-primary/40" data-testid="card-detected-deal-type">
+                    <CardContent className="pt-6">
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+                            <Sparkles className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium" data-testid="text-detected-type-label">
+                              AI detected this as a <span className="text-primary">{detectedLabel[detectedType] || detectedType}</span> transaction
+                            </p>
+                            {reason && (
+                              <p className="text-sm text-muted-foreground mt-1" data-testid="text-detected-type-reason">{reason}</p>
+                            )}
+                            {confidence && (
+                              <Badge variant="outline" className="mt-2" data-testid="badge-detected-confidence">
+                                {Math.round(confidence * 100)}% confidence
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => dismissDetectedTypeMutation.mutate()}
+                            disabled={dismissDetectedTypeMutation.isPending || applyDetectedTypeMutation.isPending}
+                            data-testid="button-dismiss-detected-type"
+                          >
+                            {dismissDetectedTypeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4 mr-1" />}
+                            Dismiss
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => applyDetectedTypeMutation.mutate()}
+                            disabled={applyDetectedTypeMutation.isPending || dismissDetectedTypeMutation.isPending}
+                            data-testid="button-apply-detected-type"
+                          >
+                            {applyDetectedTypeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                            Apply
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              return null;
+            })()}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="pt-6">
@@ -1113,27 +1214,7 @@ export default function TransactionsDealDetail() {
           </TabsContent>
 
           <TabsContent value="reports" className="mt-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-lg">Transaction Reports</CardTitle>
-                    <CardDescription>Generate and view deal reports</CardDescription>
-                  </div>
-                  <Button size="sm" data-testid="button-generate-report">
-                    <FileStack className="h-4 w-4 mr-2" />
-                    Generate Report
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  <FileStack className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>No reports generated yet</p>
-                  <p className="text-sm mt-1">Generate comprehensive deal reports for stakeholders</p>
-                </div>
-              </CardContent>
-            </Card>
+            <InvestmentMemoSection dealId={id!} dealTitle={deal.title} dealSettings={(deal.settings || {}) as Record<string, any>} onDealRefetch={refetchDeal} />
           </TabsContent>
         </Tabs>
 
@@ -1987,5 +2068,297 @@ function BackgroundResearchTab({ dealId }: { dealId: string }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch }: { dealId: string; dealTitle: string; dealSettings: Record<string, any>; onDealRefetch: () => void }) {
+  const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const [generationProgress, setGenerationProgress] = useState<{ stage: string; progress: number; message: string } | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const { data: memos = [], isLoading: memosLoading } = useQuery<any[]>({
+    queryKey: ["/api/deals", dealId, "memos"],
+    enabled: !!dealId,
+  });
+
+  const memoStatus = dealSettings?.memoStatus as string | undefined;
+  const latestMemo = memos.length > 0 ? memos[0] : null;
+
+  const handleAutoGenerate = async () => {
+    setIsGenerating(true);
+    setGenerationProgress({ stage: "starting", progress: 0, message: "Starting memo generation..." });
+
+    try {
+      const response = await fetch(`/api/deals/${dealId}/memos/auto-generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              setGenerationProgress(data);
+
+              if (data.stage === "complete") {
+                toast({ title: "Memo Generated", description: "Investment memo has been created successfully." });
+                queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "memos"] });
+                onDealRefetch();
+              } else if (data.stage === "error") {
+                toast({ title: "Generation Failed", description: data.message, variant: "destructive" });
+              }
+            } catch {}
+          }
+        }
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to generate memo", variant: "destructive" });
+    } finally {
+      setIsGenerating(false);
+      setTimeout(() => setGenerationProgress(null), 3000);
+    }
+  };
+
+  const memoStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      draft: "Draft",
+      generating: "Generating",
+      review: "Ready for Review",
+      approved: "Approved",
+      failed: "Failed",
+    };
+    return labels[status] || status;
+  };
+
+  const memoStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      draft: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+      generating: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+      review: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+      approved: "bg-green-500/20 text-green-400 border-green-500/30",
+      failed: "bg-red-500/20 text-red-400 border-red-500/30",
+    };
+    return colors[status] || "";
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Investment Memo
+              </CardTitle>
+              <CardDescription>AI-generated investment memo from uploaded documents</CardDescription>
+            </div>
+            {latestMemo && !isGenerating && (
+              <Button size="sm" onClick={handleAutoGenerate} data-testid="button-regenerate-memo">
+                <Sparkles className="h-4 w-4 mr-2" />
+                Regenerate
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isGenerating && generationProgress && (
+            <div className="space-y-4" data-testid="memo-generation-progress">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <div className="flex-1">
+                  <p className="font-medium">Generating Investment Memo</p>
+                  <p className="text-sm text-muted-foreground">{generationProgress.message}</p>
+                </div>
+                <span className="text-sm font-medium">{generationProgress.progress}%</span>
+              </div>
+              <Progress value={generationProgress.progress} className="h-2" />
+            </div>
+          )}
+
+          {!isGenerating && memoStatus === "update_available" && latestMemo && (
+            <div className="p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 mb-4" data-testid="memo-update-banner">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Sparkles className="h-5 w-5 text-yellow-500" />
+                  <div>
+                    <p className="font-medium">New documents available</p>
+                    <p className="text-sm text-muted-foreground">
+                      New documents have been uploaded since the last memo was generated. Regenerate to include them.
+                    </p>
+                  </div>
+                </div>
+                <Button size="sm" onClick={handleAutoGenerate} data-testid="button-update-memo">
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Update Memo
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!isGenerating && !latestMemo && memoStatus !== "generating" && !memosLoading && (
+            <div className="text-center py-8">
+              {memoStatus === "ready_to_generate" ? (
+                <div className="space-y-4">
+                  <div className="p-3 rounded-full bg-primary/10 w-fit mx-auto">
+                    <Sparkles className="h-8 w-8 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Ready to Generate</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Documents have been processed and are ready for memo generation.
+                    </p>
+                  </div>
+                  <Button onClick={handleAutoGenerate} data-testid="button-generate-memo">
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Generate Investment Memo
+                  </Button>
+                </div>
+              ) : memoStatus === "failed" ? (
+                <div className="space-y-4">
+                  <div className="p-3 rounded-full bg-destructive/10 w-fit mx-auto">
+                    <AlertTriangle className="h-8 w-8 text-destructive" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Generation Failed</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {dealSettings?.memoError || "The memo generation encountered an error. Please try again."}
+                    </p>
+                  </div>
+                  <Button onClick={handleAutoGenerate} data-testid="button-retry-memo">
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Retry Generation
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-full bg-muted w-fit mx-auto">
+                    <FileText className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <p className="text-muted-foreground" data-testid="text-memo-pending">
+                    An investment memo will be automatically generated when documents are uploaded and processed.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Upload documents to a data room linked to this deal to get started.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isGenerating && latestMemo && (
+            <div className="space-y-4" data-testid="memo-details">
+              {memoStatus !== "update_available" && (
+                <div className="flex items-center justify-between p-4 rounded-lg border hover-elevate cursor-pointer" onClick={() => navigate(`/investor-memo/${latestMemo.id}`)} data-testid="link-view-memo">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{latestMemo.dealName || dealTitle} - Investment Memo</p>
+                      <div className="flex items-center gap-2 flex-wrap mt-1">
+                        <Badge variant="outline" className={memoStatusColor(latestMemo.status)}>
+                          {memoStatusLabel(latestMemo.status)}
+                        </Badge>
+                        {latestMemo.overallScore && (
+                          <Badge variant="outline">
+                            Score: {latestMemo.overallScore}/100
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Last Updated</p>
+                      <p className="text-sm font-medium">
+                        {latestMemo.updatedAt ? format(new Date(latestMemo.updatedAt), "MMM d, yyyy h:mm a") : "—"}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+              )}
+
+              {memoStatus === "update_available" && (
+                <div className="flex items-center justify-between p-4 rounded-lg border hover-elevate cursor-pointer" onClick={() => navigate(`/investor-memo/${latestMemo.id}`)} data-testid="link-view-memo">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{latestMemo.dealName || dealTitle} - Investment Memo</p>
+                      <div className="flex items-center gap-2 flex-wrap mt-1">
+                        <Badge variant="outline" className={memoStatusColor(latestMemo.status)}>
+                          {memoStatusLabel(latestMemo.status)}
+                        </Badge>
+                        {latestMemo.overallScore && (
+                          <Badge variant="outline">
+                            Score: {latestMemo.overallScore}/100
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Last Updated</p>
+                      <p className="text-sm font-medium">
+                        {latestMemo.updatedAt ? format(new Date(latestMemo.updatedAt), "MMM d, yyyy h:mm a") : "—"}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+              )}
+
+              {memos.length > 1 && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Previous Versions</p>
+                  <div className="space-y-2">
+                    {memos.slice(1).map((memo: any) => (
+                      <div key={memo.id} className="flex items-center justify-between p-3 rounded-lg border hover-elevate cursor-pointer" onClick={() => navigate(`/investor-memo/${memo.id}`)} data-testid={`link-memo-${memo.id}`}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">Version {memo.version || "—"}</span>
+                          <Badge variant="outline" className={memoStatusColor(memo.status)}>
+                            {memoStatusLabel(memo.status)}
+                          </Badge>
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          {memo.createdAt ? format(new Date(memo.createdAt), "MMM d, yyyy") : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {memosLoading && (
+            <div className="space-y-3">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

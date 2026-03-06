@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { db } from "../db";
 import {
   investorMemos, memoGenerationRuns, extractedFinancials,
-  financialModels, memoSectionEdits, memoChatMessages,
+  financialModels, memoSectionEdits, memoChatMessages, deals,
 } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { generateInvestorMemo, regenerateSection, chatAboutMemo } from "../services/investor-memo-service";
@@ -253,6 +253,72 @@ router.get("/api/memos/:memoId/export/excel", async (req: Request, res: Response
     res.send(excelBuffer);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/deals/:dealId/memos/auto-generate", async (req: Request, res: Response) => {
+  try {
+    const { dealId } = req.params;
+    const userId = getUserId(req);
+
+    const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
+    if (!deal) return res.status(404).json({ error: "Deal not found" });
+
+    const settings = (deal.settings || {}) as Record<string, any>;
+
+    await db.update(deals).set({
+      settings: {
+        ...settings,
+        memoStatus: "generating",
+        memoGenerationStartedAt: new Date().toISOString(),
+      },
+      updatedAt: new Date(),
+    }).where(eq(deals.id, dealId));
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+
+    const sendProgress = (stage: string, progress: number, message: string) => {
+      res.write(`data: ${JSON.stringify({ stage, progress, message })}\n\n`);
+    };
+
+    try {
+      const memoId = await generateInvestorMemo(dealId, "transaction", userId, sendProgress);
+
+      await db.update(deals).set({
+        settings: {
+          ...((await db.select().from(deals).where(eq(deals.id, dealId)))[0]?.settings as Record<string, any> || {}),
+          memoStatus: "generated",
+          lastMemoGeneratedAt: new Date().toISOString(),
+          lastMemoId: memoId,
+        },
+        updatedAt: new Date(),
+      }).where(eq(deals.id, dealId));
+
+      res.write(`data: ${JSON.stringify({ stage: "complete", progress: 100, message: "Done", memoId })}\n\n`);
+    } catch (err: any) {
+      const latestSettings = ((await db.select().from(deals).where(eq(deals.id, dealId)))[0]?.settings as Record<string, any> || {});
+      await db.update(deals).set({
+        settings: {
+          ...latestSettings,
+          memoStatus: "failed",
+          memoError: err.message,
+        },
+        updatedAt: new Date(),
+      }).where(eq(deals.id, dealId));
+
+      res.write(`data: ${JSON.stringify({ stage: "error", progress: 0, message: err.message })}\n\n`);
+    }
+
+    res.end();
+  } catch (err: any) {
+    console.error("[MemoRoutes] Auto-generate error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 

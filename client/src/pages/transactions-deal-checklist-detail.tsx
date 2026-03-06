@@ -93,6 +93,7 @@ interface EnrichedItem {
   notes?: string;
   documentCount?: number;
   hasAutoMatched?: boolean;
+  autoMatchConfidence?: number;
   templateItem?: {
     id: string;
     name: string;
@@ -311,6 +312,8 @@ export default function TransactionsDealChecklistDetail() {
   const criticalPending = items.filter(i => i.templateItem?.isCritical && i.status === "pending").length;
   const requiredPending = items.filter(i => i.templateItem?.isRequired && i.status === "pending").length;
   const completionPercentage = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+  const autoMatchedItems = items.filter(i => i.hasAutoMatched);
+  const autoMatchedCount = autoMatchedItems.length;
 
   return (
     <div className="p-6 space-y-6">
@@ -353,6 +356,26 @@ export default function TransactionsDealChecklistDetail() {
           Run Auto-Match
         </Button>
       </div>
+
+      {autoMatchedCount > 0 && (
+        <Card data-testid="card-auto-completed-summary">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center h-9 w-9 rounded-md bg-primary/10">
+                <Sparkles className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-medium" data-testid="text-auto-completed-count">
+                  {autoMatchedCount} of {totalItems} items auto-completed from uploaded documents
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  AI automatically matched documents to checklist items based on content analysis
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
@@ -468,6 +491,27 @@ export default function TransactionsDealChecklistDetail() {
                                     <span className="font-medium text-sm">
                                       {item.templateItem?.name || "Untitled Item"}
                                     </span>
+                                    {item.hasAutoMatched && (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Badge variant="outline" className="text-xs" data-testid={`badge-ai-matched-${item.id}`}>
+                                            <Sparkles className="h-3 w-3 mr-1" />
+                                            AI Matched
+                                            {item.autoMatchConfidence != null && (
+                                              <span className="ml-1 opacity-70">
+                                                {Math.round(item.autoMatchConfidence * 100)}%
+                                              </span>
+                                            )}
+                                          </Badge>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>This item was auto-completed by AI document analysis</p>
+                                          {item.autoMatchConfidence != null && (
+                                            <p className="text-xs opacity-70">Confidence: {Math.round(item.autoMatchConfidence * 100)}%</p>
+                                          )}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    )}
                                     {item.templateItem?.isRequired && (
                                       <Badge variant="secondary" className="text-xs">Required</Badge>
                                     )}
@@ -475,6 +519,11 @@ export default function TransactionsDealChecklistDetail() {
                                       <Badge variant="destructive" className="text-xs">Critical</Badge>
                                     )}
                                   </div>
+                                  {item.hasAutoMatched && item.notes && (
+                                    <p className="text-xs text-muted-foreground mt-0.5 truncate italic" data-testid={`text-auto-match-notes-${item.id}`}>
+                                      {item.notes}
+                                    </p>
+                                  )}
                                   {item.templateItem?.description && (
                                     <p className="text-xs text-muted-foreground mt-0.5 truncate">
                                       {item.templateItem.description}
@@ -592,7 +641,13 @@ export default function TransactionsDealChecklistDetail() {
                           {link.document?.name || link.document?.fileName || "Unknown Document"}
                         </span>
                         {link.isAutoMatched && (
-                          <Badge variant="outline" className="text-xs flex-shrink-0">Auto-matched</Badge>
+                          <Badge variant="outline" className="text-xs flex-shrink-0" data-testid={`badge-auto-matched-doc-${link.id}`}>
+                            <Sparkles className="h-3 w-3 mr-1" />
+                            AI Matched
+                            {link.matchConfidence != null && (
+                              <span className="ml-1 opacity-70">{Math.round(link.matchConfidence * 100)}%</span>
+                            )}
+                          </Badge>
                         )}
                       </div>
                       <Button

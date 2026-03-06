@@ -13259,6 +13259,36 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  // Apply AI-detected deal type and optionally auto-apply matching template
+  app.post("/api/deals/:dealId/apply-detected-type", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const { applyDetectedDealType } = await import("./services/deal-intelligence-service");
+      const result = await applyDetectedDealType(req.params.dealId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error applying detected deal type:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Dismiss detected deal type suggestion
+  app.post("/api/deals/:dealId/dismiss-detected-type", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, req.params.dealId));
+      if (!deal) return res.status(404).json({ message: "Deal not found" });
+      const settings = (deal.settings || {}) as Record<string, any>;
+      await db.update(schema.deals)
+        .set({
+          settings: { ...settings, detectedDealType: null, dealTypeConfirmed: true },
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.deals.id, req.params.dealId));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Apply template to a deal - creates a checklist
   app.post("/api/deals/:dealId/apply-template/:templateId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {

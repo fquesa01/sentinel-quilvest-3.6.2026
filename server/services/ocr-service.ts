@@ -524,6 +524,16 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
       })
       .where(eq(dataRoomDocuments.id, documentId));
 
+    // Trigger deal intelligence processing asynchronously (fire-and-forget)
+    try {
+      const { processDealDocumentIntelligence } = await import("./deal-intelligence-service");
+      processDealDocumentIntelligence(documentId).catch(err => {
+        console.error(`[DealIntel] Background processing failed for ${documentId}:`, err.message);
+      });
+    } catch (importErr: any) {
+      console.error(`[DealIntel] Failed to import deal intelligence service:`, importErr.message);
+    }
+
     return {
       extractedText,
       documentDate,
