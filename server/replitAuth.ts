@@ -23,6 +23,7 @@ const testingAdminEmails = [
   "binhaks@binhaklaw.com",
   "zoinertejada@gmail.com",
   "charliewhorton@gmail.com",
+  "charlie@sntlabs.io",
   "rjb@borgheselaw.com",
 ];
 
