@@ -1,0 +1,747 @@
+# SENTINEL COUNSEL — REPLIT AGENT PROMPT
+## Feature: Due Diligence Checklists Module (Equity & Debt)
+
+---
+
+## CONTEXT: EXISTING APPLICATION
+
+You are adding a **Due Diligence Checklists** feature to an existing application called **Sentinel Counsel LLP** — an AI-powered legal and compliance intelligence platform for institutional investors (PE firms, hedge funds, investment banks, and in-house legal/compliance teams).
+
+**Existing Tech Stack:**
+- Frontend: React + TypeScript + Tailwind CSS
+- Backend: Node.js / Express (REST API)
+- Database: PostgreSQL with Prisma ORM
+- UI Style: Dark, Palantir-inspired, mission-control aesthetic — navy (#1B2A4A), gold (#C9A84C), dark backgrounds (#0F1623), white text
+- Navigation: Left sidebar ribbon with collapsible sections
+- The app already has modules for: Investigations, Document Review, eDiscovery/Productions, GRC & Compliance, Business Transactions / Deal Workspace, Virtual Data Room, and Analytics
+
+**Where this feature lives:**
+This feature is part of the **BUSINESS TRANSACTIONS** section of the left sidebar, which currently has:
+```
+BUSINESS TRANSACTIONS ▼
+├── 📊 Transaction Dashboard
+├── 📁 Active Deals
+├── 📋 Deal Templates
+├── 📄 Request Lists (DRL)
+├── 🔒 Data Rooms
+├── ✅ Due Diligence Checklists  ← THIS IS WHAT WE ARE BUILDING
+├── 📑 Contract Analysis
+├── ⚠️ Issue Tracker
+├── 💬 Q&A Management
+└── 📝 Closing Management
+```
+
+---
+
+## FEATURE OVERVIEW
+
+Build a **Due Diligence Checklists** module that supports two distinct investment tracks:
+
+1. **Equity DD Checklist** — for PE buyouts, M&A, minority investments, co-investments
+2. **Debt DD Checklist** — for senior secured loans, mezzanine, revolving credit, ABL, direct lending
+
+Each checklist is:
+- Pre-populated with institutional-grade items organized by category
+- Fully trackable (status, priority, responsible party, date received, data room path, notes)
+- Linked to a specific **Deal** in the deal workspace
+- Exportable to Excel and PDF
+- AI-augmented (Ava can analyze completion gaps and surface risks)
+
+---
+
+## DATABASE SCHEMA
+
+Add the following tables to the existing Prisma schema:
+
+```prisma
+// ─── DUE DILIGENCE CHECKLISTS ──────────────────────────────────────
+
+model DDChecklist {
+  id             String          @id @default(cuid())
+  dealId         String
+  deal           Deal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  track          DDTrack         // EQUITY or DEBT
+  title          String          // e.g., "Project Heartland - Equity DD"
+  status         ChecklistStatus @default(ACTIVE)
+  createdById    String
+  createdBy      User            @relation(fields: [createdById], references: [id])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  items          DDChecklistItem[]
+  
+  @@index([dealId])
+}
+
+enum DDTrack {
+  EQUITY
+  DEBT
+}
+
+enum ChecklistStatus {
+  ACTIVE
+  ARCHIVED
+  COMPLETED
+}
+
+model DDChecklistItem {
+  id               String          @id @default(cuid())
+  checklistId      String
+  checklist        DDChecklist     @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  itemNumber       Int             // Sequential within checklist
+  section          String          // e.g., "A. Corporate & Governance"
+  sectionCode      String          // e.g., "A"
+  itemText         String          @db.Text
+  priority         DDPriority      @default(MEDIUM)
+  status           DDItemStatus    @default(OPEN)
+  responsibleParty String?
+  dateRequested    DateTime?
+  dateReceived     DateTime?
+  dataRoomPath     String?
+  notes            String?         @db.Text
+  isBestPractice   Boolean         @default(false)
+  isCustom         Boolean         @default(false)   // User-added items
+  displayOrder     Int
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([checklistId])
+  @@index([status])
+  @@index([priority])
+}
+
+enum DDPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum DDItemStatus {
+  OPEN
+  IN_PROGRESS
+  PARTIAL
+  PROVIDED
+  NOT_APPLICABLE
+}
+
+// Add to existing DDTemplate model (or create if not exists)
+model DDChecklistTemplate {
+  id          String        @id @default(cuid())
+  track       DDTrack
+  name        String        // e.g., "Standard PE Buyout - Equity DD"
+  description String?
+  isDefault   Boolean       @default(false)
+  sections    Json          // Array of section objects with items
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+```
+
+---
+
+## SEED DATA — PRE-BUILT CHECKLIST ITEMS
+
+Create a seed file `prisma/seeds/ddChecklistTemplates.ts` with the complete item lists below. These are called when a user creates a new checklist for a deal.
+
+### EQUITY DD TEMPLATE ITEMS
+
+```typescript
+export const EQUITY_DD_SECTIONS = [
+  {
+    code: "A",
+    title: "A. Corporate & Governance",
+    items: [
+      { text: "Legal entity structure chart for the target company and all subsidiaries, joint ventures, and affiliates, including jurisdiction of formation and ownership percentages.", priority: "HIGH", isBestPractice: false },
+      { text: "Capitalization table setting forth all outstanding equity interests (common, preferred, options, warrants, SARs, convertible instruments), with grant date, exercise price, vesting schedule, and expiration.", priority: "HIGH", isBestPractice: false },
+      { text: "Organizational documents for each entity: certificate of incorporation/formation, bylaws/operating agreement, partnership agreements, and all amendments thereto.", priority: "HIGH", isBestPractice: false },
+      { text: "All stockholder, voting, drag-along, tag-along, right-of-first-refusal, and registration rights agreements.", priority: "HIGH", isBestPractice: false },
+      { text: "Board and stockholder/member meeting minutes and resolutions for the last five (5) years.", priority: "MEDIUM", isBestPractice: false },
+      { text: "List and copies of all equity incentive plans (stock option, restricted stock, phantom equity, profit interest) and all award agreements.", priority: "HIGH", isBestPractice: false },
+      { text: "Schedule of all distributions, dividends, or returns of capital made to equity holders for the last three (3) years.", priority: "MEDIUM", isBestPractice: false },
+      { text: "All buy-sell agreements, redemption agreements, and right of first refusal agreements among equity holders.", priority: "HIGH", isBestPractice: false },
+      { text: "Corporate good-standing certificates for each entity from state of formation.", priority: "MEDIUM", isBestPractice: true, notes: "Best practice: obtain within 30 days of closing" },
+      { text: "Documentation of all prior equity issuances, repurchases, and recapitalizations.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Any pending or threatened challenges to corporate authority or governance disputes among owners.", priority: "HIGH", isBestPractice: false },
+    ]
+  },
+  {
+    code: "B",
+    title: "B. Financial Statements & Quality of Earnings",
+    items: [
+      { text: "Audited or reviewed financial statements (IS, BS, CF) for the last three (3) to five (5) fiscal years.", priority: "HIGH", isBestPractice: false },
+      { text: "Year-to-date unaudited monthly P&L and balance sheet, reconciled to prior audited period.", priority: "HIGH", isBestPractice: false },
+      { text: "Last twelve months (LTM) monthly P&L with management commentary on variances.", priority: "HIGH", isBestPractice: false },
+      { text: "General ledger detail for all periods under review exported to Excel.", priority: "HIGH", isBestPractice: false },
+      { text: "Monthly trial balances for each entity for the last three (3) years.", priority: "HIGH", isBestPractice: false },
+      { text: "Chart of accounts and accounting policy memorandum.", priority: "MEDIUM", isBestPractice: false },
+      { text: "All adjusting journal entries prepared in connection with any audit, review, or compilation.", priority: "MEDIUM", isBestPractice: false },
+      { text: "EBITDA bridge from GAAP net income to Adjusted EBITDA, with itemized add-backs/deductions and supporting documentation for each.", priority: "HIGH", isBestPractice: true, notes: "Scrutinize one-time, non-recurring, and owner-specific adjustments" },
+      { text: "Revenue recognition policy and all material customer contracts analyzed for proper revenue timing (ASC 606 or applicable standard).", priority: "HIGH", isBestPractice: false },
+      { text: "Deferred revenue and customer deposit detail by customer as of each historical balance sheet date.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Accounts receivable aging by customer as of each historical BS date, with allowance for doubtful accounts roll-forward.", priority: "HIGH", isBestPractice: false },
+      { text: "Accounts payable aging by vendor as of each historical BS date.", priority: "HIGH", isBestPractice: false },
+      { text: "Inventory listing (quantity and value) reconciled to balance sheet; inventory aging and reserve calculation.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Prepaid expenses and other current assets schedule.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Accrued expenses detail (warranty, commissions, bonuses, taxes, etc.) as of historical BS dates.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Bank statements and reconciliations for all accounts for all periods under review.", priority: "HIGH", isBestPractice: false },
+      { text: "Schedule of indebtedness, including all secured and unsecured debt, capital leases, and lines of credit.", priority: "HIGH", isBestPractice: false },
+      { text: "Industry benchmark comparisons: EBITDA margin, ROE, DSO, DPO, liquidity ratios vs. market peers.", priority: "MEDIUM", isBestPractice: true },
+      { text: "Management discussion and analysis or board presentations summarizing financial performance.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Internal audit reports and findings; remediation tracking.", priority: "LOW", isBestPractice: false },
+    ]
+  },
+  {
+    code: "C",
+    title: "C. Tax Diligence",
+    items: [
+      { text: "Federal and state/local income tax returns for all open statute years (generally three to six years).", priority: "HIGH", isBestPractice: false },
+      { text: "Entity org chart with U.S. tax classification of each entity (C-corp, S-corp, partnership, disregarded).", priority: "HIGH", isBestPractice: false },
+      { text: "S-election or check-the-box election documents (Form 2553, Form 8832) and IRS acceptance letters, if applicable.", priority: "HIGH", isBestPractice: false, notes: "If applicable" },
+      { text: "Schedule of S-corp shareholder distributions and basis calculations since election date.", priority: "HIGH", isBestPractice: false },
+      { text: "Tax basis balance sheet; depreciation schedules and method elections.", priority: "HIGH", isBestPractice: false },
+      { text: "Description of all federal and state/local tax examinations, audits, or inquiries (open or closed within 6 years).", priority: "HIGH", isBestPractice: false },
+      { text: "Tax reserve schedule (ASC 740-10 / FIN 48 uncertain tax positions) with amounts and descriptions.", priority: "HIGH", isBestPractice: false },
+      { text: "State apportionment factor schedule (property, payroll, sales) by state for all open periods.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Sales & use tax returns and nexus analysis; voluntary disclosure agreements.", priority: "HIGH", isBestPractice: false },
+      { text: "Payroll/unemployment tax filings (Forms 940, 941, state withholding) for all open periods.", priority: "HIGH", isBestPractice: false },
+      { text: "Independent contractor documentation: classification support, 1099s, and written agreements.", priority: "MEDIUM", isBestPractice: true, notes: "Worker misclassification is a significant diligence risk" },
+      { text: "Transfer pricing documentation for any intercompany transactions.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Unclaimed/abandoned property (escheat) compliance and any audits.", priority: "MEDIUM", isBestPractice: false },
+      { text: "PPP loan forgiveness documentation; ERC credits claimed and compliance.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Personal property tax statements and real property tax assessments.", priority: "LOW", isBestPractice: false },
+      { text: "Copies of prior tax due diligence reports or structuring memoranda.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Schedule of material acquisitions/divestitures with tax treatment, elections, and purchase price allocation.", priority: "HIGH", isBestPractice: false },
+    ]
+  },
+  {
+    code: "D",
+    title: "D. Legal Diligence",
+    items: [
+      { text: "Schedule and copies of all pending, threatened, or recently resolved litigation, arbitration, mediation, or government investigations (last 5 years), with exposure estimates and insurance coverage status.", priority: "HIGH", isBestPractice: false },
+      { text: "Attorney response letters to auditors (audit response letters) for each of the last three fiscal years.", priority: "HIGH", isBestPractice: false },
+      { text: "All material contracts (customer, supplier, distributor, JV, licensing, partnership) — include any exceeding defined revenue/cost threshold.", priority: "HIGH", isBestPractice: false },
+      { text: "Non-compete, non-solicitation, and exclusivity provisions in any material contract.", priority: "HIGH", isBestPractice: false },
+      { text: "Contracts containing change-of-control provisions, consent requirements, or termination rights triggered by the transaction.", priority: "HIGH", isBestPractice: true, notes: "Critical for PE/M&A — requires advance consent mapping" },
+      { text: "All real property leases and owned property documents (deeds, title insurance, surveys, zoning).", priority: "HIGH", isBestPractice: false },
+      { text: "All personal property leases, equipment financing agreements, and security interests.", priority: "MEDIUM", isBestPractice: false },
+      { text: "UCC lien searches and judgment searches in all relevant jurisdictions.", priority: "HIGH", isBestPractice: true, notes: "Best practice: run within 30 days of closing" },
+      { text: "All debt instruments, credit agreements, guarantees, letters of credit, surety bonds, and hedging arrangements.", priority: "HIGH", isBestPractice: false },
+      { text: "Related-party transaction list and copies of all agreements between the company and any owner, officer, director, family member, or affiliate.", priority: "HIGH", isBestPractice: false },
+      { text: "All regulatory licenses, permits, franchises, and governmental authorizations.", priority: "HIGH", isBestPractice: false },
+      { text: "EEOC, OSHA, ADA, DOL, and other regulatory correspondence and notices received in the last three (3) years.", priority: "HIGH", isBestPractice: false },
+      { text: "Environmental compliance documentation, Phase I/II environmental site assessments, and any remediation history.", priority: "HIGH", isBestPractice: false },
+      { text: "All acquisition or disposition agreements (stock, assets) closed within the last five (5) years with closing sets.", priority: "MEDIUM", isBestPractice: false },
+      { text: "All consultant, independent contractor, and professional services agreements.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Data privacy and cybersecurity policies, breach history, and any regulatory notifications (GDPR, CCPA, etc.).", priority: "HIGH", isBestPractice: true, notes: "Increasingly critical for PE diligence" },
+      { text: "Anti-corruption / FCPA / OFAC compliance program documentation and any violations or self-disclosures.", priority: "HIGH", isBestPractice: false },
+      { text: "Product liability, warranty claims history, and recall documentation.", priority: "MEDIUM", isBestPractice: false },
+      { text: "All franchise agreements and franchise disclosure documents, if applicable.", priority: "MEDIUM", isBestPractice: false },
+    ]
+  },
+  {
+    code: "E",
+    title: "E. Intellectual Property",
+    items: [
+      { text: "Schedule of all patents (issued and pending), registered trademarks, copyrights, and domain names, with application numbers, filing dates, registration numbers, and jurisdictions.", priority: "HIGH", isBestPractice: false },
+      { text: "Assignment records confirming company ownership of all IP developed by employees, contractors, or founders.", priority: "HIGH", isBestPractice: true, notes: "Founders often retain IP if not properly assigned at formation" },
+      { text: "IP license agreements (in-bound and out-bound), including open-source software usage audit.", priority: "HIGH", isBestPractice: true, notes: "Copyleft licenses (GPL) can taint proprietary code" },
+      { text: "Non-disclosure and invention assignment agreements for all current and former employees and contractors.", priority: "HIGH", isBestPractice: false },
+      { text: "Any IP ownership disputes, third-party infringement claims, or freedom-to-operate analyses.", priority: "HIGH", isBestPractice: false },
+      { text: "List of all material trade secrets and description of confidentiality protection measures.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Software code ownership analysis and any third-party code integrated into core product.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Domain name registrations and social media account ownership documentation.", priority: "LOW", isBestPractice: false },
+    ]
+  },
+  {
+    code: "F",
+    title: "F. Human Capital",
+    items: [
+      { text: "Full employee census (name, title, department, location, hire date, compensation, bonus, benefits) in Excel.", priority: "HIGH", isBestPractice: true, notes: "Request 10 days before close for final update" },
+      { text: "Organizational chart for all entities, including open positions.", priority: "HIGH", isBestPractice: false },
+      { text: "Employment agreements, offer letters, and severance/change-of-control agreements for all key employees.", priority: "HIGH", isBestPractice: false },
+      { text: "Non-compete, non-solicitation, and confidentiality agreements for key personnel.", priority: "HIGH", isBestPractice: false },
+      { text: "Payroll registers (monthly detail) for the last two to three years, including employer tax and benefit cost.", priority: "HIGH", isBestPractice: false },
+      { text: "Employee benefits plan documents: health, dental, life, disability, 401(k)/retirement, PTO policy.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Schedule of employee grievances, claims, EEOC charges, or labor actions (last 3 years).", priority: "HIGH", isBestPractice: false },
+      { text: "Staff turnover / attrition data by role and location; regretted vs. unregretted classification.", priority: "HIGH", isBestPractice: false },
+      { text: "Employee handbook and all onboarding/offboarding documents signed by employees.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Incentive and bonus plan documents; commission structures.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Key-man dependency analysis: identify roles where departure would materially impact operations.", priority: "HIGH", isBestPractice: true, notes: "Best practice — often overlooked" },
+      { text: "Results of employee engagement/pulse surveys and exit interview summaries.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Worker classification assessment for all independent contractors (1099 vs. W-2 risk).", priority: "HIGH", isBestPractice: false },
+      { text: "ERISA compliance for any defined benefit or defined contribution plans; Form 5500 filings.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Union agreements or collective bargaining agreements, if applicable.", priority: "HIGH", isBestPractice: false },
+    ]
+  },
+  {
+    code: "G",
+    title: "G. Operations & Technology",
+    items: [
+      { text: "Overview of all technology platforms (ERP, CRM, accounting software, field service management, etc.) with SOPs, data-flow diagrams, and user access logs.", priority: "HIGH", isBestPractice: false },
+      { text: "IT infrastructure diagram: on-premise vs. cloud, vendor dependencies, single points of failure.", priority: "HIGH", isBestPractice: false },
+      { text: "Cybersecurity assessment: penetration test results, SOC 2 / ISO 27001 certification, incident history.", priority: "HIGH", isBestPractice: false },
+      { text: "Business continuity / disaster recovery plan and most recent test results.", priority: "MEDIUM", isBestPractice: false },
+      { text: "List of all software tools used internally with annual cost, owner, and contract terms.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Supply chain analysis: top suppliers by spend, concentration risk, contract terms, pricing escalation clauses.", priority: "HIGH", isBestPractice: false },
+      { text: "Equipment list with age, condition, maintenance records, and depreciation schedules.", priority: "MEDIUM", isBestPractice: false },
+      { text: "WIP schedule, backlog by month (36 months), and explanation of WIP accounting methodology.", priority: "HIGH", isBestPractice: true, notes: "Particularly critical for project-based businesses" },
+      { text: "Operational KPI dashboard: response times, productivity metrics, customer satisfaction scores.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Route/dispatch optimization or capacity utilization reports.", priority: "LOW", isBestPractice: false },
+      { text: "ESG / sustainability policies and any environmental certifications.", priority: "LOW", isBestPractice: true, notes: "Increasingly required by institutional LPs" },
+    ]
+  },
+  {
+    code: "H",
+    title: "H. Sales, Marketing & Customers",
+    items: [
+      { text: "Top 20–25 customers by revenue for the last two (2) to three (3) years with revenue, contract terms, and renewal/churn data.", priority: "HIGH", isBestPractice: true, notes: "Customer concentration >20% in single customer is a key risk flag" },
+      { text: "Customer contracts (current and pipeline); identify any termination-for-convenience or change-of-control rights.", priority: "HIGH", isBestPractice: false },
+      { text: "Revenue breakdown by service/product type, geography, and customer segment (last 36 months).", priority: "HIGH", isBestPractice: false },
+      { text: "Customer win/loss data and churn analysis for the last three (3) years.", priority: "HIGH", isBestPractice: false },
+      { text: "NPS scores, customer satisfaction surveys, and post-service feedback (last 24 months).", priority: "MEDIUM", isBestPractice: false },
+      { text: "CRM or lead-management reports: new vs. existing customers, funnel stages, conversion rates, average deal size.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Marketing strategy, budget by channel, and campaign performance metrics (ROI, CPL, CPA).", priority: "MEDIUM", isBestPractice: false },
+      { text: "Sales organizational chart, headcount, and incentive/commission structure.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Sales cycle length analysis and win-rate by segment (last 3 years).", priority: "MEDIUM", isBestPractice: false },
+      { text: "List of top 25 suppliers with spend, contract terms, and any sole-source dependencies.", priority: "HIGH", isBestPractice: false },
+      { text: "Seasonal revenue trend analysis and predictive models.", priority: "LOW", isBestPractice: false },
+      { text: "Pipeline summary of strategic acquisition targets, if applicable.", priority: "LOW", isBestPractice: false },
+    ]
+  },
+  {
+    code: "I",
+    title: "I. Insurance",
+    items: [
+      { text: "Schedule of all insurance policies (general liability, workers' comp, professional liability / E&O, D&O, cyber, property, umbrella, auto) with carrier, limits, and premiums.", priority: "HIGH", isBestPractice: false },
+      { text: "Copies of all current insurance policies.", priority: "HIGH", isBestPractice: false },
+      { text: "Insurer-issued loss runs for all lines of coverage for the last five (5) years.", priority: "HIGH", isBestPractice: false },
+      { text: "Details of any pending or historical material insurance claims and outcomes.", priority: "HIGH", isBestPractice: false },
+      { text: "Confirmation of cyber liability, management liability (D&O, EPL, fiduciary, crime), and E&O coverage.", priority: "HIGH", isBestPractice: false },
+      { text: "Evidence of key-man life insurance, if any.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Tail coverage (ERPLI) analysis for any claims-made policies if transaction triggers cancellation.", priority: "MEDIUM", isBestPractice: true, notes: "Best practice: plan for rep & warranty insurance" },
+    ]
+  },
+  {
+    code: "J",
+    title: "J. Real Estate",
+    items: [
+      { text: "Schedule of all owned and leased real property: address, sq. ft., function, lease expiration, and annual rent.", priority: "HIGH", isBestPractice: false },
+      { text: "Full copies of all lease agreements and amendments.", priority: "HIGH", isBestPractice: false },
+      { text: "Deeds, title insurance policies, surveys, zoning reports, and property condition reports for owned property.", priority: "HIGH", isBestPractice: false },
+      { text: "Property tax assessments and most recent appraisals.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Certificates of occupancy, zoning variances, and outstanding permitting issues.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Summary of any landlord disputes, threatened lease terminations, or pending condemnations.", priority: "HIGH", isBestPractice: false },
+      { text: "Plans for any lease renewals, expansions, consolidations, or early exits.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Environmental site assessments (Phase I, and Phase II if applicable).", priority: "HIGH", isBestPractice: false },
+    ]
+  },
+  {
+    code: "K",
+    title: "K. Best Practices & Supplemental (Equity)",
+    items: [
+      { text: "Management Quality Assessment: reference checks on CEO, CFO, and key executives from prior employers, investors, and counterparties.", priority: "HIGH", isBestPractice: true, notes: "Often done via third-party firm — critical for PE" },
+      { text: "Background checks and litigation history searches on all principals, directors, and key employees.", priority: "HIGH", isBestPractice: true },
+      { text: "Management's 100-day plan and post-close integration roadmap.", priority: "HIGH", isBestPractice: true },
+      { text: "Sell-side Quality of Earnings (QoE) report review and reconciliation to buy-side findings.", priority: "HIGH", isBestPractice: true },
+      { text: "Normalized Working Capital analysis: define peg, seasonal fluctuations, target range, and NWC peg adjustment mechanism.", priority: "HIGH", isBestPractice: true, notes: "Critical for purchase price adjustment mechanics" },
+      { text: "Earnout structure and milestone definitions (if applicable), with clear measurement criteria.", priority: "HIGH", isBestPractice: true },
+      { text: "Representations & warranties insurance (RWI) underwriting process support documentation.", priority: "MEDIUM", isBestPractice: true, notes: "Best practice for PE buyouts" },
+      { text: "EBITDA run-rate bridge: LTM → Normalized EBITDA → Pro Forma EBITDA with all adjustments documented.", priority: "HIGH", isBestPractice: true },
+      { text: "Digital / AI transformation roadmap: assess any automation in operations, data management, or customer delivery.", priority: "MEDIUM", isBestPractice: true, notes: "Increasingly relevant for value creation thesis" },
+      { text: "ESG due diligence questionnaire (if LP mandate requires).", priority: "LOW", isBestPractice: true },
+      { text: "Competitive landscape analysis: market sizing, share, and differentiation vs. direct competitors.", priority: "MEDIUM", isBestPractice: true },
+      { text: "Customer reference calls: at least 3–5 strategic accounts with structured call guide.", priority: "HIGH", isBestPractice: true },
+    ]
+  },
+];
+```
+
+### DEBT DD TEMPLATE ITEMS
+
+```typescript
+export const DEBT_DD_SECTIONS = [
+  {
+    code: "A",
+    title: "A. Corporate & Entity Verification",
+    items: [
+      { text: "Legal entity structure chart for borrower and all guarantors, with jurisdiction of formation and ownership.", priority: "HIGH", isBestPractice: false },
+      { text: "Good-standing certificates for borrower and each guarantor in state of formation and any state where qualified.", priority: "HIGH", isBestPractice: true, notes: "Obtain within 30 days of closing" },
+      { text: "Organizational documents for borrower and each guarantor entity: charter, bylaws/operating agreement, all amendments.", priority: "HIGH", isBestPractice: false },
+      { text: "Incumbency certificate and resolution authorizing the loan transaction, execution of loan documents, and identification of authorized signatories.", priority: "HIGH", isBestPractice: false },
+      { text: "Capitalization table and ownership structure; identify any minority investors or co-investment vehicles.", priority: "HIGH", isBestPractice: false },
+      { text: "List of all jurisdictions where borrower conducts business (nexus analysis).", priority: "MEDIUM", isBestPractice: false },
+    ]
+  },
+  {
+    code: "B",
+    title: "B. Financial Statements & Credit Analysis",
+    items: [
+      { text: "Audited or reviewed annual financial statements for the last three (3) to five (5) fiscal years.", priority: "HIGH", isBestPractice: false },
+      { text: "Year-to-date monthly P&L and balance sheet (current and prior year comparative).", priority: "HIGH", isBestPractice: false },
+      { text: "LTM financial statements with management commentary.", priority: "HIGH", isBestPractice: false },
+      { text: "General ledger access or export for all periods under review.", priority: "HIGH", isBestPractice: false },
+      { text: "Monthly trial balances for the last two (2) to three (3) years.", priority: "HIGH", isBestPractice: false },
+      { text: "Bank statements and reconciliations for all operating and reserve accounts (last 12–24 months).", priority: "HIGH", isBestPractice: false },
+      { text: "Accounts receivable aging (by customer, by invoice) as of most recent month-end; bad debt history.", priority: "HIGH", isBestPractice: false },
+      { text: "Accounts payable aging (by vendor) as of most recent month-end.", priority: "HIGH", isBestPractice: false },
+      { text: "Inventory reconciliation and aging; write-down history.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Schedule of all existing indebtedness: lender, original amount, current balance, maturity, interest rate, collateral, covenants.", priority: "HIGH", isBestPractice: false },
+      { text: "Debt service coverage ratio (DSCR) calculation for each period under review; sensitivity analysis.", priority: "HIGH", isBestPractice: false },
+      { text: "Fixed charge coverage ratio (FCCR) analysis.", priority: "HIGH", isBestPractice: false },
+      { text: "Leverage ratio analysis: Total Debt / EBITDA, Senior Debt / EBITDA, Net Debt / EBITDA.", priority: "HIGH", isBestPractice: false },
+      { text: "Liquidity analysis: current ratio, quick ratio, cash burn rate.", priority: "HIGH", isBestPractice: false },
+      { text: "Working capital cycle analysis: DSO, DPO, DIO, cash conversion cycle.", priority: "HIGH", isBestPractice: false },
+      { text: "Capital expenditure history and forward capex schedule; maintenance vs. growth split.", priority: "HIGH", isBestPractice: false },
+      { text: "Free cash flow analysis: Adjusted EBITDA – Taxes – Net Interest – Capex – Change in Working Capital.", priority: "HIGH", isBestPractice: false },
+      { text: "Management's financial forecast (3–5 year) with assumption support; stress test / downside case.", priority: "HIGH", isBestPractice: false },
+      { text: "Pro forma financial model reflecting proposed debt structure (sources & uses, DSCR, leverage).", priority: "HIGH", isBestPractice: false },
+      { text: "Seasonal cash flow analysis and identification of peak borrowing periods.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Any off-balance sheet liabilities, contingent obligations, or underfunded pension obligations.", priority: "HIGH", isBestPractice: false },
+    ]
+  },
+  {
+    code: "C",
+    title: "C. Collateral & Security Diligence",
+    items: [
+      { text: "Collateral schedule: itemized list of all assets pledged as security with book value, fair market value, and liquidation value estimates.", priority: "HIGH", isBestPractice: false },
+      { text: "UCC lien search results in all relevant jurisdictions; identify any prior-perfected security interests to be released or subordinated.", priority: "HIGH", isBestPractice: false },
+      { text: "Judgment lien and tax lien searches (federal and state) for borrower and each guarantor.", priority: "HIGH", isBestPractice: false },
+      { text: "Real property title reports, surveys, ALTA title insurance commitments, and appraisals for all mortgaged properties.", priority: "HIGH", isBestPractice: false },
+      { text: "Environmental Phase I assessments for all real property collateral; Phase II if any RECs identified.", priority: "HIGH", isBestPractice: true, notes: "ASTM E1527-21 standard" },
+      { text: "Equipment appraisals (NADA, Blue Book, or independent appraiser) for all titled collateral.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Accounts receivable eligibility analysis under borrowing base formula (if revolving credit).", priority: "HIGH", isBestPractice: false },
+      { text: "Inventory eligibility analysis and field exam results (if revolving credit / ABL).", priority: "HIGH", isBestPractice: false },
+      { text: "Flood zone certification for all real property collateral.", priority: "MEDIUM", isBestPractice: true, notes: "Required for federally regulated lenders" },
+      { text: "Insurance certificates (and endorsements naming lender as loss payee / additional insured) for all collateral.", priority: "HIGH", isBestPractice: false },
+      { text: "Subordination and intercreditor agreements from all existing lienholders.", priority: "HIGH", isBestPractice: false },
+      { text: "Personal guaranty documentation and guarantor financial statements.", priority: "HIGH", isBestPractice: false },
+    ]
+  },
+  {
+    code: "D",
+    title: "D. Legal & Documentation Diligence",
+    items: [
+      { text: "Copies of all existing credit agreements, notes, and loan documents — confirm maturity dates, prepayment penalties, and acceleration triggers.", priority: "HIGH", isBestPractice: false },
+      { text: "All guaranty agreements and review for limitations, carve-outs, or waivers.", priority: "HIGH", isBestPractice: false },
+      { text: "Material contracts reviewed for change-of-control and assignment consent requirements.", priority: "HIGH", isBestPractice: false },
+      { text: "Contracts containing financial maintenance covenants, cross-default provisions, or cross-acceleration triggers.", priority: "HIGH", isBestPractice: false },
+      { text: "All pending or threatened litigation, arbitration, or regulatory investigation disclosures.", priority: "HIGH", isBestPractice: false },
+      { text: "Attorney response letters to auditors for each of the last three (3) fiscal years.", priority: "HIGH", isBestPractice: false },
+      { text: "Regulatory licenses and permits required to operate; confirm current and in good standing.", priority: "HIGH", isBestPractice: false },
+      { text: "Real property lease review: remaining term, renewal options, assignment and sublease rights, landlord default exposure.", priority: "HIGH", isBestPractice: false },
+      { text: "Intellectual property ownership confirmation and any material IP-dependent revenue streams.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Related-party transaction review for arm's-length terms and undisclosed commitments.", priority: "HIGH", isBestPractice: false },
+      { text: "ERISA compliance; pension and post-retirement benefit obligations.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Data privacy and cybersecurity breach history; regulatory compliance (GDPR, CCPA).", priority: "MEDIUM", isBestPractice: false },
+      { text: "Anti-money laundering (AML), OFAC, and KYC compliance documentation for borrower and principals.", priority: "HIGH", isBestPractice: true, notes: "BSA/AML requirement for regulated lenders" },
+      { text: "FCPA / anti-corruption compliance program for borrowers with international operations.", priority: "MEDIUM", isBestPractice: false },
+    ]
+  },
+  {
+    code: "E",
+    title: "E. Tax Diligence",
+    items: [
+      { text: "Federal and state income tax returns for the last three (3) to five (5) years.", priority: "HIGH", isBestPractice: false },
+      { text: "Schedule of any open tax audits, assessments, or tax liens.", priority: "HIGH", isBestPractice: false },
+      { text: "Federal and state tax payment history; evidence of current tax compliance.", priority: "HIGH", isBestPractice: false },
+      { text: "Sales and use tax compliance: nexus analysis, returns, and any outstanding assessments.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Payroll tax compliance: Form 941/940 filings; no delinquent payroll taxes.", priority: "HIGH", isBestPractice: true, notes: "Payroll taxes have priority over most security interests" },
+      { text: "Property tax assessments and payment status for all owned real property.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Schedule of any tax reserves or uncertain tax positions.", priority: "MEDIUM", isBestPractice: false },
+    ]
+  },
+  {
+    code: "F",
+    title: "F. Insurance & Risk Management",
+    items: [
+      { text: "Certificates of insurance for all lines of coverage; endorsements naming lender as additional insured / loss payee.", priority: "HIGH", isBestPractice: false },
+      { text: "Schedule of insurance: carrier, policy number, coverage type, limits, deductibles, premium, expiration.", priority: "HIGH", isBestPractice: false },
+      { text: "Insurer-issued loss runs for all lines for the last five (5) years.", priority: "HIGH", isBestPractice: false },
+      { text: "Confirmation of business interruption / contingent business interruption coverage.", priority: "HIGH", isBestPractice: false },
+      { text: "Key-man life insurance in amount sufficient to cover outstanding loan balance.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Flood insurance for any real property collateral in FEMA Special Flood Hazard Area.", priority: "HIGH", isBestPractice: false },
+      { text: "Cyber liability coverage confirmation.", priority: "MEDIUM", isBestPractice: false },
+    ]
+  },
+  {
+    code: "G",
+    title: "G. Operations & Management Assessment",
+    items: [
+      { text: "Management team bios, background checks, and reference checks on key principals.", priority: "HIGH", isBestPractice: false },
+      { text: "Organizational chart with identification of key-man dependencies.", priority: "HIGH", isBestPractice: false },
+      { text: "Business plan or strategic plan (3–5 year) with narrative explanation of growth thesis.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Customer concentration analysis: top 10 customers as % of revenue, contract terms, renewal rates.", priority: "HIGH", isBestPractice: false },
+      { text: "Supplier concentration analysis: sole-source suppliers and business continuity risk.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Technology infrastructure overview and critical systems dependency.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Business continuity and disaster recovery plan.", priority: "MEDIUM", isBestPractice: false },
+      { text: "Environmental, health & safety compliance and any outstanding violations.", priority: "HIGH", isBestPractice: false },
+      { text: "Government contract compliance (if applicable): FAR/DFARS, set-aside classifications.", priority: "MEDIUM", isBestPractice: false },
+    ]
+  },
+  {
+    code: "H",
+    title: "H. Covenant Compliance & Reporting",
+    items: [
+      { text: "Proposed financial covenant framework: minimum DSCR (e.g., 1.20x), maximum leverage ratio, minimum liquidity.", priority: "HIGH", isBestPractice: true, notes: "Negotiate from Adjusted EBITDA definition outward" },
+      { text: "Proposed reporting requirements: monthly/quarterly financials, annual audit, compliance certificate.", priority: "HIGH", isBestPractice: false },
+      { text: "Borrowing base certificate template and eligibility criteria (if revolving/ABL).", priority: "HIGH", isBestPractice: false },
+      { text: "Affirmative covenants checklist: insurance maintenance, tax compliance, permits, notice of material events.", priority: "HIGH", isBestPractice: false },
+      { text: "Negative covenants checklist: additional indebtedness, liens, asset sales, dividends/distributions, acquisitions.", priority: "HIGH", isBestPractice: false },
+      { text: "Change-of-control definition and trigger events in proposed loan documents.", priority: "HIGH", isBestPractice: false },
+      { text: "Events of default definitions and cure period review.", priority: "HIGH", isBestPractice: false },
+      { text: "Springing vs. maintenance covenant structure analysis based on credit profile.", priority: "MEDIUM", isBestPractice: true },
+    ]
+  },
+  {
+    code: "I",
+    title: "I. Guarantor & Sponsor Diligence",
+    items: [
+      { text: "Guarantor personal financial statements (signed and dated within 120 days).", priority: "HIGH", isBestPractice: false },
+      { text: "Guarantor tax returns for the last two (2) to three (3) years.", priority: "HIGH", isBestPractice: false },
+      { text: "Guarantor credit report and background check.", priority: "HIGH", isBestPractice: false },
+      { text: "Guarantor liquidity analysis: liquid assets vs. total contingent guaranty exposure.", priority: "HIGH", isBestPractice: false },
+      { text: "Sponsor / PE fund overview: fund size, vintage, remaining investment period, LP base, prior credit track record.", priority: "HIGH", isBestPractice: false, notes: "For sponsor-backed deals" },
+      { text: "Equity contribution documentation and confirmation of equity skin in the game.", priority: "HIGH", isBestPractice: false },
+      { text: "Guarantor disclosure of other material contingent liabilities or guarantees.", priority: "HIGH", isBestPractice: false },
+    ]
+  },
+  {
+    code: "J",
+    title: "J. Best Practices & Supplemental (Debt)",
+    items: [
+      { text: "Third-party Quality of Earnings (QoE) report from reputable accounting firm — required for deals above $10M.", priority: "HIGH", isBestPractice: true, notes: "Best practice — not always provided on smaller deals" },
+      { text: "Third-party field examination (field audit) of accounts receivable and inventory for ABL facilities.", priority: "HIGH", isBestPractice: true },
+      { text: "Independent property appraisal (FIRREA-compliant) for all real property collateral.", priority: "HIGH", isBestPractice: true, notes: "Required for regulated lenders over de minimis thresholds" },
+      { text: "Environmental indemnity agreement from borrower (and guarantor) for all real property collateral.", priority: "HIGH", isBestPractice: true },
+      { text: "Springing deposit account control agreements (DACAs) on all material operating accounts.", priority: "HIGH", isBestPractice: true, notes: "Best practice for senior secured lenders" },
+      { text: "UCC search bring-down within 3–5 business days of closing.", priority: "HIGH", isBestPractice: true },
+      { text: "Insurance bring-down certificate at closing with lender named as loss payee / additional insured.", priority: "HIGH", isBestPractice: true },
+      { text: "OFAC screening of borrower, principals, and beneficial owners (25%+ threshold).", priority: "HIGH", isBestPractice: true },
+      { text: "Beneficial ownership certification (FinCEN rule) for entity borrowers.", priority: "HIGH", isBestPractice: true, notes: "Regulatory requirement for covered financial institutions" },
+      { text: "Post-closing covenant: delivery of audited financials within 90–120 days of fiscal year end.", priority: "MEDIUM", isBestPractice: true },
+      { text: "Lender's counsel legal opinion on due authorization, enforceability, and perfection of security interests.", priority: "HIGH", isBestPractice: true },
+      { text: "Sensitivity analysis: DSCR at revenue -10%, -20%, and -30% scenarios vs. proposed covenants.", priority: "HIGH", isBestPractice: true, notes: "Best practice for credit committee presentation" },
+    ]
+  },
+];
+```
+
+---
+
+## API ENDPOINTS
+
+Add the following REST endpoints to the Express backend:
+
+```
+// Checklist CRUD
+POST   /api/deals/:dealId/dd-checklists            — Create checklist from template for a deal
+GET    /api/deals/:dealId/dd-checklists            — List all checklists for a deal
+GET    /api/dd-checklists/:checklistId             — Get checklist with all items
+DELETE /api/dd-checklists/:checklistId             — Archive checklist
+
+// Item Management
+PATCH  /api/dd-checklist-items/:itemId             — Update item (status, responsible party, notes, dates, path)
+PATCH  /api/dd-checklists/:checklistId/bulk-update — Bulk update multiple items
+POST   /api/dd-checklists/:checklistId/items       — Add custom item
+DELETE /api/dd-checklist-items/:itemId             — Delete custom item only
+
+// Progress & Analytics
+GET    /api/dd-checklists/:checklistId/progress    — Completion stats by section and priority
+GET    /api/dd-checklists/:checklistId/gaps        — Return all OPEN or IN_PROGRESS HIGH priority items
+
+// Export
+GET    /api/dd-checklists/:checklistId/export/excel  — Download as .xlsx
+GET    /api/dd-checklists/:checklistId/export/pdf    — Download as .pdf
+
+// Templates
+GET    /api/dd-checklist-templates                 — List available templates
+```
+
+---
+
+## FRONTEND COMPONENTS
+
+### Page: Due Diligence Checklists (`/business-transactions/dd-checklists`)
+
+This is the **main landing page** when a user clicks "Due Diligence Checklists" in the left nav. It should:
+
+1. Show a deal selector at the top (dropdown to pick which deal's checklists to view)
+2. Display cards for any existing checklists for that deal
+3. Offer a "Create New Checklist" button that opens a modal to choose Equity or Debt track
+
+**Create Checklist Modal:**
+- Title field (auto-populated: `[Deal Name] - [Track] DD Checklist`)
+- Track selector: Two large cards — "EQUITY INVESTMENT" and "DEBT INVESTMENT" with descriptions
+- Button: "Generate Checklist" — creates all items from the seed template
+
+---
+
+### Component: `DDChecklistView`
+
+The main checklist view after creation. Layout:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  [Deal Name] — Equity DD Checklist         [Export ▾] [Ava ✨]  │
+├──────────┬──────────────────────────────────────────────────────┤
+│ SECTIONS │  HEADER: Progress Bar + Stats                        │
+│ sidebar  │  Total: 120 | ✅ 45 Provided | ⏳ 32 In Progress     │
+│          │  ❌ 43 Open | ⚠️ 8 High Priority Open               │
+│  A. Corp │  ─────────────────────────────────────────────       │
+│  B. Fin  │  FILTER BAR:                                         │
+│  C. Tax  │  [All Sections ▾] [All Priorities ▾] [All Status ▾] │
+│  D. Legal│  [🔍 Search items...]  [☆ Best Practices Only]      │
+│  E. IP   │  ─────────────────────────────────────────────       │
+│  F. HR   │  ITEM TABLE (see below)                              │
+│  G. Ops  │                                                      │
+│  H. Sales│                                                      │
+│  I. Ins  │                                                      │
+│  J. RE   │                                                      │
+│  K. Best │                                                      │
+└──────────┴──────────────────────────────────────────────────────┘
+```
+
+**Section Sidebar:**
+- Each section shows a mini progress bar and item count
+- Clicking jumps to that section in the table
+- Color dot: red if any HIGH OPEN items, yellow if all MEDIUM, green if fully provided
+
+**Item Table Columns:**
+| # | Item Description | Priority | Status | Responsible Party | Date Received | Data Room Path | Notes |
+|---|---|---|---|---|---|---|---|
+
+- **Priority** badge: red pill (H), orange (M), green (L)
+- **Status** dropdown (inline edit): Open / In Progress / Partial / Provided / N/A — color coded
+- **Best Practice** items get a ⭐ gold star icon and subtle gold left border
+- Clicking any row expands it for full notes editing
+- Long item text truncates with "..." and expand-on-click
+
+**Ava AI Panel (right drawer, triggered by ✨ button):**
+Ava analyzes the checklist and surfaces:
+- "⚠️ 8 HIGH priority items are still OPEN — these should be prioritized before LOI."
+- "💡 Section C (Tax) is 0% complete — recommend engaging tax counsel immediately."
+- "🔍 3 items in Section D involve change-of-control consents that may need advance notice to counterparties."
+- Allow user to ask: "What items are blocking closing?" or "Summarize what's missing in the financial section."
+
+---
+
+### Component: `DDProgressDashboard`
+
+A summary card shown on the Transaction Dashboard for each deal that has a checklist:
+
+```
+[Equity DD]           [Debt DD]
+  67% Complete          23% Complete
+  ████████░░░░          ███░░░░░░░░░
+  8 High Open ⚠️        14 High Open ⚠️
+  [View Checklist →]    [View Checklist →]
+```
+
+---
+
+## VISUAL DESIGN REQUIREMENTS
+
+Match the existing Sentinel dark UI:
+
+- **Background:** `#0F1623` (page), `#131D2E` (cards/panels)
+- **Borders:** `#1E2D45` (subtle), `#2A3F5F` (active)
+- **Primary Text:** `#E8EDF5`
+- **Secondary Text:** `#7A8FA8`
+- **Accent Gold:** `#C9A84C`
+- **Navy:** `#1B2A4A`
+- **Priority HIGH:** Background `#2D1515`, text/badge `#E05252`
+- **Priority MEDIUM:** Background `#2D2015`, text/badge `#E0943A`
+- **Priority LOW:** Background `#152D1F`, text/badge `#52C279`
+- **Status OPEN:** `#E05252` (red)
+- **Status IN_PROGRESS:** `#E0943A` (orange)
+- **Status PARTIAL:** `#C9A84C` (gold)
+- **Status PROVIDED:** `#52C279` (green)
+- **Status N/A:** `#7A8FA8` (gray)
+- **Best Practice Items:** Left border `3px solid #C9A84C`, ⭐ icon in gold
+- **Section Headers:** `#1B2A4A` background, `#C9A84C` gold text, bold
+
+Use `Arial` or `Inter` as the font. No rounded corners on table rows — use subtle bottom borders only. Hover state on rows: `#1A2840`.
+
+---
+
+## EXPORT FUNCTIONALITY
+
+### Excel Export
+Generate a `.xlsx` file using the `exceljs` npm package:
+- Sheet 1: Summary tab with progress stats and deal info
+- Sheet 2: Full checklist (Equity or Debt track)
+- Columns: #, Section, Item, Priority (color-coded), Status, Responsible Party, Date Received, Data Room Path, Notes
+- Header row: Navy fill (#1B2A4A), gold text (#C9A84C), bold
+- Priority color coding: matching the app colors
+- Freeze panes on row 1
+- Auto-fit column widths
+- Filename: `[DealName]_[Track]_DD_Checklist_[YYYY-MM-DD].xlsx`
+
+### PDF Export
+Generate a `.pdf` using `puppeteer` or `pdfmake`:
+- Cover page: Sentinel Counsel logo, deal name, track label, date, generated by
+- Subsequent pages: Checklist table organized by section
+- Footer: Sentinel Counsel LLP | Confidential | Page X of Y
+
+---
+
+## AVA AI INTEGRATION
+
+Add a `POST /api/dd-checklists/:checklistId/ava-analysis` endpoint that:
+1. Fetches all checklist items and their statuses
+2. Sends to the LLM with this system prompt:
+
+```
+You are Ava, an AI legal and compliance intelligence assistant for Sentinel Counsel LLP.
+You are analyzing a due diligence checklist for an investment transaction.
+
+Analyze the checklist completion data and provide:
+1. A concise risk summary (2-3 sentences)
+2. A bulleted list of the top 3-5 blocking items (HIGH priority, OPEN status)
+3. Any sections that are critically incomplete (<25% complete)
+4. Any patterns or risks you observe across multiple open items
+5. Recommended next steps
+
+Be specific, professional, and concise. Reference item numbers where possible.
+Format your response in clear sections.
+```
+
+3. Return the analysis to the frontend for display in the Ava drawer panel
+
+---
+
+## BUILD ORDER
+
+Build in this sequence to avoid dependency issues:
+
+1. **Database** — Run Prisma migration for the 3 new tables
+2. **Seed data** — Create `ddChecklistTemplates.ts` seed file with all items above
+3. **API endpoints** — Build all 10 REST endpoints
+4. **DDChecklistView component** — Main table UI with inline editing
+5. **Section sidebar** — With progress indicators
+6. **Filter bar** — Section, priority, status filters + search
+7. **Create Checklist modal** — With track selector
+8. **Ava AI panel** — Right drawer with analysis endpoint
+9. **Progress Dashboard card** — For Transaction Dashboard
+10. **Excel export** — Using exceljs
+11. **PDF export** — Using pdfmake
+12. **Left nav link** — Wire up "Due Diligence Checklists" in the sidebar
+
+---
+
+## QUALITY CHECKLIST
+
+Before considering this feature complete, verify:
+
+- [ ] All ~120 Equity items are seeded correctly across 11 sections
+- [ ] All ~100 Debt items are seeded correctly across 10 sections
+- [ ] Status dropdown updates persist immediately (optimistic UI)
+- [ ] Progress bar recalculates in real time as items are updated
+- [ ] Section sidebar counts update as items are checked off
+- [ ] Filter by priority shows correct items
+- [ ] "Best Practices Only" filter works (☆ toggle)
+- [ ] Ava analysis returns actionable insights
+- [ ] Excel export downloads with correct formatting
+- [ ] PDF export generates a professional document
+- [ ] Mobile-responsive (tablet minimum)
+- [ ] No TypeScript errors
+- [ ] All API routes return proper error handling (404, 400, 500)
