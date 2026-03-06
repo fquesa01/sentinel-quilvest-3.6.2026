@@ -12823,6 +12823,18 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
+  app.post("/api/deal-templates/seed-pe-templates", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+    try {
+      const { seedEquityDDTemplate, seedDebtDDTemplate } = await import("./scripts/seed-deal-templates");
+      const equity = await seedEquityDDTemplate();
+      const debt = await seedDebtDDTemplate();
+      res.json({ message: "PE templates seeded successfully", equity: equity?.name, debt: debt?.name });
+    } catch (error: any) {
+      console.error("Error seeding PE templates:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Apply template to a deal - creates a checklist
   app.post("/api/deals/:dealId/apply-template/:templateId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {
