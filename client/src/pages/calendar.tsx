@@ -1015,7 +1015,11 @@ export default function CalendarPage() {
         <div className="sticky bottom-0 flex items-center justify-between px-4 py-3 border-t bg-background z-50">
           <Button
             variant="outline"
-            onClick={goToToday}
+            onClick={() => {
+              setCurrentDate(new Date());
+              setMobileView("day");
+              scrollDayViewToCurrentHour();
+            }}
             className="font-semibold"
             data-testid="button-mobile-today"
           >
