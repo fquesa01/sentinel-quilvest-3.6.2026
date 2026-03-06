@@ -92,42 +92,91 @@ export async function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  const config = await getOidcConfig();
-
-  const verify: VerifyFunction = async (
-    tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
-    verified: passport.AuthenticateCallback
-  ) => {
-    const dbUser = await upsertUser(tokens.claims());
-    updateUserSession(dbUser, tokens);
-    verified(null, dbUser);
-  };
-
-  // Keep track of registered strategies
-  const registeredStrategies = new Set<string>();
-
-  // Helper function to ensure strategy exists for a domain
-  const ensureStrategy = (domain: string) => {
-    const strategyName = `replitauth:${domain}`;
-    if (!registeredStrategies.has(strategyName)) {
-      const strategy = new Strategy(
-        {
-          name: strategyName,
-          config,
-          scope: "openid email profile offline_access",
-          callbackURL: `https://${domain}/api/callback`,
-        },
-        verify,
-      );
-      passport.use(strategy);
-      registeredStrategies.add(strategyName);
-    }
-  };
-
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
-  // Microsoft OAuth Strategy
+  // Replit OIDC Auth - only available when running on Replit
+  let config: Awaited<ReturnType<typeof getOidcConfig>> | null = null;
+  const registeredStrategies = new Set<string>();
+
+  if (process.env.REPL_ID) {
+    config = await getOidcConfig();
+
+    const verify: VerifyFunction = async (
+      tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
+      verified: passport.AuthenticateCallback
+    ) => {
+      const dbUser = await upsertUser(tokens.claims());
+      updateUserSession(dbUser, tokens);
+      verified(null, dbUser);
+    };
+
+    // Helper function to ensure strategy exists for a domain
+    const ensureStrategy = (domain: string) => {
+      const strategyName = `replitauth:${domain}`;
+      if (!registeredStrategies.has(strategyName)) {
+        const strategy = new Strategy(
+          {
+            name: strategyName,
+            config: config!,
+            scope: "openid email profile offline_access",
+            callbackURL: `https://${domain}/api/callback`,
+          },
+          verify,
+        );
+        passport.use(strategy);
+        registeredStrategies.add(strategyName);
+      }
+    };
+
+    app.get("/api/login", (req, res, next) => {
+      ensureStrategy(req.hostname);
+      passport.authenticate(`replitauth:${req.hostname}`, {
+        prompt: "login consent",
+        scope: ["openid", "email", "profile", "offline_access"],
+      })(req, res, next);
+    });
+
+    app.get("/api/callback", (req, res, next) => {
+      ensureStrategy(req.hostname);
+      passport.authenticate(`replitauth:${req.hostname}`, {
+        successReturnToOrRedirect: "/",
+        failureRedirect: "/api/login",
+      })(req, res, next);
+    });
+
+    app.get("/api/logout", (req, res) => {
+      req.logout(() => {
+        res.redirect(
+          client.buildEndSessionUrl(config!, {
+            client_id: process.env.REPL_ID!,
+            post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
+          }).href
+        );
+      });
+    });
+
+    console.log("[Auth] Replit OIDC auth configured");
+  } else {
+    console.log("[Auth] REPL_ID not found - Replit OIDC disabled, using Microsoft OAuth only");
+
+    // Fallback login/logout routes when not on Replit
+    app.get("/api/login", (req, res) => {
+      if (process.env.MICROSOFT_CLIENT_ID) {
+        res.redirect("/api/auth/microsoft");
+      } else {
+        res.status(501).json({ message: "No auth provider configured" });
+      }
+    });
+
+    app.get("/api/logout", (req, res) => {
+      req.logout(() => {
+        res.redirect("/");
+      });
+    });
+  }
+
+  // Microsoft OAuth Strategy - works on any platform
   if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
     passport.use(new MicrosoftStrategy({
         clientID: process.env.MICROSOFT_CLIENT_ID,
@@ -139,11 +188,11 @@ export async function setupAuth(app: Express) {
         try {
           // Check if user exists with this Microsoft ID
           let user = await storage.getUserByMicrosoftId(profile.id);
-          
+
           if (!user) {
             // Check if a user with this email already exists (account linking)
             const existingUser = await storage.getUserByEmail(profile.emails?.[0]?.value);
-            
+
             if (existingUser) {
               // Link Microsoft account to existing user
               user = await storage.updateUser(existingUser.id, {
@@ -162,7 +211,7 @@ export async function setupAuth(app: Express) {
               user = await storage.createUser(userData);
             }
           }
-          
+
           // Update session with Microsoft tokens
           const userWithTokens = {
             ...user,
@@ -171,7 +220,7 @@ export async function setupAuth(app: Express) {
             claims: { sub: user.id, email: user.email },
             expires_at: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
           };
-          
+
           done(null, userWithTokens);
         } catch (error) {
           console.error('[Microsoft Auth] Error:', error);
@@ -179,38 +228,8 @@ export async function setupAuth(app: Express) {
         }
       }
     ));
-  }
 
-  app.get("/api/login", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      prompt: "login consent",
-      scope: ["openid", "email", "profile", "offline_access"],
-    })(req, res, next);
-  });
-
-  app.get("/api/callback", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      successReturnToOrRedirect: "/",
-      failureRedirect: "/api/login",
-    })(req, res, next);
-  });
-
-  app.get("/api/logout", (req, res) => {
-    req.logout(() => {
-      res.redirect(
-        client.buildEndSessionUrl(config, {
-          client_id: process.env.REPL_ID!,
-          post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
-        }).href
-      );
-    });
-  });
-
-  // Microsoft OAuth routes - only register if strategy is configured
-  if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
-    app.get("/api/auth/microsoft", 
+    app.get("/api/auth/microsoft",
       passport.authenticate("microsoft", {
         scope: ["user.read"]
       })
@@ -225,6 +244,8 @@ export async function setupAuth(app: Express) {
         res.redirect("/");
       }
     );
+
+    console.log("[Auth] Microsoft OAuth configured");
   }
 }
 
