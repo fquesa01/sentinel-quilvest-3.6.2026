@@ -240,9 +240,11 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
     }
 
     const fileType = doc.fileType?.toLowerCase() || '';
-    const nonOcrTypes = ['txt', 'csv', 'json', 'xml', 'html', 'htm', 'md'];
+    const fileExt = doc.fileName?.toLowerCase().split('.').pop() || '';
+    const nonOcrExtensions = ['txt', 'csv', 'json', 'xml', 'html', 'htm', 'md'];
+    const nonOcrMimeTypes = ['text/plain', 'text/csv', 'application/json', 'application/xml', 'text/xml', 'text/html', 'text/markdown'];
     
-    if (nonOcrTypes.some(t => fileType.includes(t))) {
+    if (nonOcrExtensions.includes(fileExt) || nonOcrMimeTypes.includes(fileType)) {
       await db.update(dataRoomDocuments)
         .set({ 
           ocrStatus: "not_applicable",
