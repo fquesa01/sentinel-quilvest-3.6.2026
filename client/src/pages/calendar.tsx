@@ -1568,7 +1568,76 @@ export default function CalendarPage() {
         </Button>
       </div>
       <div className="flex-1 flex gap-4 min-h-0">
-        <div className="w-64 flex-shrink-0 space-y-4">
+        <Card className="flex-1 flex flex-col min-h-0">
+          <div className="flex items-center justify-between p-4 border-b">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" onClick={() => navigate("prev")} data-testid="button-prev">
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => navigate("next")} data-testid="button-next">
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" onClick={goToToday} data-testid="button-today">
+                Today
+              </Button>
+              <h2 className="text-lg font-semibold ml-2">
+                {view === "month" && format(currentDate, "MMMM yyyy")}
+                {view === "week" && `${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`}
+                {view === "day" && format(currentDate, "MMMM d, yyyy")}
+                {view === "list" && `${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`}
+              </h2>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant={view === "day" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("day")}
+                data-testid="button-view-day"
+              >
+                Day
+              </Button>
+              <Button
+                variant={view === "week" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("week")}
+                data-testid="button-view-week"
+              >
+                Week
+              </Button>
+              <Button
+                variant={view === "month" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("month")}
+                data-testid="button-view-month"
+              >
+                Month
+              </Button>
+              <Button
+                variant={view === "list" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setView("list")}
+                data-testid="button-view-list"
+              >
+                List
+              </Button>
+            </div>
+          </div>
+          
+          {isLoading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <>
+              {view === "month" && renderMonthView()}
+              {view === "week" && renderWeekView()}
+              {view === "day" && renderDayView()}
+              {view === "list" && renderListView()}
+            </>
+          )}
+        </Card>
+
+        <div className="w-64 flex-shrink-0 space-y-4 overflow-y-auto">
           <Card>
             {renderMiniCalendar()}
           </Card>
@@ -1694,75 +1763,6 @@ export default function CalendarPage() {
             </CardContent>
           </Card>
         </div>
-
-        <Card className="flex-1 flex flex-col min-h-0">
-          <div className="flex items-center justify-between p-4 border-b">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={() => navigate("prev")} data-testid="button-prev">
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="icon" onClick={() => navigate("next")} data-testid="button-next">
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" onClick={goToToday} data-testid="button-today">
-                Today
-              </Button>
-              <h2 className="text-lg font-semibold ml-2">
-                {view === "month" && format(currentDate, "MMMM yyyy")}
-                {view === "week" && `${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`}
-                {view === "day" && format(currentDate, "MMMM d, yyyy")}
-                {view === "list" && `${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`}
-              </h2>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant={view === "day" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setView("day")}
-                data-testid="button-view-day"
-              >
-                Day
-              </Button>
-              <Button
-                variant={view === "week" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setView("week")}
-                data-testid="button-view-week"
-              >
-                Week
-              </Button>
-              <Button
-                variant={view === "month" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setView("month")}
-                data-testid="button-view-month"
-              >
-                Month
-              </Button>
-              <Button
-                variant={view === "list" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setView("list")}
-                data-testid="button-view-list"
-              >
-                List
-              </Button>
-            </div>
-          </div>
-          
-          {isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
-          ) : (
-            <>
-              {view === "month" && renderMonthView()}
-              {view === "week" && renderWeekView()}
-              {view === "day" && renderDayView()}
-              {view === "list" && renderListView()}
-            </>
-          )}
-        </Card>
       </div>
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent 
