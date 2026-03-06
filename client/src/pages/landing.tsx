@@ -101,13 +101,14 @@ export default function Landing() {
                   </Button>
                 </Link>
               ) : (
-                <Button 
-                  size="sm"
-                  variant="outline"
-                  onClick={() => window.location.href = "/api/login"}
-                  className="border-[#5ba897] text-[#5ba897] font-medium tracking-wide min-w-[140px] bg-transparent text-[13px] hover:bg-[#5ba897]/20"
-                  data-testid="button-sign-in"
-                >Client Login</Button>
+                <Link href="/login">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-[#5ba897] text-[#5ba897] font-medium tracking-wide min-w-[140px] bg-transparent text-[13px] hover:bg-[#5ba897]/20"
+                    data-testid="button-sign-in"
+                  >Client Login</Button>
+                </Link>
               )}
             </div>
           </div>

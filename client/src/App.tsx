@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
+import Login from "@/pages/login";
 import StartPage from "@/pages/start";
 import Dashboard from "@/pages/dashboard";
 import Communications from "@/pages/communications";
@@ -76,6 +77,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 
 
 function AuthenticatedApp() {
+  const { signOut } = useAuth();
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
@@ -97,7 +99,7 @@ function AuthenticatedApp() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => window.location.href = "/api/logout"}
+                    onClick={() => signOut()}
                     data-testid="button-sign-out"
                     aria-label="Sign out"
                   >
@@ -212,6 +214,7 @@ function App() {
             ) : (
               <Switch>
                 <Route path="/" component={Landing} />
+                <Route path="/login" component={Login} />
                 <Route path="/report" component={WhistleblowerReport} />
                 <Route path="/report/confirmation" component={WhistleblowerConfirmation} />
                 <Route path="/report/lookup" component={WhistleblowerLookup} />
