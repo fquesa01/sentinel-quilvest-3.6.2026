@@ -314,18 +314,10 @@ async function writeMemoSections(
   let lastError: Error | null = null;
   let response: Anthropic.Messages.Message | null = null;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) {
-      const backoffMs = Math.min(10000 * Math.pow(2, attempt - 1), 30000);
-      console.log(`[MemoGen] Retry ${attempt}/${maxRetries} after ${backoffMs}ms backoff...`);
-      await new Promise(resolve => setTimeout(resolve, backoffMs));
-    }
-
-    try {
-      response = await anthropic.messages.create({
-        model: "claude-sonnet-4-5",
-        max_tokens: 16000,
-        system: `You are a senior investment professional writing an investor memo for a PE deal. Write in a professional, analytical tone suitable for an investment committee presentation.
+  const requestParams = {
+    model: "claude-sonnet-4-5" as const,
+    max_tokens: 16000,
+    system: `You are a senior investment professional writing an investor memo for a PE deal. Write in a professional, analytical tone suitable for an investment committee presentation.
 
 The memo should be comprehensive but concise. Use specific numbers from the data. Cite research sources where relevant.
 
@@ -334,44 +326,66 @@ Sector: ${context.sector}
 Deal type: ${context.dealType}
 Geography: ${context.geography}
 Description: ${context.targetDescription || "N/A"}`,
-        messages: [
-          {
-            role: "user",
-            content: `Write all 13 sections of the investor memo using this data:\n\n${truncatedPayload}`,
+    messages: [
+      {
+        role: "user" as const,
+        content: `Write all 13 sections of the investor memo using this data:\n\n${truncatedPayload}`,
+      },
+    ],
+    tools: [
+      {
+        name: "write_memo" as const,
+        description: "Write the complete investor memo sections",
+        input_schema: {
+          type: "object" as const,
+          properties: {
+            executive_summary: { type: "string" as const },
+            company_overview: { type: "string" as const },
+            industry_market_analysis: { type: "string" as const },
+            competitive_intelligence: { type: "string" as const },
+            financial_performance: { type: "string" as const },
+            financial_projections: { type: "string" as const },
+            valuation: { type: "string" as const },
+            technology_innovation: { type: "string" as const },
+            value_creation_plan: { type: "string" as const },
+            management_organization: { type: "string" as const },
+            risk_factors: { type: "string" as const },
+            investment_merits: { type: "string" as const },
+            appendix: { type: "string" as const },
           },
-        ],
-        tools: [
-          {
-            name: "write_memo",
-            description: "Write the complete investor memo sections",
-            input_schema: {
-              type: "object" as const,
-              properties: {
-                executive_summary: { type: "string" as const },
-                company_overview: { type: "string" as const },
-                industry_market_analysis: { type: "string" as const },
-                competitive_intelligence: { type: "string" as const },
-                financial_performance: { type: "string" as const },
-                financial_projections: { type: "string" as const },
-                valuation: { type: "string" as const },
-                technology_innovation: { type: "string" as const },
-                value_creation_plan: { type: "string" as const },
-                management_organization: { type: "string" as const },
-                risk_factors: { type: "string" as const },
-                investment_merits: { type: "string" as const },
-                appendix: { type: "string" as const },
-              },
-              required: [
-                "executive_summary", "company_overview", "industry_market_analysis",
-                "competitive_intelligence", "financial_performance", "financial_projections",
-                "valuation", "technology_innovation", "value_creation_plan",
-                "management_organization", "risk_factors", "investment_merits", "appendix",
-              ],
-            },
-          },
-        ],
-        tool_choice: { type: "tool", name: "write_memo" },
-      }, { timeout: 600000 });
+          required: [
+            "executive_summary", "company_overview", "industry_market_analysis",
+            "competitive_intelligence", "financial_performance", "financial_projections",
+            "valuation", "technology_innovation", "value_creation_plan",
+            "management_organization", "risk_factors", "investment_merits", "appendix",
+          ],
+        },
+      },
+    ],
+    tool_choice: { type: "tool" as const, name: "write_memo" as const },
+  };
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const backoffMs = Math.min(10000 * Math.pow(2, attempt - 1), 30000);
+      console.log(`[MemoGen] Retry ${attempt}/${maxRetries} after ${backoffMs}ms backoff...`);
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
+
+    try {
+      console.log(`[MemoGen] Starting streaming write (attempt ${attempt + 1})...`);
+      const stream = anthropic.messages.stream(requestParams);
+
+      let tokenCount = 0;
+      stream.on('text', () => {
+        tokenCount++;
+        if (tokenCount % 500 === 0) {
+          console.log(`[MemoGen] Streaming progress: ~${tokenCount} tokens received...`);
+        }
+      });
+
+      response = await stream.finalMessage();
+      console.log(`[MemoGen] Streaming complete: ${response.usage?.output_tokens || tokenCount} output tokens`);
       break;
     } catch (err: any) {
       lastError = err;
