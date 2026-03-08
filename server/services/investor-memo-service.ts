@@ -56,6 +56,7 @@ export async function generateInvestorMemo(
   let geography: string;
   let documents: DealDocumentInput[];
   let targetDescription: string | null = null;
+  let dealSettings: Record<string, any> = {};
 
   if (sourceType === "pe_deal") {
     const [deal] = await db.select().from(peDeals).where(eq(peDeals.id, dealId));
@@ -66,6 +67,7 @@ export async function generateInvestorMemo(
     dealType = deal.dealType;
     geography = deal.geography;
     targetDescription = deal.targetDescription;
+    dealSettings = {};
 
     const docs = await db.select().from(peDealDocuments).where(eq(peDealDocuments.dealId, dealId));
     documents = docs.map((d) => ({
@@ -81,6 +83,7 @@ export async function generateInvestorMemo(
     sector = deal.dealType || "General";
     dealType = deal.dealType || "acquisition";
     geography = "United States";
+    dealSettings = (deal.settings as Record<string, any>) || {};
 
     const roomsList = await db.select().from(dataRooms).where(eq(dataRooms.dealId, dealId));
     const allDocs: DealDocumentInput[] = [];
@@ -222,13 +225,15 @@ export async function generateInvestorMemo(
       { dealName, sector, dealType, geography, targetDescription }
     );
 
+    const rawOverall = calculateOverallScore(extraction, industryResearch, techAssessment, model);
+
     await db.update(investorMemos).set({
       status: "review",
       sections: sections as any,
       industryResearch: industryResearch as any,
       techAssessment: techAssessment as any,
-      innovationScore: techAssessment?.innovationScore || null,
-      overallScore: calculateOverallScore(extraction, industryResearch, techAssessment, model),
+      innovationScore: techAssessment?.innovationScore != null ? Math.round(techAssessment.innovationScore) : null,
+      overallScore: rawOverall != null ? Math.round(rawOverall) : null,
       executiveSummary: sections.executive_summary?.content || null,
       investmentThesis: extractThesis(sections.executive_summary?.content || ""),
       metadata: {
@@ -240,6 +245,20 @@ export async function generateInvestorMemo(
       },
       updatedAt: new Date(),
     }).where(eq(investorMemos.id, memo.id));
+
+    if (sourceType !== "pe_deal") {
+      try {
+        await db.update(deals).set({
+          settings: {
+            ...dealSettings,
+            memoStatus: "generated",
+            memoError: null,
+          },
+        }).where(eq(deals.id, dealId));
+      } catch (settingsErr) {
+        console.error("[MemoGen] Non-fatal: failed to update deal settings after success:", settingsErr);
+      }
+    }
 
     await updateRunStage(run.id, "writing", "complete");
     await db.update(memoGenerationRuns).set({
@@ -259,6 +278,17 @@ export async function generateInvestorMemo(
       status: "failed",
       errorMessage: error.message,
     }).where(eq(memoGenerationRuns.id, run.id));
+    if (sourceType !== "pe_deal") {
+      try {
+        await db.update(deals).set({
+          settings: {
+            ...dealSettings,
+            memoStatus: "failed",
+            memoError: error.message,
+          },
+        }).where(eq(deals.id, dealId));
+      } catch {}
+    }
     throw error;
   }
 }
