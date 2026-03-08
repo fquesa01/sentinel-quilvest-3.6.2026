@@ -105,7 +105,7 @@ export default function InvestorMemoBuilder() {
   const sectionKeys = Object.keys(sections);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="border-b px-6 py-4 flex items-center justify-between bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex items-center gap-4">
@@ -190,7 +190,7 @@ export default function InvestorMemoBuilder() {
 
         {/* Content area */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
             <div className="border-b px-6">
               <TabsList className="h-10">
                 <TabsTrigger value="memo" className="gap-2">

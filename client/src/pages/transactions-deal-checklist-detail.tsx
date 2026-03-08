@@ -239,7 +239,8 @@ export default function TransactionsDealChecklistDetail() {
 
   const autoMatchMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", `/api/deal-checklists/${id}/auto-match`);
+      const res = await apiRequest("POST", `/api/deal-checklists/${id}/auto-match`);
+      return res.json();
     },
     onSuccess: async (data: any) => {
       await Promise.all([
