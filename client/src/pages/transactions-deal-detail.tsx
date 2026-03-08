@@ -538,7 +538,27 @@ export default function TransactionsDealDetail() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="stagger-2">
-          <ScrollArea className="w-full">
+          <div className="md:hidden mb-4">
+            <Select value={activeTab} onValueChange={setActiveTab}>
+              <SelectTrigger data-testid="select-tab-mobile" aria-label="Select deal section">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="overview">Overview</SelectItem>
+                <SelectItem value="terms">Deal Terms</SelectItem>
+                <SelectItem value="parties">Parties</SelectItem>
+                <SelectItem value="milestones">Milestones</SelectItem>
+                <SelectItem value="dataroom">Data Room</SelectItem>
+                <SelectItem value="documents">Documents</SelectItem>
+                <SelectItem value="checklists">Checklists</SelectItem>
+                <SelectItem value="issues">Issues</SelectItem>
+                <SelectItem value="research">Research</SelectItem>
+                <SelectItem value="closing">Closing</SelectItem>
+                <SelectItem value="reports">Reports</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <TabsList className="flex w-max gap-1">
               <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="terms" data-testid="tab-terms">Deal Terms</TabsTrigger>
@@ -552,7 +572,7 @@ export default function TransactionsDealDetail() {
               <TabsTrigger value="closing" data-testid="tab-closing">Closing</TabsTrigger>
               <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
             </TabsList>
-          </ScrollArea>
+          </div>
 
           <TabsContent value="overview" className="mt-6 space-y-6 stagger-3">
             {(() => {
