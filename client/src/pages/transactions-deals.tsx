@@ -207,15 +207,21 @@ export default function TransactionsDeals() {
       const result = await apiRequest("DELETE", `/api/deals/${dealId}`);
       return { dealId, result };
     },
-    onSuccess: ({ dealId }) => {
-      // Immediately add to deleted set for instant UI update
+    onMutate: (dealId) => {
       setDeletedDealIds(prev => new Set([...Array.from(prev), dealId]));
       setDealToDelete(null);
+    },
+    onSuccess: ({ dealId }) => {
       toast({ title: "Deal deleted successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/deals"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions/dashboard"] });
     },
-    onError: (error: any) => {
+    onError: (error: any, dealId) => {
+      setDeletedDealIds(prev => {
+        const next = new Set(Array.from(prev));
+        next.delete(dealId);
+        return next;
+      });
       toast({ 
         title: "Failed to delete deal", 
         description: error.message,
@@ -558,6 +564,7 @@ export default function TransactionsDeals() {
                             variant="ghost" 
                             size="icon"
                             onClick={() => setDealToDelete(deal)}
+                            disabled={deletedDealIds.has(deal.id) || deleteDealMutation.isPending}
                             data-testid={`button-delete-deal-${deal.id}`}
                             className="text-destructive hover:text-destructive"
                           >
