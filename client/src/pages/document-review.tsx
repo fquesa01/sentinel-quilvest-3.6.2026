@@ -1292,10 +1292,16 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
     enabled: !!effectiveCaseId,
   });
 
-  // Fetch all cases for the case picker
-  const { data: allCases = [], isLoading: casesLoading } = useQuery<Array<{ id: string; caseNumber: string; title: string; status: string }>>({
-    queryKey: ['/api/cases'],
-    enabled: !effectiveCaseId, // Only fetch when no case is selected
+  // Fetch deals for the selection picker
+  const { data: allDeals = [], isLoading: dealsLoading } = useQuery<Array<{ id: string; dealNumber: string; title: string; status: string; dealType: string }>>({
+    queryKey: ['/api/deals'],
+    enabled: !effectiveCaseId,
+  });
+
+  // Fetch data lake items for the selection picker
+  const { data: dataLakeItems = [], isLoading: dataLakeLoading } = useQuery<Array<{ id: string; title: string; sourceType: string; fileType: string; status: string }>>({
+    queryKey: ['/api/data-lake/items'],
+    enabled: !effectiveCaseId,
   });
 
   // Bookmark functionality for the current document
@@ -1455,53 +1461,99 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
                 <h1 className="text-lg font-semibold">Document Review</h1>
               </div>
               
-              {/* Case selection prompt */}
+              {/* Deal / Data Lake selection prompt */}
               <div className="flex items-center justify-center flex-1 p-8">
                 <Card className="max-w-2xl w-full">
                   <CardHeader className="text-center">
-                    <CardTitle className="text-xl">Case Selection</CardTitle>
+                    <CardTitle className="text-xl">Select a Source</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <p className="text-center text-muted-foreground">
-                      Please select a case to review documents. Document review must be performed within the context of a specific case to ensure proper scoping and data isolation.
+                      Select a deal or data lake document to begin your review.
                     </p>
-                    
-                    {casesLoading ? (
-                      <div className="text-center py-4 text-muted-foreground">Loading cases...</div>
-                    ) : allCases.length > 0 ? (
-                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                        {allCases.filter(c => c.status !== 'archived').map((caseItem) => (
-                          <div
-                            key={caseItem.id}
-                            className="flex items-center justify-between p-3 border rounded-lg hover-elevate cursor-pointer"
-                            onClick={() => setLocation(`/cases/${caseItem.id}/document-review`)}
-                            data-testid={`case-select-${caseItem.id}`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <Briefcase className="h-5 w-5 text-muted-foreground" />
-                              <div>
-                                <div className="font-medium">{caseItem.title}</div>
-                                <div className="text-sm text-muted-foreground">{caseItem.caseNumber}</div>
+
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-medium flex items-center gap-2">
+                        <Briefcase className="h-4 w-4" /> Transactions
+                      </h3>
+                      {dealsLoading ? (
+                        <div className="text-center py-4 text-muted-foreground">Loading deals...</div>
+                      ) : allDeals.length > 0 ? (
+                        <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                          {allDeals.map((deal) => (
+                            <div
+                              key={deal.id}
+                              className="flex items-center justify-between p-3 border rounded-lg hover-elevate cursor-pointer"
+                              onClick={() => setLocation(`/document-review?caseId=${deal.id}`)}
+                              data-testid={`deal-select-${deal.id}`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <Briefcase className="h-5 w-5 text-muted-foreground" />
+                                <div>
+                                  <div className="font-medium">{deal.title}</div>
+                                  <div className="text-sm text-muted-foreground">{deal.dealNumber} &middot; {deal.dealType?.replace(/_/g, " ")}</div>
+                                </div>
                               </div>
+                              <Badge variant="outline">{deal.status}</Badge>
                             </div>
-                            <Badge variant="outline">{caseItem.status}</Badge>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-4 text-muted-foreground">
-                        No cases available. Create a case first to review documents.
-                      </div>
-                    )}
-                    
-                    <div className="flex justify-center pt-4">
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-muted-foreground text-sm">
+                          No deals available.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-medium flex items-center gap-2">
+                        <FileText className="h-4 w-4" /> My Data Lake
+                      </h3>
+                      {dataLakeLoading ? (
+                        <div className="text-center py-4 text-muted-foreground">Loading documents...</div>
+                      ) : dataLakeItems.length > 0 ? (
+                        <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                          {dataLakeItems.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center justify-between p-3 border rounded-lg hover-elevate cursor-pointer"
+                              onClick={() => setLocation(`/document-review?caseId=${item.id}`)}
+                              data-testid={`datalake-select-${item.id}`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <FileText className="h-5 w-5 text-muted-foreground" />
+                                <div>
+                                  <div className="font-medium">{item.title || "Untitled Document"}</div>
+                                  <div className="text-sm text-muted-foreground">{item.sourceType} {item.fileType ? `\u00b7 ${item.fileType}` : ""}</div>
+                                </div>
+                              </div>
+                              {item.status && <Badge variant="outline">{item.status}</Badge>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-muted-foreground text-sm">
+                          No documents in your Data Lake.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-center gap-3 pt-4 flex-wrap">
                       <Button
                         variant="outline"
-                        onClick={() => setLocation('/cases')}
-                        data-testid="button-go-to-cases"
+                        onClick={() => setLocation('/transactions/deals')}
+                        data-testid="button-go-to-deals"
                       >
                         <Briefcase className="h-4 w-4 mr-2" />
-                        Go to Cases
+                        Go to Transactions
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setLocation('/my-data-lake')}
+                        data-testid="button-go-to-data-lake"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Go to Data Lake
                       </Button>
                     </div>
                   </CardContent>
