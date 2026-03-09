@@ -15,7 +15,7 @@ interface FocusIssue {
   id: string;
   sessionId?: string | null;
   meetingId?: string | null;
-  caseId?: string | null;
+  dealId?: string | null;
   title: string;
   shortName?: string | null;
   active: boolean;
@@ -28,7 +28,7 @@ interface FocusIssue {
 interface FocusIssuesPanelProps {
   sessionId?: string;
   meetingId?: string;
-  caseId?: string;
+  dealId?: string;
   focusMode: "all" | "focused";
   onFocusModeChange: (mode: "all" | "focused") => void;
   onIssuesChange?: (issues: FocusIssue[]) => void;
@@ -37,7 +37,7 @@ interface FocusIssuesPanelProps {
 export function FocusIssuesPanel({
   sessionId,
   meetingId,
-  caseId,
+  dealId,
   focusMode,
   onFocusModeChange,
   onIssuesChange,
@@ -68,7 +68,7 @@ export function FocusIssuesPanel({
       const response = await apiRequest("POST", "/api/focus-issues", {
         sessionId,
         meetingId,
-        caseId,
+        dealId,
         title,
       });
       return response.json();
@@ -102,7 +102,7 @@ export function FocusIssuesPanel({
   const suggestMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/focus-issues/suggest", {
-        caseId,
+        dealId,
       });
       return response.json();
     },

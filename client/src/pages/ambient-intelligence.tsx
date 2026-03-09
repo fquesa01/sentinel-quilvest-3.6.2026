@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Case } from "@shared/schema";
+import type { Case, Deal } from "@shared/schema";
 import { 
   Mic, 
   Clock, 
@@ -69,13 +69,14 @@ export default function AmbientIntelligence() {
   // Mode selection state
   const [selectedMode, setSelectedMode] = useState<SessionMode>(null);
   
-  // Parse caseId from URL query params
+  // Parse dealId from URL query params
   const urlParams = new URLSearchParams(search);
-  const caseIdFromUrl = urlParams.get("caseId") || "";
+  const dealIdFromUrl = urlParams.get("dealId") || "";
   
   const [sessionName, setSessionName] = useState("");
   const [sessionType, setSessionType] = useState<string>("");
-  const [selectedCaseId, setSelectedCaseId] = useState<string>(caseIdFromUrl);
+  const [selectedDealId, setSelectedDealId] = useState<string>(dealIdFromUrl);
+  const [useDataLake, setUseDataLake] = useState(false);
   const [participants, setParticipants] = useState("");
   const [notes, setNotes] = useState("");
   const [consentGiven, setConsentGiven] = useState(false);
@@ -99,15 +100,15 @@ export default function AmbientIntelligence() {
   const [editingAllegationText, setEditingAllegationText] = useState("");
   const [manualIssueTitle, setManualIssueTitle] = useState("");
   
-  // Update selectedCaseId when URL changes
+  // Update selectedDealId when URL changes
   useEffect(() => {
-    if (caseIdFromUrl) {
-      setSelectedCaseId(caseIdFromUrl);
+    if (dealIdFromUrl) {
+      setSelectedDealId(dealIdFromUrl);
     }
-  }, [caseIdFromUrl]);
+  }, [dealIdFromUrl]);
   
-  const { data: cases = [] } = useQuery<Case[]>({
-    queryKey: ["/api/cases"],
+  const { data: deals = [] } = useQuery<Deal[]>({
+    queryKey: ["/api/deals"],
   });
   
   // Video meeting creation state
@@ -208,7 +209,8 @@ export default function AmbientIntelligence() {
       createSessionMutation.mutate({
         sessionName: sessionName.trim(),
         sessionType,
-        caseId: selectedCaseId || null,
+        dealId: selectedDealId || null,
+        useDataLake,
         participants: participantList,
         notes: notes.trim(),
       });
@@ -230,7 +232,7 @@ export default function AmbientIntelligence() {
           title: sessionName.trim(),
           description: notes.trim() || undefined,
           meetingType: meetingTypeMap[sessionType] || "other",
-          caseId: selectedCaseId || undefined,
+          dealId: selectedDealId || undefined,
           recordingEnabled: "true",
           transcriptionEnabled: "true",
         };
@@ -239,7 +241,7 @@ export default function AmbientIntelligence() {
         const meeting = await response.json();
         
         // Create focus issues from allegations
-        await createFocusIssuesFromAllegations(null, meeting.id, selectedCaseId || null);
+        await createFocusIssuesFromAllegations(null, meeting.id, selectedDealId || null);
         
         queryClient.invalidateQueries({ queryKey: ["/api/video-meetings"] });
         
@@ -544,24 +546,40 @@ export default function AmbientIntelligence() {
                       </div>
                       
                       <div className="space-y-2">
-                        <Label htmlFor="case-link">Link to Case <span className="text-muted-foreground font-normal">(Optional)</span></Label>
-                        <Select value={selectedCaseId || "none"} onValueChange={(value) => setSelectedCaseId(value === "none" ? "" : value)}>
-                          <SelectTrigger id="case-link" data-testid="select-case-link">
-                            <SelectValue placeholder="Select a case..." />
+                        <Label htmlFor="deal-link">Link to Transaction <span className="text-muted-foreground font-normal">(Optional)</span></Label>
+                        <Select value={selectedDealId || "none"} onValueChange={(value) => setSelectedDealId(value === "none" ? "" : value)}>
+                          <SelectTrigger id="deal-link" data-testid="select-deal-link">
+                            <SelectValue placeholder="Select a transaction..." />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="none">No case linked</SelectItem>
-                            {cases.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.caseNumber} - {c.title}
+                            <SelectItem value="none">No transaction linked</SelectItem>
+                            {deals.map((d) => (
+                              <SelectItem key={d.id} value={d.id}>
+                                {d.dealNumber ? `${d.dealNumber} - ` : ""}{d.title}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          Linking to a case enables document suggestions from the case data room
+                          Linking to a transaction enables document suggestions from uploaded deal documents
                         </p>
                       </div>
+                      
+                      <div className="flex items-center gap-2 pt-1">
+                        <Checkbox
+                          id="use-data-lake"
+                          checked={useDataLake}
+                          onCheckedChange={(checked) => setUseDataLake(checked === true)}
+                          data-testid="checkbox-data-lake"
+                        />
+                        <Label htmlFor="use-data-lake" className="cursor-pointer text-sm">
+                          Connect to My Data Lake
+                        </Label>
+                        <Brain className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <p className="text-xs text-muted-foreground -mt-1">
+                        Include your personal uploaded documents for AI suggestions
+                      </p>
                       
                       <div className="space-y-2">
                         <Label htmlFor="participants">Participants <span className="text-muted-foreground font-normal">(Optional)</span></Label>

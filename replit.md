@@ -15,6 +15,7 @@ The frontend uses React 18, TypeScript, Vite, Wouter, and TanStack Query. Stylin
 The backend uses Node.js, Express.js, and TypeScript, providing RESTful API endpoints. Authentication leverages Replit Auth (OpenID Connect with Passport.js) and Microsoft OAuth 365, including automatic account linking and role-based access control. Data persistence is managed by PostgreSQL (Neon serverless driver) with Drizzle ORM. The system supports secure file uploads with automatic text extraction, a comprehensive email ingestion module, and an extensible Third-Party Connector Ingestion Framework.
 
 ### Feature Specifications
+- **Ambient Intelligence:** Session linking now uses transactions (deals) instead of cases. Users can link sessions to any transaction and optionally connect to My Data Lake for AI document suggestions. Schema: `ambient_sessions` has `deal_id` and `use_data_lake` columns.
 - **Communication Ingestion:** Processes various email and chat message formats.
 - **Analytics Dashboards:** Offers Communication Analytics (Top Communicators, Heatmap, Unified Timeline) and Management Analytics (AI-powered insights for behavioral patterns, topic clusters, sentiment trends, PII redaction).
 - **Tag Management:** Comprehensive system for document coding and categorization with "Quick Tags," dynamic updates, user-specific tracking, color coding, and text selection tagging.

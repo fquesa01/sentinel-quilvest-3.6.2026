@@ -36,7 +36,7 @@ interface FocusIssueResult {
 interface AISuggestionsPanelProps {
   suggestions: SuggestionData[];
   insightSuggestions?: InsightSuggestion[];
-  caseId?: string;
+  dealId?: string;
   isAnalyzing?: boolean;
   isRecording?: boolean;
   isPaused?: boolean;
@@ -93,7 +93,7 @@ const insightLabels = {
 export function AISuggestionsPanel({
   suggestions,
   insightSuggestions = [],
-  caseId,
+  dealId,
   isAnalyzing = false,
   isRecording = false,
   isPaused = false,
@@ -320,7 +320,7 @@ export function AISuggestionsPanel({
                   <SuggestionCard
                     key={suggestion.id}
                     suggestion={suggestion}
-                    caseId={caseId}
+                    dealId={caseId}
                     onViewDocument={onViewDocument}
                     onDismiss={() => onDismissSuggestion(suggestion.id)}
                     onDismissDocument={(docId) => onDismissDocument(suggestion.id, docId)}

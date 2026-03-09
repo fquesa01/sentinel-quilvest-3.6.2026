@@ -26746,7 +26746,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // Create a new ambient session
   app.post("/api/ambient-sessions", isAuthenticated, async (req: any, res) => {
     try {
-      const { sessionName, sessionType, caseId, participants, notes } = req.body;
+      const { sessionName, sessionType, caseId, dealId, useDataLake, participants, notes } = req.body;
       
       if (!sessionName) {
         return res.status(400).json({ message: "Session name is required" });
@@ -26758,6 +26758,8 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
           sessionName,
           sessionType: sessionType || "other",
           caseId: caseId ? String(caseId) : null,
+          dealId: dealId ? String(dealId) : null,
+          useDataLake: useDataLake || false,
           notes: notes || null,
           participantNames: participants || [],
           status: "active",
@@ -26775,9 +26777,8 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // Update ambient session (status, caseId, etc.)
   app.patch("/api/ambient-sessions/:id", isAuthenticated, async (req, res) => {
     try {
-      const { status, endedAt, durationSeconds, caseId } = req.body;
+      const { status, endedAt, durationSeconds, caseId, dealId, useDataLake } = req.body;
       
-      // Build the update object dynamically to handle null caseId
       const updateData: any = {
         updatedAt: new Date(),
       };
@@ -26785,7 +26786,9 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
       if (status !== undefined) updateData.status = status;
       if (endedAt !== undefined) updateData.endedAt = new Date(endedAt);
       if (durationSeconds !== undefined) updateData.durationSeconds = durationSeconds;
-      if (caseId !== undefined) updateData.caseId = caseId; // Can be null to unlink
+      if (caseId !== undefined) updateData.caseId = caseId;
+      if (dealId !== undefined) updateData.dealId = dealId;
+      if (useDataLake !== undefined) updateData.useDataLake = useDataLake;
       
       const [session] = await db
         .update(schema.ambientSessions)

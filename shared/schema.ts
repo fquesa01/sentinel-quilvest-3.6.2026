@@ -9047,6 +9047,8 @@ export const ambientSuggestionConfidenceEnum = pgEnum("ambient_suggestion_confid
 export const ambientSessions = pgTable("ambient_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   caseId: varchar("case_id").references(() => cases.id, { onDelete: "set null" }),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "set null" }),
+  useDataLake: boolean("use_data_lake").default(false),
   clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   sessionName: varchar("session_name", { length: 255 }).notNull(),
   sessionType: ambientSessionTypeEnum("session_type").default("other"),
@@ -9061,6 +9063,7 @@ export const ambientSessions = pgTable("ambient_sessions", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   caseIdx: index("idx_ambient_sessions_case").on(table.caseId),
+  dealIdx: index("idx_ambient_sessions_deal").on(table.dealId),
   statusIdx: index("idx_ambient_sessions_status").on(table.status),
 }));
 

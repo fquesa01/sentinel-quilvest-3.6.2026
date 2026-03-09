@@ -5,6 +5,8 @@ import { Helmet } from "react-helmet";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
@@ -69,9 +71,10 @@ import { FocusIssuesPanel } from "@/components/ambient/FocusIssuesPanel";
 
 import { SuggestionData } from "@/components/ambient/SuggestionCard";
 
-type Case = {
+type Deal = {
   id: string;
-  name: string;
+  title: string;
+  dealNumber: string | null;
   status: string;
 };
 
@@ -81,6 +84,8 @@ type AmbientSession = {
   sessionType: string;
   status: string;
   caseId: string | null;
+  dealId: string | null;
+  useDataLake: boolean | null;
   notes: string | null;
   startedAt: string | null;
   endedAt: string | null;
@@ -162,8 +167,9 @@ export default function AmbientSession() {
   const [previousQueries, setPreviousQueries] = useState<Set<string>>(new Set());
   const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
   const [dismissedDocIds, setDismissedDocIds] = useState<Set<string>>(new Set());
-  const [showLinkCaseDialog, setShowLinkCaseDialog] = useState(false);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [showLinkDealDialog, setShowLinkDealDialog] = useState(false);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  const [linkUseDataLake, setLinkUseDataLake] = useState(false);
   const [focusMode, setFocusMode] = useState<"all" | "focused">("all");
   const [focusResults, setFocusResults] = useState<Array<{
     documentId: string;
@@ -199,9 +205,9 @@ export default function AmbientSession() {
     enabled: !!sessionId,
   });
   
-  // Fetch available cases for linking
-  const { data: cases = [] } = useQuery<Case[]>({
-    queryKey: ["/api/cases"],
+  // Fetch available deals for linking
+  const { data: deals = [] } = useQuery<Deal[]>({
+    queryKey: ["/api/deals"],
   });
   
   // Fetch focus issues for this session
@@ -231,7 +237,7 @@ export default function AmbientSession() {
   // Fetch focus issue results when in focused mode
   const focusSearchMutation = useMutation({
     mutationFn: async () => {
-      if (!session?.caseId) return { results: [] };
+      if (!session?.dealId) return { results: [] };
       
       // Get recent transcript text for context
       const transcriptText = transcripts
@@ -241,7 +247,7 @@ export default function AmbientSession() {
       
       const response = await apiRequest("POST", "/api/focus-issues/search-all", {
         sessionId,
-        caseId: session.caseId,
+        dealId: session.dealId,
         transcriptText,
       });
       return response.json();
@@ -258,39 +264,35 @@ export default function AmbientSession() {
   // Trigger focus search when mode changes or issues update
   const activeIssueCount = focusIssues.filter(i => i.active).length;
   useEffect(() => {
-    if (focusMode === "focused" && session?.caseId && activeIssueCount > 0) {
+    if (focusMode === "focused" && session?.dealId && activeIssueCount > 0) {
       setIsFocusSearching(true);
       focusSearchMutation.mutate();
     }
-  }, [focusMode, session?.caseId, activeIssueCount]);
+  }, [focusMode, session?.dealId, activeIssueCount]);
   
-  // Link session to case mutation
-  const linkCaseMutation = useMutation({
-    mutationFn: async (caseId: string | null) => {
-      const response = await apiRequest("PATCH", `/api/ambient-sessions/${sessionId}`, { caseId });
+  // Link session to deal mutation
+  const linkDealMutation = useMutation({
+    mutationFn: async (data: { dealId: string | null; useDataLake: boolean }) => {
+      const response = await apiRequest("PATCH", `/api/ambient-sessions/${sessionId}`, { dealId: data.dealId, useDataLake: data.useDataLake });
       if (!response.ok) {
         throw new Error("Failed to link session");
       }
       return response.json();
     },
-    onSuccess: (_, caseId) => {
-      // Force refetch to update session data immediately
+    onSuccess: (_, data) => {
       queryClient.refetchQueries({ queryKey: ["/api/ambient-sessions", sessionId] });
-      if (caseId) {
-        queryClient.refetchQueries({ queryKey: [`/api/ambient-sessions?caseId=${caseId}`] });
-      }
       toast({
-        title: caseId ? "Session Linked" : "Session Unlinked",
-        description: caseId 
-          ? "This session is now linked to the selected case and will appear in the case recordings."
-          : "This session has been unlinked from its case.",
+        title: data.dealId ? "Session Linked" : "Session Updated",
+        description: data.dealId 
+          ? "This session is now linked to the selected transaction."
+          : "Session document sources updated.",
       });
-      setShowLinkCaseDialog(false);
+      setShowLinkDealDialog(false);
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to link session to case",
+        description: error.message || "Failed to link session",
         variant: "destructive",
       });
     },
@@ -367,7 +369,7 @@ export default function AmbientSession() {
   const booleanSearchMutation = useMutation({
     mutationFn: async (transcriptText: string) => {
       const response = await apiRequest("POST", `/api/ambient-sessions/${sessionId}/boolean-search`, {
-        caseId: session?.caseId,
+        dealId: session?.dealId,
         transcriptText,
       });
       return response.json();
@@ -415,8 +417,8 @@ export default function AmbientSession() {
 
   // Fetch document details and bullet summaries for suggestions with documentIds
   useEffect(() => {
-    // Wait for session to load with caseId before fetching documents
-    if (!session?.caseId) return;
+    // Wait for session to load with dealId before fetching documents
+    if (!session?.dealId && !session?.useDataLake) return;
     
     const fetchDocs = async () => {
       const suggestionsWithDocs = suggestions.filter(
@@ -427,7 +429,7 @@ export default function AmbientSession() {
         try {
           const response = await apiRequest("POST", "/api/communications/batch", {
             ids: suggestion.documentIds,
-            caseId: session.caseId,
+            dealId: session.dealId,
           });
           if (response.ok) {
             const docs = await response.json();
@@ -466,7 +468,7 @@ export default function AmbientSession() {
     if (suggestions.length > 0) {
       fetchDocs();
     }
-  }, [suggestions, session?.caseId]);
+  }, [suggestions, session?.dealId, session?.useDataLake]);
   // Track if this is a fresh recording start vs a resume
   const isFirstStartRef = useRef(true);
   
@@ -489,7 +491,7 @@ export default function AmbientSession() {
             triggerAnalysisMutation.mutate();
           }
           // Also trigger Claude-powered boolean search
-          if (!booleanSearchMutation.isPending && session?.caseId) {
+          if (!booleanSearchMutation.isPending && session?.dealId) {
             const recentText = transcriptsRef.current
               .slice(-5)
               .map(t => t.content)
@@ -765,8 +767,8 @@ export default function AmbientSession() {
   };
   
   const handleViewDocument = (docId: string) => {
-    if (session?.caseId) {
-      window.open(`/cases/${session.caseId}/document-review?docId=${docId}`, "_blank");
+    if (session?.dealId) {
+      window.open(`/transactions/deals/${session.dealId}`, "_blank");
     }
   };
   
@@ -812,7 +814,7 @@ export default function AmbientSession() {
           preview: doc.body?.substring(0, 150) || "",
           riskLevel: doc.riskLevel || undefined,
           bullets: bulletSummaries[doc.id] || undefined,
-          viewUrl: doc.caseId ? `/cases/${doc.caseId}/communications/${doc.id}` : `/communications/${doc.id}`,
+          viewUrl: `/communications/${doc.id}`,
         })),
       status: 'found' as const,
     }));
@@ -957,33 +959,34 @@ export default function AmbientSession() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem 
                         onClick={() => {
-                          setSelectedCaseId(session.caseId);
-                          setShowLinkCaseDialog(true);
+                          setSelectedDealId(session.dealId);
+                          setLinkUseDataLake(session.useDataLake || false);
+                          setShowLinkDealDialog(true);
                         }}
-                        data-testid="menu-item-link-case"
+                        data-testid="menu-item-link-deal"
                       >
-                        {session.caseId ? (
+                        {session.dealId ? (
                           <>
                             <FolderOpen className="h-4 w-4 mr-2" />
-                            Change Linked Case
+                            Change Linked Transaction
                           </>
                         ) : (
                           <>
                             <Link className="h-4 w-4 mr-2" />
-                            Link to Case
+                            Link to Transaction
                           </>
                         )}
                       </DropdownMenuItem>
-                      {session.caseId && (
+                      {session.dealId && (
                         <>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem 
-                            onClick={() => linkCaseMutation.mutate(null)}
+                            onClick={() => linkDealMutation.mutate({ dealId: null, useDataLake: session.useDataLake || false })}
                             className="text-destructive"
-                            data-testid="menu-item-unlink-case"
+                            data-testid="menu-item-unlink-deal"
                           >
                             <Unlink className="h-4 w-4 mr-2" />
-                            Unlink from Case
+                            Unlink from Transaction
                           </DropdownMenuItem>
                         </>
                       )}
@@ -1160,7 +1163,7 @@ export default function AmbientSession() {
               {/* Focus Issues Toggle and Panel */}
               <FocusIssuesPanel
                 sessionId={sessionId}
-                caseId={session?.caseId || undefined}
+                dealId={session?.dealId || undefined}
                 focusMode={focusMode}
                 onFocusModeChange={setFocusMode}
               />
@@ -1169,7 +1172,7 @@ export default function AmbientSession() {
               <AISuggestionsPanel
                 suggestions={allGlanceableSuggestions as SuggestionData[]}
                 insightSuggestions={insightSuggestions}
-                caseId={session?.caseId || undefined}
+                dealId={session?.dealId || undefined}
                 isAnalyzing={isAnalyzing || isFocusSearching}
                 isRecording={isRecording}
                 isPaused={isPaused}
@@ -1201,58 +1204,76 @@ export default function AmbientSession() {
         </AlertDialogContent>
       </AlertDialog>
       
-      {/* Link to Case Dialog */}
-      <Dialog open={showLinkCaseDialog} onOpenChange={setShowLinkCaseDialog}>
+      {/* Link to Transaction Dialog */}
+      <Dialog open={showLinkDealDialog} onOpenChange={setShowLinkDealDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
               <FolderOpen className="h-5 w-5 inline-block mr-2" />
-              Link Session to Case
+              Link Session to Transaction
             </DialogTitle>
             <DialogDescription>
-              Select a case to link this recording session to. It will appear in the case's Recordings tab.
+              Select a transaction to link this session to. Documents from the transaction's data room will be available for AI suggestions.
             </DialogDescription>
           </DialogHeader>
           
-          <div className="py-4">
-            <Select
-              value={selectedCaseId || "none"}
-              onValueChange={(value) => setSelectedCaseId(value === "none" ? null : value)}
-            >
-              <SelectTrigger data-testid="select-case">
-                <SelectValue placeholder="Select a case" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No case linked</SelectItem>
-                {cases.filter((c: Case) => c.status !== "closed").map((caseItem: Case) => (
-                  <SelectItem key={caseItem.id} value={caseItem.id}>
-                    {caseItem.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label>Transaction</Label>
+              <Select
+                value={selectedDealId || "none"}
+                onValueChange={(value) => setSelectedDealId(value === "none" ? null : value)}
+              >
+                <SelectTrigger data-testid="select-deal">
+                  <SelectValue placeholder="Select a transaction" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No transaction linked</SelectItem>
+                  {deals.map((d: Deal) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.dealNumber ? `${d.dealNumber} - ` : ""}{d.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             
-            {session?.caseId && (
-              <p className="text-sm text-muted-foreground mt-3">
-                Currently linked to: <strong>{cases.find((c: Case) => c.id === session.caseId)?.name || "Unknown"}</strong>
+            {session?.dealId && (
+              <p className="text-sm text-muted-foreground">
+                Currently linked to: <strong>{deals.find((d: Deal) => d.id === session.dealId)?.title || "Unknown"}</strong>
               </p>
             )}
+            
+            <div className="flex items-center gap-2 pt-1">
+              <Checkbox
+                id="link-data-lake"
+                checked={linkUseDataLake}
+                onCheckedChange={(checked) => setLinkUseDataLake(checked === true)}
+                data-testid="checkbox-link-data-lake"
+              />
+              <Label htmlFor="link-data-lake" className="cursor-pointer text-sm">
+                Connect to My Data Lake
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground -mt-2">
+              Include your personal uploaded documents for AI suggestions
+            </p>
           </div>
           
           <DialogFooter>
             <Button 
               variant="outline" 
-              onClick={() => setShowLinkCaseDialog(false)}
+              onClick={() => setShowLinkDealDialog(false)}
               data-testid="button-cancel-link"
             >
               Cancel
             </Button>
             <Button 
-              onClick={() => linkCaseMutation.mutate(selectedCaseId)}
-              disabled={linkCaseMutation.isPending || selectedCaseId === session?.caseId}
+              onClick={() => linkDealMutation.mutate({ dealId: selectedDealId, useDataLake: linkUseDataLake })}
+              disabled={linkDealMutation.isPending}
               data-testid="button-confirm-link"
             >
-              {linkCaseMutation.isPending ? (
+              {linkDealMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Linking...
@@ -1260,7 +1281,7 @@ export default function AmbientSession() {
               ) : (
                 <>
                   <Link className="h-4 w-4 mr-2" />
-                  {selectedCaseId ? "Link to Case" : "Unlink"}
+                  {selectedDealId ? "Link to Transaction" : "Save"}
                 </>
               )}
             </Button>

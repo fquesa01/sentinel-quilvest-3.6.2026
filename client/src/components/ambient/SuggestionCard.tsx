@@ -42,7 +42,7 @@ export interface SuggestionData {
 
 interface SuggestionCardProps {
   suggestion: SuggestionData;
-  caseId?: string;
+  dealId?: string;
   onViewDocument: (docId: string) => void;
   onDismiss: () => void;
   onDismissDocument: (docId: string) => void;
@@ -50,7 +50,7 @@ interface SuggestionCardProps {
 
 export function SuggestionCard({
   suggestion,
-  caseId,
+  dealId,
   onViewDocument,
   onDismiss,
   onDismissDocument
