@@ -251,6 +251,62 @@ export default function StartPage() {
           >At Your Service.</h2>
         </div>
 
+        <div className="pb-6 w-full max-w-xl">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmit();
+            }}
+          >
+            <div className="bg-card border border-border rounded-[14px] px-4 py-3 flex items-center gap-3">
+              <Input
+                ref={inputRef}
+                value={isListening ? displayTranscript : commandInput}
+                onChange={(e) => setCommandInput(e.target.value)}
+                placeholder="Ask Emma anything..."
+                disabled={isProcessing || isListening}
+                className="flex-1 bg-transparent border-0 p-0 h-auto text-sm focus-visible:ring-0 placeholder:text-muted-foreground/60"
+                data-testid="input-command"
+              />
+              
+              {isVoiceSupported && (
+                <button
+                  type="button"
+                  onClick={handleMicClick}
+                  disabled={isProcessing}
+                  className={cn(
+                    "w-9 h-9 rounded-[10px] flex items-center justify-center transition-colors",
+                    isListening 
+                      ? "bg-destructive text-destructive-foreground animate-pulse" 
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  data-testid="button-voice-input"
+                  aria-label={isListening ? "Stop listening" : "Start voice input"}
+                >
+                  {isListening ? (
+                    <MicOff className="w-[18px] h-[18px]" />
+                  ) : (
+                    <Mic className="w-[18px] h-[18px]" />
+                  )}
+                </button>
+              )}
+              
+              <button
+                type="submit"
+                disabled={(!commandInput.trim() && !isListening) || isProcessing}
+                className="w-9 h-9 rounded-[10px] bg-primary text-primary-foreground flex items-center justify-center transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="button-submit-command"
+              >
+                {isProcessing ? (
+                  <Loader2 className="w-[18px] h-[18px] animate-spin" />
+                ) : (
+                  <ArrowRight className="w-[18px] h-[18px]" />
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+
         {errorMessage && (
           <div 
             className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3 mb-4 w-full max-w-xl" 
@@ -374,61 +430,6 @@ export default function StartPage() {
           })}
         </div>
 
-        <div className="py-6 mt-auto w-full max-w-xl">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSubmit();
-            }}
-          >
-            <div className="bg-card border border-border rounded-[14px] px-4 py-3 flex items-center gap-3">
-              <Input
-                ref={inputRef}
-                value={isListening ? displayTranscript : commandInput}
-                onChange={(e) => setCommandInput(e.target.value)}
-                placeholder="Ask Emma anything..."
-                disabled={isProcessing || isListening}
-                className="flex-1 bg-transparent border-0 p-0 h-auto text-sm focus-visible:ring-0 placeholder:text-muted-foreground/60"
-                data-testid="input-command"
-              />
-              
-              {isVoiceSupported && (
-                <button
-                  type="button"
-                  onClick={handleMicClick}
-                  disabled={isProcessing}
-                  className={cn(
-                    "w-9 h-9 rounded-[10px] flex items-center justify-center transition-colors",
-                    isListening 
-                      ? "bg-destructive text-destructive-foreground animate-pulse" 
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                  data-testid="button-voice-input"
-                  aria-label={isListening ? "Stop listening" : "Start voice input"}
-                >
-                  {isListening ? (
-                    <MicOff className="w-[18px] h-[18px]" />
-                  ) : (
-                    <Mic className="w-[18px] h-[18px]" />
-                  )}
-                </button>
-              )}
-              
-              <button
-                type="submit"
-                disabled={(!commandInput.trim() && !isListening) || isProcessing}
-                className="w-9 h-9 rounded-[10px] bg-primary text-primary-foreground flex items-center justify-center transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
-                data-testid="button-submit-command"
-              >
-                {isProcessing ? (
-                  <Loader2 className="w-[18px] h-[18px] animate-spin" />
-                ) : (
-                  <ArrowRight className="w-[18px] h-[18px]" />
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
       </main>
     </div>
   );
