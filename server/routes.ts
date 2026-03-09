@@ -27095,6 +27095,48 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // DEAL CHAT / MESSAGING ROUTES
   // ============================================================
 
+
+  app.post("/api/deals/:dealId/default-channel", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { dealId } = req.params;
+
+      const existing = await db.execute(sql`
+        SELECT * FROM deal_channels WHERE deal_id = ${dealId} AND channel_name = 'General' AND is_archived = false LIMIT 1
+      `);
+      if ((existing.rows as any[]).length > 0) {
+        return res.json((existing.rows as any[])[0]);
+      }
+
+      const dealResult = await db.execute(sql`SELECT title FROM deals WHERE id = ${dealId}`);
+      const dealTitle = (dealResult.rows as any[])[0]?.title || 'Deal';
+
+      const ambientResult = await db.execute(sql`
+        INSERT INTO ambient_sessions (session_name, session_type, deal_id, created_by, status)
+        VALUES (${`Chat: ${dealTitle}`}, 'meeting', ${dealId}, ${userId}, 'active')
+        RETURNING id
+      `);
+      const ambientSessionId = (ambientResult.rows as any[])[0]?.id;
+
+      const channelResult = await db.execute(sql`
+        INSERT INTO deal_channels (deal_id, channel_name, channel_type, ambient_session_id, created_by)
+        VALUES (${dealId}, 'General', 'internal', ${ambientSessionId}, ${userId})
+        RETURNING *
+      `);
+      const channel = (channelResult.rows as any[])[0];
+
+      await db.execute(sql`
+        INSERT INTO deal_channel_members (channel_id, user_id, role)
+        VALUES (${channel.id}, ${userId}, 'owner')
+      `);
+
+      return res.json(channel);
+    } catch (error: any) {
+      console.error("[DealChat] Error getting/creating default channel:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/deals/:dealId/channels", isAuthenticated, async (req: any, res) => {
     try {
       const { dealId } = req.params;
