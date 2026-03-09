@@ -13,9 +13,11 @@ interface FinancialModelPanelProps {
 
 function formatNumber(val: number | null | undefined): string {
   if (val == null) return "—";
-  if (Math.abs(val) >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}B`;
-  if (Math.abs(val) >= 1_000) return `$${(val / 1_000).toFixed(1)}M`;
-  return `$${val.toFixed(0)}K`;
+  const abs = Math.abs(val);
+  if (abs >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}B`;
+  if (abs >= 1_000) return `$${(val / 1_000).toFixed(1)}M`;
+  if (abs >= 1) return `$${val.toFixed(0)}K`;
+  return `$${(val * 1000).toFixed(0)}`;
 }
 
 function formatPercent(val: number | null | undefined): string {

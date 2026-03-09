@@ -113,13 +113,21 @@ Use the following methodology:
 7. For PE deals, build an LBO model with leverage assumptions
 8. Include technology value creation from platform synergies in the upside case
 
-All values in thousands ($000s).
+CRITICAL UNIT INSTRUCTIONS — READ CAREFULLY:
+- All monetary values (revenue, EBITDA, capex, FCF, enterprise value, etc.) MUST be in THOUSANDS of US dollars.
+- This means: if actual revenue is $50 million, output the number 50000 (fifty thousand).
+- If actual revenue is $200 million, output 200000.
+- If actual revenue is $1.5 billion, output 1500000.
+- Do NOT output raw dollar amounts. A revenue value of 66000000 is WRONG for a $66M company — the correct value is 66000.
+- Growth rates and margins should be percentages (e.g., 15.0 for 15%).
+- Use calendar years (e.g., "2026", "2027") for projection year labels, not "Year 1", "Year 2".
+
 Market growth rate: ${marketGrowth ? `${marketGrowth}%` : "Use sector benchmarks"}
 Deal type: ${dealContext.dealType}`,
     messages: [
       {
         role: "user",
-        content: `Build the financial model:
+        content: `Build the financial model. REMINDER: All monetary output values MUST be in THOUSANDS ($000s). If revenue is $66 million, output 66000 not 66000000.
 
 Historical P&L: ${JSON.stringify(historicals)}
 Balance Sheets: ${JSON.stringify(balanceSheets)}
@@ -138,7 +146,7 @@ Key synergies: ${techSynergies.map((s) => `${s.capability}: ${s.estimatedRevenue
     tools: [
       {
         name: "build_model",
-        description: "Output the complete financial model",
+        description: "Output the complete financial model. ALL monetary values must be in THOUSANDS of dollars ($000s). Example: $50M revenue = 50000, $1.2B = 1200000.",
         input_schema: {
           type: "object" as const,
           properties: {
@@ -161,25 +169,26 @@ Key synergies: ${techSynergies.map((s) => `${s.capability}: ${s.estimatedRevenue
             },
             baseProjections: {
               type: "array" as const,
+              description: "5-year projections for base case. All monetary fields in $000s.",
               items: {
                 type: "object" as const,
                 properties: {
-                  year: { type: "string" as const },
-                  revenue: { type: "number" as const },
-                  revenueGrowth: { type: "number" as const },
-                  cogs: { type: "number" as const },
-                  grossProfit: { type: "number" as const },
-                  grossMargin: { type: "number" as const },
-                  operatingExpenses: { type: "number" as const },
-                  ebitda: { type: "number" as const },
-                  ebitdaMargin: { type: "number" as const },
-                  depreciation: { type: "number" as const },
-                  ebit: { type: "number" as const },
-                  taxes: { type: "number" as const },
-                  nopat: { type: "number" as const },
-                  capex: { type: "number" as const },
-                  changeInWC: { type: "number" as const },
-                  freeCashFlow: { type: "number" as const },
+                  year: { type: "string" as const, description: "Calendar year e.g. '2026'" },
+                  revenue: { type: "number" as const, description: "Revenue in $000s. $50M = 50000" },
+                  revenueGrowth: { type: "number" as const, description: "Revenue growth rate as percentage e.g. 15.0" },
+                  cogs: { type: "number" as const, description: "Cost of goods sold in $000s" },
+                  grossProfit: { type: "number" as const, description: "Gross profit in $000s" },
+                  grossMargin: { type: "number" as const, description: "Gross margin as percentage" },
+                  operatingExpenses: { type: "number" as const, description: "Operating expenses in $000s" },
+                  ebitda: { type: "number" as const, description: "EBITDA in $000s" },
+                  ebitdaMargin: { type: "number" as const, description: "EBITDA margin as percentage" },
+                  depreciation: { type: "number" as const, description: "Depreciation in $000s" },
+                  ebit: { type: "number" as const, description: "EBIT in $000s" },
+                  taxes: { type: "number" as const, description: "Taxes in $000s" },
+                  nopat: { type: "number" as const, description: "NOPAT in $000s" },
+                  capex: { type: "number" as const, description: "Capital expenditures in $000s" },
+                  changeInWC: { type: "number" as const, description: "Change in working capital in $000s" },
+                  freeCashFlow: { type: "number" as const, description: "Free cash flow in $000s" },
                 },
                 required: ["year", "revenue", "revenueGrowth", "ebitda", "ebitdaMargin", "freeCashFlow"],
               },
@@ -223,12 +232,105 @@ Key synergies: ${techSynergies.map((s) => `${s.capability}: ${s.estimatedRevenue
 
   const raw = toolBlock.input as any;
 
+  const monetaryFields = ["revenue", "cogs", "grossProfit", "operatingExpenses", "ebitda", "depreciation", "ebit", "taxes", "nopat", "capex", "changeInWC", "freeCashFlow"];
+
+  function detectRawDollars(projections: any[]): boolean {
+    if (!projections || projections.length === 0) return false;
+    const revenues = projections.map((p: any) => Math.abs(p.revenue || 0)).filter((r: number) => r > 0);
+    if (revenues.length === 0) return false;
+    const medianRev = revenues.sort((a: number, b: number) => a - b)[Math.floor(revenues.length / 2)];
+
+    for (const p of projections) {
+      const rev = Math.abs(p.revenue || 0);
+      const margin = p.ebitdaMargin ?? p.grossMargin;
+      const ebitda = Math.abs(p.ebitda || 0);
+      if (rev > 0 && margin != null && margin > 0 && margin < 100 && ebitda > 0) {
+        const impliedEbitda = rev * (margin / 100);
+        const ratio = ebitda / impliedEbitda;
+        if (ratio > 500) {
+          console.log(`[FinModel] Unit mismatch detected via margin cross-check: revenue=${rev}, ebitdaMargin=${margin}%, ebitda=${ebitda}, ratio=${ratio.toFixed(0)}`);
+          return true;
+        }
+      }
+    }
+
+    if (medianRev > 5_000_000) {
+      console.log(`[FinModel] Likely raw dollars detected: median revenue=${medianRev} (too large for $000s unless >$5B company)`);
+      return true;
+    }
+
+    return false;
+  }
+
+  function scaleDown(projections: any[]): ProjectionYear[] {
+    console.log(`[FinModel] Normalizing projections from raw dollars to $000s (dividing by 1000)`);
+    return projections.map((p: any) => {
+      const normalized = { ...p };
+      for (const field of monetaryFields) {
+        if (typeof normalized[field] === "number") {
+          normalized[field] = Math.round(normalized[field] / 1000);
+        }
+      }
+      return normalized;
+    });
+  }
+
+  function normalizeProjections(projections: any[]): ProjectionYear[] {
+    if (!projections || projections.length === 0) return projections;
+    if (detectRawDollars(projections)) {
+      return scaleDown(projections);
+    }
+    return projections;
+  }
+
+  function normalizeValuation(val: any, projScaleApplied: boolean): ValuationOutput {
+    if (!val) return val;
+    const normalized = JSON.parse(JSON.stringify(val));
+    const shouldScale = projScaleApplied;
+
+    if (normalized.dcf && shouldScale) {
+      console.log(`[FinModel] Normalizing DCF valuation to $000s (EV: ${normalized.dcf.enterpriseValue})`);
+      for (const field of ["terminalValue", "enterpriseValue", "equityValue"]) {
+        if (typeof normalized.dcf[field] === "number") {
+          normalized.dcf[field] = Math.round(normalized.dcf[field] / 1000);
+        }
+      }
+    }
+    if (normalized.comparableTransactions?.impliedValuationRange && shouldScale) {
+      for (const field of ["low", "mid", "high"]) {
+        if (typeof normalized.comparableTransactions.impliedValuationRange[field] === "number") {
+          normalized.comparableTransactions.impliedValuationRange[field] = Math.round(normalized.comparableTransactions.impliedValuationRange[field] / 1000);
+        }
+      }
+    }
+    if (normalized.lbo && shouldScale) {
+      if (typeof normalized.lbo.equityCheck === "number") {
+        normalized.lbo.equityCheck = Math.round(normalized.lbo.equityCheck / 1000);
+      }
+      if (typeof normalized.lbo.debtPaydown === "number") {
+        normalized.lbo.debtPaydown = Math.round(normalized.lbo.debtPaydown / 1000);
+      }
+    }
+    return normalized;
+  }
+
+  const baseRawDollars = detectRawDollars(raw.baseProjections);
+  const baseProj = baseRawDollars ? scaleDown(raw.baseProjections) : raw.baseProjections;
+
+  const upsideRaw = raw.upsideProjections || raw.baseProjections;
+  const upsideRawDollars = detectRawDollars(upsideRaw);
+  const upsideProj = upsideRawDollars ? scaleDown(upsideRaw) : upsideRaw;
+
+  const downsideRaw = raw.downsideProjections || raw.baseProjections;
+  const downsideRawDollars = detectRawDollars(downsideRaw);
+  const downsideProj = downsideRawDollars ? scaleDown(downsideRaw) : downsideRaw;
+
   const result: FinancialModelOutput = {
     assumptions: raw.assumptions,
     scenarios: {
-      base: { projections: raw.baseProjections, valuation: raw.baseValuation },
-      upside: { projections: raw.upsideProjections || raw.baseProjections, valuation: raw.upsideValuation || raw.baseValuation },
-      downside: { projections: raw.downsideProjections || raw.baseProjections, valuation: raw.downsideValuation || raw.baseValuation },
+      base: { projections: baseProj, valuation: normalizeValuation(raw.baseValuation, baseRawDollars) },
+      upside: { projections: upsideProj, valuation: normalizeValuation(raw.upsideValuation || raw.baseValuation, upsideRawDollars) },
+      downside: { projections: downsideProj, valuation: normalizeValuation(raw.downsideValuation || raw.baseValuation, downsideRawDollars) },
     },
     sensitivityTable: raw.sensitivityTable,
     techValueCreation: {
