@@ -265,6 +265,31 @@ export default function TransactionsDealDetail() {
     },
   });
 
+  const populateOverviewMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${id}/populate-overview`);
+      return res.json();
+    },
+    onSuccess: async (data: any) => {
+      await refetchDeal();
+      const count = data.totalUpdated || 0;
+      const fields = (data.fieldsUpdated || []) as string[];
+      const fieldLabels: Record<string, string> = {
+        dealValue: "Deal Value", closingTargetDate: "Closing Target", loiDate: "LOI Date",
+        signingTargetDate: "Signing Target", exclusivityExpiration: "Exclusivity Expiration",
+        description: "Description", dealStructure: "Structure", subType: "Sub-Type",
+      };
+      const names = fields.map((f: string) => fieldLabels[f] || f).join(", ");
+      toast({
+        title: "Overview Populated",
+        description: count > 0 ? `Updated ${count} field${count > 1 ? "s" : ""}: ${names}` : "All available fields are already populated.",
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Population Failed", description: error.message || "Could not populate overview.", variant: "destructive" });
+    },
+  });
+
   const extractTermsMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/deals/${id}/terms/extract-all`);
@@ -775,6 +800,21 @@ export default function TransactionsDealDetail() {
               }
               return null;
             })()}
+            <div className="flex items-center justify-end">
+              <Button
+                variant="outline"
+                onClick={() => populateOverviewMutation.mutate()}
+                disabled={populateOverviewMutation.isPending}
+                data-testid="button-populate-overview"
+              >
+                {populateOverviewMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4 mr-2" />
+                )}
+                {populateOverviewMutation.isPending ? "Populating..." : "Auto-Populate from Documents"}
+              </Button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="pt-6">

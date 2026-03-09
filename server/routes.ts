@@ -13390,6 +13390,17 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  app.post("/api/deals/:dealId/populate-overview", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const { populateDealOverview } = await import("./services/deal-intelligence-service");
+      const result = await populateDealOverview(req.params.dealId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error populating deal overview:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   app.post("/api/deals/:dealId/extract-parties", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {
       const { extractDealParties } = await import("./services/deal-intelligence-service");

@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "../db";
 import { 
-  dataRoomDocuments, dataRooms, deals, dealTemplates, 
+  dataRoomDocuments, dataRooms, deals, dealTerms, dealTemplates, 
   dealChecklists, dealChecklistItems, templateItems, 
   checklistItemDocuments, templateCategories,
   investorMemos,
@@ -514,5 +514,177 @@ ${combinedText}`
     added,
     totalAdded,
     totalFound,
+  };
+}
+
+export async function populateDealOverview(dealId: string): Promise<{
+  fieldsUpdated: string[];
+  totalUpdated: number;
+}> {
+  const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
+  if (!deal) throw new Error("Deal not found");
+
+  const updateData: Record<string, any> = {};
+  const fieldsUpdated: string[] = [];
+
+  const parseDate = (val: string | null | undefined): Date | null => {
+    if (!val) return null;
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const terms = await db.select().from(dealTerms).where(eq(dealTerms.dealId, dealId)).limit(1);
+  const term = terms[0] || null;
+
+  if (term) {
+    if (!deal.dealValue && term.purchasePrice) {
+      updateData.dealValue = term.purchasePrice;
+      fieldsUpdated.push("dealValue");
+    }
+    const closingDate = parseDate(term.closingDate);
+    if (!deal.closingTargetDate && closingDate) {
+      updateData.closingTargetDate = closingDate;
+      fieldsUpdated.push("closingTargetDate");
+    }
+    const loiDate = parseDate(term.effectiveDate);
+    if (!deal.loiDate && loiDate) {
+      updateData.loiDate = loiDate;
+      fieldsUpdated.push("loiDate");
+    }
+  }
+
+  const memos = await db.select().from(investorMemos).where(eq(investorMemos.dealId, dealId)).limit(1);
+  const memo = memos[0] || null;
+
+  const needsAI = !deal.description || !deal.dealStructure || !deal.subType ||
+    (!deal.signingTargetDate && !updateData.signingTargetDate) ||
+    (!deal.exclusivityExpiration && !updateData.exclusivityExpiration);
+
+  if (needsAI) {
+    const rooms = await db.select({ id: dataRooms.id })
+      .from(dataRooms)
+      .where(eq(dataRooms.dealId, dealId));
+
+    let docText = "";
+    if (rooms.length > 0) {
+      const roomIds = rooms.map(r => r.id);
+      const docs = await db.select()
+        .from(dataRoomDocuments)
+        .where(inArray(dataRoomDocuments.dataRoomId, roomIds));
+      const docsWithText = docs.filter(d => d.extractedText && d.extractedText.length > 100);
+      if (docsWithText.length > 0) {
+        const perDoc = Math.min(6000, Math.floor(15000 / docsWithText.length));
+        docText = docsWithText
+          .map(d => `--- ${d.fileName} ---\n${(d.extractedText || "").slice(0, perDoc)}`)
+          .join("\n\n");
+      }
+    }
+
+    let memoContext = "";
+    if (memo) {
+      const memoFields = [
+        memo.executiveSummary ? `Executive Summary: ${(memo.executiveSummary as string).slice(0, 2000)}` : "",
+        memo.companyOverview ? `Company Overview: ${(memo.companyOverview as string).slice(0, 1000)}` : "",
+        memo.investmentThesis ? `Investment Thesis: ${(memo.investmentThesis as string).slice(0, 1000)}` : "",
+      ].filter(Boolean).join("\n\n");
+      memoContext = memoFields;
+    }
+
+    const combinedContext = [docText, memoContext].filter(Boolean).join("\n\n---\n\n");
+
+    if (combinedContext.length > 200) {
+      const fieldsNeeded: string[] = [];
+      if (!deal.description) fieldsNeeded.push('"description": "2-3 sentence deal summary"');
+      if (!deal.dealStructure) fieldsNeeded.push('"dealStructure": "description of deal structure (e.g., Asset Purchase, Stock Purchase, Merger, Joint Venture)"');
+      if (!deal.subType) fieldsNeeded.push('"subType": "more specific deal sub-type"');
+      if (!deal.signingTargetDate && !updateData.signingTargetDate) fieldsNeeded.push('"signingTargetDate": "YYYY-MM-DD or null"');
+      if (!deal.exclusivityExpiration && !updateData.exclusivityExpiration) fieldsNeeded.push('"exclusivityExpiration": "YYYY-MM-DD or null"');
+      if (!deal.dealValue && !updateData.dealValue) fieldsNeeded.push('"dealValue": "dollar amount as string e.g. 2,500,000"');
+      if (!deal.closingTargetDate && !updateData.closingTargetDate) fieldsNeeded.push('"closingTargetDate": "YYYY-MM-DD or null"');
+      if (!deal.loiDate && !updateData.loiDate) fieldsNeeded.push('"loiDate": "YYYY-MM-DD or null"');
+
+      if (fieldsNeeded.length > 0) {
+        try {
+          const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-5",
+            max_tokens: 1000,
+            messages: [{
+              role: "user",
+              content: `Analyze these transaction documents and extract the following deal overview fields. Only include fields you can identify with reasonable confidence. Do NOT guess or make up values.
+
+Return ONLY a JSON object with these fields (use null for unknown):
+{
+  ${fieldsNeeded.join(",\n  ")}
+}
+
+Deal title: ${deal.title}
+Deal type: ${deal.dealType}
+
+Documents and reports:
+${combinedContext.slice(0, 18000)}`
+            }],
+          });
+
+          const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+
+            if (parsed.description && !deal.description) {
+              updateData.description = parsed.description;
+              fieldsUpdated.push("description");
+            }
+            if (parsed.dealStructure && !deal.dealStructure) {
+              updateData.dealStructure = parsed.dealStructure;
+              fieldsUpdated.push("dealStructure");
+            }
+            if (parsed.subType && !deal.subType) {
+              updateData.subType = parsed.subType;
+              fieldsUpdated.push("subType");
+            }
+            if (parsed.dealValue && !deal.dealValue && !updateData.dealValue) {
+              updateData.dealValue = parsed.dealValue;
+              fieldsUpdated.push("dealValue");
+            }
+            const signingDate = parseDate(parsed.signingTargetDate);
+            if (signingDate && !deal.signingTargetDate) {
+              updateData.signingTargetDate = signingDate;
+              fieldsUpdated.push("signingTargetDate");
+            }
+            const exclDate = parseDate(parsed.exclusivityExpiration);
+            if (exclDate && !deal.exclusivityExpiration) {
+              updateData.exclusivityExpiration = exclDate;
+              fieldsUpdated.push("exclusivityExpiration");
+            }
+            const aiClosing = parseDate(parsed.closingTargetDate);
+            if (aiClosing && !deal.closingTargetDate && !updateData.closingTargetDate) {
+              updateData.closingTargetDate = aiClosing;
+              fieldsUpdated.push("closingTargetDate");
+            }
+            const aiLoi = parseDate(parsed.loiDate);
+            if (aiLoi && !deal.loiDate && !updateData.loiDate) {
+              updateData.loiDate = aiLoi;
+              fieldsUpdated.push("loiDate");
+            }
+          }
+        } catch (error: any) {
+          console.error(`[DealIntel] AI overview extraction error:`, error.message);
+        }
+      }
+    }
+  }
+
+  if (Object.keys(updateData).length > 0) {
+    updateData.updatedAt = new Date();
+    await db.update(deals)
+      .set(updateData)
+      .where(eq(deals.id, dealId));
+  }
+
+  console.log(`[DealIntel] Populated ${fieldsUpdated.length} overview fields for deal "${deal.title}": ${fieldsUpdated.join(", ")}`);
+
+  return {
+    fieldsUpdated,
+    totalUpdated: fieldsUpdated.length,
   };
 }
