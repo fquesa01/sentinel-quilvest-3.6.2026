@@ -13,7 +13,6 @@ import Communications from "@/pages/communications";
 import CommunicationDetail from "@/pages/communication-detail";
 import CommunicationAnalytics from "@/pages/communication-analytics";
 import Alerts from "@/pages/alerts";
-import ClientsPage from "@/pages/clients";
 import CalendarPage from "@/pages/calendar";
 import AttorneyQueue from "@/pages/attorney-queue";
 import Analytics from "@/pages/analytics";
@@ -119,7 +118,6 @@ function AuthenticatedApp() {
               <Route path="/communications/:id" component={CommunicationDetail} />
               <Route path="/communication-analytics" component={CommunicationAnalytics} />
               <Route path="/alerts" component={Alerts} />
-              <Route path="/clients" component={ClientsPage} />
               <Route path="/issue-heatmap" component={IssueHeatmapLanding} />
               <Route path="/my-queue" component={MyQueue} />
               <Route path="/ambient-intelligence" component={AmbientIntelligence} />

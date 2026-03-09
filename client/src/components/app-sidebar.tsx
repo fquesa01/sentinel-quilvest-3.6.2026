@@ -24,7 +24,6 @@ import {
   AlertTriangle,
   BarChart3,
   BookOpen,
-  Building2,
   Calendar,
   FileText,
   Home,
@@ -139,24 +138,6 @@ export function AppSidebar() {
       ],
     },
     {
-      title: "Clients",
-      defaultOpen: true,
-      items: [
-        {
-          title: "All Clients",
-          url: "/clients",
-          icon: Building2,
-          roles: ["admin", "compliance_officer", "attorney", "external_counsel"],
-        },
-        {
-          title: "Client Intelligence",
-          url: "/business-intelligence",
-          icon: Briefcase,
-          roles: ["admin", "attorney", "external_counsel", "auditor"],
-        },
-      ],
-    },
-    {
       title: "Transactions",
       defaultOpen: true,
       items: [
@@ -165,6 +146,12 @@ export function AppSidebar() {
           url: "/transactions/deals",
           icon: Handshake,
           roles: ["admin", "attorney", "external_counsel"],
+        },
+        {
+          title: "Client Intelligence",
+          url: "/business-intelligence",
+          icon: Briefcase,
+          roles: ["admin", "attorney", "external_counsel", "auditor"],
         },
         {
           title: "Deal Templates",
