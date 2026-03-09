@@ -345,7 +345,7 @@ export default function InvestorMemoBuilder() {
 
             <TabsContent value="model" className="flex-1 overflow-y-auto p-6 mt-0">
               <AnnotatableContent memoId={memoId!} sectionKey="financial_model" annotations={annotations as any[]}>
-                <FinancialModelPanel model={model} />
+                <FinancialModelPanel model={model} dealId={memo.dealId} />
               </AnnotatableContent>
             </TabsContent>
 

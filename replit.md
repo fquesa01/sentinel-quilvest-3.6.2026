@@ -86,6 +86,12 @@ Comprehensive data models are used for entities such as Users, Communications, A
 - URL sanitization enforces only `/`, `https://`, or `http://` protocols; unsafe schemes (javascript:, data:) are stripped
 - For transaction/data_room source types, document previews use `/api/data-room-documents/:id/preview`
 
+### Financial Model Source Documents
+- The Financial Model tab displays a "Source Documents" section listing all data room documents associated with the deal
+- Backend endpoint: `GET /api/deals/:dealId/source-documents` — fetches all data rooms for the deal, then returns all documents across those rooms
+- Frontend: `FinancialModelPanel` receives `dealId` prop from `investor-memo-builder.tsx`, uses `useQuery` to fetch source documents, and renders clickable links that open document previews in a new tab
+- Each link shows the document filename and optional category badge, with an external link icon on hover
+
 ### Memo Annotations & Collaboration
 - Users can highlight text in any memo section and either "Ask AI" a question or "Add Comment"
 - Annotations are stored in the `memo_annotations` table with type (`comment` or `ai_question`), selected text, author info, and optional AI response

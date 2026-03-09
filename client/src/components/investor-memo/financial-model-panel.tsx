@@ -4,11 +4,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3 } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3, FileText, ExternalLink } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 interface FinancialModelPanelProps {
   model: any;
+  dealId?: string;
 }
 
 function formatNumber(val: number | null | undefined): string {
@@ -52,8 +54,13 @@ function formatPercent(val: number | null | undefined): string {
   return `${val.toFixed(1)}%`;
 }
 
-export function FinancialModelPanel({ model }: FinancialModelPanelProps) {
+export function FinancialModelPanel({ model, dealId }: FinancialModelPanelProps) {
   const [scenario, setScenario] = useState<"base" | "upside" | "downside">("base");
+
+  const { data: sourceDocuments = [] } = useQuery<any[]>({
+    queryKey: ["/api/deals", dealId, "source-documents"],
+    enabled: !!dealId,
+  });
 
   if (!model) {
     return (
@@ -286,6 +293,43 @@ export function FinancialModelPanel({ model }: FinancialModelPanelProps) {
           </div>
         </CardContent>
       </Card>
+
+      {sourceDocuments.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Source Documents
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground mb-3">
+              The following data room documents were used to generate this financial model.
+            </p>
+            <div className="space-y-2">
+              {sourceDocuments.map((doc: any) => (
+                <a
+                  key={doc.id}
+                  href={`/api/data-room-documents/${doc.id}/preview`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-2 rounded-md hover-elevate group"
+                  data-testid={`link-source-doc-${doc.id}`}
+                >
+                  <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium truncate block">{doc.fileName}</span>
+                    {doc.documentCategory && (
+                      <span className="text-xs text-muted-foreground">{doc.documentCategory}</span>
+                    )}
+                  </div>
+                  <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0 invisible group-hover:visible" />
+                </a>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

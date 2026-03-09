@@ -13679,6 +13679,29 @@ Guidelines:
     }
   });
 
+  app.get("/api/deals/:dealId/source-documents", isAuthenticated, async (req: any, res) => {
+    try {
+      const rooms = await db.select({ id: schema.dataRooms.id })
+        .from(schema.dataRooms)
+        .where(eq(schema.dataRooms.dealId, req.params.dealId));
+
+      if (rooms.length === 0) {
+        return res.json([]);
+      }
+
+      const roomIds = rooms.map(r => r.id);
+      const docs = await db.select()
+        .from(schema.dataRoomDocuments)
+        .where(inArray(schema.dataRoomDocuments.dataRoomId, roomIds))
+        .orderBy(desc(schema.dataRoomDocuments.uploadedAt));
+
+      res.json(docs);
+    } catch (error: any) {
+      console.error("Error fetching source documents:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Apply AI-detected deal type and optionally auto-apply matching template
   app.post("/api/deals/:dealId/apply-detected-type", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {
