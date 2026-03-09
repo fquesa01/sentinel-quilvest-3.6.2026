@@ -21,6 +21,10 @@ import {
   ListTodo,
   MessageCircle,
   UserPlus,
+  Link2,
+  Check,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 import {
   Dialog,
@@ -30,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SiWhatsapp, SiSlack } from "react-icons/si";
 
 type Deal = {
   id: string;
@@ -122,7 +127,9 @@ export default function DealChat() {
   const [messageText, setMessageText] = useState("");
   const [showInsights, setShowInsights] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [showIntegrations, setShowIntegrations] = useState(false);
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [copiedWebhook, setCopiedWebhook] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [channelLoading, setChannelLoading] = useState(false);
 
@@ -209,6 +216,32 @@ export default function DealChat() {
     },
   });
 
+  const connectIntegrationMutation = useMutation({
+    mutationFn: async ({ type, externalChannelId }: { type: string; externalChannelId: string }) => {
+      await apiRequest("POST", `/api/deals/${selectedDealId}/channels`, {
+        channelName: `${type.charAt(0).toUpperCase() + type.slice(1)} Integration`,
+        channelType: type,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Integration connected" });
+      setShowIntegrations(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to connect", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const webhookUrl = (type: string) => `${baseUrl}/api/integrations/${type}/webhook`;
+
+  const copyWebhook = (type: string) => {
+    navigator.clipboard.writeText(webhookUrl(type));
+    setCopiedWebhook(type);
+    setTimeout(() => setCopiedWebhook(null), 2000);
+    toast({ title: "Webhook URL copied" });
+  };
+
   const handleSend = () => {
     const trimmed = messageText.trim();
     if (!trimmed || !channelId) return;
@@ -254,6 +287,14 @@ export default function DealChat() {
 
           {channelId && (
             <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowIntegrations(true)}
+                data-testid="button-integrations"
+              >
+                <Link2 className="h-4 w-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -547,6 +588,100 @@ export default function DealChat() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => { setShowAddMember(false); setMemberSearchQuery(""); }} data-testid="button-cancel-add-member">
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showIntegrations} onOpenChange={setShowIntegrations}>
+        <DialogContent className="max-w-lg" data-testid="dialog-integrations">
+          <DialogHeader>
+            <DialogTitle>Connect Messaging Platforms</DialogTitle>
+            <DialogDescription>
+              Link external messaging services to sync conversations into this deal chat. Messages from connected platforms will be analyzed by Ambient Intelligence.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {[
+              {
+                type: "slack",
+                name: "Slack",
+                icon: SiSlack,
+                color: "text-purple-600 dark:text-purple-400",
+                bgColor: "bg-purple-50 dark:bg-purple-950/30",
+                description: "Connect a Slack channel to sync messages bidirectionally.",
+                steps: ["Create a Slack App at api.slack.com", "Add the webhook URL below to Event Subscriptions", "Subscribe to message.channels events", "Install the app to your workspace"],
+              },
+              {
+                type: "whatsapp",
+                name: "WhatsApp",
+                icon: SiWhatsapp,
+                color: "text-green-600 dark:text-green-400",
+                bgColor: "bg-green-50 dark:bg-green-950/30",
+                description: "Route WhatsApp Business messages into this deal chat.",
+                steps: ["Go to Meta Business Suite", "Configure Webhooks in WhatsApp settings", "Paste the webhook URL below", "Verify and subscribe to messages"],
+              },
+              {
+                type: "teams",
+                name: "Microsoft Teams",
+                icon: Users,
+                color: "text-blue-600 dark:text-blue-400",
+                bgColor: "bg-blue-50 dark:bg-blue-950/30",
+                description: "Sync Microsoft Teams channel messages into this deal.",
+                steps: ["Register a Bot in Azure Bot Service", "Set the messaging endpoint to the webhook URL below", "Add the bot to your Teams channel", "Messages will flow automatically"],
+              },
+            ].map((integration) => (
+              <Card key={integration.type} className="p-4" data-testid={`integration-card-${integration.type}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-md ${integration.bgColor}`}>
+                    <integration.icon className={`h-5 w-5 ${integration.color}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h4 className="font-medium text-sm">{integration.name}</h4>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{integration.description}</p>
+
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Setup Steps:</p>
+                      <ol className="space-y-1">
+                        {integration.steps.map((step, i) => (
+                          <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                            <span className="font-medium text-muted-foreground/70 shrink-0">{i + 1}.</span>
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+
+                    <div className="mt-3 space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">Webhook URL:</p>
+                      <div className="flex items-center gap-1">
+                        <code className="flex-1 text-[11px] bg-muted px-2 py-1.5 rounded-md truncate font-mono" data-testid={`webhook-url-${integration.type}`}>
+                          {webhookUrl(integration.type)}
+                        </code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => copyWebhook(integration.type)}
+                          data-testid={`button-copy-webhook-${integration.type}`}
+                        >
+                          {copiedWebhook === integration.type ? (
+                            <Check className="h-3.5 w-3.5 text-green-500" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowIntegrations(false)} data-testid="button-close-integrations">
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>
