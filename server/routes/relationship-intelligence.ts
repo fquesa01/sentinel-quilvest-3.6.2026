@@ -10,6 +10,7 @@ import {
   outreachLog,
   communications,
   emailAccounts,
+  draftNotes,
 } from "@shared/schema";
 import { eq, and, desc, ilike, or, sql, inArray } from "drizzle-orm";
 import multer from "multer";
@@ -2164,6 +2165,337 @@ Example response format:
       }
     } catch (error: any) {
       console.error("[RI] Selective import from case error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =============================================
+  // DRAFT NOTES CRUD
+  // =============================================
+
+  app.get("/api/relationship-intelligence/drafts", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { status } = req.query;
+
+      let conditions = [eq(draftNotes.userId, userId)];
+      if (status && ["draft", "sent", "discarded"].includes(status as string)) {
+        conditions.push(eq(draftNotes.status, status as any));
+      }
+
+      const drafts = await db
+        .select({
+          id: draftNotes.id,
+          userId: draftNotes.userId,
+          contactId: draftNotes.contactId,
+          alertId: draftNotes.alertId,
+          subjectLine: draftNotes.subjectLine,
+          body: draftNotes.body,
+          tone: draftNotes.tone,
+          status: draftNotes.status,
+          channel: draftNotes.channel,
+          contextSources: draftNotes.contextSources,
+          createdAt: draftNotes.createdAt,
+          updatedAt: draftNotes.updatedAt,
+          sentAt: draftNotes.sentAt,
+          contactName: relationshipContacts.fullName,
+          contactEmail: relationshipContacts.email,
+          contactCompany: relationshipContacts.company,
+          contactJobTitle: relationshipContacts.jobTitle,
+          alertHeadline: newsAlerts.headline,
+          alertSourceName: newsAlerts.sourceName,
+          alertCategory: newsAlerts.category,
+        })
+        .from(draftNotes)
+        .leftJoin(relationshipContacts, eq(draftNotes.contactId, relationshipContacts.id))
+        .leftJoin(newsAlerts, eq(draftNotes.alertId, newsAlerts.id))
+        .where(and(...conditions))
+        .orderBy(desc(draftNotes.createdAt));
+
+      res.json(drafts);
+    } catch (error: any) {
+      console.error("[RI] List drafts error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/relationship-intelligence/drafts", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { contactId, alertId, subjectLine, body, tone, channel, contextSources } = req.body;
+
+      if (!body || typeof body !== "string" || !body.trim()) {
+        return res.status(400).json({ message: "body is required" });
+      }
+
+      const validTones = ["formal", "informal", "playful"];
+      if (tone && !validTones.includes(tone)) {
+        return res.status(400).json({ message: "Invalid tone. Must be formal, informal, or playful." });
+      }
+
+      if (contactId) {
+        const [contact] = await db.select({ id: relationshipContacts.id }).from(relationshipContacts)
+          .where(and(eq(relationshipContacts.id, contactId), eq(relationshipContacts.userId, userId)));
+        if (!contact) return res.status(403).json({ message: "Contact not found or not owned by you" });
+      }
+
+      if (alertId) {
+        const [alert] = await db.select({ id: newsAlerts.id }).from(newsAlerts)
+          .where(and(eq(newsAlerts.id, alertId), eq(newsAlerts.userId, userId)));
+        if (!alert) return res.status(403).json({ message: "Alert not found or not owned by you" });
+      }
+
+      const result = await db.insert(draftNotes).values({
+        userId,
+        contactId: contactId || null,
+        alertId: alertId || null,
+        subjectLine: subjectLine || null,
+        body,
+        tone: tone || "formal",
+        channel: channel || "note",
+        contextSources: contextSources || null,
+        status: "draft",
+      }).returning();
+
+      res.json(result[0]);
+    } catch (error: any) {
+      console.error("[RI] Save draft error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/relationship-intelligence/drafts/:id", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { id } = req.params;
+      const { body, subjectLine, tone, status } = req.body;
+
+      const [existing] = await db.select().from(draftNotes)
+        .where(and(eq(draftNotes.id, id), eq(draftNotes.userId, userId)));
+      if (!existing) return res.status(404).json({ message: "Draft not found" });
+
+      const validTones = ["formal", "informal", "playful"];
+      if (tone !== undefined && !validTones.includes(tone)) {
+        return res.status(400).json({ message: "Invalid tone" });
+      }
+      const validStatuses = ["draft", "sent", "discarded"];
+      if (status !== undefined && !validStatuses.includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+
+      const updates: any = { updatedAt: new Date() };
+      if (body !== undefined) updates.body = body;
+      if (subjectLine !== undefined) updates.subjectLine = subjectLine;
+      if (tone !== undefined) updates.tone = tone;
+      if (status !== undefined) {
+        updates.status = status;
+        if (status === "sent") updates.sentAt = new Date();
+      }
+
+      const result = await db.update(draftNotes)
+        .set(updates)
+        .where(and(eq(draftNotes.id, id), eq(draftNotes.userId, userId)))
+        .returning();
+
+      res.json(result[0]);
+    } catch (error: any) {
+      console.error("[RI] Update draft error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/relationship-intelligence/drafts/:id", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { id } = req.params;
+
+      const [existing] = await db.select().from(draftNotes)
+        .where(and(eq(draftNotes.id, id), eq(draftNotes.userId, userId)));
+      if (!existing) return res.status(404).json({ message: "Draft not found" });
+
+      await db.delete(draftNotes)
+        .where(and(eq(draftNotes.id, id), eq(draftNotes.userId, userId)));
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[RI] Delete draft error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =============================================
+  // BULK DRAFT GENERATION
+  // =============================================
+
+  app.post("/api/relationship-intelligence/drafts/bulk-generate", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { items, tone = "formal" } = req.body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "items array is required (each with alertId and contactId)" });
+      }
+
+      if (items.length > 50) {
+        return res.status(400).json({ message: "Maximum 50 drafts can be generated at once" });
+      }
+
+      const toneInstructions: Record<string, string> = {
+        formal: "Write in a professional, polished tone. Use proper greetings and sign-offs.",
+        informal: "Write in a casual, friendly tone. Use conversational language.",
+        playful: "Write in a lighthearted, witty tone. Add humor where appropriate.",
+      };
+      const selectedToneInstruction = toneInstructions[tone] || toneInstructions.formal;
+
+      console.log(`[RI] Bulk draft: generating ${items.length} drafts (tone: ${tone})`);
+
+      const results: { success: number; failed: number; drafts: any[] } = {
+        success: 0,
+        failed: 0,
+        drafts: [],
+      };
+
+      for (const item of items) {
+        try {
+          const { alertId, contactId } = item;
+          if (!alertId || !contactId) {
+            results.failed++;
+            continue;
+          }
+
+          const [alert] = await db.select().from(newsAlerts)
+            .where(and(eq(newsAlerts.id, alertId), eq(newsAlerts.userId, userId)));
+          if (!alert) { results.failed++; continue; }
+
+          const [contact] = await db.select().from(relationshipContacts)
+            .where(and(eq(relationshipContacts.id, contactId), eq(relationshipContacts.userId, userId)));
+          if (!contact) { results.failed++; continue; }
+
+          const searchTerms = [
+            contact.fullName,
+            contact.company || "",
+            (alert.headline || "").split(/\s+/).slice(0, 3).join(" "),
+          ].filter(t => t && t.length >= 2);
+
+          const contextSources: any[] = [];
+          const seenIds = new Set<string>();
+
+          for (const term of searchTerms.slice(0, 3)) {
+            const trimmedTerm = (term || "").trim();
+            if (!trimmedTerm || trimmedTerm.length < 2) continue;
+            try {
+              const searchPattern = `%${trimmedTerm}%`;
+              const matches = await db.select({
+                id: communications.id,
+                subject: communications.subject,
+                body: communications.body,
+                sender: communications.sender,
+                recipients: communications.recipients,
+                timestamp: communications.timestamp,
+              })
+              .from(communications)
+              .where(or(
+                ilike(communications.subject, searchPattern),
+                ilike(communications.body, searchPattern),
+                ilike(communications.sender, searchPattern)
+              ))
+              .orderBy(desc(communications.timestamp))
+              .limit(2);
+
+              for (const match of matches) {
+                if (seenIds.has(match.id)) continue;
+                seenIds.add(match.id);
+                contextSources.push({
+                  communicationId: match.id,
+                  subject: match.subject || "(No Subject)",
+                  snippet: (match.body || "").substring(0, 300).replace(/\n+/g, " ").trim(),
+                  sender: match.sender || "Unknown",
+                  timestamp: match.timestamp?.toISOString() || "",
+                  relevanceReason: `Matched: "${trimmedTerm}"`,
+                });
+              }
+            } catch (e) {}
+          }
+
+          const topSources = contextSources.slice(0, 5);
+          const contextBlock = topSources.length > 0
+            ? `\n\nRelevant emails:\n${topSources.map((s, i) =>
+                `${i + 1}. From: ${s.sender} | Subject: "${s.subject}" | Snippet: ${s.snippet}`
+              ).join("\n")}`
+            : "";
+
+          const draftResponse = await openai.chat.completions.create({
+            model: "gpt-5",
+            messages: [{
+              role: "system",
+              content: `You draft outreach messages for a compliance professional. ${selectedToneInstruction} Never use emojis. Return valid JSON with "draft" and "subjectLine" fields.`
+            }, {
+              role: "user",
+              content: `Write a ${tone} outreach message (1-5 sentences) to this contact about the news article.
+
+Contact: ${contact.fullName}, ${contact.jobTitle || "Professional"} at ${contact.company || "their organization"}
+
+Article: "${alert.headline}"
+Summary: ${alert.summary || "N/A"}
+Sentiment: ${alert.sentiment || "neutral"}
+${contextBlock}
+
+Rules:
+1. ${selectedToneInstruction}
+2. Reference shared history if context exists
+3. 1-5 sentences, personal and specific
+4. If negative news, be tactful
+
+Return JSON: {"draft": "message text", "subjectLine": "subject"}`
+            }],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 500,
+          });
+
+          const rawContent = draftResponse.choices[0].message.content || '{}';
+          let draftData: any;
+          try {
+            draftData = JSON.parse(rawContent);
+          } catch {
+            draftData = { draft: rawContent, subjectLine: "" };
+          }
+
+          let finalDraft = draftData.draft || draftData.message || "";
+          let finalSubject = draftData.subjectLine || draftData.subject_line || "";
+
+          if (!finalDraft.trim()) {
+            const firstName = contact.fullName.split(",")[0].split(" ")[0];
+            finalDraft = `Dear ${firstName},\n\nI came across "${alert.headline}" and thought it may be of interest given your work at ${contact.company || "your organization"}. I would welcome the opportunity to connect.`;
+            finalSubject = `Re: ${(alert.headline || "Recent News").substring(0, 80)}`;
+          }
+          if (!finalSubject.trim()) {
+            finalSubject = `Re: ${(alert.headline || "Recent News").substring(0, 80)}`;
+          }
+
+          const saved = await db.insert(draftNotes).values({
+            userId,
+            contactId,
+            alertId,
+            subjectLine: finalSubject,
+            body: finalDraft,
+            tone,
+            channel: "note",
+            contextSources: { searchTerms, sources: topSources },
+            status: "draft",
+          }).returning();
+
+          results.success++;
+          results.drafts.push(saved[0]);
+        } catch (itemErr: any) {
+          console.error(`[RI] Bulk draft: failed for item:`, itemErr.message);
+          results.failed++;
+        }
+      }
+
+      console.log(`[RI] Bulk draft complete: ${results.success} success, ${results.failed} failed`);
+      res.json(results);
+    } catch (error: any) {
+      console.error("[RI] Bulk draft error:", error);
       res.status(500).json({ message: error.message });
     }
   });

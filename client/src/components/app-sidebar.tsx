@@ -64,6 +64,7 @@ import {
   Mic,
   Radar,
   Contact,
+  FileEdit,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
@@ -133,6 +134,12 @@ export function AppSidebar() {
           title: "Contacts",
           url: "/relationship-contacts",
           icon: Contact,
+          roles: ["admin", "attorney", "compliance_officer"],
+        },
+        {
+          title: "Drafts",
+          url: "/relationship-drafts",
+          icon: FileEdit,
           roles: ["admin", "attorney", "compliance_officer"],
         },
       ],

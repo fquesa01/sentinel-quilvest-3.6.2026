@@ -69,6 +69,8 @@ import {
   CheckSquare,
   ArrowLeft,
   CheckCircle2,
+  FileEdit,
+  Zap,
 } from "lucide-react";
 import type { NewsAlert, RelationshipContact } from "@shared/schema";
 
@@ -220,6 +222,8 @@ function AlertCard({
   onDraftResponse,
   onDismiss,
   onMarkRead,
+  isSelected,
+  onToggleSelect,
 }: {
   alertData: AlertWithContact;
   onDraftEmail: () => void;
@@ -227,6 +231,8 @@ function AlertCard({
   onDraftResponse: () => void;
   onDismiss: () => void;
   onMarkRead: () => void;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const { alert, contact } = alertData;
 
@@ -238,6 +244,14 @@ function AlertCard({
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
+            {onToggleSelect && (
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={onToggleSelect}
+                data-testid={`checkbox-select-alert-${alert.id}`}
+                className="shrink-0"
+              />
+            )}
             <Avatar className="h-9 w-9 shrink-0">
               <AvatarFallback>{getInitials(contact.fullName)}</AvatarFallback>
             </Avatar>
@@ -865,6 +879,31 @@ function DraftResponseDialog({
     toast({ title: "Copied", description: "Response copied to clipboard." });
   };
 
+  const saveDraftMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/relationship-intelligence/drafts", {
+        contactId: contact?.id,
+        alertId: alert?.id,
+        subjectLine: draftMutation.data?.subjectLine || "",
+        body: editedDraft,
+        tone,
+        channel: "note",
+        contextSources: draftMutation.data ? {
+          searchTerms: draftMutation.data.searchTermsUsed,
+          sources: draftMutation.data.contextSources,
+        } : null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/drafts"] });
+      toast({ title: "Draft Saved", description: "Your draft has been saved. View it in the Drafts section." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleLogSent = () => {
     logOutreachMutation.mutate({
       channel: "email",
@@ -1083,6 +1122,15 @@ function DraftResponseDialog({
               <Button variant="outline" onClick={handleCopy} data-testid="button-copy-draft">
                 {copied ? <Check className="w-3.5 h-3.5 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
                 {copied ? "Copied" : "Copy"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => saveDraftMutation.mutate()}
+                disabled={saveDraftMutation.isPending || !editedDraft.trim()}
+                data-testid="button-save-draft"
+              >
+                {saveDraftMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <FileEdit className="w-3.5 h-3.5 mr-1" />}
+                Save Draft
               </Button>
               <Button
                 variant="outline"
@@ -2006,6 +2054,43 @@ export default function RelationshipIntelligence() {
     contact: { id: string; fullName: string; company: string | null; email?: string | null } | null;
   }>({ open: false, alert: null, contact: null });
 
+  const [selectedAlertIds, setSelectedAlertIds] = useState<Set<string>>(new Set());
+  const [bulkTone, setBulkTone] = useState<"formal" | "informal" | "playful">("formal");
+
+  const toggleAlertSelection = (alertId: string) => {
+    setSelectedAlertIds(prev => {
+      const next = new Set(prev);
+      if (next.has(alertId)) next.delete(alertId);
+      else next.add(alertId);
+      return next;
+    });
+  };
+
+  const bulkGenerateMutation = useMutation({
+    mutationFn: async () => {
+      const allAlertsList = alertsData?.alerts || [];
+      const items = allAlertsList
+        .filter(a => selectedAlertIds.has(a.alert.id))
+        .map(a => ({ alertId: a.alert.id, contactId: a.contact.id }));
+      const res = await apiRequest("POST", "/api/relationship-intelligence/drafts/bulk-generate", {
+        items,
+        tone: bulkTone,
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/drafts"] });
+      setSelectedAlertIds(new Set());
+      toast({
+        title: "Drafts Generated",
+        description: `${data.success} draft${data.success !== 1 ? "s" : ""} created successfully${data.failed > 0 ? ` (${data.failed} failed)` : ""}. View them in the Drafts section.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Bulk Generation Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const { data: stats, isLoading: statsLoading } = useQuery<StatsData>({
     queryKey: ["/api/relationship-intelligence/stats"],
   });
@@ -2164,6 +2249,8 @@ export default function RelationshipIntelligence() {
             onMarkRead={() =>
               updateAlertMutation.mutate({ id: alertData.alert.id, updates: { isRead: !alertData.alert.isRead } })
             }
+            isSelected={selectedAlertIds.has(alertData.alert.id)}
+            onToggleSelect={() => toggleAlertSelection(alertData.alert.id)}
           />
         ))}
       </div>
@@ -2279,6 +2366,66 @@ export default function RelationshipIntelligence() {
             </div>
           </CardContent>
         </Card>
+
+        {selectedAlertIds.size > 0 && (
+          <Card data-testid="card-bulk-actions">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <Badge variant="secondary" data-testid="badge-selected-count">
+                  {selectedAlertIds.size} selected
+                </Badge>
+                <Select value={bulkTone} onValueChange={(v) => setBulkTone(v as any)}>
+                  <SelectTrigger className="w-[130px]" data-testid="select-bulk-tone">
+                    <SelectValue placeholder="Tone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="formal">Formal</SelectItem>
+                    <SelectItem value="informal">Informal</SelectItem>
+                    <SelectItem value="playful">Playful</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={() => bulkGenerateMutation.mutate()}
+                  disabled={bulkGenerateMutation.isPending}
+                  data-testid="button-bulk-generate"
+                >
+                  {bulkGenerateMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                      Generating {selectedAlertIds.size} Drafts...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 mr-1" />
+                      Generate {selectedAlertIds.size} Draft{selectedAlertIds.size !== 1 ? "s" : ""}
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedAlertIds(new Set())}
+                  data-testid="button-clear-selection"
+                >
+                  Clear Selection
+                </Button>
+                <div className="flex-1" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const allIds = filteredAlerts.map(a => a.alert.id);
+                    setSelectedAlertIds(new Set(allIds));
+                  }}
+                  data-testid="button-select-all"
+                >
+                  <CheckSquare className="w-3.5 h-3.5 mr-1" />
+                  Select All ({filteredAlerts.length})
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {alertsLoading ? (
           <div className="space-y-3">

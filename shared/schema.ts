@@ -12810,6 +12810,39 @@ export const insertOutreachLogSchema = createInsertSchema(outreachLog).omit({
 });
 export type InsertOutreachLog = z.infer<typeof insertOutreachLogSchema>;
 
+export const draftNoteStatusEnum = pgEnum("draft_note_status", [
+  "draft",
+  "sent",
+  "discarded",
+]);
+
+export const draftNotes = pgTable("draft_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").references(() => relationshipContacts.id),
+  alertId: varchar("alert_id").references(() => newsAlerts.id),
+  subjectLine: text("subject_line"),
+  body: text("body").notNull(),
+  tone: varchar("tone").notNull().default("formal"),
+  status: draftNoteStatusEnum("status").notNull().default("draft"),
+  channel: varchar("channel").notNull().default("note"),
+  contextSources: jsonb("context_sources"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  sentAt: timestamp("sent_at"),
+}, (table) => ({
+  userIdx: index("idx_draft_notes_user").on(table.userId),
+  statusIdx: index("idx_draft_notes_status").on(table.status),
+}));
+
+export type DraftNote = typeof draftNotes.$inferSelect;
+export const insertDraftNoteSchema = createInsertSchema(draftNotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertDraftNote = z.infer<typeof insertDraftNoteSchema>;
+
 export const contactSourcesRelations = relations(contactSources, ({ one, many }) => ({
   user: one(users, {
     fields: [contactSources.userId],
