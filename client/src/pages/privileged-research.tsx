@@ -38,7 +38,11 @@ import {
   PanelLeft,
   Briefcase,
   Building2,
-  Scale
+  Scale,
+  Mail,
+  Phone,
+  UserPlus,
+  AlertTriangle,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -139,6 +143,11 @@ export default function PrivilegedResearch() {
   const [linkType, setLinkType] = useState<"case" | "client">("case");
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [attorneyName, setAttorneyName] = useState("");
+  const [lawFirm, setLawFirm] = useState("");
+  const [attorneyEmail, setAttorneyEmail] = useState("");
+  const [attorneyPhone, setAttorneyPhone] = useState("");
+  const [inviteMethod, setInviteMethod] = useState<"email" | "sms">("email");
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -160,6 +169,47 @@ export default function PrivilegedResearch() {
   const { data: currentSession, isLoading: sessionLoading, refetch: refetchSession } = useQuery<SessionWithMessages>({
     queryKey: ["/api/privileged-sessions", sessionId],
     enabled: !!sessionId,
+  });
+
+  const { data: attorneyInfo, isLoading: attorneyInfoLoading } = useQuery<any>({
+    queryKey: ["/api/attorney-info"],
+  });
+
+  useEffect(() => {
+    if (attorneyInfo) {
+      setAttorneyName(attorneyInfo.attorney_name || "");
+      setLawFirm(attorneyInfo.law_firm || "");
+      setAttorneyEmail(attorneyInfo.attorney_email || "");
+      setAttorneyPhone(attorneyInfo.attorney_phone || "");
+    }
+  }, [attorneyInfo]);
+
+  const saveAttorneyInfo = useMutation({
+    mutationFn: async (data: { attorneyName: string; lawFirm: string; attorneyEmail: string; attorneyPhone: string }) => {
+      const response = await apiRequest("PUT", "/api/attorney-info", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/attorney-info"] });
+      toast({ title: "Saved", description: "Attorney information updated" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save attorney info", variant: "destructive" });
+    },
+  });
+
+  const sendInvite = useMutation({
+    mutationFn: async (data: { method: string; attorneyName: string; lawFirm: string; attorneyEmail: string; attorneyPhone: string }) => {
+      const response = await apiRequest("POST", "/api/attorney-info/invite", data);
+      return response.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/attorney-info"] });
+      toast({ title: "Invite Sent", description: result.message });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to send invite", variant: "destructive" });
+    },
   });
 
   const createSession = useMutation({
@@ -668,14 +718,157 @@ export default function PrivilegedResearch() {
           </div>
 
           {!sessionId ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center max-w-lg stagger-1">
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
-                  <Sparkles className="h-8 w-8 text-primary" />
+            <div className="flex-1 overflow-auto">
+              <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6">
+                <div className="text-center stagger-1">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
+                    <Sparkles className="h-8 w-8 text-primary" />
+                  </div>
+                  <h2 className="text-2xl font-semibold mb-3">Privileged Legal Research</h2>
+                  <p className="text-muted-foreground mb-6">Confidential and attorney work product privileged research.</p>
                 </div>
-                <h2 className="text-2xl font-semibold mb-3">Privileged Legal Research</h2>
-                <p className="text-muted-foreground mb-6">Confidential and attorney work product privileged research.</p>
-                <div className="flex flex-col gap-3 text-sm text-left bg-muted/50 rounded-lg p-4 mb-6">
+
+                <Card className="border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                      <h3 className="font-semibold text-amber-800 dark:text-amber-300">Attorney-Client Privilege Notice</h3>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-amber-900 dark:text-amber-200 leading-relaxed">
+                      To ensure attorney-client privilege protections apply to communications and research conducted on this platform, 
+                      you must invite your attorney of record to participate. Without an attorney present on this platform, 
+                      privilege protections may not attach to your research and communications.
+                    </p>
+                    <p className="text-sm text-amber-900 dark:text-amber-200 leading-relaxed">
+                      Please provide your attorney's information below and send them an invitation to create an account. 
+                      Once your attorney joins, all sessions will be protected under attorney-client privilege and work product doctrine.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <UserPlus className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Your Attorney</h3>
+                    </div>
+                    {attorneyInfo?.attorney_name && (
+                      <div className="flex items-center gap-3 mt-2 p-3 bg-muted/50 rounded-lg">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          <Scale className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate" data-testid="text-attorney-name">{attorneyInfo.attorney_name}</p>
+                          {attorneyInfo.law_firm && (
+                            <p className="text-sm text-muted-foreground truncate" data-testid="text-law-firm">
+                              <Building2 className="h-3 w-3 inline mr-1" />
+                              {attorneyInfo.law_firm}
+                            </p>
+                          )}
+                          {attorneyInfo.invite_sent_at && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Invite sent via {attorneyInfo.invite_method} on {new Date(attorneyInfo.invite_sent_at).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        {attorneyInfo.attorney_user_id ? (
+                          <Badge variant="secondary" className="shrink-0 ml-auto">
+                            <Check className="h-3 w-3 mr-1" />
+                            Joined
+                          </Badge>
+                        ) : attorneyInfo.invite_sent_at ? (
+                          <Badge variant="outline" className="shrink-0 ml-auto border-amber-500/50 text-amber-600">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pending
+                          </Badge>
+                        ) : null}
+                      </div>
+                    )}
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="attorney-name">Attorney Name</Label>
+                        <Input
+                          id="attorney-name"
+                          placeholder="e.g. Jane Smith, Esq."
+                          value={attorneyName}
+                          onChange={(e) => setAttorneyName(e.target.value)}
+                          data-testid="input-attorney-name"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="law-firm">Law Firm</Label>
+                        <Input
+                          id="law-firm"
+                          placeholder="e.g. Smith & Associates LLP"
+                          value={lawFirm}
+                          onChange={(e) => setLawFirm(e.target.value)}
+                          data-testid="input-law-firm"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="attorney-email">Attorney Email</Label>
+                        <Input
+                          id="attorney-email"
+                          type="email"
+                          placeholder="attorney@lawfirm.com"
+                          value={attorneyEmail}
+                          onChange={(e) => setAttorneyEmail(e.target.value)}
+                          data-testid="input-attorney-email"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="attorney-phone">Attorney Phone</Label>
+                        <Input
+                          id="attorney-phone"
+                          type="tel"
+                          placeholder="+1 (555) 123-4567"
+                          value={attorneyPhone}
+                          onChange={(e) => setAttorneyPhone(e.target.value)}
+                          data-testid="input-attorney-phone"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1 gap-2"
+                        disabled={!attorneyName.trim() || saveAttorneyInfo.isPending}
+                        onClick={() => saveAttorneyInfo.mutate({ attorneyName, lawFirm, attorneyEmail, attorneyPhone })}
+                        data-testid="button-save-attorney"
+                      >
+                        {saveAttorneyInfo.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                        Save Attorney Info
+                      </Button>
+                      <Button
+                        className="flex-1 gap-2"
+                        disabled={!attorneyName.trim() || !attorneyEmail.trim() || sendInvite.isPending}
+                        onClick={() => sendInvite.mutate({ method: "email", attorneyName, lawFirm, attorneyEmail, attorneyPhone })}
+                        data-testid="button-invite-email"
+                      >
+                        {sendInvite.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                        Email Invite Link
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1 gap-2"
+                        disabled={!attorneyName.trim() || !attorneyPhone.trim() || sendInvite.isPending}
+                        onClick={() => sendInvite.mutate({ method: "sms", attorneyName, lawFirm, attorneyEmail, attorneyPhone })}
+                        data-testid="button-invite-sms"
+                      >
+                        {sendInvite.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
+                        Text Invite Link
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="flex flex-col gap-3 text-sm text-left bg-muted/50 rounded-lg p-4">
                   <div className="flex items-start gap-3">
                     <FileText className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                     <div>
@@ -698,20 +891,23 @@ export default function PrivilegedResearch() {
                     </div>
                   </div>
                 </div>
-                <Button 
-                  size="lg" 
-                  onClick={() => setShowRetentionDialog(true)}
-                  disabled={createSession.isPending}
-                  className="gap-2"
-                  data-testid="button-start-research"
-                >
-                  {createSession.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  Start New Research Session
-                </Button>
+
+                <div className="text-center">
+                  <Button 
+                    size="lg" 
+                    onClick={() => setShowRetentionDialog(true)}
+                    disabled={createSession.isPending}
+                    className="gap-2"
+                    data-testid="button-start-research"
+                  >
+                    {createSession.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    Start New Research Session
+                  </Button>
+                </div>
               </div>
             </div>
           ) : sessionLoading ? (
@@ -720,6 +916,39 @@ export default function PrivilegedResearch() {
             </div>
           ) : currentSession ? (
             <>
+              {attorneyInfo?.attorney_name && (
+                <div className="border-b px-4 py-2 bg-muted/30 flex items-center gap-3 flex-wrap">
+                  <Scale className="h-4 w-4 text-primary shrink-0" />
+                  <span className="text-sm font-medium" data-testid="text-session-attorney">{attorneyInfo.attorney_name}</span>
+                  {attorneyInfo.law_firm && (
+                    <>
+                      <Separator orientation="vertical" className="h-4" />
+                      <span className="text-sm text-muted-foreground flex items-center gap-1" data-testid="text-session-firm">
+                        <Building2 className="h-3 w-3" />
+                        {attorneyInfo.law_firm}
+                      </span>
+                    </>
+                  )}
+                  {attorneyInfo.attorney_user_id ? (
+                    <Badge variant="secondary" className="ml-auto">
+                      <Check className="h-3 w-3 mr-1" />
+                      Active
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="ml-auto border-amber-500/50 text-amber-600 text-[10px]">
+                      Invite Pending
+                    </Badge>
+                  )}
+                </div>
+              )}
+              {!attorneyInfo?.attorney_name && !attorneyInfoLoading && (
+                <div className="border-b px-4 py-2 bg-amber-50/50 dark:bg-amber-950/20 flex items-center gap-2 flex-wrap">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span className="text-xs text-amber-800 dark:text-amber-300">
+                    No attorney linked. Return to the main screen to invite your attorney for privilege protection.
+                  </span>
+                </div>
+              )}
               <ScrollArea className="flex-1 p-2 sm:p-4">
                 <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
                   {currentSession.messages.length === 0 && !isStreaming && (

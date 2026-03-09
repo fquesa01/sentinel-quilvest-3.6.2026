@@ -27088,6 +27088,169 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
     }
   });
 
+
+  // ============================================================
+  // ATTORNEY INFO & INVITE ROUTES
+  // ============================================================
+
+  // GET /api/attorney-info - Get current user's attorney info
+  app.get("/api/attorney-info", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      
+      const infoResult = await db.execute(sql`SELECT * FROM user_attorney_info WHERE user_id = ${userId}`);
+      const rows = infoResult.rows as any[];
+      if (!rows || rows.length === 0) {
+        return res.json(null);
+      }
+      
+      // If attorney is linked, fetch their user info
+      let attorneyUser = null;
+      const row = rows[0];
+      if (row.attorney_user_id) {
+        const userInfoResult = await db.execute(sql`SELECT id, first_name, last_name, email FROM users WHERE id = ${row.attorney_user_id}`);
+        if ((userInfoResult.rows as any[])?.length > 0) {
+          attorneyUser = (userInfoResult.rows as any[])[0];
+        }
+      }
+      
+      return res.json({
+        ...row,
+        attorneyUser
+      });
+    } catch (error: any) {
+      console.error("[AttorneyInfo] Error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // PUT /api/attorney-info - Save/update attorney info
+  app.put("/api/attorney-info", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      
+      const { attorneyName, lawFirm, attorneyEmail, attorneyPhone } = req.body;
+      
+      await db.execute(sql`
+        INSERT INTO user_attorney_info (user_id, attorney_name, law_firm, attorney_email, attorney_phone, updated_at)
+        VALUES (${userId}, ${attorneyName || null}, ${lawFirm || null}, ${attorneyEmail || null}, ${attorneyPhone || null}, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          attorney_name = ${attorneyName || null},
+          law_firm = ${lawFirm || null},
+          attorney_email = ${attorneyEmail || null},
+          attorney_phone = ${attorneyPhone || null},
+          updated_at = NOW()
+      `);
+      
+      const putResult = await db.execute(sql`SELECT * FROM user_attorney_info WHERE user_id = ${userId}`);
+      return res.json((putResult.rows as any[])[0]);
+    } catch (error: any) {
+      console.error("[AttorneyInfo] Error saving:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // POST /api/attorney-info/invite - Send invite to attorney via email or SMS
+  app.post("/api/attorney-info/invite", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      
+      const { method, attorneyName, lawFirm, attorneyEmail, attorneyPhone } = req.body;
+      
+      if (!method || !['email', 'sms'].includes(method)) {
+        return res.status(400).json({ message: "Invalid invite method. Use 'email' or 'sms'" });
+      }
+      
+      if (method === 'email' && !attorneyEmail) {
+        return res.status(400).json({ message: "Attorney email is required for email invites" });
+      }
+      
+      if (method === 'sms' && !attorneyPhone) {
+        return res.status(400).json({ message: "Attorney phone number is required for SMS invites" });
+      }
+      
+      // Get the requesting user's info
+      const inviteUserResult = await db.execute(sql`SELECT first_name, last_name, email FROM users WHERE id = ${userId}`);
+      const requestingUser = (inviteUserResult.rows as any[])?.[0];
+      const userName = requestingUser ? `${requestingUser.first_name || ''} ${requestingUser.last_name || ''}`.trim() : 'A Sentinel Counsel user';
+      
+      // Generate invite link
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
+        : (process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : 'https://sentinelcounsel.com');
+      const inviteLink = `${baseUrl}/login?invite=attorney&ref=${userId}`;
+      
+      let success = false;
+      
+      if (method === 'email') {
+        const { emailService } = await import('./services/email-service');
+        success = await emailService.sendEmail({
+          to: attorneyEmail,
+          subject: `${userName} has invited you to join Sentinel Counsel LLP`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: #1a1a2e; padding: 24px; border-radius: 8px 8px 0 0;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Sentinel Counsel LLP</h1>
+                <p style="color: #a0a0b0; margin: 4px 0 0;">Attorney-Client Privileged Platform</p>
+              </div>
+              <div style="background: #ffffff; padding: 24px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px;">
+                <h2 style="color: #333; margin-top: 0;">You've Been Invited</h2>
+                <p style="color: #555; line-height: 1.6;">
+                  <strong>${userName}</strong> has invited you to join Sentinel Counsel LLP as their attorney of record to ensure attorney-client privilege protection for their privileged legal research.
+                </p>
+                ${lawFirm ? `<p style="color: #555;"><strong>Law Firm:</strong> ${lawFirm}</p>` : ''}
+                <div style="background: #f8f4e8; border-left: 4px solid #d4a017; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+                  <p style="color: #6b5900; margin: 0; font-size: 14px;">
+                    <strong>Important:</strong> By joining this platform, all communications and research conducted within will be protected under attorney-client privilege and work product doctrine.
+                  </p>
+                </div>
+                <p style="color: #555; line-height: 1.6;">
+                  Click the link below to create your account and begin collaborating:
+                </p>
+                <div style="text-align: center; margin: 24px 0;">
+                  <a href="${inviteLink}" style="background: #2563eb; color: #ffffff; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
+                    Join Sentinel Counsel
+                  </a>
+                </div>
+                <p style="color: #999; font-size: 12px; text-align: center;">
+                  If the button doesn't work, copy and paste this link: ${inviteLink}
+                </p>
+              </div>
+            </div>
+          `
+        });
+      } else if (method === 'sms') {
+        const { smsService } = await import('./services/sms-service');
+        success = await smsService.sendSMS({
+          to: attorneyPhone,
+          message: `${userName} has invited you to join Sentinel Counsel LLP as their attorney to ensure attorney-client privilege. Create your account here: ${inviteLink}`
+        });
+      }
+      
+      // Update attorney info with invite details
+      await db.execute(sql`
+        INSERT INTO user_attorney_info (user_id, attorney_name, law_firm, attorney_email, attorney_phone, invite_sent_at, invite_method, updated_at)
+        VALUES (${userId}, ${attorneyName || null}, ${lawFirm || null}, ${attorneyEmail || null}, ${attorneyPhone || null}, NOW(), ${method}, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          attorney_name = ${attorneyName || null},
+          law_firm = ${lawFirm || null},
+          attorney_email = ${attorneyEmail || null},
+          attorney_phone = ${attorneyPhone || null},
+          invite_sent_at = NOW(),
+          invite_method = ${method},
+          updated_at = NOW()
+      `);
+      
+      return res.json({ success, method, message: success ? `Invite sent via ${method}` : `Invite logged (${method} service not fully configured)` });
+    } catch (error: any) {
+      console.error("[AttorneyInfo] Error sending invite:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ============================================================
   // PRIVILEGED RESEARCH ROUTES - Claude-like AI chat interface
   // ============================================================
