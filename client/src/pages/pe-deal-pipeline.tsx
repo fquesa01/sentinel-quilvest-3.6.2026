@@ -19,6 +19,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -191,6 +192,7 @@ export default function PEDealPipeline() {
   const [pipelineMode, setPipelineMode] = useState<"manual" | "intelligent">("intelligent");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [dealToDelete, setDealToDelete] = useState<PEDeal | null>(null);
+  const [sourcingDetail, setSourcingDetail] = useState<FlaggedAlert | null>(null);
   const [newDeal, setNewDeal] = useState({
     name: "",
     sector: "Technology",
@@ -561,56 +563,49 @@ export default function PEDealPipeline() {
                 </div>
               ) : (
                 flaggedData.alerts.map((item) => (
-                  <Card key={item.alert.id} className="hover-elevate" data-testid={`card-sourcing-${item.alert.id}`}>
+                  <Card
+                    key={item.alert.id}
+                    className="hover-elevate cursor-pointer"
+                    data-testid={`card-sourcing-${item.alert.id}`}
+                    onClick={() => setSourcingDetail(item)}
+                  >
                     <CardContent className="p-3">
-                      <div className="flex items-start gap-2">
-                        <Avatar className="h-7 w-7 shrink-0 mt-0.5">
-                          <AvatarFallback className="text-xs">
-                            {item.contact.fullName.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-medium text-sm truncate" data-testid={`text-sourcing-contact-${item.alert.id}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Avatar className="h-7 w-7 shrink-0">
+                            <AvatarFallback className="text-xs">
+                              {item.contact.fullName.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <span className="font-medium text-sm truncate block" data-testid={`text-sourcing-contact-${item.alert.id}`}>
                               {item.contact.fullName}
                             </span>
                             {item.contact.company && (
-                              <span className="text-xs text-muted-foreground truncate">{item.contact.company}</span>
+                              <span className="text-xs text-muted-foreground truncate block">{item.contact.company}</span>
                             )}
-                          </div>
-                          {item.alert.sourceUrl && item.alert.sourceUrl !== "#" ? (
-                            <a
-                              href={item.alert.sourceUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium leading-snug line-clamp-2 mt-1 hover:underline"
-                              data-testid={`text-sourcing-headline-${item.alert.id}`}
-                            >
-                              {item.alert.headline}
-                              <ExternalLink className="w-3 h-3 inline-block ml-1 text-muted-foreground" />
-                            </a>
-                          ) : (
-                            <p className="text-sm font-medium leading-snug line-clamp-2 mt-1" data-testid={`text-sourcing-headline-${item.alert.id}`}>
-                              {item.alert.headline}
-                            </p>
-                          )}
-                          {item.alert.summary && (
-                            <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{item.alert.summary}</p>
-                          )}
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            {item.alert.sentiment && (
-                              <Badge variant="outline" className="text-xs">
-                                {item.alert.sentiment}
-                              </Badge>
-                            )}
-                            {item.alert.category && (
-                              <Badge variant="secondary" className="text-xs">
-                                {item.alert.category}
-                              </Badge>
-                            )}
-                            <Flag className="h-3 w-3 text-yellow-500 fill-yellow-500" />
                           </div>
                         </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </div>
+                      <p className="text-sm font-medium leading-snug line-clamp-1 mt-2" data-testid={`text-sourcing-headline-${item.alert.id}`}>
+                        {item.alert.headline}
+                      </p>
+                      {item.alert.summary && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{item.alert.summary}</p>
+                      )}
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        {item.alert.sentiment && (
+                          <Badge variant="outline" className="text-xs">
+                            {item.alert.sentiment}
+                          </Badge>
+                        )}
+                        {item.alert.category && (
+                          <Badge variant="secondary" className="text-xs">
+                            {item.alert.category}
+                          </Badge>
+                        )}
+                        <Flag className="h-3 w-3 text-yellow-500 fill-yellow-500" />
                       </div>
                     </CardContent>
                   </Card>
@@ -884,6 +879,74 @@ export default function PEDealPipeline() {
           </Table>
         </Card>
       )}
+
+      <Dialog open={!!sourcingDetail} onOpenChange={(open) => !open && setSourcingDetail(null)}>
+        <DialogContent className="max-w-lg" data-testid="dialog-sourcing-detail">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2" data-testid="text-sourcing-detail-title">
+              <Flag className="h-4 w-4 text-yellow-500 fill-yellow-500 shrink-0" />
+              Flagged Alert
+            </DialogTitle>
+            <DialogDescription>
+              {sourcingDetail?.contact.fullName}
+              {sourcingDetail?.contact.company ? ` - ${sourcingDetail.contact.company}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {sourcingDetail && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Avatar className="h-8 w-8 shrink-0">
+                  <AvatarFallback className="text-xs">
+                    {sourcingDetail.contact.fullName.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <p className="font-medium text-sm" data-testid="text-sourcing-detail-contact">{sourcingDetail.contact.fullName}</p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                    {sourcingDetail.contact.jobTitle && <span>{sourcingDetail.contact.jobTitle}</span>}
+                    {sourcingDetail.contact.company && <span>{sourcingDetail.contact.company}</span>}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h4 className="font-medium text-sm mb-1" data-testid="text-sourcing-detail-headline">{sourcingDetail.alert.headline}</h4>
+                {sourcingDetail.alert.sourceUrl && sourcingDetail.alert.sourceUrl !== "#" && (
+                  <a
+                    href={sourcingDetail.alert.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                    data-testid="link-sourcing-detail-source"
+                  >
+                    {sourcingDetail.alert.sourceName || "View Source"}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+              {sourcingDetail.alert.summary && (
+                <div className="rounded-md bg-muted/50 p-3">
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap" data-testid="text-sourcing-detail-summary">
+                    {sourcingDetail.alert.summary}
+                  </p>
+                </div>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {sourcingDetail.alert.sentiment && (
+                  <Badge variant="outline" className="text-xs">{sourcingDetail.alert.sentiment}</Badge>
+                )}
+                {sourcingDetail.alert.category && (
+                  <Badge variant="secondary" className="text-xs">{sourcingDetail.alert.category}</Badge>
+                )}
+                {sourcingDetail.alert.publishedAt && (
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(sourcingDetail.alert.publishedAt), "MMM d, yyyy")}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="max-w-2xl">
