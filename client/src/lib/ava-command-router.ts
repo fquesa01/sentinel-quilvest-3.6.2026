@@ -954,6 +954,361 @@ export async function executeAvaCommand(
       }
     }
 
+    // ===== Platform Navigation Intents =====
+    case "navigate_to_relationship_intelligence":
+      navigate("/relationship-intelligence");
+      closeDrawer?.();
+      return { navigateTo: "/relationship-intelligence" };
+
+    case "navigate_to_contacts":
+      navigate("/relationship-contacts");
+      closeDrawer?.();
+      return { navigateTo: "/relationship-contacts" };
+
+    case "navigate_to_client_intelligence":
+      navigate("/pe/deal-intelligence");
+      closeDrawer?.();
+      return { navigateTo: "/pe/deal-intelligence" };
+
+    case "navigate_to_deal_templates":
+      navigate("/transactions/templates");
+      closeDrawer?.();
+      return { navigateTo: "/transactions/templates" };
+
+    case "navigate_to_request_lists":
+      navigate("/transactions/request-lists");
+      closeDrawer?.();
+      return { navigateTo: "/transactions/request-lists" };
+
+    case "navigate_to_deal_chat":
+      navigate("/deal-chat");
+      closeDrawer?.();
+      return { navigateTo: "/deal-chat" };
+
+    case "navigate_to_data_rooms":
+      navigate("/transactions/data-rooms");
+      closeDrawer?.();
+      return { navigateTo: "/transactions/data-rooms" };
+
+    case "navigate_to_deal_pipeline":
+      navigate("/pe/deals");
+      closeDrawer?.();
+      return { navigateTo: "/pe/deals" };
+
+    case "navigate_to_due_diligence":
+      navigate("/transactions/checklists");
+      closeDrawer?.();
+      return { navigateTo: "/transactions/checklists" };
+
+    case "navigate_to_privileged_research":
+      navigate("/privileged-research");
+      closeDrawer?.();
+      return { navigateTo: "/privileged-research" };
+
+    case "navigate_to_calendar":
+      navigate("/calendar");
+      closeDrawer?.();
+      return { navigateTo: "/calendar" };
+
+    case "navigate_to_ambient_intelligence":
+      navigate("/ambient-intelligence");
+      closeDrawer?.();
+      return { navigateTo: "/ambient-intelligence" };
+
+    case "navigate_to_document_review":
+      navigate("/document-review");
+      closeDrawer?.();
+      return { navigateTo: "/document-review" };
+
+    case "navigate_to_issue_heatmap":
+      navigate("/issue-heatmap");
+      closeDrawer?.();
+      return { navigateTo: "/issue-heatmap" };
+
+    case "navigate_to_data_lake":
+      navigate("/my-data-lake");
+      closeDrawer?.();
+      return { navigateTo: "/my-data-lake" };
+
+    case "navigate_to_collections":
+      navigate("/collections");
+      closeDrawer?.();
+      return { navigateTo: "/collections" };
+
+    case "navigate_to_background_research":
+      navigate("/background-research");
+      closeDrawer?.();
+      return { navigateTo: "/background-research" };
+
+    case "navigate_to_business_intelligence":
+      navigate("/business-intelligence");
+      closeDrawer?.();
+      return { navigateTo: "/business-intelligence" };
+
+    case "navigate_to_mailbox":
+      navigate("/mailbox");
+      closeDrawer?.();
+      return { navigateTo: "/mailbox" };
+
+    case "navigate_to_dashboard":
+      navigate("/dashboard");
+      closeDrawer?.();
+      return { navigateTo: "/dashboard" };
+
+    case "navigate_to_analytics":
+      navigate("/analytics");
+      closeDrawer?.();
+      return { navigateTo: "/analytics" };
+
+    case "navigate_to_admin":
+      navigate("/admin");
+      closeDrawer?.();
+      return { navigateTo: "/admin" };
+
+    case "navigate_to_deal_checklists":
+      navigate("/transactions/checklists");
+      closeDrawer?.();
+      return { navigateTo: "/transactions/checklists" };
+
+    case "navigate_to_investor_memo": {
+      if (parameters.memoId) {
+        navigate(`/investor-memo/${parameters.memoId}`);
+        closeDrawer?.();
+        return { navigateTo: `/investor-memo/${parameters.memoId}` };
+      }
+      navigate("/pe/deals");
+      closeDrawer?.();
+      return {
+        navigateTo: "/pe/deals",
+        responseMessage: "Select a deal to generate an investment memo.",
+      };
+    }
+
+    // ===== Draft & Create Action Intents =====
+    case "draft_note": {
+      const queryParts: string[] = [];
+      if (parameters.topic) queryParts.push(`draftNote=${encodeURIComponent(parameters.topic)}`);
+      else queryParts.push("draftNote=true");
+      if (parameters.contactName) queryParts.push(`contact=${encodeURIComponent(parameters.contactName)}`);
+      if (parameters.alertId) queryParts.push(`alertId=${encodeURIComponent(parameters.alertId)}`);
+      const url = `/relationship-intelligence${queryParts.length ? '?' + queryParts.join('&') : ''}`;
+      navigate(url);
+      closeDrawer?.();
+      return {
+        navigateTo: url,
+        successMessage: parameters.topic
+          ? `Taking you to draft a note about "${parameters.topic}".`
+          : "Taking you to draft a note.",
+      };
+    }
+
+    case "draft_email": {
+      const queryParts: string[] = [];
+      if (parameters.topic) queryParts.push(`draftEmail=${encodeURIComponent(parameters.topic)}`);
+      else queryParts.push("draftEmail=true");
+      if (parameters.recipientName) queryParts.push(`recipient=${encodeURIComponent(parameters.recipientName)}`);
+      if (parameters.contactName) queryParts.push(`contact=${encodeURIComponent(parameters.contactName)}`);
+      if (parameters.alertId) queryParts.push(`alertId=${encodeURIComponent(parameters.alertId)}`);
+      const url = `/relationship-intelligence${queryParts.length ? '?' + queryParts.join('&') : ''}`;
+      navigate(url);
+      closeDrawer?.();
+      return {
+        navigateTo: url,
+        successMessage: parameters.recipientName
+          ? `Taking you to draft an email to ${parameters.recipientName}.`
+          : "Taking you to draft an email.",
+      };
+    }
+
+    case "draft_linkedin": {
+      const queryParts: string[] = [];
+      if (parameters.topic) queryParts.push(`draftLinkedIn=${encodeURIComponent(parameters.topic)}`);
+      else queryParts.push("draftLinkedIn=true");
+      if (parameters.contactName) queryParts.push(`contact=${encodeURIComponent(parameters.contactName)}`);
+      if (parameters.alertId) queryParts.push(`alertId=${encodeURIComponent(parameters.alertId)}`);
+      const url = `/relationship-intelligence${queryParts.length ? '?' + queryParts.join('&') : ''}`;
+      navigate(url);
+      closeDrawer?.();
+      return {
+        navigateTo: url,
+        successMessage: parameters.topic
+          ? `Taking you to draft a LinkedIn post about "${parameters.topic}".`
+          : "Taking you to draft a LinkedIn post.",
+      };
+    }
+
+    case "create_deal": {
+      const queryParts: string[] = ["createDeal=true"];
+      if (parameters.title) queryParts.push(`title=${encodeURIComponent(parameters.title)}`);
+      if (parameters.dealType) queryParts.push(`dealType=${encodeURIComponent(parameters.dealType)}`);
+      const url = `/transactions/deals?${queryParts.join('&')}`;
+      navigate(url);
+      closeDrawer?.();
+      return {
+        navigateTo: url,
+        successMessage: parameters.title
+          ? `Taking you to create the "${parameters.title}" deal.`
+          : "Taking you to create a new deal.",
+      };
+    }
+
+    case "create_contact": {
+      const queryParts: string[] = ["createContact=true"];
+      if (parameters.name) queryParts.push(`name=${encodeURIComponent(parameters.name)}`);
+      if (parameters.company) queryParts.push(`company=${encodeURIComponent(parameters.company)}`);
+      const url = `/relationship-contacts?${queryParts.join('&')}`;
+      navigate(url);
+      closeDrawer?.();
+      return {
+        navigateTo: url,
+        successMessage: parameters.name
+          ? `Taking you to add ${parameters.name} as a contact.`
+          : "Taking you to create a new contact.",
+      };
+    }
+
+    case "upload_to_data_lake": {
+      navigate("/my-data-lake?upload=true");
+      closeDrawer?.();
+      return {
+        navigateTo: "/my-data-lake?upload=true",
+        successMessage: "Taking you to your data lake to upload documents.",
+      };
+    }
+
+    case "generate_investment_memo": {
+      if (parameters.dealName) {
+        const foundDeal = await searchDealByName(parameters.dealName);
+        if (foundDeal) {
+          navigate(`/transactions/deals/${foundDeal.id}?generateMemo=true`);
+          closeDrawer?.();
+          return {
+            navigateTo: `/transactions/deals/${foundDeal.id}?generateMemo=true`,
+            successMessage: `Taking you to generate an investment memo for ${foundDeal.title}.`,
+          };
+        }
+        return { errorMessage: `I couldn't find a deal matching "${parameters.dealName}".` };
+      }
+      navigate("/pe/deals?generateMemo=true");
+      closeDrawer?.();
+      return {
+        navigateTo: "/pe/deals?generateMemo=true",
+        responseMessage: "Select a deal to generate an investment memo.",
+      };
+    }
+
+    case "share_deal": {
+      if (parameters.dealName) {
+        const foundDeal = await searchDealByName(parameters.dealName);
+        if (foundDeal) {
+          navigate(`/transactions/deals/${foundDeal.id}?shareDeal=true`);
+          closeDrawer?.();
+          return {
+            navigateTo: `/transactions/deals/${foundDeal.id}?shareDeal=true`,
+            successMessage: `Taking you to share the ${foundDeal.title} deal.`,
+          };
+        }
+        return { errorMessage: `I couldn't find a deal matching "${parameters.dealName}".` };
+      }
+      navigate("/transactions/deals?shareDeal=true");
+      closeDrawer?.();
+      return {
+        navigateTo: "/transactions/deals?shareDeal=true",
+        responseMessage: "Select a deal to share.",
+      };
+    }
+
+    case "scan_news": {
+      navigate("/relationship-intelligence?scanNews=true");
+      closeDrawer?.();
+      return {
+        navigateTo: "/relationship-intelligence?scanNews=true",
+        successMessage: "Taking you to scan news for your monitored contacts.",
+      };
+    }
+
+    case "create_request_list": {
+      navigate("/transactions/request-lists?create=true");
+      closeDrawer?.();
+      return {
+        navigateTo: "/transactions/request-lists?create=true",
+        successMessage: "Taking you to create a new request list.",
+      };
+    }
+
+    case "create_checklist": {
+      navigate("/transactions/checklists?create=true");
+      closeDrawer?.();
+      return {
+        navigateTo: "/transactions/checklists?create=true",
+        successMessage: "Taking you to create a new checklist.",
+      };
+    }
+
+    case "start_due_diligence": {
+      if (parameters.dealName) {
+        const foundDeal = await searchDealByName(parameters.dealName);
+        if (foundDeal) {
+          navigate(`/transactions/deals/${foundDeal.id}?startDD=true`);
+          closeDrawer?.();
+          return {
+            navigateTo: `/transactions/deals/${foundDeal.id}?startDD=true`,
+            successMessage: `Starting due diligence for ${foundDeal.title}.`,
+          };
+        }
+        return { errorMessage: `I couldn't find a deal matching "${parameters.dealName}".` };
+      }
+      navigate("/transactions/checklists?create=true");
+      closeDrawer?.();
+      return {
+        navigateTo: "/transactions/checklists?create=true",
+        responseMessage: "Taking you to start a due diligence checklist.",
+      };
+    }
+
+    case "start_privileged_research": {
+      const queryParts: string[] = [];
+      if (parameters.topic) queryParts.push(`topic=${encodeURIComponent(parameters.topic)}`);
+      const url = `/privileged-research${queryParts.length ? '?' + queryParts.join('&') : ''}`;
+      navigate(url);
+      closeDrawer?.();
+      return {
+        navigateTo: url,
+        successMessage: parameters.topic
+          ? `Starting privileged research on "${parameters.topic}".`
+          : "Opening privileged research.",
+      };
+    }
+
+    case "create_collection": {
+      const queryParts: string[] = ["create=true"];
+      if (parameters.name) queryParts.push(`name=${encodeURIComponent(parameters.name)}`);
+      const url = `/collections?${queryParts.join('&')}`;
+      navigate(url);
+      closeDrawer?.();
+      return {
+        navigateTo: url,
+        successMessage: parameters.name
+          ? `Creating a collection called "${parameters.name}".`
+          : "Taking you to create a new collection.",
+      };
+    }
+
+    case "run_background_research": {
+      const queryParts: string[] = [];
+      if (parameters.targetName) queryParts.push(`target=${encodeURIComponent(parameters.targetName)}`);
+      if (parameters.targetType) queryParts.push(`type=${encodeURIComponent(parameters.targetType)}`);
+      const url = `/background-research${queryParts.length ? '?' + queryParts.join('&') : ''}`;
+      navigate(url);
+      closeDrawer?.();
+      return {
+        navigateTo: url,
+        successMessage: parameters.targetName
+          ? `Starting background research on ${parameters.targetName}.`
+          : "Opening background research.",
+      };
+    }
+
     default:
       console.log("[CommandRouter] Unknown command intent:", intent);
       return { errorMessage: `Unknown command: ${intent}` };

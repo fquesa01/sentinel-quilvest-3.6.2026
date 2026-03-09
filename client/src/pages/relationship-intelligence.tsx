@@ -2066,6 +2066,42 @@ export default function RelationshipIntelligence() {
     },
   });
 
+  const [pendingEmmaAction, setPendingEmmaAction] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get("draftNote") ? "draftNote"
+      : params.get("draftEmail") ? "draftEmail"
+      : params.get("draftLinkedIn") ? "draftLinkedIn"
+      : params.get("scanNews") ? "scanNews"
+      : null;
+    if (action) window.history.replaceState({}, "", window.location.pathname);
+    return action;
+  });
+
+  useEffect(() => {
+    if (!pendingEmmaAction) return;
+
+    if (pendingEmmaAction === "scanNews") {
+      scanMutation.mutate();
+      setPendingEmmaAction(null);
+      return;
+    }
+
+    const alerts = alertsData?.alerts || [];
+    if (alerts.length === 0) return;
+
+    const firstAlert = alerts[0];
+    const contactInfo = { id: firstAlert.contact.id, fullName: firstAlert.contact.fullName, company: firstAlert.contact.company, email: firstAlert.contact.email };
+
+    if (pendingEmmaAction === "draftNote") {
+      setDraftResponseDialog({ open: true, alert: firstAlert.alert, contact: contactInfo });
+    } else if (pendingEmmaAction === "draftEmail") {
+      setOutreachDialog({ open: true, alert: firstAlert.alert, contact: contactInfo, channel: "email" });
+    } else if (pendingEmmaAction === "draftLinkedIn") {
+      setOutreachDialog({ open: true, alert: firstAlert.alert, contact: contactInfo, channel: "linkedin" });
+    }
+    setPendingEmmaAction(null);
+  }, [pendingEmmaAction, alertsData]);
+
   const allAlerts = alertsData?.alerts || [];
 
   const filteredAlerts = searchQuery

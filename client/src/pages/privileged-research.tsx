@@ -127,7 +127,15 @@ export default function PrivilegedResearch() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
-  const [inputValue, setInputValue] = useState("");
+  const [inputValue, setInputValue] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const topic = params.get("topic");
+    if (topic) {
+      window.history.replaceState({}, "", window.location.pathname);
+      return topic;
+    }
+    return "";
+  });
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamedContent, setStreamedContent] = useState("");
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);

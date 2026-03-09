@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -99,7 +99,14 @@ function getItemTypeIcon(type: string) {
 }
 
 export default function MyDataLakePage() {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("upload")) {
+      window.history.replaceState({}, "", window.location.pathname);
+      return "upload";
+    }
+    return "overview";
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [fileFilter, setFileFilter] = useState("all");
   const [uploadDragging, setUploadDragging] = useState(false);

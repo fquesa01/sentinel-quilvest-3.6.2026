@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,14 @@ type ConnectorConfig = {
 };
 
 export default function CollectionsPage() {
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("create")) {
+      window.history.replaceState({}, "", window.location.pathname);
+      return true;
+    }
+    return false;
+  });
   const [connectorName, setConnectorName] = useState("");
   const [connectorType, setConnectorType] = useState("");
   const [selectedConfig, setSelectedConfig] = useState<ConnectorConfig | null>(null);

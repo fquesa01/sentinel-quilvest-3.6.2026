@@ -296,6 +296,31 @@ const NAVIGATION_INTENTS = [
   "navigate_to_deal",
   "navigate_to_transactions",
   "start_video_conference",
+  "navigate_to_relationship_intelligence",
+  "navigate_to_contacts",
+  "navigate_to_client_intelligence",
+  "navigate_to_deal_templates",
+  "navigate_to_request_lists",
+  "navigate_to_deal_chat",
+  "navigate_to_data_rooms",
+  "navigate_to_deal_pipeline",
+  "navigate_to_due_diligence",
+  "navigate_to_privileged_research",
+  "navigate_to_calendar",
+  "navigate_to_ambient_intelligence",
+  "navigate_to_document_review",
+  "navigate_to_issue_heatmap",
+  "navigate_to_data_lake",
+  "navigate_to_collections",
+  "navigate_to_background_research",
+  "navigate_to_business_intelligence",
+  "navigate_to_mailbox",
+  "navigate_to_dashboard",
+  "navigate_to_analytics",
+  "navigate_to_admin",
+  "navigate_to_deal_data_room",
+  "navigate_to_deal_checklists",
+  "navigate_to_investor_memo",
 ];
 
 const ACTION_INTENTS = [
@@ -307,6 +332,21 @@ const ACTION_INTENTS = [
   "filter_by_date",
   "create_finding",
   "add_tag",
+  "draft_note",
+  "draft_email",
+  "draft_linkedin",
+  "create_deal",
+  "create_contact",
+  "upload_to_data_lake",
+  "generate_investment_memo",
+  "share_deal",
+  "scan_news",
+  "create_request_list",
+  "create_checklist",
+  "start_due_diligence",
+  "start_privileged_research",
+  "create_collection",
+  "run_background_research",
 ];
 
 const CASE_DATA_INTENTS = [
@@ -379,6 +419,61 @@ CRITICAL: When the user says "transaction", "deal", or "project" (not "case"), u
 - Example: "Take me to the Ultimate Gamer transaction" → dealName: "Ultimate Gamer"
 - Example: "Open the Acme Corp deal" → dealName: "Acme Corp"
 - Example: "Go to the Johnson project" → dealName: "Johnson"
+
+PLATFORM NAVIGATION (respond with mode: "command"):
+These intents navigate to major platform sections:
+- "Go to relationship intelligence" / "Show me the intelligence feed" / "Open my feed" / "Show alerts" → navigate_to_relationship_intelligence
+- "Go to contacts" / "Show my contacts" / "Open contacts" → navigate_to_contacts
+- "Go to client intelligence" / "Show client intelligence" / "Deal intelligence" → navigate_to_client_intelligence
+- "Go to deal templates" / "Show templates" / "Open templates" → navigate_to_deal_templates
+- "Go to request lists" / "Show DRL" / "Open request lists" → navigate_to_request_lists
+- "Go to deal chat" / "Open deal chat" → navigate_to_deal_chat
+- "Go to data rooms" / "Show data rooms" → navigate_to_data_rooms
+- "Go to deal pipeline" / "Show pipeline" / "Open pipeline" → navigate_to_deal_pipeline
+- "Go to due diligence" / "Show due diligence reports" → navigate_to_due_diligence
+- "Go to privileged research" / "Open research" / "Legal research" → navigate_to_privileged_research
+- "Go to calendar" / "Show my calendar" / "Open calendar" → navigate_to_calendar
+- "Go to ambient intelligence" / "Show meeting intelligence" / "Open ambient" → navigate_to_ambient_intelligence
+- "Go to document review" / "Review documents" (without specifying a case) → navigate_to_document_review
+- "Go to issue heatmap" / "Show heatmap" / "Open heatmap" → navigate_to_issue_heatmap
+- "Go to data lake" / "My data lake" / "Show data lake" / "Open data lake" → navigate_to_data_lake
+- "Go to collections" / "Show collections" / "Open collections" → navigate_to_collections
+- "Go to background research" / "Run background check" → navigate_to_background_research
+- "Go to business intelligence" / "Open BI" / "Show business intelligence" → navigate_to_business_intelligence
+- "Go to mailbox" / "Show mailbox" / "Open email" / "Check mail" → navigate_to_mailbox
+- "Go to dashboard" / "Show dashboard" / "Open dashboard" / "Home" → navigate_to_dashboard
+- "Go to analytics" / "Show analytics" → navigate_to_analytics
+- "Go to admin" / "Admin panel" / "Admin dashboard" → navigate_to_admin
+- "Go to checklists" / "Show checklists" / "Open checklists" → navigate_to_deal_checklists
+
+DRAFT & CREATE ACTIONS (respond with mode: "command"):
+- "Draft a note" / "Write a note" / "Create a note" / "Draft a note about [topic]" → draft_note
+  - Parameters: topic (optional - what the note is about), contactName (optional - who it's about), alertId (optional)
+  - This navigates to the intelligence feed and triggers the note drafting workflow
+- "Draft an email" / "Write an email" / "Compose an email" / "Send an email" / "Draft an email about [topic]" / "Draft an email to [person]" → draft_email
+  - Parameters: topic (optional), recipientName (optional), contactName (optional), alertId (optional)
+- "Draft a LinkedIn post" / "Write a LinkedIn post" / "Create a LinkedIn post about [topic]" → draft_linkedin
+  - Parameters: topic (optional), contactName (optional), alertId (optional)
+- "Create a deal" / "New transaction" / "Start a new deal" / "Create a transaction" → create_deal
+  - Parameters: title (optional), dealType (optional, e.g., "acquisition", "merger", "lbo")
+- "Create a contact" / "Add a contact" / "New contact" / "Add [person] as a contact" → create_contact
+  - Parameters: name (optional), company (optional)
+- "Upload to data lake" / "Add document to data lake" / "Upload a file" → upload_to_data_lake
+- "Generate investment memo" / "Create an investment memo for [deal]" / "Build a memo" → generate_investment_memo
+  - Parameters: dealName (optional)
+- "Share a deal" / "Share [deal name] with [person]" → share_deal
+  - Parameters: dealName (optional), recipientEmail (optional)
+- "Scan news" / "Check for news" / "Run a news scan" / "Scan for updates" → scan_news
+- "Create a request list" / "New DRL" / "Create DRL" → create_request_list
+- "Create a checklist" / "New checklist" → create_checklist
+- "Start due diligence" / "Begin due diligence on [deal]" → start_due_diligence
+  - Parameters: dealName (optional)
+- "Start privileged research" / "New research session" / "Begin legal research" / "Research [topic]" → start_privileged_research
+  - Parameters: topic (optional)
+- "Create a collection" / "New collection" → create_collection
+  - Parameters: name (optional)
+- "Run background research" / "Background check on [person/company]" → run_background_research
+  - Parameters: targetName (optional), targetType (optional - "person" or "company")
 
 ACTION COMMANDS (respond with mode: "command"):
 - "Schedule an interview with [name] for [date/time]" → schedule_interview
@@ -644,6 +739,226 @@ User: "Review documents in the Sentinel case"
     "caseName": "Sentinel"
   },
   "assistantMessage": "Opening Email & Document Review for the Sentinel case."
+}
+
+PLATFORM NAVIGATION EXAMPLES:
+
+User: "Show me the intelligence feed"
+{
+  "mode": "command",
+  "intent": "navigate_to_relationship_intelligence",
+  "parameters": {},
+  "assistantMessage": "Opening your intelligence feed."
+}
+
+User: "Go to my contacts"
+{
+  "mode": "command",
+  "intent": "navigate_to_contacts",
+  "parameters": {},
+  "assistantMessage": "Taking you to your contacts."
+}
+
+User: "Open the deal pipeline"
+{
+  "mode": "command",
+  "intent": "navigate_to_deal_pipeline",
+  "parameters": {},
+  "assistantMessage": "Opening the deal pipeline."
+}
+
+User: "Go to privileged research"
+{
+  "mode": "command",
+  "intent": "navigate_to_privileged_research",
+  "parameters": {},
+  "assistantMessage": "Opening privileged research."
+}
+
+User: "Show my calendar"
+{
+  "mode": "command",
+  "intent": "navigate_to_calendar",
+  "parameters": {},
+  "assistantMessage": "Opening your calendar."
+}
+
+User: "Go to data lake"
+{
+  "mode": "command",
+  "intent": "navigate_to_data_lake",
+  "parameters": {},
+  "assistantMessage": "Opening your data lake."
+}
+
+User: "Open deal chat"
+{
+  "mode": "command",
+  "intent": "navigate_to_deal_chat",
+  "parameters": {},
+  "assistantMessage": "Opening deal chat."
+}
+
+User: "Go to ambient intelligence"
+{
+  "mode": "command",
+  "intent": "navigate_to_ambient_intelligence",
+  "parameters": {},
+  "assistantMessage": "Opening ambient intelligence."
+}
+
+User: "Open mailbox"
+{
+  "mode": "command",
+  "intent": "navigate_to_mailbox",
+  "parameters": {},
+  "assistantMessage": "Opening your mailbox."
+}
+
+User: "Take me to the dashboard"
+{
+  "mode": "command",
+  "intent": "navigate_to_dashboard",
+  "parameters": {},
+  "assistantMessage": "Taking you to the dashboard."
+}
+
+User: "Show me background research"
+{
+  "mode": "command",
+  "intent": "navigate_to_background_research",
+  "parameters": {},
+  "assistantMessage": "Opening background research."
+}
+
+DRAFT & CREATE EXAMPLES:
+
+User: "Draft a note"
+{
+  "mode": "command",
+  "intent": "draft_note",
+  "parameters": {},
+  "assistantMessage": "I'll take you to the intelligence feed to draft a note."
+}
+
+User: "Draft a note about the quarterly earnings"
+{
+  "mode": "command",
+  "intent": "draft_note",
+  "parameters": { "topic": "quarterly earnings" },
+  "assistantMessage": "I'll take you to the intelligence feed to draft a note about quarterly earnings."
+}
+
+User: "Draft an email to John"
+{
+  "mode": "command",
+  "intent": "draft_email",
+  "parameters": { "recipientName": "John" },
+  "assistantMessage": "I'll take you to draft an email to John."
+}
+
+User: "Write a LinkedIn post about the merger"
+{
+  "mode": "command",
+  "intent": "draft_linkedin",
+  "parameters": { "topic": "the merger" },
+  "assistantMessage": "I'll take you to draft a LinkedIn post about the merger."
+}
+
+User: "Create a new deal"
+{
+  "mode": "command",
+  "intent": "create_deal",
+  "parameters": {},
+  "assistantMessage": "I'll take you to create a new transaction."
+}
+
+User: "Create a deal called Project Phoenix"
+{
+  "mode": "command",
+  "intent": "create_deal",
+  "parameters": { "title": "Project Phoenix" },
+  "assistantMessage": "I'll take you to create the Project Phoenix transaction."
+}
+
+User: "Scan the news"
+{
+  "mode": "command",
+  "intent": "scan_news",
+  "parameters": {},
+  "assistantMessage": "Starting a news scan for your monitored contacts."
+}
+
+User: "Generate an investment memo for Acme Corp"
+{
+  "mode": "command",
+  "intent": "generate_investment_memo",
+  "parameters": { "dealName": "Acme Corp" },
+  "assistantMessage": "I'll help you generate an investment memo for Acme Corp."
+}
+
+User: "Share the Ultimate Gamer deal"
+{
+  "mode": "command",
+  "intent": "share_deal",
+  "parameters": { "dealName": "Ultimate Gamer" },
+  "assistantMessage": "I'll take you to the Ultimate Gamer deal to share it."
+}
+
+User: "Start privileged research about antitrust"
+{
+  "mode": "command",
+  "intent": "start_privileged_research",
+  "parameters": { "topic": "antitrust" },
+  "assistantMessage": "Starting a privileged research session on antitrust."
+}
+
+User: "Run a background check on John Smith"
+{
+  "mode": "command",
+  "intent": "run_background_research",
+  "parameters": { "targetName": "John Smith", "targetType": "person" },
+  "assistantMessage": "Starting background research on John Smith."
+}
+
+User: "Upload to data lake"
+{
+  "mode": "command",
+  "intent": "upload_to_data_lake",
+  "parameters": {},
+  "assistantMessage": "I'll take you to your data lake to upload documents."
+}
+
+User: "Create a request list"
+{
+  "mode": "command",
+  "intent": "create_request_list",
+  "parameters": {},
+  "assistantMessage": "I'll take you to create a new request list."
+}
+
+User: "Add a contact for Jane Doe at Blackrock"
+{
+  "mode": "command",
+  "intent": "create_contact",
+  "parameters": { "name": "Jane Doe", "company": "Blackrock" },
+  "assistantMessage": "I'll take you to add Jane Doe from Blackrock as a contact."
+}
+
+User: "Show me the heatmap"
+{
+  "mode": "command",
+  "intent": "navigate_to_issue_heatmap",
+  "parameters": {},
+  "assistantMessage": "Opening the issue heatmap."
+}
+
+User: "Open due diligence"
+{
+  "mode": "command",
+  "intent": "navigate_to_due_diligence",
+  "parameters": {},
+  "assistantMessage": "Opening due diligence reports."
 }`;
 
 export async function interpretUserMessage(

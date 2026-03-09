@@ -449,26 +449,35 @@ export function AvaChat({
               <div className="border rounded-lg p-3 bg-muted/30">
                 <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
                   <Navigation className="h-3 w-3" />
-                  Try saying or typing:
+                  Navigate anywhere:
                 </p>
                 <div className="space-y-1.5">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                    onClick={() => setMessageInput("Take me to the Safety PPE case")}
+                    onClick={() => setMessageInput("Go to my intelligence feed")}
                     data-testid="button-suggested-nav-1"
                   >
-                    "Take me to the Safety PPE case"
+                    "Go to my intelligence feed"
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                    onClick={() => setMessageInput("Show me my queue")}
+                    onClick={() => setMessageInput("Open the deal pipeline")}
                     data-testid="button-suggested-nav-2"
                   >
-                    "Show me my queue"
+                    "Open the deal pipeline"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
+                    onClick={() => setMessageInput("Show me my data lake")}
+                    data-testid="button-suggested-nav-3"
+                  >
+                    "Show me my data lake"
                   </Button>
                 </div>
               </div>
@@ -476,33 +485,62 @@ export function AvaChat({
               <div className="border rounded-lg p-3 bg-muted/30">
                 <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  Schedule actions:
-                </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                  onClick={() => setMessageInput("Schedule an interview with John Doe for tomorrow at 3pm")}
-                  data-testid="button-suggested-action-1"
-                >
-                  "Schedule an interview with John Doe for tomorrow at 3pm"
-                </Button>
-              </div>
-
-              <div className="border rounded-lg p-3 bg-muted/30">
-                <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
-                  <Sparkles className="h-3 w-3" />
-                  Ask compliance questions:
+                  Create and draft:
                 </p>
                 <div className="space-y-1.5">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                    onClick={() => setMessageInput("What are the key elements of an FCPA violation?")}
+                    onClick={() => setMessageInput("Draft a note")}
+                    data-testid="button-suggested-action-1"
+                  >
+                    "Draft a note"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
+                    onClick={() => setMessageInput("Create a new deal")}
+                    data-testid="button-suggested-action-2"
+                  >
+                    "Create a new deal"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
+                    onClick={() => setMessageInput("Scan the news")}
+                    data-testid="button-suggested-action-3"
+                  >
+                    "Scan the news"
+                  </Button>
+                </div>
+              </div>
+
+              <div className="border rounded-lg p-3 bg-muted/30">
+                <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  Research and analyze:
+                </p>
+                <div className="space-y-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
+                    onClick={() => setMessageInput("Start privileged research on antitrust")}
                     data-testid="button-suggested-question-1"
                   >
-                    "What are the key elements of an FCPA violation?"
+                    "Start privileged research on antitrust"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
+                    onClick={() => setMessageInput("Run a background check on John Smith")}
+                    data-testid="button-suggested-question-2"
+                  >
+                    "Run a background check on John Smith"
                   </Button>
                 </div>
               </div>

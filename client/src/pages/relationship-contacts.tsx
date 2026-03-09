@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -1157,7 +1157,14 @@ export default function RelationshipContactsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
-  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showAddDialog, setShowAddDialog] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("createContact")) {
+      window.history.replaceState({}, "", window.location.pathname);
+      return true;
+    }
+    return false;
+  });
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showCSVDialog, setShowCSVDialog] = useState(false);
   const [showCaseImport, setShowCaseImport] = useState(false);

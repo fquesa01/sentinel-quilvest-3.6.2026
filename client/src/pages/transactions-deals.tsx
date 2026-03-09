@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -108,9 +108,24 @@ export default function TransactionsDeals() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("createDeal")) {
+      window.history.replaceState({}, "", window.location.pathname);
+      return true;
+    }
+    return false;
+  });
   const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
   const [dealToShare, setDealToShare] = useState<Deal | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("shareDeal") && deals && deals.length > 0) {
+      window.history.replaceState({}, "", window.location.pathname);
+      setDealToShare(deals[0]);
+    }
+  }, [deals]);
   const [deletedDealIds, setDeletedDealIds] = useState<Set<string>>(new Set());
   const [newDeal, setNewDeal] = useState({
     title: "",

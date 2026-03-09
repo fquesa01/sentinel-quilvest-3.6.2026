@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +56,14 @@ export default function TransactionsChecklists() {
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("create")) {
+      window.history.replaceState({}, "", window.location.pathname);
+      setIsCreateOpen(true);
+    }
+  }, []);
 
   const { data: deals, isLoading: dealsLoading } = useQuery<Deal[]>({
     queryKey: ["/api/deals"],

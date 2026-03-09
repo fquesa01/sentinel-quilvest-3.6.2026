@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Helmet } from "react-helmet";
@@ -146,14 +146,27 @@ export default function BackgroundResearchPage() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [isNewDialogOpen, setIsNewDialogOpen] = useState(false);
-  const [newResearch, setNewResearch] = useState({
-    targetName: "",
-    targetWebsite: "",
-    targetIndustry: "",
-    targetDescription: "",
-    researchType: "full",
-    enabledModules: ALL_MODULES.map(m => m.id),
+  const [isNewDialogOpen, setIsNewDialogOpen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("target")) {
+      return true;
+    }
+    return false;
+  });
+  const [newResearch, setNewResearch] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("target");
+    if (target) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    return {
+      targetName: target || "",
+      targetWebsite: "",
+      targetIndustry: "",
+      targetDescription: "",
+      researchType: "full",
+      enabledModules: ALL_MODULES.map(m => m.id),
+    };
   });
 
   const { data: researchList, isLoading } = useQuery<BackgroundResearch[]>({
