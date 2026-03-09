@@ -118,14 +118,6 @@ export default function TransactionsDeals() {
   });
   const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
   const [dealToShare, setDealToShare] = useState<Deal | null>(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("shareDeal") && deals && deals.length > 0) {
-      window.history.replaceState({}, "", window.location.pathname);
-      setDealToShare(deals[0]);
-    }
-  }, [deals]);
   const [deletedDealIds, setDeletedDealIds] = useState<Set<string>>(new Set());
   const [newDeal, setNewDeal] = useState({
     title: "",
@@ -141,6 +133,14 @@ export default function TransactionsDeals() {
   const { data: deals, isLoading } = useQuery<Deal[]>({
     queryKey: ["/api/deals"],
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("shareDeal") && deals && deals.length > 0) {
+      window.history.replaceState({}, "", window.location.pathname);
+      setDealToShare(deals[0]);
+    }
+  }, [deals]);
 
   const createDealMutation = useMutation({
     mutationFn: async (data: typeof newDeal) => {

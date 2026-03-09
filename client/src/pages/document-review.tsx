@@ -137,6 +137,69 @@ type Communication = {
   attachmentCount?: number;
 };
 
+type DataRoomDocument = {
+  id: string;
+  dataRoomId: string;
+  folderId: string | null;
+  fileName: string;
+  fileSize: number | null;
+  fileType: string | null;
+  storagePath: string | null;
+  documentNumber: string | null;
+  description: string | null;
+  tags: string[] | null;
+  documentCategory: string | null;
+  extractedText: string | null;
+  aiSummary: string | null;
+  comprehensiveSummary: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  name: string;
+};
+
+function dataRoomDocToCommunication(doc: DataRoomDocument): Communication {
+  const ext = doc.fileName?.split('.').pop()?.toLowerCase() || '';
+  const mimeMap: Record<string, string> = {
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    txt: 'text/plain',
+    csv: 'text/csv',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+  };
+  return {
+    id: doc.id,
+    communicationType: 'document',
+    subject: doc.fileName || doc.name || 'Untitled Document',
+    body: doc.extractedText || doc.comprehensiveSummary || doc.aiSummary || doc.description || '',
+    sender: doc.documentCategory || 'Data Room',
+    recipients: [],
+    timestamp: doc.createdAt || new Date().toISOString(),
+    legalHold: null,
+    emailThreadId: null,
+    fileSize: doc.fileSize,
+    fileExtension: ext || null,
+    mimeType: mimeMap[ext] || doc.fileType || null,
+    filePath: doc.storagePath || null,
+    metadata: {
+      isDataRoomDocument: true,
+      dataRoomId: doc.dataRoomId,
+      folderId: doc.folderId,
+      documentNumber: doc.documentNumber,
+      documentCategory: doc.documentCategory,
+      tags: doc.tags,
+    },
+  };
+}
+
 function isImageMimeType(mimeType: string | null | undefined): boolean {
   if (!mimeType) return false;
   return mimeType.startsWith('image/');
@@ -677,6 +740,16 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
     },
     enabled: !searchResults && !selectedSetId, // Only fetch if not showing search results and not filtering by set
   });
+
+  const { data: dataRoomDocs, isLoading: isLoadingDataRoomDocs } = useQuery<DataRoomDocument[]>({
+    queryKey: ["/api/deals", effectiveCaseId, "documents"],
+    queryFn: async () => {
+      const response = await fetch(`/api/deals/${effectiveCaseId}/documents`, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: !!effectiveCaseId && !searchResults && !selectedSetId,
+  });
   
   // Fetch available document sets
   const { data: documentSets = [] } = useQuery<any[]>({
@@ -694,8 +767,22 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
     return acc;
   }, {});
   
-  // Use search results if available, otherwise use set documents or regular communications
-  const unsortedCommunications = searchResults ?? setDocuments ?? communications;
+  const dataRoomAsCommunications = useMemo(() => {
+    if (!dataRoomDocs || dataRoomDocs.length === 0) return [];
+    return dataRoomDocs.map(dataRoomDocToCommunication);
+  }, [dataRoomDocs]);
+
+  const mergedCommunications = useMemo(() => {
+    if (communications === undefined && dataRoomAsCommunications.length === 0) return undefined;
+    const comms = communications || [];
+    if (dataRoomAsCommunications.length === 0) return comms;
+    const existingIds = new Set(comms.map(c => c.id));
+    const unique = dataRoomAsCommunications.filter(d => !existingIds.has(d.id));
+    return [...unique, ...comms];
+  }, [communications, dataRoomAsCommunications]);
+
+  // Use search results if available, otherwise use set documents or merged data
+  const unsortedCommunications = searchResults ?? setDocuments ?? mergedCommunications;
   
   // Apply sort order to displayed communications
   const displayedCommunications = useMemo(() => {
@@ -1567,7 +1654,7 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
   }
 
   // Show loading only when fetching and no search results present
-  if (isLoading && !searchResults) {
+  if ((isLoading || isLoadingDataRoomDocs) && !searchResults) {
     return (
       <SidebarProvider 
         key="document-review-sidebar-loading"
