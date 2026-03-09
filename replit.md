@@ -72,3 +72,10 @@ Comprehensive data models are used for entities such as Users, Communications, A
 - `jspdf-autotable` for PDF exports.
 - `pdfkit` for investor memo PDF exports (cover page, markdown-to-PDF rendering with tables/bold/lists, financial model pages).
 - `docx` for investor memo Word/DOCX exports (cover page, all memo sections with markdown conversion, financial model tables, tech assessment).
+
+### Investor Memo Citations
+- AI-generated memo sections include inline citations linking claims to source documents using markdown link syntax: `[Document Name](/api/data-room-documents/DOCUMENT_ID/preview)`
+- The document manifest (id, filename, category) is passed to the AI in the `sourceDocuments` field of the data payload during both initial generation and section regeneration
+- The markdown renderer in `memo-section-editor.tsx` parses `[text](url)` links, renders them as clickable `<a>` tags with a FileText icon for document citations
+- URL sanitization enforces only `/`, `https://`, or `http://` protocols; unsafe schemes (javascript:, data:) are stripped
+- For transaction/data_room source types, document previews use `/api/data-room-documents/:id/preview`

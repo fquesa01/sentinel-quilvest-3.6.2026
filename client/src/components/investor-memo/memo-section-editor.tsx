@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Edit2, Save, X, RefreshCw, Sparkles, Clock } from "lucide-react";
+import { Edit2, Save, X, RefreshCw, Sparkles, Clock, FileText } from "lucide-react";
 import { format } from "date-fns";
 
 function formatInlineText(text: string): (string | JSX.Element)[] {
@@ -17,12 +17,52 @@ function formatInlineText(text: string): (string | JSX.Element)[] {
 
   while (remaining.length > 0) {
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
-    if (boldMatch && boldMatch.index !== undefined) {
+    const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
+
+    let firstMatch: "bold" | "link" | null = null;
+    let firstIndex = Infinity;
+
+    if (boldMatch && boldMatch.index !== undefined && boldMatch.index < firstIndex) {
+      firstMatch = "bold";
+      firstIndex = boldMatch.index;
+    }
+    if (linkMatch && linkMatch.index !== undefined && linkMatch.index < firstIndex) {
+      firstMatch = "link";
+      firstIndex = linkMatch.index;
+    }
+
+    if (firstMatch === "bold" && boldMatch && boldMatch.index !== undefined) {
       if (boldMatch.index > 0) {
         parts.push(remaining.slice(0, boldMatch.index));
       }
       parts.push(<strong key={`b-${keyIdx++}`}>{boldMatch[1]}</strong>);
       remaining = remaining.slice(boldMatch.index + boldMatch[0].length);
+    } else if (firstMatch === "link" && linkMatch && linkMatch.index !== undefined) {
+      if (linkMatch.index > 0) {
+        parts.push(remaining.slice(0, linkMatch.index));
+      }
+      const linkText = linkMatch[1];
+      const linkUrl = linkMatch[2];
+      const isSafeUrl = linkUrl.startsWith("/") || linkUrl.startsWith("https://") || linkUrl.startsWith("http://");
+      if (isSafeUrl) {
+        const isDocLink = linkUrl.includes("/api/data-room-documents/") || linkUrl.includes("/api/pe-documents/");
+        parts.push(
+          <a
+            key={`l-${keyIdx++}`}
+            href={linkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex items-center gap-1 text-primary underline underline-offset-2 decoration-primary/40 hover:decoration-primary ${isDocLink ? "text-xs font-medium" : ""}`}
+            data-testid={`link-citation-${keyIdx}`}
+          >
+            {isDocLink && <FileText className="h-3 w-3 inline flex-shrink-0" />}
+            {linkText}
+          </a>
+        );
+      } else {
+        parts.push(`[${linkText}]`);
+      }
+      remaining = remaining.slice(linkMatch.index + linkMatch[0].length);
     } else {
       parts.push(remaining);
       break;

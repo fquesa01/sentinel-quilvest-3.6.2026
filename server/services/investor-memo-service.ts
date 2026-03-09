@@ -220,9 +220,16 @@ export async function generateInvestorMemo(
     progress("writing", 85, "Writing investor memo...");
     await updateRunStage(run.id, "writing", "running");
 
+    const documentManifest = classifiedDocs.map((d) => ({
+      id: d.id,
+      filename: d.filename,
+      category: d.category,
+    }));
+
     const sections = await writeMemoSections(
       extraction, industryResearch, techAssessment, model,
-      { dealName, sector, dealType, geography, targetDescription }
+      { dealName, sector, dealType, geography, targetDescription },
+      documentManifest
     );
 
     const rawOverall = calculateOverallScore(extraction, industryResearch, techAssessment, model);
@@ -298,9 +305,11 @@ async function writeMemoSections(
   research: IndustryResearch | null,
   techAssessment: TechAssessment | null,
   model: FinancialModelOutput,
-  context: { dealName: string; sector: string; dealType: string; geography: string; targetDescription: string | null }
+  context: { dealName: string; sector: string; dealType: string; geography: string; targetDescription: string | null },
+  documentManifest?: { id: string; filename: string; category: string }[]
 ): Promise<Record<string, { title: string; content: string; isEdited: boolean; generatedAt: string }>> {
   const dataPayload = {
+    sourceDocuments: documentManifest || [],
     financials: {
       incomeStatements: extraction.incomeStatements,
       kpis: extraction.kpis,
@@ -352,6 +361,8 @@ async function writeMemoSections(
 The memo should be comprehensive but concise. Use specific numbers from the data. Cite research sources where relevant.
 
 IMPORTANT: Every section must have substantive content. Do NOT leave any section empty. The risk_factors section must be especially detailed — it should expand on ALL risks mentioned in the executive summary and add additional risk categories (financial, operational, market, regulatory, technology, management, deal-specific). Use markdown tables for structured risk data.
+
+CITATIONS: The data payload includes a "sourceDocuments" array containing {id, filename, category} for each document in the deal's data room. You MUST include inline citations throughout every section linking claims, data points, and analysis back to specific source documents. Use markdown link syntax: [Document Name](/api/data-room-documents/DOCUMENT_ID/preview). For example: "Revenue grew 335% ([Q4 2025 Financial Statements](/api/data-room-documents/abc123/preview))". Place citations immediately after the claim they support. Every paragraph with factual claims should have at least one citation. When a data point could come from multiple documents, cite the most specific/relevant one. Use the document filename (cleaned up for readability) as the link text.
 
 Target: ${context.dealName}
 Sector: ${context.sector}
@@ -488,11 +499,32 @@ export async function regenerateSection(
       contextSections[key] = (val as any).content;
     }
   }
+
+  let documentManifest: { id: string; filename: string; category: string }[] = [];
+  try {
+    const sourceType = memo.sourceType;
+    if (sourceType === "pe_deal") {
+      const docs = await db.select({ id: peDealDocuments.id, filename: peDealDocuments.filename, category: peDealDocuments.category })
+        .from(peDealDocuments).where(eq(peDealDocuments.dealId, memo.dealId));
+      documentManifest = docs.map(d => ({ id: d.id, filename: d.filename, category: d.category || "other" }));
+    } else {
+      const roomsList = await db.select().from(dataRooms).where(eq(dataRooms.dealId, memo.dealId));
+      for (const room of roomsList) {
+        const roomDocs = await db.select({ id: dataRoomDocuments.id, filename: dataRoomDocuments.filename })
+          .from(dataRoomDocuments).where(eq(dataRoomDocuments.dataRoomId, room.id));
+        documentManifest.push(...roomDocs.map(d => ({ id: d.id, filename: d.filename, category: "other" })));
+      }
+    }
+  } catch (e) {
+    console.error("[MemoGen] Non-fatal: could not fetch document manifest for regeneration:", e);
+  }
+
   const contextStr = JSON.stringify({
     dealName: memo.dealName,
     research: memo.industryResearch,
     techAssessment: memo.techAssessment,
     otherSections: contextSections,
+    sourceDocuments: documentManifest,
   });
   const truncatedContext = contextStr.length > 60000 ? contextStr.slice(0, 60000) + "...[truncated]" : contextStr;
 
@@ -505,10 +537,14 @@ export async function regenerateSection(
     ? "Improve the section with more detail and better analysis."
     : "Generate comprehensive content for this section based on the memo context provided. The section is currently empty and needs full content.";
 
+  const citationInstruction = documentManifest.length > 0
+    ? `\n\nCITATIONS: The context includes a "sourceDocuments" array with {id, filename, category}. You MUST include inline citations using markdown link syntax: [Document Name](/api/data-room-documents/DOCUMENT_ID/preview). Place citations after claims they support. Every paragraph with factual claims should have at least one citation.`
+    : "";
+
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 4000,
-    system: `You are rewriting a section of an investor memo. ${prompt ? `User instruction: ${prompt}` : defaultInstruction}${sectionGuidance ? `\n\nSection requirements: ${sectionGuidance}` : ""}`,
+    system: `You are rewriting a section of an investor memo. ${prompt ? `User instruction: ${prompt}` : defaultInstruction}${sectionGuidance ? `\n\nSection requirements: ${sectionGuidance}` : ""}${citationInstruction}`,
     messages: [
       {
         role: "user",
