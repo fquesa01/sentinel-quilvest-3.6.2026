@@ -110,7 +110,35 @@ export default function InvestorMemoBuilder() {
     return <MemoProgressTracker memoId={memoId!} dealName={memo.dealName} />;
   }
 
-  const sections = (memo.sections || {}) as Record<string, { title: string; content: string; isEdited: boolean; generatedAt: string }>;
+  const sections = (() => {
+    const s = { ...(memo.sections || {}) } as Record<string, { title: string; content: string; isEdited: boolean; generatedAt: string }>;
+    const riskSection = s["risk_factors"];
+    const execSection = s["executive_summary"];
+    if (riskSection && (!riskSection.content || riskSection.content.trim().length === 0) && execSection?.content) {
+      const execContent = execSection.content;
+      const riskHeaderPattern = /(?:#{1,4}\s*|\*{1,2})(?:Key\s+)?Risks?\s*(?:&|and)\s*Mitigants?\*{0,2}/i;
+      const headerMatch = execContent.match(riskHeaderPattern);
+      if (headerMatch && headerMatch.index != null) {
+        let riskBlock = execContent.slice(headerMatch.index);
+        const endPattern = /\n(?:#{1,3}\s+(?!Risk|Mitig)|\*{1,2}(?:Recommendation|Investment|Conclusion|Summary))/;
+        const nextSectionMatch = riskBlock.match(endPattern);
+        if (nextSectionMatch && nextSectionMatch.index != null && nextSectionMatch.index > 0) {
+          riskBlock = riskBlock.slice(0, nextSectionMatch.index);
+        }
+        const footnoteStart = riskBlock.search(/\n\s*\[\^/);
+        if (footnoteStart > 0) {
+          riskBlock = riskBlock.slice(0, footnoteStart);
+        }
+        if (riskBlock.includes("|")) {
+          s["risk_factors"] = {
+            ...riskSection,
+            content: `## Risk Factors\n\n*Derived from Executive Summary. Use "Regenerate" for a comprehensive risk analysis.*\n\n${riskBlock.trim()}`,
+          };
+        }
+      }
+    }
+    return s;
+  })();
 
   const SECTION_ORDER = [
     "executive_summary",
