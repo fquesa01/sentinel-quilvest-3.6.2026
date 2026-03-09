@@ -13,11 +13,38 @@ interface FinancialModelPanelProps {
 
 function formatNumber(val: number | null | undefined): string {
   if (val == null) return "—";
-  const abs = Math.abs(val);
-  if (abs >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}B`;
-  if (abs >= 1_000) return `$${(val / 1_000).toFixed(1)}M`;
-  if (abs >= 1) return `$${val.toFixed(0)}K`;
-  return `$${(val * 1000).toFixed(0)}`;
+  const dollars = val * 1000;
+  const abs = Math.abs(dollars);
+  if (abs >= 1_000_000_000) return `$${(dollars / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `$${(dollars / 1_000).toFixed(0)}K`;
+  return `$${dollars.toFixed(0)}`;
+}
+
+function detectScale(projections: any[]): number {
+  if (!projections || projections.length === 0) return 1;
+  const revenues = projections.map((p: any) => Math.abs(p.revenue || 0)).filter((v: number) => v > 0);
+  if (revenues.length === 0) return 1;
+  const median = revenues.sort((a: number, b: number) => a - b)[Math.floor(revenues.length / 2)];
+
+  for (const p of projections) {
+    const rev = Math.abs(p.revenue || 0);
+    const margin = p.ebitdaMargin ?? p.grossMargin;
+    const ebitda = Math.abs(p.ebitda || 0);
+    if (rev > 0 && margin != null && margin > 0 && margin < 100 && ebitda > 0) {
+      const impliedEbitda = rev * (margin / 100);
+      const ratio = ebitda / impliedEbitda;
+      if (ratio > 500) return 1000;
+    }
+  }
+
+  if (median > 5_000_000) return 1000;
+  return 1;
+}
+
+function normalizeValue(val: number | null | undefined, scale: number): number | null | undefined {
+  if (val == null) return val;
+  return val / scale;
 }
 
 function formatPercent(val: number | null | undefined): string {
@@ -40,10 +67,47 @@ export function FinancialModelPanel({ model }: FinancialModelPanelProps) {
 
   const scenarios = model.scenarios || {};
   const currentScenario = scenarios[scenario] || scenarios.base;
-  const projections = currentScenario?.projections || [];
-  const valuation = currentScenario?.valuation || {};
+  const rawProjections = currentScenario?.projections || [];
+  const rawValuation = currentScenario?.valuation || {};
   const assumptions = model.assumptions || {};
-  const techValue = model.techValueCreation || {};
+  const rawTechValue = model.techValueCreation || {};
+
+  const scale = detectScale(rawProjections);
+  const monetaryKeys = ["revenue", "cogs", "grossProfit", "operatingExpenses", "ebitda", "depreciation", "ebit", "taxes", "nopat", "capex", "changeInWC", "freeCashFlow"];
+  const projections = rawProjections.map((p: any) => {
+    const norm = { ...p };
+    for (const k of monetaryKeys) {
+      if (typeof norm[k] === "number") norm[k] = norm[k] / scale;
+    }
+    return norm;
+  });
+
+  const valuation = JSON.parse(JSON.stringify(rawValuation));
+  if (scale > 1) {
+    if (valuation.dcf) {
+      for (const f of ["terminalValue", "enterpriseValue", "equityValue", "npvProjections", "npvTerminalValue"]) {
+        if (typeof valuation.dcf[f] === "number") valuation.dcf[f] = valuation.dcf[f] / scale;
+      }
+    }
+    if (valuation.lbo) {
+      for (const f of ["entryDebt", "exitEbitda", "totalSources", "exitEquityValue", "entryEquityValue", "exitEnterpriseValue", "equityCheck", "debtPaydown"]) {
+        if (typeof valuation.lbo[f] === "number") valuation.lbo[f] = valuation.lbo[f] / scale;
+      }
+    }
+    if (valuation.comparableTransactions?.impliedValuationRange) {
+      for (const f of ["low", "mid", "high"]) {
+        if (typeof valuation.comparableTransactions.impliedValuationRange[f] === "number")
+          valuation.comparableTransactions.impliedValuationRange[f] = valuation.comparableTransactions.impliedValuationRange[f] / scale;
+      }
+    }
+  }
+
+  const techValue = { ...rawTechValue };
+  if (scale > 1) {
+    for (const f of ["year1", "year2", "year3"]) {
+      if (typeof techValue[f] === "number") techValue[f] = techValue[f] / scale;
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -72,17 +136,17 @@ export function FinancialModelPanel({ model }: FinancialModelPanelProps) {
             <MetricCard
               label="Enterprise Value (DCF)"
               value={formatNumber(valuation.dcf.enterpriseValue)}
-              sublabel={`WACC: ${formatPercent(valuation.dcf.wacc)}`}
+              sublabel={`WACC: ${formatPercent(valuation.dcf.discountRate || valuation.dcf.wacc)}`}
               icon={DollarSign}
             />
             <MetricCard
               label="EV / Revenue"
-              value={`${valuation.dcf.impliedEvRevenue?.toFixed(1) || "—"}x`}
+              value={`${valuation.dcf.impliedEvRevenue?.toFixed(1) ?? valuation.dcf.impliedEvRevenue2026?.toFixed(1) ?? "—"}x`}
               icon={BarChart3}
             />
             <MetricCard
               label="EV / EBITDA"
-              value={`${valuation.dcf.impliedEvEbitda?.toFixed(1) || "—"}x`}
+              value={`${valuation.dcf.impliedEvEbitda?.toFixed(1) ?? valuation.dcf.impliedEvEbitda2026?.toFixed(1) ?? "—"}x`}
               icon={BarChart3}
             />
           </>
