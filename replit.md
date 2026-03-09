@@ -69,4 +69,5 @@ Comprehensive data models are used for entities such as Users, Communications, A
 - Nanoid for unique ID generation.
 - Libraries for email ingestion (`pst-extractor`, `@kenjiuno/msgreader`, `mailparser`, `node-mbox`, `mhtml2html`, `ical.js`, `vcf`, `adm-zip`, `jsdom`).
 - `jspdf-autotable` for PDF exports.
-- `docx` for Word exports.
+- `pdfkit` for investor memo PDF exports (cover page, markdown-to-PDF rendering with tables/bold/lists, financial model pages).
+- `docx` for investor memo Word/DOCX exports (cover page, all memo sections with markdown conversion, financial model tables, tech assessment).

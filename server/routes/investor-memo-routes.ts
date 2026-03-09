@@ -6,7 +6,7 @@ import {
 } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { generateInvestorMemo, regenerateSection, chatAboutMemo } from "../services/investor-memo-service";
-import { generateMemoPDF, generateMemoExcel } from "../services/memo-export-service";
+import { generateMemoPDF, generateMemoExcel, generateMemoWord } from "../services/memo-export-service";
 
 const router = Router();
 
@@ -233,6 +233,27 @@ router.get("/api/memos/:memoId/export/pdf", async (req: Request, res: Response) 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(pdfBuffer);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/memos/:memoId/export/word", async (req: Request, res: Response) => {
+  try {
+    const { memoId } = req.params;
+    const [memo] = await db.select().from(investorMemos)
+      .where(eq(investorMemos.id, memoId));
+    if (!memo) return res.status(404).json({ error: "Memo not found" });
+
+    const [model] = await db.select().from(financialModels)
+      .where(eq(financialModels.memoId, memoId));
+
+    const wordBuffer = await generateMemoWord(memo, model);
+    const filename = `Investor_Memo_${memo.dealName.replace(/[^a-zA-Z0-9]/g, "_")}.docx`;
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(wordBuffer);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

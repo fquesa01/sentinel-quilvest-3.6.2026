@@ -146,6 +146,10 @@ export default function InvestorMemoBuilder() {
             <Download className="h-4 w-4 mr-2" />
             Export PDF
           </Button>
+          <Button variant="outline" size="sm" onClick={() => window.open(`/api/memos/${memoId}/export/word`)}>
+            <FileText className="h-4 w-4 mr-2" />
+            Export Word
+          </Button>
           <Button variant="outline" size="sm" onClick={() => window.open(`/api/memos/${memoId}/export/excel`)}>
             <BarChart3 className="h-4 w-4 mr-2" />
             Export Excel
