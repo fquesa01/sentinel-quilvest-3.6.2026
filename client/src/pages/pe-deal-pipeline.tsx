@@ -544,7 +544,7 @@ export default function PEDealPipeline() {
         </div>
       ) : viewMode === "pipeline" ? (
         <div className="flex gap-4 overflow-x-auto pb-4">
-          <div className="min-w-[280px] flex-shrink-0">
+          <div className="w-[280px] min-w-[280px] max-w-[280px] flex-shrink-0">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">
@@ -565,11 +565,11 @@ export default function PEDealPipeline() {
                 flaggedData.alerts.map((item) => (
                   <Card
                     key={item.alert.id}
-                    className="hover-elevate cursor-pointer"
+                    className="overflow-hidden cursor-pointer"
                     data-testid={`card-sourcing-${item.alert.id}`}
                     onClick={() => setSourcingDetail(item)}
                   >
-                    <CardContent className="p-3">
+                    <CardContent className="p-3 overflow-hidden">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <Avatar className="h-7 w-7 shrink-0">
