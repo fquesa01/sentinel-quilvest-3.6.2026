@@ -261,10 +261,16 @@ export default function TransactionsDiligence() {
           {!selectedDealId ? (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ClipboardList className="h-5 w-5" />
-                  Select a Deal
-                </CardTitle>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <CardTitle className="flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5" />
+                    Select a Deal
+                  </CardTitle>
+                  <Button onClick={() => navigate("/transactions/deals?createDeal=true")} data-testid="button-new-deal">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Deal
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground mb-4">
