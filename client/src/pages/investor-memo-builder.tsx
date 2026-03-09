@@ -109,7 +109,7 @@ export default function InvestorMemoBuilder() {
       {/* Header */}
       <div className="border-b px-6 py-4 flex items-center justify-between bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex items-center gap-4">
-          <Link href={`/pe/deals/${memo.dealId}`}>
+          <Link href={memo.sourceType === "transaction" || memo.sourceType === "data_room" ? `/transactions/deals/${memo.dealId}` : `/pe/deals/${memo.dealId}`}>
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>
