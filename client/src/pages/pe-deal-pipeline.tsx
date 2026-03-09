@@ -32,6 +32,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { 
@@ -58,6 +60,9 @@ import {
   ClipboardCheck,
   ScrollText,
   Zap,
+  Flag,
+  ExternalLink,
+  Mail,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -96,6 +101,29 @@ interface PEDeal {
   dataRoomType: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface FlaggedAlert {
+  alert: {
+    id: string;
+    headline: string;
+    summary: string | null;
+    sourceUrl: string | null;
+    sourceName: string | null;
+    sentiment: string | null;
+    category: string | null;
+    publishedAt: string | null;
+    isHighPriority: boolean;
+    highPriorityAt: string | null;
+    createdAt: string;
+  };
+  contact: {
+    id: string;
+    fullName: string;
+    company: string | null;
+    jobTitle: string | null;
+    email: string | null;
+  };
 }
 
 interface EnrichedDeal {
@@ -182,6 +210,10 @@ export default function PEDealPipeline() {
   const { data: enrichedDeals, isLoading: isLoadingEnriched } = useQuery<EnrichedDeal[]>({
     queryKey: ["/api/pe/deals/pipeline-progress"],
     enabled: pipelineMode === "intelligent",
+  });
+
+  const { data: flaggedData } = useQuery<{ alerts: FlaggedAlert[] }>({
+    queryKey: ["/api/relationship-intelligence/alerts/flagged"],
   });
 
   const createDealMutation = useMutation({
@@ -510,6 +542,82 @@ export default function PEDealPipeline() {
         </div>
       ) : viewMode === "pipeline" ? (
         <div className="flex gap-4 overflow-x-auto pb-4">
+          <div className="min-w-[280px] flex-shrink-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">
+                  <Flag className="h-3 w-3 mr-1 fill-current" />
+                  Sourcing
+                </Badge>
+                <span className="text-sm text-muted-foreground">({flaggedData?.alerts?.length || 0})</span>
+              </div>
+            </div>
+            <div className="space-y-3 bg-muted/30 rounded-lg p-3 min-h-[400px]">
+              {!flaggedData?.alerts?.length ? (
+                <div className="text-center text-sm text-muted-foreground py-8">
+                  <Flag className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                  <p>No flagged alerts</p>
+                  <p className="text-xs mt-1">Flag high-priority items in Intelligence Feed</p>
+                </div>
+              ) : (
+                flaggedData.alerts.map((item) => (
+                  <Card key={item.alert.id} className="hover-elevate" data-testid={`card-sourcing-${item.alert.id}`}>
+                    <CardContent className="p-3">
+                      <div className="flex items-start gap-2">
+                        <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+                          <AvatarFallback className="text-xs">
+                            {item.contact.fullName.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-medium text-sm truncate" data-testid={`text-sourcing-contact-${item.alert.id}`}>
+                              {item.contact.fullName}
+                            </span>
+                            {item.contact.company && (
+                              <span className="text-xs text-muted-foreground truncate">{item.contact.company}</span>
+                            )}
+                          </div>
+                          {item.alert.sourceUrl && item.alert.sourceUrl !== "#" ? (
+                            <a
+                              href={item.alert.sourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium leading-snug line-clamp-2 mt-1 hover:underline"
+                              data-testid={`text-sourcing-headline-${item.alert.id}`}
+                            >
+                              {item.alert.headline}
+                              <ExternalLink className="w-3 h-3 inline-block ml-1 text-muted-foreground" />
+                            </a>
+                          ) : (
+                            <p className="text-sm font-medium leading-snug line-clamp-2 mt-1" data-testid={`text-sourcing-headline-${item.alert.id}`}>
+                              {item.alert.headline}
+                            </p>
+                          )}
+                          {item.alert.summary && (
+                            <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{item.alert.summary}</p>
+                          )}
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            {item.alert.sentiment && (
+                              <Badge variant="outline" className="text-xs">
+                                {item.alert.sentiment}
+                              </Badge>
+                            )}
+                            {item.alert.category && (
+                              <Badge variant="secondary" className="text-xs">
+                                {item.alert.category}
+                              </Badge>
+                            )}
+                            <Flag className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
           {activeStages.map((stage) => {
             const stageInfo = getStageInfo(stage);
             const stageDeals = getDealsByStage(stage);

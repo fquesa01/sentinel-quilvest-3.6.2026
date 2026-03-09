@@ -12740,11 +12740,14 @@ export const newsAlerts = pgTable("news_alerts", {
   }>(),
   suggestedOutreach: text("suggested_outreach"),
   outreachChannel: outreachChannelEnum("outreach_channel"),
+  isHighPriority: boolean("is_high_priority").notNull().default(false),
+  highPriorityAt: timestamp("high_priority_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   userDateIdx: index("idx_news_alerts_user_date").on(table.userId, table.createdAt),
   contactIdx: index("idx_news_alerts_contact").on(table.contactId),
   categoryIdx: index("idx_news_alerts_category").on(table.category),
+  highPriorityIdx: index("idx_news_alerts_high_priority").on(table.isHighPriority),
 }));
 
 export type NewsAlert = typeof newsAlerts.$inferSelect;

@@ -380,12 +380,16 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
   app.patch("/api/relationship-intelligence/alerts/:id", isAuthenticated, riRoles, async (req: any, res) => {
     try {
       const userId = req.user?.id;
-      const { isRead, isDismissed, isActedOn } = req.body;
+      const { isRead, isDismissed, isActedOn, isHighPriority } = req.body;
 
       const updates: any = {};
       if (isRead !== undefined) updates.isRead = isRead;
       if (isDismissed !== undefined) updates.isDismissed = isDismissed;
       if (isActedOn !== undefined) updates.isActedOn = isActedOn;
+      if (isHighPriority !== undefined) {
+        updates.isHighPriority = isHighPriority;
+        updates.highPriorityAt = isHighPriority ? new Date() : null;
+      }
 
       const [updated] = await db
         .update(newsAlerts)
@@ -396,6 +400,34 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
       if (!updated) return res.status(404).json({ message: "Alert not found" });
       res.json(updated);
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/relationship-intelligence/alerts/flagged", isAuthenticated, riRoles, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const alerts = await db
+        .select({
+          alert: newsAlerts,
+          contact: {
+            id: relationshipContacts.id,
+            fullName: relationshipContacts.fullName,
+            company: relationshipContacts.company,
+            jobTitle: relationshipContacts.jobTitle,
+            email: relationshipContacts.email,
+            priorityLevel: relationshipContacts.priorityLevel,
+            tags: relationshipContacts.tags,
+          },
+        })
+        .from(newsAlerts)
+        .innerJoin(relationshipContacts, eq(newsAlerts.contactId, relationshipContacts.id))
+        .where(and(eq(newsAlerts.userId, userId), eq(newsAlerts.isHighPriority, true), eq(newsAlerts.isDismissed, false)))
+        .orderBy(desc(newsAlerts.highPriorityAt));
+
+      res.json({ alerts });
+    } catch (error: any) {
+      console.error("[RI] Error fetching flagged alerts:", error);
       res.status(500).json({ message: error.message });
     }
   });

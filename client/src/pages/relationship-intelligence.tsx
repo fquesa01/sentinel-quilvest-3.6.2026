@@ -71,6 +71,7 @@ import {
   CheckCircle2,
   FileEdit,
   Zap,
+  Flag,
 } from "lucide-react";
 import type { NewsAlert, RelationshipContact } from "@shared/schema";
 
@@ -222,6 +223,7 @@ function AlertCard({
   onDraftResponse,
   onDismiss,
   onMarkRead,
+  onToggleFlag,
   isSelected,
   onToggleSelect,
 }: {
@@ -231,6 +233,7 @@ function AlertCard({
   onDraftResponse: () => void;
   onDismiss: () => void;
   onMarkRead: () => void;
+  onToggleFlag: () => void;
   isSelected?: boolean;
   onToggleSelect?: () => void;
 }) {
@@ -357,6 +360,15 @@ function AlertCard({
             Draft Note
           </Button>
           <div className="flex-1" />
+          <Button
+            variant={alert.isHighPriority ? "default" : "ghost"}
+            size="sm"
+            onClick={onToggleFlag}
+            data-testid={`button-flag-${alert.id}`}
+          >
+            <Flag className={`w-3.5 h-3.5 mr-1 ${alert.isHighPriority ? "fill-current" : ""}`} />
+            {alert.isHighPriority ? "Flagged" : "Flag"}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -2121,6 +2133,7 @@ export default function RelationshipIntelligence() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/alerts/flagged"] });
       queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
     },
     onError: (error: Error) => {
@@ -2248,6 +2261,9 @@ export default function RelationshipIntelligence() {
             }
             onMarkRead={() =>
               updateAlertMutation.mutate({ id: alertData.alert.id, updates: { isRead: !alertData.alert.isRead } })
+            }
+            onToggleFlag={() =>
+              updateAlertMutation.mutate({ id: alertData.alert.id, updates: { isHighPriority: !alertData.alert.isHighPriority } })
             }
             isSelected={selectedAlertIds.has(alertData.alert.id)}
             onToggleSelect={() => toggleAlertSelection(alertData.alert.id)}
