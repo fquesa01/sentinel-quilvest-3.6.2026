@@ -236,7 +236,7 @@ export default function StartPage() {
           </p>
         </div>
         <Link 
-          href="/my-queue" 
+          href="/pe/deals" 
           className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           data-testid="link-skip-to-platform"
         >

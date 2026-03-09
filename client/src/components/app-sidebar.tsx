@@ -179,12 +179,6 @@ export function AppSidebar() {
           roles: ["admin", "attorney", "external_counsel", "compliance_officer"],
         },
         {
-          title: "Deal Pipeline",
-          url: "/pe/deals",
-          icon: TrendingUp,
-          roles: ["admin", "attorney", "external_counsel"],
-        },
-        {
           title: "Due Diligence Reports",
           url: "/pe/deal-intelligence",
           icon: FileScan,
@@ -357,10 +351,44 @@ export function AppSidebar() {
             <div className="w-full"><AvaChat /></div>
           )}
         </SidebarGroup>
-        {/* Pinned My Queue section - always at top */}
+        {/* Pinned top nav items */}
         {user && ["admin", "attorney", "external_counsel"].includes(user.role || "") && (
           <SidebarGroup className="py-2">
             <SidebarMenu>
+              <SidebarMenuItem>
+                {isCollapsed ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Link
+                        href="/pe/deals"
+                        className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover-elevate active-elevate-2 ${
+                          location === "/pe/deals" || location.startsWith("/pe/deals/")
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground"
+                        }`}
+                        data-testid="link-nav-deal-pipeline"
+                      >
+                        <TrendingUp className="h-4 w-4 flex-shrink-0" />
+                        <span className="group-data-[collapsible=icon]:hidden">Deal Pipeline</span>
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>Deal Pipeline</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Link
+                    href="/pe/deals"
+                    className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover-elevate active-elevate-2 ${
+                      location === "/pe/deals" || location.startsWith("/pe/deals/")
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-sidebar-foreground"
+                    }`}
+                    data-testid="link-nav-deal-pipeline"
+                  >
+                    <TrendingUp className="h-4 w-4 flex-shrink-0" />
+                    <span className="group-data-[collapsible=icon]:hidden">Deal Pipeline</span>
+                  </Link>
+                )}
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 {isCollapsed ? (
                   <Tooltip>
