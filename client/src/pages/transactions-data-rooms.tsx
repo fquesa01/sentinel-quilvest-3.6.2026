@@ -192,7 +192,7 @@ export default function TransactionsDataRooms() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/transactions")}
+            onClick={() => navigate("/transactions/deals")}
             data-testid="button-back"
           >
             <ArrowLeft className="h-4 w-4" />

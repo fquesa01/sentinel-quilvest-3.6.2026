@@ -456,9 +456,9 @@ export async function executeAvaCommand(
     // ===== Business Transaction Intents =====
     case "navigate_to_transactions":
     case "open_transactions":
-      navigate("/transactions");
+      navigate("/transactions/deals");
       closeDrawer?.();
-      return { navigateTo: "/transactions" };
+      return { navigateTo: "/transactions/deals" };
 
     case "navigate_to_deal": {
       if (parameters.dealId) {

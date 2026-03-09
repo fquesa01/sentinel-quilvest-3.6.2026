@@ -592,8 +592,8 @@ export default function TransactionsDataRoomDetail() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">Data room not found</p>
-            <Button className="mt-4" onClick={() => navigate("/transactions")}>
-              Back to Transactions
+            <Button className="mt-4" onClick={() => navigate("/transactions/data-rooms")}>
+              Back to Data Rooms
             </Button>
           </CardContent>
         </Card>
@@ -608,7 +608,13 @@ export default function TransactionsDataRoomDetail() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/transactions")}
+            onClick={() => {
+              if (room?.dealId) {
+                navigate(`/transactions/deals/${room.dealId}`);
+              } else {
+                navigate("/transactions/data-rooms");
+              }
+            }}
             data-testid="button-back"
           >
             <ArrowLeft className="h-4 w-4" />
