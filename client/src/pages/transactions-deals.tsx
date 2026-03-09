@@ -43,6 +43,7 @@ import {
   DollarSign,
   ExternalLink,
   Trash2,
+  Share2,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -55,6 +56,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { ShareDealDialog } from "@/components/share-deal-dialog";
 import { format } from "date-fns";
 import type { Deal } from "@shared/schema";
 
@@ -108,6 +110,7 @@ export default function TransactionsDeals() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
+  const [dealToShare, setDealToShare] = useState<Deal | null>(null);
   const [deletedDealIds, setDeletedDealIds] = useState<Set<string>>(new Set());
   const [newDeal, setNewDeal] = useState({
     title: "",
@@ -499,6 +502,14 @@ export default function TransactionsDeals() {
                             <ExternalLink className="h-4 w-4" />
                           </Button>
                         </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDealToShare(deal)}
+                          data-testid={`button-share-deal-${deal.id}`}
+                        >
+                          <Share2 className="h-4 w-4" />
+                        </Button>
                         {isAdmin && (
                           <Button 
                             variant="ghost" 
@@ -539,6 +550,15 @@ export default function TransactionsDeals() {
           )}
         </CardContent>
       </Card>
+
+      {dealToShare && (
+        <ShareDealDialog
+          dealId={dealToShare.id}
+          dealTitle={dealToShare.title}
+          open={!!dealToShare}
+          onOpenChange={(open) => !open && setDealToShare(null)}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!dealToDelete} onOpenChange={(open) => !open && setDealToDelete(null)}>

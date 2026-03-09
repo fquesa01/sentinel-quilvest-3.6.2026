@@ -65,6 +65,10 @@ import InvestorMemoBuilder from "@/pages/investor-memo-builder";
 import RelationshipIntelligence from "@/pages/relationship-intelligence";
 import RelationshipContacts from "@/pages/relationship-contacts";
 import DealChat from "@/pages/deal-chat";
+import GuestPortal from "@/pages/guest-portal";
+import GuestLogin from "@/pages/guest-login";
+import GuestDeals from "@/pages/guest-deals";
+import GuestDealView from "@/pages/guest-deal-view";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { NotificationBell } from "@/components/notification-bell";
@@ -191,6 +195,11 @@ function App() {
   return (
     <>
       <Switch>
+        {/* Guest portal routes - accessible without OIDC auth */}
+        <Route path="/guest/share/:token" component={GuestPortal} />
+        <Route path="/guest/login" component={GuestLogin} />
+        <Route path="/guest/deals/:dealId" component={GuestDealView} />
+        <Route path="/guest/deals" component={GuestDeals} />
         {/* Video meeting room - accessible to guests without authentication */}
         <Route path="/video-meeting/:roomId" component={VideoMeetingPage} />
         {/* Start page - Emma-powered landing after login */}

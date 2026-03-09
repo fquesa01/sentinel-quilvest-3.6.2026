@@ -28,6 +28,7 @@ import { smsService } from "./services/sms-service";
 import * as fileSearchService from "./services/file-search-service";
 import { conductCompanyResearch } from "./services/web-research-service";
 import type { WebResearch } from "@shared/business-summary-types";
+import bcrypt from "bcryptjs";
 import * as entityExtractionService from "./services/entity-extraction-service";
 import * as heatmapService from "./services/communications-heatmap-service";
 import * as issueExtractionService from "./services/issue-extraction-service";
@@ -29291,6 +29292,379 @@ Guidelines:
 
   // Setup WebRTC signaling for live interview sessions
   setupWebRTCSignaling(httpServer);
+
+  // =============================================
+
+  // ============================================================
+  // DEAL SHARING & GUEST AUTH ROUTES
+  // ============================================================
+
+  app.get("/api/deal-share/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const shareResult = await db.execute(sql`
+        SELECT ds.*, d.title as deal_title, d.deal_number, d.deal_type,
+          u.first_name as shared_by_first, u.last_name as shared_by_last
+        FROM deal_shares ds
+        JOIN deals d ON d.id = ds.deal_id
+        LEFT JOIN users u ON u.id = ds.shared_by
+        WHERE ds.token = ${token} AND ds.status != 'revoked'
+      `);
+      const share = (shareResult.rows as any[])[0];
+      if (!share) {
+        return res.status(404).json({ message: "Share link not found or has been revoked" });
+      }
+      if (share.expires_at && new Date(share.expires_at) < new Date()) {
+        return res.status(410).json({ message: "This share link has expired" });
+      }
+      const guestResult = await db.execute(sql`
+        SELECT id, email, first_name, last_name, company FROM deal_guests WHERE email = ${share.email}
+      `);
+      const existingGuest = (guestResult.rows as any[])[0];
+      return res.json({
+        dealTitle: share.deal_title,
+        dealNumber: share.deal_number,
+        dealType: share.deal_type,
+        sharedBy: share.shared_by_first ? `${share.shared_by_first} ${share.shared_by_last}` : 'A team member',
+        email: share.email,
+        message: share.message,
+        hasAccount: !!existingGuest,
+        status: share.status,
+      });
+    } catch (error: any) {
+      console.error("[DealShare] Error validating token:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/guest/register", async (req, res) => {
+    try {
+      const { token, password, firstName, lastName, company } = req.body;
+      const email = (req.body.email || "").toLowerCase().trim();
+      if (!token || !email || !password) {
+        return res.status(400).json({ message: "Token, email, and password are required" });
+      }
+      if (password.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      }
+      const shareResult = await db.execute(sql`
+        SELECT * FROM deal_shares WHERE token = ${token} AND LOWER(email) = ${email} AND status = 'pending'
+      `);
+      const share = (shareResult.rows as any[])[0];
+      if (!share) {
+        return res.status(400).json({ message: "Invalid or expired share link" });
+      }
+      if (share.expires_at && new Date(share.expires_at) < new Date()) {
+        return res.status(410).json({ message: "This share link has expired" });
+      }
+      const existingResult = await db.execute(sql`SELECT id FROM deal_guests WHERE LOWER(email) = ${email}`);
+      if ((existingResult.rows as any[]).length > 0) {
+        return res.status(409).json({ message: "An account with this email already exists. Please login instead." });
+      }
+      const passwordHash = await bcrypt.hash(password, 12);
+      const guestResult = await db.execute(sql`
+        INSERT INTO deal_guests (email, password_hash, first_name, last_name, company)
+        VALUES (${email}, ${passwordHash}, ${firstName || null}, ${lastName || null}, ${company || null})
+        RETURNING id, email, first_name, last_name, company
+      `);
+      const guest = (guestResult.rows as any[])[0];
+      await db.execute(sql`
+        UPDATE deal_shares SET status = 'accepted', guest_id = ${guest.id} WHERE token = ${token}
+      `);
+      await db.execute(sql`
+        UPDATE deal_shares SET status = 'accepted', guest_id = ${guest.id}
+        WHERE email = ${email} AND status = 'pending' AND token != ${token}
+      `);
+      (req.session as any).guestId = guest.id;
+      (req.session as any).guestEmail = guest.email;
+      return res.json({
+        id: guest.id,
+        email: guest.email,
+        firstName: guest.first_name,
+        lastName: guest.last_name,
+        company: guest.company,
+      });
+    } catch (error: any) {
+      console.error("[GuestAuth] Registration error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/guest/login", async (req, res) => {
+    try {
+      const email = (req.body.email || "").toLowerCase().trim();
+      const { password, token } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+      const guestResult = await db.execute(sql`
+        SELECT * FROM deal_guests WHERE LOWER(email) = ${email} AND is_activated = true
+      `);
+      const guest = (guestResult.rows as any[])[0];
+      if (!guest) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      const valid = await bcrypt.compare(password, guest.password_hash);
+      if (!valid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      if (token) {
+        await db.execute(sql`
+          UPDATE deal_shares SET status = 'accepted', guest_id = ${guest.id}
+          WHERE token = ${token} AND LOWER(email) = ${email} AND status = 'pending'
+            AND (expires_at IS NULL OR expires_at > NOW())
+        `);
+      }
+      await db.execute(sql`UPDATE deal_guests SET last_login_at = NOW() WHERE id = ${guest.id}`);
+      (req.session as any).guestId = guest.id;
+      (req.session as any).guestEmail = guest.email;
+      return res.json({
+        id: guest.id,
+        email: guest.email,
+        firstName: guest.first_name,
+        lastName: guest.last_name,
+        company: guest.company,
+      });
+    } catch (error: any) {
+      console.error("[GuestAuth] Login error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/guest/session", (req, res) => {
+    const guestId = (req.session as any)?.guestId;
+    if (!guestId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    return res.json({
+      id: guestId,
+      email: (req.session as any).guestEmail,
+    });
+  });
+
+  app.post("/api/guest/logout", (req, res) => {
+    delete (req.session as any).guestId;
+    delete (req.session as any).guestEmail;
+    return res.json({ message: "Logged out" });
+  });
+
+  const isGuestAuthenticated = (req: any, res: any, next: any) => {
+    const guestId = req.session?.guestId;
+    if (!guestId) {
+      return res.status(401).json({ message: "Guest authentication required" });
+    }
+    req.guestId = guestId;
+    req.guestEmail = req.session.guestEmail;
+    next();
+  };
+
+  app.post("/api/deals/:dealId/share", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { dealId } = req.params;
+      const email = (req.body.email || "").toLowerCase().trim();
+      const { message, expiresInDays } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      const dealResult = await db.execute(sql`SELECT id, title, deal_number FROM deals WHERE id = ${dealId}`);
+      const deal = (dealResult.rows as any[])[0];
+      if (!deal) {
+        return res.status(404).json({ message: "Deal not found" });
+      }
+      const existingResult = await db.execute(sql`
+        SELECT id FROM deal_shares WHERE deal_id = ${dealId} AND LOWER(email) = ${email} AND status != 'revoked'
+      `);
+      if ((existingResult.rows as any[]).length > 0) {
+        return res.status(409).json({ message: "This deal is already shared with this email" });
+      }
+      const token = nanoid(32);
+      const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86400000) : null;
+      const shareResult = await db.execute(sql`
+        INSERT INTO deal_shares (deal_id, shared_by, email, token, message, expires_at)
+        VALUES (${dealId}, ${userId}, ${email}, ${token}, ${message || null}, ${expiresAt})
+        RETURNING *
+      `);
+      const share = (shareResult.rows as any[])[0];
+      const shareUrl = `${req.protocol}://${req.get('host')}/guest/share/${token}`;
+      try {
+        const userResult = await db.execute(sql`SELECT first_name, last_name FROM users WHERE id = ${userId}`);
+        const sharer = (userResult.rows as any[])[0];
+        const sharerName = sharer ? `${sharer.first_name} ${sharer.last_name}` : 'A team member';
+        const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        await emailService.sendEmail({
+          to: email,
+          subject: `Deal Shared: ${esc(deal.title)} (${esc(deal.deal_number)})`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2>You've been invited to view a deal</h2>
+              <p>${esc(sharerName)} has shared <strong>${esc(deal.title)}</strong> (${esc(deal.deal_number)}) with you on Sentinel Counsel.</p>
+              ${message ? `<p><em>"${esc(message)}"</em></p>` : ''}
+              <p>Click the link below to view the deal details:</p>
+              <a href="${shareUrl}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;margin:16px 0;">View Deal</a>
+              <p style="color:#666;font-size:12px;">If you don't have an account, you'll be prompted to create one.</p>
+            </div>
+          `,
+        });
+      } catch (emailError) {
+        console.error("[DealShare] Email send failed (share still created):", emailError);
+      }
+      return res.json({ ...share, shareUrl });
+    } catch (error: any) {
+      console.error("[DealShare] Error sharing deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/deals/:dealId/shares", isAuthenticated, async (req: any, res) => {
+    try {
+      const { dealId } = req.params;
+      const result = await db.execute(sql`
+        SELECT ds.*, dg.first_name as guest_first, dg.last_name as guest_last, dg.company as guest_company,
+          u.first_name as shared_by_first, u.last_name as shared_by_last
+        FROM deal_shares ds
+        LEFT JOIN deal_guests dg ON dg.id = ds.guest_id
+        LEFT JOIN users u ON u.id = ds.shared_by
+        WHERE ds.deal_id = ${dealId}
+        ORDER BY ds.created_at DESC
+      `);
+      return res.json(result.rows);
+    } catch (error: any) {
+      console.error("[DealShare] Error listing shares:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/deals/:dealId/shares/:shareId", isAuthenticated, async (req: any, res) => {
+    try {
+      const { dealId, shareId } = req.params;
+      await db.execute(sql`UPDATE deal_shares SET status = 'revoked' WHERE id = ${shareId} AND deal_id = ${dealId}`);
+      return res.json({ message: "Share revoked" });
+    } catch (error: any) {
+      console.error("[DealShare] Error revoking share:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/guest/deals", isGuestAuthenticated, async (req: any, res) => {
+    try {
+      const guestEmail = req.guestEmail;
+      const result = await db.execute(sql`
+        SELECT d.*, ds.token as share_token, ds.created_at as shared_at,
+          u.first_name as shared_by_first, u.last_name as shared_by_last
+        FROM deal_shares ds
+        JOIN deals d ON d.id = ds.deal_id
+        LEFT JOIN users u ON u.id = ds.shared_by
+        WHERE LOWER(ds.email) = ${(guestEmail || '').toLowerCase()} AND ds.status = 'accepted'
+          AND (ds.expires_at IS NULL OR ds.expires_at > NOW())
+        ORDER BY ds.created_at DESC
+      `);
+      return res.json(result.rows);
+    } catch (error: any) {
+      console.error("[GuestDeals] Error listing guest deals:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/guest/deals/:dealId", isGuestAuthenticated, async (req: any, res) => {
+    try {
+      const guestEmail = (req.guestEmail || '').toLowerCase();
+      const { dealId } = req.params;
+      const accessResult = await db.execute(sql`
+        SELECT id FROM deal_shares WHERE deal_id = ${dealId} AND LOWER(email) = ${guestEmail} AND status = 'accepted'
+          AND (expires_at IS NULL OR expires_at > NOW())
+      `);
+      if ((accessResult.rows as any[]).length === 0) {
+        return res.status(403).json({ message: "You do not have access to this deal" });
+      }
+      const dealResult = await db.execute(sql`SELECT * FROM deals WHERE id = ${dealId}`);
+      const deal = (dealResult.rows as any[])[0];
+      if (!deal) {
+        return res.status(404).json({ message: "Deal not found" });
+      }
+      return res.json(deal);
+    } catch (error: any) {
+      console.error("[GuestDeals] Error getting deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/guest/deals/:dealId/milestones", isGuestAuthenticated, async (req: any, res) => {
+    try {
+      const guestEmail = (req.guestEmail || '').toLowerCase();
+      const { dealId } = req.params;
+      const accessResult = await db.execute(sql`
+        SELECT id FROM deal_shares WHERE deal_id = ${dealId} AND LOWER(email) = ${guestEmail} AND status = 'accepted'
+          AND (expires_at IS NULL OR expires_at > NOW())
+      `);
+      if ((accessResult.rows as any[]).length === 0) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const result = await db.execute(sql`SELECT * FROM deal_milestones WHERE deal_id = ${dealId} ORDER BY target_date ASC`);
+      return res.json(result.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/guest/deals/:dealId/participants", isGuestAuthenticated, async (req: any, res) => {
+    try {
+      const guestEmail = (req.guestEmail || '').toLowerCase();
+      const { dealId } = req.params;
+      const accessResult = await db.execute(sql`
+        SELECT id FROM deal_shares WHERE deal_id = ${dealId} AND LOWER(email) = ${guestEmail} AND status = 'accepted'
+          AND (expires_at IS NULL OR expires_at > NOW())
+      `);
+      if ((accessResult.rows as any[]).length === 0) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const result = await db.execute(sql`
+        SELECT dp.*, u.first_name, u.last_name, u.email
+        FROM deal_participants dp
+        LEFT JOIN users u ON u.id = dp.user_id
+        WHERE dp.deal_id = ${dealId}
+      `);
+      return res.json(result.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/guest/deals/:dealId/issues", isGuestAuthenticated, async (req: any, res) => {
+    try {
+      const guestEmail = (req.guestEmail || '').toLowerCase();
+      const { dealId } = req.params;
+      const accessResult = await db.execute(sql`
+        SELECT id FROM deal_shares WHERE deal_id = ${dealId} AND LOWER(email) = ${guestEmail} AND status = 'accepted'
+          AND (expires_at IS NULL OR expires_at > NOW())
+      `);
+      if ((accessResult.rows as any[]).length === 0) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const result = await db.execute(sql`SELECT * FROM deal_issues WHERE deal_id = ${dealId} ORDER BY created_at DESC`);
+      return res.json(result.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/guest/deals/:dealId/terms", isGuestAuthenticated, async (req: any, res) => {
+    try {
+      const guestEmail = (req.guestEmail || '').toLowerCase();
+      const { dealId } = req.params;
+      const accessResult = await db.execute(sql`
+        SELECT id FROM deal_shares WHERE deal_id = ${dealId} AND LOWER(email) = ${guestEmail} AND status = 'accepted'
+          AND (expires_at IS NULL OR expires_at > NOW())
+      `);
+      if ((accessResult.rows as any[]).length === 0) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const result = await db.execute(sql`SELECT * FROM deal_terms WHERE deal_id = ${dealId}`);
+      return res.json(result.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
 
   // =============================================
   

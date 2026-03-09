@@ -13303,3 +13303,57 @@ export const insertDealChannelMessageSchema = createInsertSchema(dealChannelMess
   createdAt: true,
 });
 export type InsertDealChannelMessage = z.infer<typeof insertDealChannelMessageSchema>;
+
+export const dealGuests = pgTable("deal_guests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  firstName: varchar("first_name", { length: 100 }),
+  lastName: varchar("last_name", { length: 100 }),
+  company: varchar("company", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  isActivated: boolean("is_activated").default(true),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  emailIdx: index("idx_deal_guests_email").on(table.email),
+}));
+
+export type DealGuest = typeof dealGuests.$inferSelect;
+export const insertDealGuestSchema = createInsertSchema(dealGuests).omit({
+  id: true,
+  createdAt: true,
+  lastLoginAt: true,
+});
+export type InsertDealGuest = z.infer<typeof insertDealGuestSchema>;
+
+export const dealShareStatusEnum = pgEnum("deal_share_status", [
+  "pending",
+  "accepted",
+  "revoked",
+]);
+
+export const dealShares = pgTable("deal_shares", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  sharedBy: varchar("shared_by").references(() => users.id, { onDelete: "set null" }),
+  email: varchar("email", { length: 255 }).notNull(),
+  token: varchar("token", { length: 100 }).notNull().unique(),
+  status: dealShareStatusEnum("status").default("pending").notNull(),
+  message: text("message"),
+  guestId: varchar("guest_id").references(() => dealGuests.id, { onDelete: "set null" }),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  dealIdx: index("idx_deal_shares_deal").on(table.dealId),
+  emailIdx: index("idx_deal_shares_email").on(table.email),
+  tokenIdx: index("idx_deal_shares_token").on(table.token),
+  guestIdx: index("idx_deal_shares_guest").on(table.guestId),
+}));
+
+export type DealShare = typeof dealShares.$inferSelect;
+export const insertDealShareSchema = createInsertSchema(dealShares).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertDealShare = z.infer<typeof insertDealShareSchema>;

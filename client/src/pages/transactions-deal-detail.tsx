@@ -66,8 +66,10 @@ import {
   Video,
   MessageSquare,
   Link2,
+  Share2,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { ShareDealDialog } from "@/components/share-deal-dialog";
 import type { Deal, DealMilestone, DealParticipant, DealIssue, DealMeetingNote } from "@shared/schema";
 import { format } from "date-fns";
 
@@ -109,6 +111,7 @@ export default function TransactionsDealDetail() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Deal>>({});
   
   // Party/Entity/Advisor add dialog states
@@ -884,10 +887,16 @@ export default function TransactionsDealDetail() {
               </p>
             </div>
           </div>
-          <Button onClick={openEditDialog} data-testid="button-edit-deal">
-            <Edit className="h-4 w-4 mr-2" />
-            Edit Deal
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => setIsShareOpen(true)} data-testid="button-share-deal">
+              <Share2 className="h-4 w-4 mr-2" />
+              Share Deal
+            </Button>
+            <Button onClick={openEditDialog} data-testid="button-edit-deal">
+              <Edit className="h-4 w-4 mr-2" />
+              Edit Deal
+            </Button>
+          </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="stagger-2">
@@ -2147,6 +2156,15 @@ export default function TransactionsDealDetail() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {deal && (
+          <ShareDealDialog
+            dealId={deal.id}
+            dealTitle={deal.title}
+            open={isShareOpen}
+            onOpenChange={setIsShareOpen}
+          />
+        )}
 
         <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
           <DialogContent className="max-w-lg">
