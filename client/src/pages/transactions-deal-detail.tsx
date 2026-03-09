@@ -860,10 +860,10 @@ export default function TransactionsDealDetail() {
   };
 
   return (
-    <ScrollArea className="h-full">
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between stagger-1">
-          <div className="flex items-center gap-4">
+    <div className="h-full overflow-auto">
+      <div className="p-6 space-y-6 min-w-0">
+        <div className="flex items-start justify-between gap-4 flex-wrap stagger-1">
+          <div className="flex items-center gap-4 min-w-0">
             <Button
               variant="ghost"
               size="icon"
@@ -872,8 +872,8 @@ export default function TransactionsDealDetail() {
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div>
-              <div className="flex items-center gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-bold" data-testid="text-deal-title">{deal.title}</h1>
                 <Badge variant="outline" className={statusColors[deal.status || "active"]}>
                   {deal.status?.replace("_", " ") || "Active"}
@@ -887,7 +887,7 @@ export default function TransactionsDealDetail() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
             <Button variant="outline" onClick={() => setIsShareOpen(true)} data-testid="button-share-deal">
               <Share2 className="h-4 w-4 mr-2" />
               Share Deal
@@ -2542,7 +2542,7 @@ export default function TransactionsDealDetail() {
           </DialogContent>
         </Dialog>
       </div>
-    </ScrollArea>
+    </div>
   );
 }
 
