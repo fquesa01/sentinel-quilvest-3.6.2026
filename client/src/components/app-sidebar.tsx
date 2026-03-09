@@ -161,14 +161,8 @@ export function AppSidebar() {
           roles: ["admin", "attorney", "external_counsel", "auditor"],
         },
         {
-          title: "Deal Templates",
-          url: "/transactions/templates",
-          icon: FileStack,
-          roles: ["admin", "attorney", "external_counsel"],
-        },
-        {
-          title: "Request Lists (DRL)",
-          url: "/transactions/request-lists",
+          title: "Diligence - Docs & Checklists",
+          url: "/transactions/diligence",
           icon: ClipboardList,
           roles: ["admin", "attorney", "external_counsel"],
         },

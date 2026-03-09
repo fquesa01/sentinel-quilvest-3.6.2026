@@ -265,7 +265,7 @@ export default function TransactionsDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-4">
-        <Link href="/transactions/request-lists">
+        <Link href="/transactions/diligence">
           <Card className="hover-elevate cursor-pointer h-full">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">

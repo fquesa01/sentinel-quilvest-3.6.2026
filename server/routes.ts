@@ -13236,6 +13236,109 @@ ${note.transcript.slice(0, 20000)}`
     }
   });
 
+  app.post("/api/deals/:dealId/diligence/upload", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), upload.single("file"), async (req: any, res) => {
+    try {
+      const { dealId } = req.params;
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const ext = file.originalname.split(".").pop()?.toLowerCase();
+      const allowedExts = ["csv", "xlsx", "xls", "docx", "doc", "pdf", "txt"];
+      if (!ext || !allowedExts.includes(ext)) {
+        return res.status(400).json({ message: `Unsupported file type: .${ext}. Accepted: ${allowedExts.join(", ")}` });
+      }
+
+      let lines: string[] = [];
+
+      if (ext === "csv" || ext === "txt") {
+        const text = file.buffer.toString("utf-8");
+        lines = text.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+      } else if (ext === "xlsx" || ext === "xls") {
+        try {
+          const XLSX = await import("xlsx");
+          const workbook = XLSX.read(file.buffer, { type: "buffer" });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const data: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+          for (const row of data) {
+            const text = row.map((cell: any) => (cell != null ? String(cell).trim() : "")).filter(Boolean).join(" | ");
+            if (text.length > 0) lines.push(text);
+          }
+        } catch (e: any) {
+          return res.status(400).json({ message: "Failed to parse Excel file: " + e.message });
+        }
+      } else if (ext === "docx" || ext === "doc") {
+        try {
+          const mammoth = await import("mammoth");
+          const result = await mammoth.extractRawText({ buffer: file.buffer });
+          lines = result.value.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+        } catch (e: any) {
+          return res.status(400).json({ message: "Failed to parse Word document: " + e.message });
+        }
+      } else if (ext === "pdf") {
+        try {
+          const pdfParse = (await import("pdf-parse")).default;
+          const pdfResult = await pdfParse(file.buffer);
+          lines = pdfResult.text.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+        } catch (e: any) {
+          return res.status(400).json({ message: "Failed to parse PDF: " + e.message });
+        }
+      }
+
+      if (lines.length === 0) {
+        return res.status(400).json({ message: "No content found in the uploaded file" });
+      }
+
+      const hasHeader = /^(#|item|category|description|document|request|no\.?|number)/i.test(lines[0]);
+      const itemLines = hasHeader ? lines.slice(1) : lines;
+
+      const listName = file.originalname.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
+      const [newList] = await db.insert(schema.requestLists).values({
+        dealId,
+        name: listName,
+        description: `Auto-created from uploaded file: ${file.originalname}`,
+        requestingParty: "Buyer",
+        respondingParty: "Target",
+        version: 1,
+        isActive: true,
+      }).returning();
+
+      const items = itemLines.slice(0, 200).map((line: string, idx: number) => {
+        const parts = line.split(/[|,\t]/).map((p: string) => p.trim()).filter(Boolean);
+        let category = "General";
+        let description = line;
+
+        if (parts.length >= 2) {
+          category = parts[0];
+          description = parts.slice(1).join(" - ");
+        }
+
+        return {
+          requestListId: newList.id,
+          itemNumber: idx + 1,
+          category,
+          description,
+          status: "pending" as const,
+          priority: "medium" as const,
+        };
+      });
+
+      if (items.length > 0) {
+        await db.insert(schema.requestItems).values(items);
+      }
+
+      res.status(201).json({
+        list: newList,
+        itemCount: items.length,
+        message: `Created "${listName}" with ${items.length} items from ${file.originalname}`,
+      });
+    } catch (error: any) {
+      console.error("[Diligence Upload] Error:", error);
+      res.status(500).json({ message: error.message || "Failed to process uploaded file" });
+    }
+  });
+
   // ===== Request Items API Endpoints =====
 
   // Create a new request item

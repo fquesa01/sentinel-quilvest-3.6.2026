@@ -52,6 +52,7 @@ import TransactionsDealTemplateDetail from "@/pages/transactions-deal-template-d
 import TransactionsDealTerms from "@/pages/transactions-deal-terms";
 import TransactionsDocumentSearch from "@/pages/transactions-document-search";
 import TransactionsTemplates from "@/pages/transactions-templates";
+import TransactionsDiligence from "@/pages/transactions-diligence";
 import BackgroundResearch from "@/pages/background-research";
 import BackgroundResearchDetail from "@/pages/background-research-detail";
 import AmbientIntelligence from "@/pages/ambient-intelligence";
@@ -138,6 +139,7 @@ function AuthenticatedApp() {
               <Route path="/transactions/deals" component={TransactionsDeals} />
               <Route path="/transactions/deals/:id" component={TransactionsDealDetail} />
               <Route path="/transactions/deals/:id/terms" component={TransactionsDealTerms} />
+              <Route path="/transactions/diligence" component={TransactionsDiligence} />
               <Route path="/transactions/request-lists" component={TransactionsRequestLists} />
               <Route path="/transactions/request-lists/:id" component={TransactionsRequestListDetail} />
               <Route path="/transactions/data-rooms" component={TransactionsDataRooms} />

@@ -95,10 +95,10 @@ export default function TransactionsDealTemplateDetail() {
             <p className="text-muted-foreground mb-4">
               The requested template could not be found.
             </p>
-            <Link href="/transactions/templates" data-testid="link-back-to-templates">
+            <Link href="/transactions/diligence" data-testid="link-back-to-templates">
               <Button variant="outline" data-testid="button-back-to-templates">
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Templates
+                Back to Diligence
               </Button>
             </Link>
           </CardContent>
@@ -113,9 +113,9 @@ export default function TransactionsDealTemplateDetail() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/transactions/templates" data-testid="link-breadcrumb-templates">
+        <Link href="/transactions/diligence" data-testid="link-breadcrumb-templates">
           <span className="hover:text-foreground cursor-pointer">
-            Deal Templates
+            Diligence
           </span>
         </Link>
         <span>/</span>
@@ -124,7 +124,7 @@ export default function TransactionsDealTemplateDetail() {
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/transactions/templates" data-testid="link-back">
+          <Link href="/transactions/diligence" data-testid="link-back">
             <Button variant="ghost" size="icon" data-testid="button-back">
               <ArrowLeft className="h-5 w-5" />
             </Button>

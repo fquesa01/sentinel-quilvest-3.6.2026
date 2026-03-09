@@ -137,6 +137,32 @@ export default function InvestorMemoBuilder() {
         }
       }
     }
+
+    const valSection = s["valuation"];
+    if (valSection && (!valSection.content || valSection.content.trim().length === 0) && execSection?.content) {
+      const execContent = execSection.content;
+      const valHeaderPattern = /(?:#{1,4}\s*|\*{1,2})Valuation\s*(?:(?:&|and)\s*Returns?)?\*{0,2}/i;
+      const valHeaderMatch = execContent.match(valHeaderPattern);
+      if (valHeaderMatch && valHeaderMatch.index != null) {
+        let valBlock = execContent.slice(valHeaderMatch.index);
+        const valEndPattern = /\n(?:#{1,3}\s+(?!Valuation)|\*{1,2}(?:Key\s+(?:Risks?|Value)|Investment|Recommendation|Conclusion))/i;
+        const valNextMatch = valBlock.match(valEndPattern);
+        if (valNextMatch && valNextMatch.index != null && valNextMatch.index > 0) {
+          valBlock = valBlock.slice(0, valNextMatch.index);
+        }
+        const valFootnoteStart = valBlock.search(/\n\s*\[\^/);
+        if (valFootnoteStart > 0) {
+          valBlock = valBlock.slice(0, valFootnoteStart);
+        }
+        if (valBlock.trim().length > 20) {
+          s["valuation"] = {
+            ...valSection,
+            content: `## Valuation\n\n*Derived from Executive Summary. Use "Regenerate" for a detailed valuation analysis.*\n\n${valBlock.trim()}`,
+          };
+        }
+      }
+    }
+
     return s;
   })();
 
@@ -285,10 +311,6 @@ export default function InvestorMemoBuilder() {
                   <TrendingUp className="h-4 w-4" />
                   Financial Model
                 </TabsTrigger>
-                <TabsTrigger value="tech" className="gap-2">
-                  <Brain className="h-4 w-4" />
-                  Tech & Innovation
-                </TabsTrigger>
                 <TabsTrigger value="chat" className="gap-2">
                   <MessageSquare className="h-4 w-4" />
                   Refine with AI
@@ -297,6 +319,16 @@ export default function InvestorMemoBuilder() {
             </div>
 
             <TabsContent value="memo" className="flex-1 overflow-y-auto p-6 mt-0">
+              {activeSection === "technology_innovation" && memo.techAssessment && (
+                <div className="mb-6">
+                  <AnnotatableContent memoId={memoId!} sectionKey="tech_innovation" annotations={annotations as any[]}>
+                    <TechSynergyMatrix assessment={memo.techAssessment} />
+                  </AnnotatableContent>
+                  {sections[activeSection]?.content && (
+                    <Separator className="my-6" />
+                  )}
+                </div>
+              )}
               {sections[activeSection] && (
                 <MemoSectionEditor
                   sectionKey={activeSection}
@@ -314,12 +346,6 @@ export default function InvestorMemoBuilder() {
             <TabsContent value="model" className="flex-1 overflow-y-auto p-6 mt-0">
               <AnnotatableContent memoId={memoId!} sectionKey="financial_model" annotations={annotations as any[]}>
                 <FinancialModelPanel model={model} />
-              </AnnotatableContent>
-            </TabsContent>
-
-            <TabsContent value="tech" className="flex-1 overflow-y-auto p-6 mt-0">
-              <AnnotatableContent memoId={memoId!} sectionKey="tech_innovation" annotations={annotations as any[]}>
-                <TechSynergyMatrix assessment={memo.techAssessment} />
               </AnnotatableContent>
             </TabsContent>
 

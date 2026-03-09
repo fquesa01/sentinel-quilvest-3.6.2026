@@ -230,8 +230,8 @@ export default function TransactionsRequestListDetail() {
           <CardContent className="py-12 text-center">
             <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="font-medium mb-2">Request List Not Found</h3>
-            <Button onClick={() => navigate("/transactions/request-lists")}>
-              Back to Request Lists
+            <Button onClick={() => navigate("/transactions/diligence")}>
+              Back to Diligence
             </Button>
           </CardContent>
         </Card>
@@ -246,7 +246,7 @@ export default function TransactionsRequestListDetail() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/transactions/request-lists")}
+            onClick={() => navigate("/transactions/diligence")}
             data-testid="button-back"
           >
             <ArrowLeft className="h-4 w-4" />
