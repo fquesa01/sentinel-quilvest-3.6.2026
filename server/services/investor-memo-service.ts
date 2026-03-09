@@ -362,7 +362,20 @@ The memo should be comprehensive but concise. Use specific numbers from the data
 
 IMPORTANT: Every section must have substantive content. Do NOT leave any section empty. The risk_factors section must be especially detailed — it should expand on ALL risks mentioned in the executive summary and add additional risk categories (financial, operational, market, regulatory, technology, management, deal-specific). Use markdown tables for structured risk data.
 
-CITATIONS: The data payload includes a "sourceDocuments" array containing {id, filename, category} for each document in the deal's data room. You MUST include inline citations throughout every section linking claims, data points, and analysis back to specific source documents. Use markdown link syntax: [Document Name](/api/data-room-documents/DOCUMENT_ID/preview). For example: "Revenue grew 335% ([Q4 2025 Financial Statements](/api/data-room-documents/abc123/preview))". Place citations immediately after the claim they support. Every paragraph with factual claims should have at least one citation. When a data point could come from multiple documents, cite the most specific/relevant one. Use the document filename (cleaned up for readability) as the link text.
+DOCUMENT CITATIONS — CRITICAL REQUIREMENT:
+The data payload includes a "sourceDocuments" array with the ACTUAL document IDs and filenames from the deal's data room. You MUST cite these uploaded documents as inline links throughout every section. Use this EXACT markdown link format:
+
+  ([Short Document Name](/api/data-room-documents/ACTUAL_DOCUMENT_ID/preview))
+
+Rules:
+- Use the REAL document IDs from the sourceDocuments array — do NOT invent or fabricate IDs
+- Place the citation inline, immediately after the claim, in parentheses
+- Every paragraph that states a fact, number, or claim MUST have at least one document citation
+- Match claims to the most relevant source document by filename/category
+- Use a shortened, readable version of the filename as the link text (e.g., "Financial Model 11-2025" instead of "09 EmpowerMH Financial Model 11-2025.xlsx")
+- DO NOT use footnote-style references like [^1] or [^2] — use inline links only
+- DO NOT create a separate "Sources" or "Footnotes" section — all citations must be inline
+- If external research sources are cited, they can use regular URLs, but uploaded document citations must always use the /api/data-room-documents/ID/preview format
 
 Target: ${context.dealName}
 Sector: ${context.sector}
@@ -538,7 +551,7 @@ export async function regenerateSection(
     : "Generate comprehensive content for this section based on the memo context provided. The section is currently empty and needs full content.";
 
   const citationInstruction = documentManifest.length > 0
-    ? `\n\nCITATIONS: The context includes a "sourceDocuments" array with {id, filename, category}. You MUST include inline citations using markdown link syntax: [Document Name](/api/data-room-documents/DOCUMENT_ID/preview). Place citations after claims they support. Every paragraph with factual claims should have at least one citation.`
+    ? `\n\nDOCUMENT CITATIONS — CRITICAL: The context includes a "sourceDocuments" array with {id, filename, category} for each uploaded document. You MUST cite these as inline links using: ([Short Doc Name](/api/data-room-documents/ACTUAL_ID/preview)). Use the REAL document IDs from sourceDocuments — do NOT fabricate IDs. Place citations inline after claims, NOT as footnotes. DO NOT use [^1] footnote syntax. Every paragraph with factual claims needs at least one document citation.`
     : "";
 
   const response = await anthropic.messages.create({
