@@ -16127,6 +16127,28 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  app.post("/api/deals/:dealId/terms/extract-all", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const { dealTermsService } = await import("./services/deal-terms-service");
+      const result = await dealTermsService.extractFromAllDocuments(req.params.dealId);
+      if (result.success) {
+        const terms = await dealTermsService.getDealTerms(req.params.dealId);
+        const completion = terms ? dealTermsService.calculateCompletionStatus(terms) : null;
+        res.json({
+          terms,
+          completion,
+          extractionNotes: result.extractionNotes,
+          confidence: result.confidence,
+        });
+      } else {
+        res.status(400).json({ message: result.error || "Extraction failed" });
+      }
+    } catch (error: any) {
+      console.error("Error extracting deal terms from all documents:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   // Update deal terms
   app.patch("/api/deals/:dealId/terms", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {

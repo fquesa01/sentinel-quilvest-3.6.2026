@@ -3,10 +3,12 @@ import { db } from "../db";
 import { 
   dealTerms, 
   dataRoomDocuments,
+  dataRooms,
+  deals,
   type InsertDealTerms,
   type DealTerms 
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY! });
 
@@ -316,6 +318,62 @@ ${truncatedContent}${content.length > 20000 ? '\n\n[Document truncated...]' : ''
       total: requiredFields.length,
       percentage: Math.round((filledFields.length / requiredFields.length) * 100),
     };
+  }
+
+  async extractFromAllDocuments(dealId: string): Promise<DealTermsExtractionResult> {
+    const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
+    if (!deal) throw new Error("Deal not found");
+
+    const rooms = await db.select({ id: dataRooms.id })
+      .from(dataRooms)
+      .where(eq(dataRooms.dealId, dealId));
+
+    if (rooms.length === 0) {
+      throw new Error("No data rooms found for this deal");
+    }
+
+    const roomIds = rooms.map(r => r.id);
+    const docs = await db.select()
+      .from(dataRoomDocuments)
+      .where(inArray(dataRoomDocuments.dataRoomId, roomIds));
+
+    const docsWithText = docs.filter(d => d.extractedText && d.extractedText.length > 100);
+    if (docsWithText.length === 0) {
+      throw new Error("No documents with extracted text found. Upload and process documents first.");
+    }
+
+    const perDocLimit = Math.min(8000, Math.floor(18000 / docsWithText.length));
+    const combinedText = docsWithText
+      .map(d => `--- Document: ${d.fileName} ---\n${(d.extractedText || "").slice(0, perDocLimit)}`)
+      .join("\n\n");
+
+    console.log(`[DealTerms] Extracting terms from ${docsWithText.length} documents (${combinedText.length} chars) for deal "${deal.title}"`);
+
+    const result = await this.extractFromDocument(dealId, docsWithText[0].id, combinedText, 'psa_extraction');
+
+    if (result.success && result.dealTerms) {
+      const existing = await this.getDealTerms(dealId);
+
+      if (existing) {
+        const mergedData: Record<string, any> = {};
+        for (const [key, value] of Object.entries(result.dealTerms)) {
+          if (key === 'dealId' || key === 'sourceType' || key === 'sourceDocumentId') continue;
+          if (value != null && value !== '') {
+            const existingValue = (existing as any)[key];
+            if (existingValue == null || existingValue === '') {
+              mergedData[key] = value;
+            }
+          }
+        }
+        if (Object.keys(mergedData).length > 0) {
+          await this.updateDealTerms(existing.id, mergedData);
+        }
+      } else {
+        await this.saveDealTerms(result.dealTerms as any);
+      }
+    }
+
+    return result;
   }
 }
 

@@ -155,6 +155,11 @@ export default function TransactionsDealDetail() {
     enabled: !!id,
   });
 
+  const { data: termsData } = useQuery<any>({
+    queryKey: ["/api/deals", id, "terms"],
+    enabled: !!id,
+  });
+
   const { data: dataRooms = [] } = useQuery<any[]>({
     queryKey: ["/api/data-rooms"],
     select: (rooms) => rooms.filter((r: any) => r.dealId === id),
@@ -257,6 +262,28 @@ export default function TransactionsDealDetail() {
     },
     onError: (error: any) => {
       toast({ title: "Extraction Failed", description: error.message || "Could not extract parties from documents.", variant: "destructive" });
+    },
+  });
+
+  const extractTermsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${id}/terms/extract-all`);
+      return res.json();
+    },
+    onSuccess: async (data: any) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "terms"] });
+      const pct = data.completion?.percentage ?? 0;
+      toast({
+        title: "Terms Extracted",
+        description: `Deal terms extracted from data room documents. ${pct}% of required fields populated.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Extraction Failed",
+        description: error.message || "Could not extract terms from documents.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -909,10 +936,10 @@ export default function TransactionsDealDetail() {
             )}
           </TabsContent>
 
-          <TabsContent value="terms" className="mt-6">
+          <TabsContent value="terms" className="mt-6 space-y-6">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <ClipboardCheck className="h-5 w-5" />
@@ -922,20 +949,91 @@ export default function TransactionsDealDetail() {
                       Manage extracted or manually entered deal terms for document generation
                     </CardDescription>
                   </div>
-                  <Link href={`/transactions/deals/${id}/terms`}>
-                    <Button data-testid="button-manage-terms">
-                      <FileText className="h-4 w-4 mr-2" />
-                      Manage Terms
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      onClick={() => extractTermsMutation.mutate()}
+                      disabled={extractTermsMutation.isPending}
+                      data-testid="button-extract-terms"
+                    >
+                      {extractTermsMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-2" />
+                      )}
+                      {extractTermsMutation.isPending ? "Extracting..." : "Extract from Documents"}
                     </Button>
-                  </Link>
+                    <Link href={`/transactions/deals/${id}/terms`}>
+                      <Button data-testid="button-manage-terms">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Manage Terms
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground text-sm">
-                  Deal terms can be extracted from an uploaded LOI or Term Sheet using AI, or entered manually. 
-                  These terms are used to automatically generate transaction documents like Purchase & Sale Agreements, 
-                  Deeds, and Closing Certificates.
-                </p>
+                {termsData ? (
+                  <div className="space-y-4">
+                    {termsData.completion && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2 text-sm">
+                          <span className="text-muted-foreground">Completion</span>
+                          <span className="font-medium">{termsData.completion.complete}/{termsData.completion.total} required fields</span>
+                        </div>
+                        <Progress value={termsData.completion.percentage} className="h-2" />
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {termsData.purchasePrice && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Purchase Price</p>
+                          <p className="font-medium" data-testid="text-purchase-price">${termsData.purchasePrice}</p>
+                        </div>
+                      )}
+                      {termsData.buyerName && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Buyer</p>
+                          <p className="font-medium" data-testid="text-buyer-name">{termsData.buyerName}</p>
+                        </div>
+                      )}
+                      {termsData.sellerName && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Seller</p>
+                          <p className="font-medium" data-testid="text-seller-name">{termsData.sellerName}</p>
+                        </div>
+                      )}
+                      {termsData.propertyAddress && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Property</p>
+                          <p className="font-medium" data-testid="text-property-address">{termsData.propertyAddress}</p>
+                        </div>
+                      )}
+                      {termsData.closingDate && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Closing Date</p>
+                          <p className="font-medium" data-testid="text-closing-date">{termsData.closingDate}</p>
+                        </div>
+                      )}
+                      {termsData.initialDeposit && (
+                        <div className="p-3 rounded-lg bg-muted/30">
+                          <p className="text-xs text-muted-foreground">Initial Deposit</p>
+                          <p className="font-medium" data-testid="text-initial-deposit">${termsData.initialDeposit}</p>
+                        </div>
+                      )}
+                    </div>
+                    {!termsData.purchasePrice && !termsData.buyerName && !termsData.sellerName && !termsData.propertyAddress && !termsData.closingDate && !termsData.initialDeposit && (
+                      <p className="text-muted-foreground text-sm">
+                        No terms have been filled in yet. Use "Extract from Documents" to auto-populate from your data room, or click "Manage Terms" to enter them manually.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-sm">
+                    Deal terms can be extracted from uploaded documents using AI, or entered manually.
+                    Use "Extract from Documents" to auto-populate from your data room, or click "Manage Terms" to enter them manually.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
