@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -55,6 +55,8 @@ import {
   Wand2,
   Sparkles,
   Download,
+  LayoutList,
+  Table2,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -151,6 +153,7 @@ export default function TransactionsDealChecklistDetail() {
   const [selectedItemForDocuments, setSelectedItemForDocuments] = useState<string | null>(null);
   const [isDocumentDialogOpen, setIsDocumentDialogOpen] = useState(false);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string>("");
+  const [viewMode, setViewMode] = useState<"list" | "spreadsheet">("list");
 
   const { data: checklistData, isLoading: isLoadingChecklist } = useQuery<ChecklistData>({
     queryKey: [`/api/deal-checklists/${id}`],
@@ -344,19 +347,41 @@ export default function TransactionsDealChecklistDetail() {
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => autoMatchMutation.mutate()}
-          disabled={autoMatchMutation.isPending}
-          data-testid="button-auto-match"
-        >
-          {autoMatchMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Wand2 className="h-4 w-4 mr-2" />
-          )}
-          Run Auto-Match
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center border rounded-md">
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => setViewMode("list")}
+              aria-label="List view"
+              data-testid="button-view-list"
+            >
+              <LayoutList className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "spreadsheet" ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => setViewMode("spreadsheet")}
+              aria-label="Spreadsheet view"
+              data-testid="button-view-spreadsheet"
+            >
+              <Table2 className="h-4 w-4" />
+            </Button>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => autoMatchMutation.mutate()}
+            disabled={autoMatchMutation.isPending}
+            data-testid="button-auto-match"
+          >
+            {autoMatchMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Wand2 className="h-4 w-4 mr-2" />
+            )}
+            Run Auto-Match
+          </Button>
+        </div>
       </div>
 
       {autoMatchedCount > 0 && (
@@ -426,192 +451,357 @@ export default function TransactionsDealChecklistDetail() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Checklist Items</CardTitle>
-          <CardDescription>
-            {sortedCategories.length} categories with {totalItems} items
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Accordion
-            type="multiple"
-            value={expandedCategories}
-            onValueChange={setExpandedCategories}
-            className="w-full"
-          >
-            {sortedCategories.map((category) => {
-              const categoryItems = itemsByCategory[category.id] || [];
-              const categoryComplete = categoryItems.filter(i => 
-                i.status === "complete" || i.status === "na" || i.status === "waived"
-              ).length;
-              const categoryRequired = categoryItems.filter(i => i.templateItem?.isRequired).length;
-              const categoryCritical = categoryItems.filter(i => i.templateItem?.isCritical && i.status === "pending").length;
+      {viewMode === "list" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Checklist Items</CardTitle>
+            <CardDescription>
+              {sortedCategories.length} categories with {totalItems} items
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Accordion
+              type="multiple"
+              value={expandedCategories}
+              onValueChange={setExpandedCategories}
+              className="w-full"
+            >
+              {sortedCategories.map((category) => {
+                const categoryItems = itemsByCategory[category.id] || [];
+                const categoryComplete = categoryItems.filter(i => 
+                  i.status === "complete" || i.status === "na" || i.status === "waived"
+                ).length;
+                const categoryRequired = categoryItems.filter(i => i.templateItem?.isRequired).length;
+                const categoryCritical = categoryItems.filter(i => i.templateItem?.isCritical && i.status === "pending").length;
 
-              return (
-                <AccordionItem key={category.id} value={category.id}>
-                  <AccordionTrigger className="hover:no-underline py-3" data-testid={`accordion-category-${category.id}`}>
-                    <div className="flex items-center justify-between w-full pr-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{category.name}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {categoryComplete}/{categoryItems.length}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {categoryCritical > 0 && (
-                          <Badge variant="destructive" className="text-xs">
-                            {categoryCritical} critical
+                return (
+                  <AccordionItem key={category.id} value={category.id}>
+                    <AccordionTrigger className="hover:no-underline py-3" data-testid={`accordion-category-${category.id}`}>
+                      <div className="flex items-center justify-between w-full pr-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{category.name}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {categoryComplete}/{categoryItems.length}
                           </Badge>
-                        )}
-                        {categoryRequired > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {categoryRequired} required
-                          </Badge>
-                        )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {categoryCritical > 0 && (
+                            <Badge variant="destructive" className="text-xs">
+                              {categoryCritical} critical
+                            </Badge>
+                          )}
+                          {categoryRequired > 0 && (
+                            <Badge variant="secondary" className="text-xs">
+                              {categoryRequired} required
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <div className="space-y-2 pt-2">
-                      {categoryItems
-                        .sort((a, b) => (a.templateItem?.sortOrder || 0) - (b.templateItem?.sortOrder || 0))
-                        .map((item) => {
-                          const StatusIcon = statusConfig[item.status]?.icon || Circle;
-                          const statusColor = statusConfig[item.status]?.color || "text-muted-foreground";
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="space-y-2 pt-2">
+                        {categoryItems
+                          .sort((a, b) => (a.templateItem?.sortOrder || 0) - (b.templateItem?.sortOrder || 0))
+                          .map((item) => {
+                            const StatusIcon = statusConfig[item.status]?.icon || Circle;
+                            const statusColor = statusConfig[item.status]?.color || "text-muted-foreground";
 
-                          return (
-                            <div
-                              key={item.id}
-                              className="flex items-center justify-between p-3 rounded-lg border hover-elevate"
-                              data-testid={`checklist-item-${item.id}`}
-                            >
-                              <div className="flex items-center gap-3 flex-1 min-w-0">
-                                <StatusIcon className={`h-5 w-5 flex-shrink-0 ${statusColor}`} />
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-medium text-sm">
-                                      {item.templateItem?.name || "Untitled Item"}
-                                    </span>
-                                    {item.hasAutoMatched && (
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Badge variant="outline" className="text-xs" data-testid={`badge-ai-matched-${item.id}`}>
-                                            <Sparkles className="h-3 w-3 mr-1" />
-                                            AI Matched
+                            return (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between p-3 rounded-lg border hover-elevate"
+                                data-testid={`checklist-item-${item.id}`}
+                              >
+                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                  <StatusIcon className={`h-5 w-5 flex-shrink-0 ${statusColor}`} />
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-medium text-sm">
+                                        {item.templateItem?.name || "Untitled Item"}
+                                      </span>
+                                      {item.hasAutoMatched && (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Badge variant="outline" className="text-xs" data-testid={`badge-ai-matched-${item.id}`}>
+                                              <Sparkles className="h-3 w-3 mr-1" />
+                                              AI Matched
+                                              {item.autoMatchConfidence != null && (
+                                                <span className="ml-1 opacity-70">
+                                                  {Math.round(item.autoMatchConfidence)}%
+                                                </span>
+                                              )}
+                                            </Badge>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>This item was auto-completed by AI document analysis</p>
                                             {item.autoMatchConfidence != null && (
-                                              <span className="ml-1 opacity-70">
-                                                {Math.round(item.autoMatchConfidence)}%
-                                              </span>
+                                              <p className="text-xs opacity-70">Confidence: {Math.round(item.autoMatchConfidence)}%</p>
                                             )}
-                                          </Badge>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>This item was auto-completed by AI document analysis</p>
-                                          {item.autoMatchConfidence != null && (
-                                            <p className="text-xs opacity-70">Confidence: {Math.round(item.autoMatchConfidence)}%</p>
-                                          )}
-                                        </TooltipContent>
-                                      </Tooltip>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      )}
+                                      {item.templateItem?.isRequired && (
+                                        <Badge variant="secondary" className="text-xs">Required</Badge>
+                                      )}
+                                      {item.templateItem?.isCritical && (
+                                        <Badge variant="destructive" className="text-xs">Critical</Badge>
+                                      )}
+                                    </div>
+                                    {item.hasAutoMatched && item.notes && (
+                                      <p className="text-xs text-muted-foreground mt-0.5 truncate italic" data-testid={`text-auto-match-notes-${item.id}`}>
+                                        {item.notes}
+                                      </p>
                                     )}
-                                    {item.templateItem?.isRequired && (
-                                      <Badge variant="secondary" className="text-xs">Required</Badge>
-                                    )}
-                                    {item.templateItem?.isCritical && (
-                                      <Badge variant="destructive" className="text-xs">Critical</Badge>
+                                    {item.templateItem?.description && (
+                                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                        {item.templateItem.description}
+                                      </p>
                                     )}
                                   </div>
-                                  {item.hasAutoMatched && item.notes && (
-                                    <p className="text-xs text-muted-foreground mt-0.5 truncate italic" data-testid={`text-auto-match-notes-${item.id}`}>
-                                      {item.notes}
-                                    </p>
-                                  )}
-                                  {item.templateItem?.description && (
-                                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                      {item.templateItem.description}
-                                    </p>
-                                  )}
                                 </div>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                {(item.documentCount && item.documentCount > 0) && (
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {(item.documentCount && item.documentCount > 0) && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Badge 
+                                          variant={item.hasAutoMatched ? "outline" : "secondary"} 
+                                          className="text-xs cursor-pointer"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedItemForDocuments(item.id);
+                                            setIsDocumentDialogOpen(true);
+                                          }}
+                                          data-testid={`badge-doc-count-${item.id}`}
+                                        >
+                                          {item.hasAutoMatched && <Sparkles className="h-3 w-3 mr-1" />}
+                                          {item.documentCount} doc{item.documentCount > 1 ? "s" : ""}
+                                        </Badge>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        {item.hasAutoMatched ? "Click to view matched documents" : "Click to view linked documents"}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <Badge 
-                                        variant={item.hasAutoMatched ? "outline" : "secondary"} 
-                                        className="text-xs cursor-pointer"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
                                           setSelectedItemForDocuments(item.id);
                                           setIsDocumentDialogOpen(true);
                                         }}
-                                        data-testid={`badge-doc-count-${item.id}`}
+                                        data-testid={`button-link-docs-${item.id}`}
                                       >
-                                        {item.hasAutoMatched && <Sparkles className="h-3 w-3 mr-1" />}
-                                        {item.documentCount} doc{item.documentCount > 1 ? "s" : ""}
-                                      </Badge>
+                                        <Paperclip className="h-4 w-4" />
+                                      </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent>
-                                      {item.hasAutoMatched ? "Click to view matched documents" : "Click to view linked documents"}
-                                    </TooltipContent>
+                                    <TooltipContent>Link Documents</TooltipContent>
                                   </Tooltip>
-                                )}
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
+                                  <Select
+                                    value={item.status}
+                                    onValueChange={(value) => updateItemMutation.mutate({ itemId: item.id, status: value })}
+                                  >
+                                    <SelectTrigger className="w-32 h-8" data-testid={`select-status-${item.id}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">Pending</SelectItem>
+                                      <SelectItem value="in_progress">In Progress</SelectItem>
+                                      <SelectItem value="complete">Complete</SelectItem>
+                                      <SelectItem value="na">N/A</SelectItem>
+                                      <SelectItem value="waived">Waived</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        {categoryItems.length === 0 && (
+                          <div className="text-center py-4 text-muted-foreground text-sm">
+                            No items in this category
+                          </div>
+                        )}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
+
+            {sortedCategories.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileStack className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No categories found for this checklist</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Checklist Items — Spreadsheet View</CardTitle>
+            <CardDescription>
+              {sortedCategories.length} categories with {totalItems} items
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {sortedCategories.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileStack className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No categories found for this checklist</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" data-testid="table-spreadsheet-view">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th scope="col" className="text-left font-medium px-4 py-3 text-muted-foreground">Item</th>
+                      <th scope="col" className="text-center font-medium px-3 py-3 text-muted-foreground w-20">Required</th>
+                      <th scope="col" className="text-center font-medium px-3 py-3 text-muted-foreground w-20">Critical</th>
+                      <th scope="col" className="text-left font-medium px-3 py-3 text-muted-foreground w-36">Status</th>
+                      <th scope="col" className="text-center font-medium px-3 py-3 text-muted-foreground w-24">Docs</th>
+                      <th scope="col" className="text-center font-medium px-3 py-3 text-muted-foreground w-24">AI Match</th>
+                      <th scope="col" className="text-left font-medium px-4 py-3 text-muted-foreground">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedCategories.map((category) => {
+                      const categoryItems = (itemsByCategory[category.id] || [])
+                        .sort((a, b) => (a.templateItem?.sortOrder || 0) - (b.templateItem?.sortOrder || 0));
+                      const categoryComplete = categoryItems.filter(i =>
+                        i.status === "complete" || i.status === "na" || i.status === "waived"
+                      ).length;
+
+                      return (
+                        <Fragment key={category.id}>
+                          <tr
+                            className="border-b bg-muted/30"
+                            data-testid={`spreadsheet-category-${category.id}`}
+                          >
+                            <td colSpan={7} className="px-4 py-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-sm">{category.name}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {categoryComplete}/{categoryItems.length}
+                                </Badge>
+                              </div>
+                            </td>
+                          </tr>
+                          {categoryItems.map((item, itemIndex) => {
+                            const StatusIcon = statusConfig[item.status]?.icon || Circle;
+                            const statusColor = statusConfig[item.status]?.color || "text-muted-foreground";
+
+                            return (
+                              <tr
+                                key={item.id}
+                                className={`border-b hover-elevate ${itemIndex % 2 === 1 ? "bg-muted/10" : ""}`}
+                                data-testid={`spreadsheet-item-${item.id}`}
+                              >
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <StatusIcon className={`h-4 w-4 flex-shrink-0 ${statusColor}`} />
+                                    <span className="truncate">{item.templateItem?.name || "Untitled Item"}</span>
+                                  </div>
+                                  {item.templateItem?.description && (
+                                    <p className="text-xs text-muted-foreground mt-0.5 truncate pl-6 max-w-xs">
+                                      {item.templateItem.description}
+                                    </p>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  {item.templateItem?.isRequired && (
+                                    <Badge variant="secondary" className="text-xs">Yes</Badge>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  {item.templateItem?.isCritical && (
+                                    <Badge variant="destructive" className="text-xs">Yes</Badge>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  <Select
+                                    value={item.status}
+                                    onValueChange={(value) => updateItemMutation.mutate({ itemId: item.id, status: value })}
+                                  >
+                                    <SelectTrigger className="w-32 h-8" data-testid={`select-spreadsheet-status-${item.id}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">Pending</SelectItem>
+                                      <SelectItem value="in_progress">In Progress</SelectItem>
+                                      <SelectItem value="complete">Complete</SelectItem>
+                                      <SelectItem value="na">N/A</SelectItem>
+                                      <SelectItem value="waived">Waived</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <div className="flex items-center justify-center gap-1">
                                     <Button
                                       variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
+                                      size="sm"
                                       onClick={() => {
                                         setSelectedItemForDocuments(item.id);
                                         setIsDocumentDialogOpen(true);
                                       }}
-                                      data-testid={`button-link-docs-${item.id}`}
+                                      aria-label={`Link documents for ${item.templateItem?.name || "item"}`}
+                                      data-testid={`button-spreadsheet-link-docs-${item.id}`}
                                     >
-                                      <Paperclip className="h-4 w-4" />
+                                      {item.hasAutoMatched && <Sparkles className="h-3 w-3 mr-1" />}
+                                      <Paperclip className="h-3 w-3 mr-1" />
+                                      <span className="text-xs">{(item.documentCount && item.documentCount > 0) ? item.documentCount : 0}</span>
                                     </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Link Documents</TooltipContent>
-                                </Tooltip>
-                                <Select
-                                  value={item.status}
-                                  onValueChange={(value) => updateItemMutation.mutate({ itemId: item.id, status: value })}
-                                >
-                                  <SelectTrigger className="w-32 h-8" data-testid={`select-status-${item.id}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="pending">Pending</SelectItem>
-                                    <SelectItem value="in_progress">In Progress</SelectItem>
-                                    <SelectItem value="complete">Complete</SelectItem>
-                                    <SelectItem value="na">N/A</SelectItem>
-                                    <SelectItem value="waived">Waived</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      {categoryItems.length === 0 && (
-                        <div className="text-center py-4 text-muted-foreground text-sm">
-                          No items in this category
-                        </div>
-                      )}
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              );
-            })}
-          </Accordion>
-
-          {sortedCategories.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              <FileStack className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>No categories found for this checklist</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  {item.hasAutoMatched && item.autoMatchConfidence != null ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Badge variant="outline" className="text-xs">
+                                          <Sparkles className="h-3 w-3 mr-1" />
+                                          {Math.round(item.autoMatchConfidence)}%
+                                        </Badge>
+                                      </TooltipTrigger>
+                                      <TooltipContent>AI auto-matched with {Math.round(item.autoMatchConfidence)}% confidence</TooltipContent>
+                                    </Tooltip>
+                                  ) : item.hasAutoMatched ? (
+                                    <Badge variant="outline" className="text-xs">
+                                      <Sparkles className="h-3 w-3" />
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {item.notes ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <p className="text-xs text-muted-foreground truncate max-w-[200px] cursor-default" data-testid={`text-spreadsheet-notes-${item.id}`}>
+                                          {item.notes}
+                                        </p>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-sm">
+                                        <p className="text-sm whitespace-pre-wrap">{item.notes}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={isDocumentDialogOpen} onOpenChange={(open) => {
         setIsDocumentDialogOpen(open);
