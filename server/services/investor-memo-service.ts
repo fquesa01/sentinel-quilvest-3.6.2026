@@ -351,6 +351,8 @@ async function writeMemoSections(
 
 The memo should be comprehensive but concise. Use specific numbers from the data. Cite research sources where relevant.
 
+IMPORTANT: Every section must have substantive content. Do NOT leave any section empty. The risk_factors section must be especially detailed — it should expand on ALL risks mentioned in the executive summary and add additional risk categories (financial, operational, market, regulatory, technology, management, deal-specific). Use markdown tables for structured risk data.
+
 Target: ${context.dealName}
 Sector: ${context.sector}
 Deal type: ${context.dealType}
@@ -369,19 +371,19 @@ Description: ${context.targetDescription || "N/A"}`,
         input_schema: {
           type: "object" as const,
           properties: {
-            executive_summary: { type: "string" as const },
-            company_overview: { type: "string" as const },
-            industry_market_analysis: { type: "string" as const },
-            competitive_intelligence: { type: "string" as const },
-            financial_performance: { type: "string" as const },
-            financial_projections: { type: "string" as const },
-            valuation: { type: "string" as const },
-            technology_innovation: { type: "string" as const },
-            value_creation_plan: { type: "string" as const },
-            management_organization: { type: "string" as const },
-            risk_factors: { type: "string" as const },
-            investment_merits: { type: "string" as const },
-            appendix: { type: "string" as const },
+            executive_summary: { type: "string" as const, description: "Executive summary with investment thesis, key highlights, and a Key Risks & Mitigants table" },
+            company_overview: { type: "string" as const, description: "Company background, history, products/services, and market position" },
+            industry_market_analysis: { type: "string" as const, description: "Industry overview, TAM/SAM/SOM, growth drivers, and market dynamics" },
+            competitive_intelligence: { type: "string" as const, description: "Competitive landscape, key competitors, differentiation, and market share" },
+            financial_performance: { type: "string" as const, description: "Historical financial analysis with revenue, margins, EBITDA, and key metrics" },
+            financial_projections: { type: "string" as const, description: "Forward-looking projections with assumptions and scenario analysis" },
+            valuation: { type: "string" as const, description: "Valuation methodology, multiples, DCF analysis, and comparable transactions" },
+            technology_innovation: { type: "string" as const, description: "Technology stack assessment, innovation capabilities, and tech risks/opportunities" },
+            value_creation_plan: { type: "string" as const, description: "Post-acquisition value creation levers, synergies, and 100-day plan" },
+            management_organization: { type: "string" as const, description: "Management team assessment, organizational structure, and key-man risks" },
+            risk_factors: { type: "string" as const, description: "COMPREHENSIVE risk factor analysis. Must include ALL risks from the executive summary plus additional detailed risks. Use a markdown table with columns: Risk, Severity (Critical/High/Medium/Low), Category, Description, Mitigation. Include financial risks, operational risks, market risks, regulatory risks, technology risks, management risks, and deal-specific risks. This section must be substantive — at least 8-12 risk factors with detailed descriptions and mitigations." },
+            investment_merits: { type: "string" as const, description: "Key investment merits, strengths, and reasons to invest" },
+            appendix: { type: "string" as const, description: "Supporting data, methodology notes, and additional detail" },
           },
           required: [
             "executive_summary", "company_overview", "industry_market_analysis",
@@ -480,18 +482,37 @@ export async function regenerateSection(
   const currentSections = memo.sections as Record<string, any>;
   const currentContent = currentSections[section]?.content || "";
 
+  let contextSections: Record<string, string> = {};
+  for (const [key, val] of Object.entries(currentSections)) {
+    if (key !== section && (val as any)?.content) {
+      contextSections[key] = (val as any).content;
+    }
+  }
+  const contextStr = JSON.stringify({
+    dealName: memo.dealName,
+    research: memo.industryResearch,
+    techAssessment: memo.techAssessment,
+    otherSections: contextSections,
+  });
+  const truncatedContext = contextStr.length > 60000 ? contextStr.slice(0, 60000) + "...[truncated]" : contextStr;
+
+  const sectionDescriptions: Record<string, string> = {
+    risk_factors: "Write a COMPREHENSIVE risk factor analysis. Include ALL risks mentioned in the executive summary plus additional detailed risks. Use a markdown table with columns: Risk, Severity (Critical/High/Medium/Low), Category, Description, Mitigation. Include financial risks, operational risks, market risks, regulatory risks, technology risks, management risks, and deal-specific risks. Provide at least 8-12 detailed risk factors.",
+  };
+
+  const sectionGuidance = sectionDescriptions[section] || "";
+  const defaultInstruction = currentContent.trim().length > 0
+    ? "Improve the section with more detail and better analysis."
+    : "Generate comprehensive content for this section based on the memo context provided. The section is currently empty and needs full content.";
+
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 4000,
-    system: `You are rewriting a section of an investor memo. ${prompt ? `User instruction: ${prompt}` : "Improve the section with more detail and better analysis."}`,
+    system: `You are rewriting a section of an investor memo. ${prompt ? `User instruction: ${prompt}` : defaultInstruction}${sectionGuidance ? `\n\nSection requirements: ${sectionGuidance}` : ""}`,
     messages: [
       {
         role: "user",
-        content: `Current section content:\n\n${currentContent}\n\nContext from the full memo:\n${JSON.stringify({
-          dealName: memo.dealName,
-          research: memo.industryResearch,
-          techAssessment: memo.techAssessment,
-        })}`,
+        content: `Current section content:\n\n${currentContent || "(empty — generate from scratch using the context below)"}\n\nContext from the full memo:\n${truncatedContext}`,
       },
     ],
   });
