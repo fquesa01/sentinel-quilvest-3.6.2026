@@ -16,6 +16,7 @@ The backend uses Node.js, Express.js, and TypeScript, providing RESTful API endp
 
 ### Feature Specifications
 - **Ambient Intelligence:** Session linking now uses transactions (deals) instead of cases. Users can link sessions to any transaction and optionally connect to My Data Lake for AI document suggestions. Schema: `ambient_sessions` has `deal_id` and `use_data_lake` columns.
+- **Deal Chat:** Real-time deal-centric messaging with Ambient Intelligence. Users create channels per deal, message each other, and AI passively analyzes conversations for document suggestions, key insights, and action items. Integration hooks for WhatsApp, Slack, Microsoft Teams, and SMS via webhook endpoints (`POST /api/integrations/:type/webhook`). Schema: `deal_channels`, `deal_channel_members`, `deal_channel_messages` tables. Each channel auto-creates a linked `ambient_session` for AI analysis. Frontend at `/deal-chat` with channel list, message view, member management, and AI insights panel.
 - **Communication Ingestion:** Processes various email and chat message formats.
 - **Analytics Dashboards:** Offers Communication Analytics (Top Communicators, Heatmap, Unified Timeline).
 - **Tag Management:** Comprehensive system for document coding and categorization with "Quick Tags," dynamic updates, user-specific tracking, color coding, and text selection tagging.

@@ -166,6 +166,12 @@ export function AppSidebar() {
           roles: ["admin", "attorney", "external_counsel"],
         },
         {
+          title: "Deal Chat",
+          url: "/deal-chat",
+          icon: MessageSquare,
+          roles: ["admin", "attorney", "external_counsel"],
+        },
+        {
           title: "Data Rooms",
           url: "/transactions/data-rooms",
           icon: Database,

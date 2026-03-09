@@ -64,6 +64,7 @@ import PEDealIntelligence from "@/pages/pe-deal-intelligence";
 import InvestorMemoBuilder from "@/pages/investor-memo-builder";
 import RelationshipIntelligence from "@/pages/relationship-intelligence";
 import RelationshipContacts from "@/pages/relationship-contacts";
+import DealChat from "@/pages/deal-chat";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { NotificationBell } from "@/components/notification-bell";
@@ -166,6 +167,7 @@ function AuthenticatedApp() {
               <Route path="/reports-productions" component={ReportsProductions} />
               <Route path="/relationship-intelligence" component={RelationshipIntelligence} />
               <Route path="/relationship-contacts" component={RelationshipContacts} />
+              <Route path="/deal-chat" component={DealChat} />
               <Route component={NotFound} />
             </Switch>
           </main>

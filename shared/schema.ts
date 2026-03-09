@@ -13215,3 +13215,91 @@ export const insertMemoAnnotationSchema = createInsertSchema(memoAnnotations).om
   updatedAt: true,
 });
 export type InsertMemoAnnotation = z.infer<typeof insertMemoAnnotationSchema>;
+
+export const dealChannelTypeEnum = pgEnum("deal_channel_type", [
+  "internal",
+  "whatsapp",
+  "slack",
+  "teams",
+  "sms",
+]);
+
+export const dealChannelMemberRoleEnum = pgEnum("deal_channel_member_role", [
+  "owner",
+  "member",
+  "observer",
+]);
+
+export const dealChannelMessageTypeEnum = pgEnum("deal_channel_message_type", [
+  "text",
+  "file",
+  "system",
+]);
+
+export const dealChannels = pgTable("deal_channels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  channelName: varchar("channel_name", { length: 255 }).notNull(),
+  channelType: dealChannelTypeEnum("channel_type").default("internal").notNull(),
+  ambientSessionId: varchar("ambient_session_id").references(() => ambientSessions.id, { onDelete: "set null" }),
+  externalChannelId: varchar("external_channel_id", { length: 255 }),
+  isArchived: boolean("is_archived").default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  dealIdx: index("idx_deal_channels_deal").on(table.dealId),
+  typeIdx: index("idx_deal_channels_type").on(table.channelType),
+}));
+
+export type DealChannel = typeof dealChannels.$inferSelect;
+export const insertDealChannelSchema = createInsertSchema(dealChannels).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertDealChannel = z.infer<typeof insertDealChannelSchema>;
+
+export const dealChannelMembers = pgTable("deal_channel_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: varchar("channel_id").references(() => dealChannels.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  role: dealChannelMemberRoleEnum("role").default("member").notNull(),
+  joinedAt: timestamp("joined_at").defaultNow(),
+}, (table) => ({
+  channelIdx: index("idx_deal_channel_members_channel").on(table.channelId),
+  userIdx: index("idx_deal_channel_members_user").on(table.userId),
+  uniqueMember: unique("uq_deal_channel_member").on(table.channelId, table.userId),
+}));
+
+export type DealChannelMember = typeof dealChannelMembers.$inferSelect;
+export const insertDealChannelMemberSchema = createInsertSchema(dealChannelMembers).omit({
+  id: true,
+  joinedAt: true,
+});
+export type InsertDealChannelMember = z.infer<typeof insertDealChannelMemberSchema>;
+
+export const dealChannelMessages = pgTable("deal_channel_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: varchar("channel_id").references(() => dealChannels.id, { onDelete: "cascade" }).notNull(),
+  senderId: varchar("sender_id").references(() => users.id, { onDelete: "set null" }),
+  senderName: varchar("sender_name", { length: 255 }),
+  content: text("content").notNull(),
+  messageType: dealChannelMessageTypeEnum("message_type").default("text").notNull(),
+  metadata: jsonb("metadata"),
+  externalMessageId: varchar("external_message_id", { length: 255 }),
+  isAnalyzed: boolean("is_analyzed").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  channelIdx: index("idx_deal_channel_messages_channel").on(table.channelId),
+  senderIdx: index("idx_deal_channel_messages_sender").on(table.senderId),
+  createdIdx: index("idx_deal_channel_messages_created").on(table.createdAt),
+  externalIdx: index("idx_deal_channel_messages_external").on(table.externalMessageId),
+}));
+
+export type DealChannelMessage = typeof dealChannelMessages.$inferSelect;
+export const insertDealChannelMessageSchema = createInsertSchema(dealChannelMessages).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertDealChannelMessage = z.infer<typeof insertDealChannelMessageSchema>;

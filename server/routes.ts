@@ -27090,6 +27090,371 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
 
 
   // ============================================================
+
+  // ============================================================
+  // DEAL CHAT / MESSAGING ROUTES
+  // ============================================================
+
+  app.get("/api/deals/:dealId/channels", isAuthenticated, async (req: any, res) => {
+    try {
+      const { dealId } = req.params;
+      const result = await db.execute(sql`
+        SELECT dc.*, 
+          (SELECT COUNT(*)::int FROM deal_channel_members WHERE channel_id = dc.id) as member_count,
+          (SELECT COUNT(*)::int FROM deal_channel_messages WHERE channel_id = dc.id) as message_count,
+          (SELECT content FROM deal_channel_messages WHERE channel_id = dc.id ORDER BY created_at DESC LIMIT 1) as last_message,
+          (SELECT created_at FROM deal_channel_messages WHERE channel_id = dc.id ORDER BY created_at DESC LIMIT 1) as last_message_at
+        FROM deal_channels dc
+        WHERE dc.deal_id = ${dealId} AND dc.is_archived = false
+        ORDER BY dc.updated_at DESC
+      `);
+      return res.json(result.rows);
+    } catch (error: any) {
+      console.error("[DealChat] Error listing channels:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/deals/:dealId/channels", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { dealId } = req.params;
+      const { channelName, channelType } = req.body;
+
+      if (!channelName) {
+        return res.status(400).json({ message: "Channel name is required" });
+      }
+
+      const ambientResult = await db.execute(sql`
+        INSERT INTO ambient_sessions (session_name, session_type, deal_id, created_by, status)
+        VALUES (${`Chat: ${channelName}`}, 'meeting', ${dealId}, ${userId}, 'active')
+        RETURNING id
+      `);
+      const ambientSessionId = (ambientResult.rows as any[])[0]?.id;
+
+      const channelResult = await db.execute(sql`
+        INSERT INTO deal_channels (deal_id, channel_name, channel_type, ambient_session_id, created_by)
+        VALUES (${dealId}, ${channelName}, ${channelType || 'internal'}, ${ambientSessionId}, ${userId})
+        RETURNING *
+      `);
+      const channel = (channelResult.rows as any[])[0];
+
+      await db.execute(sql`
+        INSERT INTO deal_channel_members (channel_id, user_id, role)
+        VALUES (${channel.id}, ${userId}, 'owner')
+      `);
+
+      await db.execute(sql`
+        INSERT INTO deal_channel_messages (channel_id, sender_name, content, message_type)
+        VALUES (${channel.id}, 'System', ${`Channel "${channelName}" created`}, 'system')
+      `);
+
+      return res.json(channel);
+    } catch (error: any) {
+      console.error("[DealChat] Error creating channel:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/channels/:channelId/messages", isAuthenticated, async (req: any, res) => {
+    try {
+      const { channelId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 100;
+      const before = req.query.before as string;
+
+      let query;
+      if (before) {
+        query = sql`
+          SELECT dcm.*, u.first_name, u.last_name, u.profile_image_url
+          FROM deal_channel_messages dcm
+          LEFT JOIN users u ON dcm.sender_id = u.id
+          WHERE dcm.channel_id = ${channelId} AND dcm.created_at < ${before}
+          ORDER BY dcm.created_at DESC
+          LIMIT ${limit}
+        `;
+      } else {
+        query = sql`
+          SELECT dcm.*, u.first_name, u.last_name, u.profile_image_url
+          FROM deal_channel_messages dcm
+          LEFT JOIN users u ON dcm.sender_id = u.id
+          WHERE dcm.channel_id = ${channelId}
+          ORDER BY dcm.created_at DESC
+          LIMIT ${limit}
+        `;
+      }
+
+      const result = await db.execute(query);
+      return res.json((result.rows as any[]).reverse());
+    } catch (error: any) {
+      console.error("[DealChat] Error fetching messages:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/channels/:channelId/messages", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const { channelId } = req.params;
+      const { content, messageType, metadata } = req.body;
+
+      if (!content?.trim()) {
+        return res.status(400).json({ message: "Message content is required" });
+      }
+
+      const userResult = await db.execute(sql`SELECT first_name, last_name FROM users WHERE id = ${userId}`);
+      const user = (userResult.rows as any[])[0];
+      const senderName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Unknown';
+
+      const msgResult = await db.execute(sql`
+        INSERT INTO deal_channel_messages (channel_id, sender_id, sender_name, content, message_type, metadata)
+        VALUES (${channelId}, ${userId}, ${senderName}, ${content}, ${messageType || 'text'}, ${metadata ? JSON.stringify(metadata) : null})
+        RETURNING *
+      `);
+
+      await db.execute(sql`UPDATE deal_channels SET updated_at = NOW() WHERE id = ${channelId}`);
+
+      const unanalyzedResult = await db.execute(sql`
+        SELECT COUNT(*)::int as count FROM deal_channel_messages
+        WHERE channel_id = ${channelId} AND is_analyzed = false AND message_type = 'text'
+      `);
+      const unanalyzedCount = (unanalyzedResult.rows as any[])[0]?.count || 0;
+
+      if (unanalyzedCount >= 5) {
+        const channelResult = await db.execute(sql`
+          SELECT ambient_session_id, deal_id FROM deal_channels WHERE id = ${channelId}
+        `);
+        const channel = (channelResult.rows as any[])[0];
+
+        if (channel?.ambient_session_id) {
+          const recentMsgs = await db.execute(sql`
+            SELECT sender_name, content, created_at FROM deal_channel_messages
+            WHERE channel_id = ${channelId} AND message_type = 'text'
+            ORDER BY created_at DESC LIMIT 20
+          `);
+          const msgs = (recentMsgs.rows as any[]).reverse();
+          const transcriptText = msgs.map((m: any) => `${m.sender_name}: ${m.content}`).join('\n');
+
+          await db.execute(sql`
+            INSERT INTO ambient_transcripts (session_id, timestamp_ms, speaker_label, content, is_final)
+            VALUES (${channel.ambient_session_id}, ${Date.now()}, 'chat', ${transcriptText}, true)
+          `);
+
+          try {
+            const { triggerAnalysisForSession } = await import('./services/ambient-ai-service');
+            await triggerAnalysisForSession(channel.ambient_session_id);
+          } catch (aiErr) {
+            console.log("[DealChat] Ambient analysis skipped:", (aiErr as any).message);
+          }
+
+          await db.execute(sql`
+            UPDATE deal_channel_messages SET is_analyzed = true
+            WHERE channel_id = ${channelId} AND is_analyzed = false
+          `);
+        }
+      }
+
+      const msg = (msgResult.rows as any[])[0];
+      return res.json({ ...msg, first_name: user?.first_name, last_name: user?.last_name });
+    } catch (error: any) {
+      console.error("[DealChat] Error sending message:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/channels/:channelId/members", isAuthenticated, async (req: any, res) => {
+    try {
+      const { channelId } = req.params;
+      const result = await db.execute(sql`
+        SELECT dcm.*, u.first_name, u.last_name, u.email, u.profile_image_url
+        FROM deal_channel_members dcm
+        JOIN users u ON dcm.user_id = u.id
+        WHERE dcm.channel_id = ${channelId}
+        ORDER BY dcm.joined_at
+      `);
+      return res.json(result.rows);
+    } catch (error: any) {
+      console.error("[DealChat] Error listing members:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/channels/:channelId/members", isAuthenticated, async (req: any, res) => {
+    try {
+      const { channelId } = req.params;
+      const { userId, role } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ message: "userId is required" });
+      }
+
+      const userResult = await db.execute(sql`SELECT first_name, last_name FROM users WHERE id = ${userId}`);
+      const user = (userResult.rows as any[])[0];
+
+      await db.execute(sql`
+        INSERT INTO deal_channel_members (channel_id, user_id, role)
+        VALUES (${channelId}, ${userId}, ${role || 'member'})
+        ON CONFLICT (channel_id, user_id) DO UPDATE SET role = ${role || 'member'}
+      `);
+
+      const memberName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Someone';
+      await db.execute(sql`
+        INSERT INTO deal_channel_messages (channel_id, sender_name, content, message_type)
+        VALUES (${channelId}, 'System', ${`${memberName} joined the channel`}, 'system')
+      `);
+
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("[DealChat] Error adding member:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/channels/:channelId/members/:userId", isAuthenticated, async (req: any, res) => {
+    try {
+      const { channelId, userId } = req.params;
+      await db.execute(sql`
+        DELETE FROM deal_channel_members WHERE channel_id = ${channelId} AND user_id = ${userId}
+      `);
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("[DealChat] Error removing member:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/channels/:channelId/insights", isAuthenticated, async (req: any, res) => {
+    try {
+      const { channelId } = req.params;
+      const channelResult = await db.execute(sql`
+        SELECT ambient_session_id FROM deal_channels WHERE id = ${channelId}
+      `);
+      const channel = (channelResult.rows as any[])[0];
+
+      if (!channel?.ambient_session_id) {
+        return res.json({ summaries: [], suggestions: [], insights: [] });
+      }
+
+      const sessionId = channel.ambient_session_id;
+
+      const summariesResult = await db.execute(sql`
+        SELECT * FROM ambient_session_summaries
+        WHERE session_id = ${sessionId}
+        ORDER BY created_at DESC LIMIT 5
+      `);
+
+      const suggestionsResult = await db.execute(sql`
+        SELECT * FROM ambient_suggestions
+        WHERE session_id = ${sessionId}
+        ORDER BY created_at DESC LIMIT 20
+      `);
+
+      return res.json({
+        summaries: summariesResult.rows,
+        suggestions: suggestionsResult.rows,
+        sessionId,
+      });
+    } catch (error: any) {
+      console.error("[DealChat] Error fetching insights:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/integrations/:type/webhook", async (req, res) => {
+    try {
+      const { type } = req.params;
+      const payload = req.body;
+
+      console.log(`[Integration Webhook] Received ${type} webhook`);
+
+      let channelId: string | null = null;
+      let senderName = "External User";
+      let content = "";
+      let externalMessageId: string | null = null;
+
+      if (type === 'slack') {
+        if (payload.type === 'url_verification') {
+          return res.json({ challenge: payload.challenge });
+        }
+        const event = payload.event;
+        if (event?.type === 'message' && !event.bot_id) {
+          const channelLookup = await db.execute(sql`
+            SELECT id FROM deal_channels WHERE external_channel_id = ${event.channel} AND channel_type = 'slack'
+          `);
+          channelId = (channelLookup.rows as any[])[0]?.id;
+          senderName = event.user_profile?.real_name || event.user || 'Slack User';
+          content = event.text || '';
+          externalMessageId = event.ts;
+        }
+      } else if (type === 'whatsapp') {
+        const entry = payload.entry?.[0];
+        const change = entry?.changes?.[0]?.value;
+        const message = change?.messages?.[0];
+        if (message) {
+          const from = message.from;
+          const phoneLookup = await db.execute(sql`
+            SELECT id FROM deal_channels WHERE external_channel_id = ${from} AND channel_type = 'whatsapp'
+          `);
+          channelId = (phoneLookup.rows as any[])[0]?.id;
+          senderName = change.contacts?.[0]?.profile?.name || from;
+          content = message.text?.body || '';
+          externalMessageId = message.id;
+        }
+      } else if (type === 'teams') {
+        if (payload.text) {
+          const conversationId = payload.conversation?.id;
+          const channelLookup = await db.execute(sql`
+            SELECT id FROM deal_channels WHERE external_channel_id = ${conversationId} AND channel_type = 'teams'
+          `);
+          channelId = (channelLookup.rows as any[])[0]?.id;
+          senderName = payload.from?.name || 'Teams User';
+          content = payload.text || '';
+          externalMessageId = payload.id;
+        }
+      }
+
+      if (channelId && content) {
+        if (externalMessageId) {
+          const existing = await db.execute(sql`
+            SELECT id FROM deal_channel_messages WHERE external_message_id = ${externalMessageId}
+          `);
+          if ((existing.rows as any[]).length > 0) {
+            return res.json({ status: 'duplicate' });
+          }
+        }
+
+        await db.execute(sql`
+          INSERT INTO deal_channel_messages (channel_id, sender_name, content, message_type, external_message_id, metadata)
+          VALUES (${channelId}, ${senderName}, ${content}, 'text', ${externalMessageId}, ${JSON.stringify({ source: type })})
+        `);
+
+        await db.execute(sql`UPDATE deal_channels SET updated_at = NOW() WHERE id = ${channelId}`);
+      }
+
+      return res.json({ status: 'ok' });
+    } catch (error: any) {
+      console.error("[Integration Webhook] Error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/users/search", isAuthenticated, async (req: any, res) => {
+    try {
+      const query = (req.query.q as string) || '';
+      if (!query || query.length < 2) {
+        return res.json([]);
+      }
+      const result = await db.execute(sql`
+        SELECT id, first_name, last_name, email, profile_image_url
+        FROM users
+        WHERE (first_name ILIKE ${'%' + query + '%'} OR last_name ILIKE ${'%' + query + '%'} OR email ILIKE ${'%' + query + '%'})
+        LIMIT 10
+      `);
+      return res.json(result.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ATTORNEY INFO & INVITE ROUTES
   // ============================================================
 
