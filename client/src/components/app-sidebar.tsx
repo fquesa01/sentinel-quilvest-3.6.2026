@@ -219,18 +219,6 @@ export function AppSidebar() {
           icon: Flame,
           roles: ["admin", "compliance_officer", "attorney", "auditor"],
         },
-        {
-          title: "Executive Analytics",
-          url: "/executive-analytics",
-          icon: TrendingUp,
-          roles: ["admin", "compliance_officer"],
-        },
-        {
-          title: "Management Analytics",
-          url: "/management-analytics",
-          icon: Brain,
-          roles: ["admin"],
-        },
       ],
     },
     {

@@ -17,7 +17,7 @@ The backend uses Node.js, Express.js, and TypeScript, providing RESTful API endp
 ### Feature Specifications
 - **Ambient Intelligence:** Session linking now uses transactions (deals) instead of cases. Users can link sessions to any transaction and optionally connect to My Data Lake for AI document suggestions. Schema: `ambient_sessions` has `deal_id` and `use_data_lake` columns.
 - **Communication Ingestion:** Processes various email and chat message formats.
-- **Analytics Dashboards:** Offers Communication Analytics (Top Communicators, Heatmap, Unified Timeline) and Management Analytics (AI-powered insights for behavioral patterns, topic clusters, sentiment trends, PII redaction).
+- **Analytics Dashboards:** Offers Communication Analytics (Top Communicators, Heatmap, Unified Timeline).
 - **Tag Management:** Comprehensive system for document coding and categorization with "Quick Tags," dynamic updates, user-specific tracking, color coding, and text selection tagging.
 - **AI Integration:** Uses OpenAI GPT-5 for violation analysis and risk scoring; Google Gemini for semantic document search (RAG) in the "Ask About Case" Investigation Assistant and for real-time meeting insights; Emma AI Assistant chatbot for context-aware guidance; and Claude (Anthropic) for intelligent boolean query generation in Ambient Intelligence.
 - **AI Interview Module:** Redesigned system with live video, real-time transcription, automated AI analysis, evidence linking, and a Witness Video Recording Platform.

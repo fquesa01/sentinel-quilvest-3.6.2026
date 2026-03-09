@@ -18,8 +18,6 @@ import AttorneyQueue from "@/pages/attorney-queue";
 import Analytics from "@/pages/analytics";
 import UserManagement from "@/pages/user-management";
 import EmployeeDashboard from "@/pages/employee-dashboard";
-import ExecutiveAnalytics from "@/pages/executive-analytics";
-import ManagementAnalytics from "@/pages/management-analytics";
 import DocumentReviewPage from "@/pages/document-review";
 import CollectionsPage from "@/pages/collections";
 import MyDataLakePage from "@/pages/my-data-lake";
@@ -127,8 +125,6 @@ function AuthenticatedApp() {
               <Route path="/calendar" component={CalendarPage} />
               <Route path="/attorney-queue" component={AttorneyQueue} />
               <Route path="/analytics" component={Analytics} />
-              <Route path="/executive-analytics" component={ExecutiveAnalytics} />
-              <Route path="/management-analytics" component={ManagementAnalytics} />
               <Route path="/users" component={UserManagement} />
               <Route path="/admin" component={AdminDashboard} />
               <Route path="/employee/compliance" component={EmployeeDashboard} />
