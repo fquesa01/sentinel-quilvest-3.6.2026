@@ -21,6 +21,7 @@ import { FinancialModelPanel } from "@/components/investor-memo/financial-model-
 import { MemoChatPanel } from "@/components/investor-memo/memo-chat-panel";
 import { MemoProgressTracker } from "@/components/investor-memo/memo-progress-tracker";
 import { TechSynergyMatrix } from "@/components/investor-memo/tech-synergy-matrix";
+import { AnnotatableContent } from "@/components/investor-memo/annotatable-content";
 
 const SECTION_ICONS: Record<string, any> = {
   executive_summary: Sparkles,
@@ -283,11 +284,15 @@ export default function InvestorMemoBuilder() {
             </TabsContent>
 
             <TabsContent value="model" className="flex-1 overflow-y-auto p-6 mt-0">
-              <FinancialModelPanel model={model} />
+              <AnnotatableContent memoId={memoId!} sectionKey="financial_model" annotations={annotations as any[]}>
+                <FinancialModelPanel model={model} />
+              </AnnotatableContent>
             </TabsContent>
 
             <TabsContent value="tech" className="flex-1 overflow-y-auto p-6 mt-0">
-              <TechSynergyMatrix assessment={memo.techAssessment} />
+              <AnnotatableContent memoId={memoId!} sectionKey="tech_innovation" annotations={annotations as any[]}>
+                <TechSynergyMatrix assessment={memo.techAssessment} />
+              </AnnotatableContent>
             </TabsContent>
 
             <TabsContent value="chat" className="flex-1 overflow-hidden mt-0">
