@@ -558,8 +558,8 @@ export default function TransactionsDealDetail() {
               </SelectContent>
             </Select>
           </div>
-          <div className="hidden md:block overflow-x-auto">
-            <TabsList className="flex w-max gap-1">
+          <div className="hidden md:block overflow-x-auto scrollbar-thin pb-1" style={{ WebkitOverflowScrolling: "touch" }}>
+            <TabsList className="inline-flex w-max gap-1">
               <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="terms" data-testid="tab-terms">Deal Terms</TabsTrigger>
               <TabsTrigger value="parties" data-testid="tab-parties">Parties</TabsTrigger>
