@@ -27113,7 +27113,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
 
       const ambientResult = await db.execute(sql`
         INSERT INTO ambient_sessions (session_name, session_type, deal_id, created_by, status)
-        VALUES (${`Chat: ${dealTitle}`}, 'meeting', ${dealId}, ${userId}, 'active')
+        VALUES (${`Chat: ${dealTitle}`}, 'other', ${dealId}, ${userId}, 'active')
         RETURNING id
       `);
       const ambientSessionId = (ambientResult.rows as any[])[0]?.id;
