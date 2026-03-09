@@ -13176,3 +13176,39 @@ export const dataLakeConnectorsRelations = relations(dataLakeConnectors, ({ one 
     references: [users.id],
   }),
 }));
+
+export const memoAnnotationTypeEnum = pgEnum("memo_annotation_type", ["comment", "ai_question"]);
+
+export const memoAnnotations = pgTable("memo_annotations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  memoId: varchar("memo_id").notNull().references(() => investorMemos.id, { onDelete: "cascade" }),
+  sectionKey: varchar("section_key", { length: 100 }).notNull(),
+  selectedText: text("selected_text").notNull(),
+  startOffset: integer("start_offset"),
+  type: memoAnnotationTypeEnum("type").notNull(),
+  content: text("content").notNull(),
+  aiResponse: text("ai_response"),
+  authorId: varchar("author_id").notNull().references(() => users.id),
+  authorName: varchar("author_name", { length: 200 }).notNull(),
+  resolved: boolean("resolved").default(false).notNull(),
+  replies: jsonb("replies").$type<Array<{
+    id: string;
+    authorId: string;
+    authorName: string;
+    content: string;
+    createdAt: string;
+  }>>().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  memoIdx: index("idx_memo_annotations_memo").on(table.memoId),
+  sectionIdx: index("idx_memo_annotations_section").on(table.memoId, table.sectionKey),
+}));
+
+export type MemoAnnotation = typeof memoAnnotations.$inferSelect;
+export const insertMemoAnnotationSchema = createInsertSchema(memoAnnotations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertMemoAnnotation = z.infer<typeof insertMemoAnnotationSchema>;

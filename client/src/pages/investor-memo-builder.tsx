@@ -57,6 +57,12 @@ export default function InvestorMemoBuilder() {
     enabled: !!memo && memo.status !== "generating",
   });
 
+  const { data: annotations = [] } = useQuery({
+    queryKey: ["/api/memos", memoId, "annotations"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: !!memo && memo.status !== "generating",
+  });
+
   const updateSection = useMutation({
     mutationFn: async ({ section, content }: { section: string; content: string }) => {
       await apiRequest("PATCH", `/api/memos/${memoId}/sections/${section}`, { content });
@@ -270,6 +276,8 @@ export default function InvestorMemoBuilder() {
                   onRegenerate={(prompt) => regenerateSection.mutate({ section: activeSection, prompt })}
                   isSaving={updateSection.isPending}
                   isRegenerating={regenerateSection.isPending}
+                  memoId={memoId!}
+                  annotations={annotations as any[]}
                 />
               )}
             </TabsContent>

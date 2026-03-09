@@ -28382,6 +28382,211 @@ Guidelines:
     }
   });
 
+  // =============================================
+  // Memo Annotation CRUD Routes
+  // =============================================
+
+  app.get("/api/memos/:memoId/annotations", isAuthenticated, async (req: any, res) => {
+    try {
+      const { memoId } = req.params;
+      const { sectionKey } = req.query;
+
+      const conditions = [eq(schema.memoAnnotations.memoId, memoId)];
+      if (sectionKey) {
+        conditions.push(eq(schema.memoAnnotations.sectionKey, sectionKey as string));
+      }
+
+      const annotations = await db.select()
+        .from(schema.memoAnnotations)
+        .where(and(...conditions))
+        .orderBy(desc(schema.memoAnnotations.createdAt));
+
+      res.json(annotations);
+    } catch (error: any) {
+      console.error("Error fetching memo annotations:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/memos/:memoId/annotations", isAuthenticated, async (req: any, res) => {
+    try {
+      const { memoId } = req.params;
+      const { sectionKey, selectedText, startOffset, type, content } = req.body;
+
+      if (!sectionKey || !selectedText || !type || !content) {
+        return res.status(400).json({ message: "Missing required fields: sectionKey, selectedText, type, content" });
+      }
+
+      const authorId = req.user.id;
+      const authorName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() || "Unknown";
+
+      let aiResponse: string | null = null;
+
+      if (type === "ai_question") {
+        try {
+          let sectionContent = "";
+          const [memo] = await db.select()
+            .from(schema.investorMemos)
+            .where(eq(schema.investorMemos.id, memoId))
+            .limit(1);
+
+          if (memo && memo.sections) {
+            const sections = memo.sections as Record<string, any>;
+            if (sections[sectionKey]) {
+              sectionContent = typeof sections[sectionKey] === "string"
+                ? sections[sectionKey]
+                : JSON.stringify(sections[sectionKey]);
+            }
+          }
+
+          const Anthropic = (await import("@anthropic-ai/sdk")).default;
+          const anthropic = new Anthropic({
+            baseURL: "http://localhost:1106/modelfarm/anthropic",
+            apiKey: "placeholder",
+          });
+
+          const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-5",
+            max_tokens: 2000,
+            system: "You are a PE investment analyst reviewing an investor memo. The user has highlighted a specific passage and is asking a question about it. Provide a clear, detailed answer based on the context provided. Be specific and cite data where available.",
+            messages: [{
+              role: "user",
+              content: `Selected passage: "${selectedText}"\n\nFull section content:\n${sectionContent}\n\nQuestion: ${content}`,
+            }],
+          });
+
+          aiResponse = response.content[0]?.type === "text" ? response.content[0].text : null;
+        } catch (aiError: any) {
+          console.error("Error getting AI response:", aiError);
+          aiResponse = "Sorry, I was unable to generate an AI response at this time.";
+        }
+      }
+
+      const [annotation] = await db.insert(schema.memoAnnotations).values({
+        memoId,
+        sectionKey,
+        selectedText,
+        startOffset: startOffset ?? null,
+        type,
+        content,
+        aiResponse,
+        authorId,
+        authorName,
+        resolved: false,
+        replies: [],
+      }).returning();
+
+      res.json(annotation);
+    } catch (error: any) {
+      console.error("Error creating memo annotation:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/memos/:memoId/annotations/:annotationId", isAuthenticated, async (req: any, res) => {
+    try {
+      const { memoId, annotationId } = req.params;
+      const { content, resolved } = req.body;
+
+      const [existing] = await db.select()
+        .from(schema.memoAnnotations)
+        .where(and(eq(schema.memoAnnotations.id, annotationId), eq(schema.memoAnnotations.memoId, memoId)))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ message: "Annotation not found" });
+      }
+
+      if (existing.authorId !== req.user.id && req.user.role !== "admin") {
+        return res.status(403).json({ message: "Only the author or admin can update this annotation" });
+      }
+
+      const updates: Record<string, any> = { updatedAt: new Date() };
+      if (content !== undefined) updates.content = content;
+      if (resolved !== undefined) updates.resolved = resolved;
+
+      const [updated] = await db.update(schema.memoAnnotations)
+        .set(updates)
+        .where(and(eq(schema.memoAnnotations.id, annotationId), eq(schema.memoAnnotations.memoId, memoId)))
+        .returning();
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating memo annotation:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/memos/:memoId/annotations/:annotationId", isAuthenticated, async (req: any, res) => {
+    try {
+      const { memoId, annotationId } = req.params;
+
+      const [existing] = await db.select()
+        .from(schema.memoAnnotations)
+        .where(and(eq(schema.memoAnnotations.id, annotationId), eq(schema.memoAnnotations.memoId, memoId)))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ message: "Annotation not found" });
+      }
+
+      if (existing.authorId !== req.user.id && req.user.role !== "admin") {
+        return res.status(403).json({ message: "Only the author or admin can delete this annotation" });
+      }
+
+      await db.delete(schema.memoAnnotations)
+        .where(and(eq(schema.memoAnnotations.id, annotationId), eq(schema.memoAnnotations.memoId, memoId)));
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting memo annotation:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/memos/:memoId/annotations/:annotationId/replies", isAuthenticated, async (req: any, res) => {
+    try {
+      const { memoId, annotationId } = req.params;
+      const { content } = req.body;
+
+      if (!content) {
+        return res.status(400).json({ message: "Reply content is required" });
+      }
+
+      const [existing] = await db.select()
+        .from(schema.memoAnnotations)
+        .where(and(eq(schema.memoAnnotations.id, annotationId), eq(schema.memoAnnotations.memoId, memoId)))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ message: "Annotation not found" });
+      }
+
+      const reply = {
+        id: nanoid(),
+        authorId: req.user.id,
+        authorName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() || "Unknown",
+        content,
+        createdAt: new Date().toISOString(),
+      };
+
+      const currentReplies = Array.isArray(existing.replies) ? existing.replies : [];
+
+      const [updated] = await db.update(schema.memoAnnotations)
+        .set({
+          replies: [...currentReplies, reply],
+          updatedAt: new Date(),
+        })
+        .where(and(eq(schema.memoAnnotations.id, annotationId), eq(schema.memoAnnotations.memoId, memoId)))
+        .returning();
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error adding reply to annotation:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Setup WebRTC signaling for live interview sessions

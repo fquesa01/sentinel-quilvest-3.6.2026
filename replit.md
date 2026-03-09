@@ -79,3 +79,14 @@ Comprehensive data models are used for entities such as Users, Communications, A
 - The markdown renderer in `memo-section-editor.tsx` parses `[text](url)` links, renders them as clickable `<a>` tags with a FileText icon for document citations
 - URL sanitization enforces only `/`, `https://`, or `http://` protocols; unsafe schemes (javascript:, data:) are stripped
 - For transaction/data_room source types, document previews use `/api/data-room-documents/:id/preview`
+
+### Memo Annotations & Collaboration
+- Users can highlight text in any memo section and either "Ask AI" a question or "Add Comment"
+- Annotations are stored in the `memo_annotations` table with type (`comment` or `ai_question`), selected text, author info, and optional AI response
+- Threaded replies stored as JSONB array in the `replies` column
+- API routes: GET/POST `/api/memos/:memoId/annotations`, PATCH/DELETE `.../:annotationId`, POST `.../:annotationId/replies`
+- All annotation routes enforce memoId scoping (annotation must belong to the specified memo)
+- PATCH/DELETE require the annotation author or admin role
+- AI questions use Claude claude-sonnet-4-5 via the Anthropic proxy to answer questions about highlighted text
+- Frontend components: `memo-annotations.tsx` (SelectionToolbar, AnnotationInput, MemoAnnotationsPanel, useTextSelection hook)
+- Text selection triggers a floating toolbar; annotations display below the section content grouped by section

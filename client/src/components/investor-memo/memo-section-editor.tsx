@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,6 +12,10 @@ import {
 } from "@/components/ui/dialog";
 import { Edit2, Save, X, RefreshCw, Sparkles, Clock, FileText } from "lucide-react";
 import { format } from "date-fns";
+import {
+  SelectionToolbar, AnnotationInput, MemoAnnotationsPanel, useTextSelection,
+} from "./memo-annotations";
+import type { MemoAnnotation } from "@shared/schema";
 
 function formatInlineText(text: string): (string | JSX.Element)[] {
   const parts: (string | JSX.Element)[] = [];
@@ -259,6 +266,8 @@ interface MemoSectionEditorProps {
   onRegenerate: (prompt?: string) => void;
   isSaving: boolean;
   isRegenerating: boolean;
+  memoId: string;
+  annotations?: MemoAnnotation[];
 }
 
 export function MemoSectionEditor({
@@ -268,11 +277,39 @@ export function MemoSectionEditor({
   onRegenerate,
   isSaving,
   isRegenerating,
+  memoId,
+  annotations = [],
 }: MemoSectionEditorProps) {
+  const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(section.content);
   const [showRegenDialog, setShowRegenDialog] = useState(false);
   const [regenPrompt, setRegenPrompt] = useState("");
+  const contentRef = useRef<HTMLDivElement>(null);
+  const { toolbarPosition, selectedText, selectionOffset, clearSelection } = useTextSelection(contentRef);
+  const [annotationMode, setAnnotationMode] = useState<"comment" | "ai_question" | null>(null);
+
+  const createAnnotation = useMutation({
+    mutationFn: async (data: { type: "comment" | "ai_question"; content: string }) => {
+      const res = await apiRequest("POST", `/api/memos/${memoId}/annotations`, {
+        sectionKey,
+        selectedText,
+        startOffset: selectionOffset,
+        type: data.type,
+        content: data.content,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/memos", memoId, "annotations"] });
+      setAnnotationMode(null);
+      clearSelection();
+      toast({ title: annotationMode === "ai_question" ? "AI response received" : "Comment added" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create annotation", variant: "destructive" });
+    },
+  });
 
   const handleStartEdit = () => {
     setEditContent(section.content);
@@ -352,10 +389,44 @@ export function MemoSectionEditor({
               className="min-h-[400px] font-mono text-sm"
             />
           ) : (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
-              {renderMarkdownContent(section.content)}
-            </div>
+            <>
+              <div ref={contentRef} className="prose prose-sm max-w-none dark:prose-invert">
+                {renderMarkdownContent(section.content)}
+              </div>
+
+              {!isEditing && (
+                <SelectionToolbar
+                  position={toolbarPosition}
+                  onAskAI={() => {
+                    setAnnotationMode("ai_question");
+                  }}
+                  onComment={() => {
+                    setAnnotationMode("comment");
+                  }}
+                  onClose={clearSelection}
+                />
+              )}
+
+              {annotationMode && selectedText && (
+                <AnnotationInput
+                  type={annotationMode}
+                  selectedText={selectedText}
+                  onSubmit={(content) => createAnnotation.mutate({ type: annotationMode, content })}
+                  onCancel={() => {
+                    setAnnotationMode(null);
+                    clearSelection();
+                  }}
+                  isPending={createAnnotation.isPending}
+                />
+              )}
+            </>
           )}
+
+          <MemoAnnotationsPanel
+            memoId={memoId}
+            sectionKey={sectionKey}
+            annotations={annotations}
+          />
         </CardContent>
       </Card>
 
