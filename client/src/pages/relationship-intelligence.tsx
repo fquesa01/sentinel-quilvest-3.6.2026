@@ -2141,6 +2141,41 @@ export default function RelationshipIntelligence() {
     },
   });
 
+  const alertsQueryKey = ["/api/relationship-intelligence/alerts", alertQueryString ? `?${alertQueryString}` : ""];
+
+  const flagAlertMutation = useMutation({
+    mutationFn: async ({ id, currentValue }: { id: string; currentValue: boolean }) => {
+      await apiRequest("PATCH", `/api/relationship-intelligence/alerts/${id}`, { isHighPriority: !currentValue });
+    },
+    onMutate: async ({ id, currentValue }) => {
+      await queryClient.cancelQueries({ queryKey: alertsQueryKey });
+      const previousData = queryClient.getQueryData(alertsQueryKey);
+      queryClient.setQueryData(alertsQueryKey, (old: any) => {
+        if (!old?.alerts) return old;
+        return {
+          ...old,
+          alerts: old.alerts.map((a: AlertWithContact) =>
+            a.alert.id === id
+              ? { ...a, alert: { ...a.alert, isHighPriority: !currentValue } }
+              : a
+          ),
+        };
+      });
+      return { previousData };
+    },
+    onError: (_err: Error, _vars: any, context: any) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(alertsQueryKey, context.previousData);
+      }
+      toast({ title: "Error", description: _err.message, variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/alerts/flagged"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+    },
+  });
+
   const scanMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/relationship-intelligence/scan", { searchMode: scanMode });
@@ -2263,7 +2298,7 @@ export default function RelationshipIntelligence() {
               updateAlertMutation.mutate({ id: alertData.alert.id, updates: { isRead: !alertData.alert.isRead } })
             }
             onToggleFlag={() =>
-              updateAlertMutation.mutate({ id: alertData.alert.id, updates: { isHighPriority: !alertData.alert.isHighPriority } })
+              flagAlertMutation.mutate({ id: alertData.alert.id, currentValue: alertData.alert.isHighPriority })
             }
             isSelected={selectedAlertIds.has(alertData.alert.id)}
             onToggleSelect={() => toggleAlertSelection(alertData.alert.id)}
