@@ -62,9 +62,13 @@ import {
   Folder,
   File,
   ExternalLink,
+  Mic,
+  Video,
+  MessageSquare,
+  Link2,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import type { Deal, DealMilestone, DealParticipant, DealIssue } from "@shared/schema";
+import type { Deal, DealMilestone, DealParticipant, DealIssue, DealMeetingNote } from "@shared/schema";
 import { format } from "date-fns";
 
 type DealWithRelations = Deal & {
@@ -124,6 +128,22 @@ export default function TransactionsDealDetail() {
     resolution: "",
   });
 
+  // Meeting note dialog states
+  const [meetingNoteDialogOpen, setMeetingNoteDialogOpen] = useState(false);
+  const [editingMeetingNote, setEditingMeetingNote] = useState<DealMeetingNote | null>(null);
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  const [meetingNoteForm, setMeetingNoteForm] = useState({
+    title: "",
+    meetingDate: "",
+    source: "manual_entry" as string,
+    sourceUrl: "",
+    transcript: "",
+    summary: "",
+    attendees: [] as { name: string; role?: string }[],
+    duration: "",
+  });
+  const [attendeeInput, setAttendeeInput] = useState({ name: "", role: "" });
+
   // Milestone dialog states
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<DealMilestone | null>(null);
@@ -152,6 +172,11 @@ export default function TransactionsDealDetail() {
 
   const { data: dealIssues = [] } = useQuery<DealIssue[]>({
     queryKey: ["/api/deals", id, "issues"],
+    enabled: !!id,
+  });
+
+  const { data: meetingNotes = [] } = useQuery<DealMeetingNote[]>({
+    queryKey: ["/api/deals", id, "meeting-notes"],
     enabled: !!id,
   });
 
@@ -484,6 +509,65 @@ export default function TransactionsDealDetail() {
     },
   });
 
+  // Meeting note mutations
+  const addMeetingNoteMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", `/api/deals/${id}/meeting-notes`, data);
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Meeting note added", description: "The meeting note has been saved." });
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "meeting-notes"] });
+      closeMeetingNoteDialog();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add meeting note.", variant: "destructive" });
+    },
+  });
+
+  const updateMeetingNoteMutation = useMutation({
+    mutationFn: async ({ noteId, data }: { noteId: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/deals/${id}/meeting-notes/${noteId}`, data);
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Meeting note updated", description: "Changes have been saved." });
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "meeting-notes"] });
+      closeMeetingNoteDialog();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update meeting note.", variant: "destructive" });
+    },
+  });
+
+  const deleteMeetingNoteMutation = useMutation({
+    mutationFn: async (noteId: string) => {
+      const res = await apiRequest("DELETE", `/api/deals/${id}/meeting-notes/${noteId}`);
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Meeting note deleted", description: "The meeting note has been removed." });
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "meeting-notes"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete meeting note.", variant: "destructive" });
+    },
+  });
+
+  const summarizeMeetingNoteMutation = useMutation({
+    mutationFn: async (noteId: string) => {
+      const res = await apiRequest("POST", `/api/deals/${id}/meeting-notes/${noteId}/summarize`);
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Summary generated", description: "AI summary has been added to the meeting note." });
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "meeting-notes"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Summarization failed", description: error.message || "Could not generate summary.", variant: "destructive" });
+    },
+  });
+
   // Data room creation mutation
   const createDataRoomMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string }) => {
@@ -596,6 +680,90 @@ export default function TransactionsDealDetail() {
     } else {
       addMilestoneMutation.mutate(data);
     }
+  };
+
+  // Meeting note helper functions
+  const openAddMeetingNoteDialog = () => {
+    setEditingMeetingNote(null);
+    setMeetingNoteForm({
+      title: "", meetingDate: "", source: "manual_entry", sourceUrl: "",
+      transcript: "", summary: "", attendees: [], duration: "",
+    });
+    setAttendeeInput({ name: "", role: "" });
+    setMeetingNoteDialogOpen(true);
+  };
+
+  const openEditMeetingNoteDialog = (note: DealMeetingNote) => {
+    setEditingMeetingNote(note);
+    setMeetingNoteForm({
+      title: note.title,
+      meetingDate: note.meetingDate ? format(new Date(note.meetingDate), "yyyy-MM-dd'T'HH:mm") : "",
+      source: note.source || "manual_entry",
+      sourceUrl: note.sourceUrl || "",
+      transcript: note.transcript || "",
+      summary: note.summary || "",
+      attendees: (note.attendees as any[]) || [],
+      duration: note.duration ? String(note.duration) : "",
+    });
+    setAttendeeInput({ name: "", role: "" });
+    setMeetingNoteDialogOpen(true);
+  };
+
+  const closeMeetingNoteDialog = () => {
+    setMeetingNoteDialogOpen(false);
+    setEditingMeetingNote(null);
+    setMeetingNoteForm({
+      title: "", meetingDate: "", source: "manual_entry", sourceUrl: "",
+      transcript: "", summary: "", attendees: [], duration: "",
+    });
+  };
+
+  const handleSaveMeetingNote = () => {
+    if (!meetingNoteForm.title.trim()) return;
+    const data: any = {
+      title: meetingNoteForm.title.trim(),
+      meetingDate: meetingNoteForm.meetingDate ? new Date(meetingNoteForm.meetingDate).toISOString() : null,
+      source: meetingNoteForm.source,
+      sourceUrl: meetingNoteForm.sourceUrl.trim() || null,
+      transcript: meetingNoteForm.transcript.trim() || null,
+      summary: meetingNoteForm.summary.trim() || null,
+      attendees: meetingNoteForm.attendees,
+      duration: meetingNoteForm.duration ? parseInt(meetingNoteForm.duration) : null,
+    };
+    if (editingMeetingNote) {
+      updateMeetingNoteMutation.mutate({ noteId: editingMeetingNote.id, data });
+    } else {
+      addMeetingNoteMutation.mutate(data);
+    }
+  };
+
+  const addAttendee = () => {
+    if (!attendeeInput.name.trim()) return;
+    setMeetingNoteForm(prev => ({
+      ...prev,
+      attendees: [...prev.attendees, { name: attendeeInput.name.trim(), role: attendeeInput.role.trim() || undefined }],
+    }));
+    setAttendeeInput({ name: "", role: "" });
+  };
+
+  const removeAttendee = (idx: number) => {
+    setMeetingNoteForm(prev => ({
+      ...prev,
+      attendees: prev.attendees.filter((_, i) => i !== idx),
+    }));
+  };
+
+  const sourceLabels: Record<string, string> = {
+    ambient_intelligence: "Sentinel AI",
+    manual_upload: "Uploaded",
+    manual_entry: "Manual Entry",
+    motion: "Motion",
+    notion: "Notion",
+    monday: "Monday.com",
+    slack: "Slack",
+    teams: "Microsoft Teams",
+    zoom: "Zoom",
+    other: "Other",
   };
 
   // Calendar link generators
@@ -733,6 +901,7 @@ export default function TransactionsDealDetail() {
                 <SelectItem value="terms">Deal Terms</SelectItem>
                 <SelectItem value="parties">Parties</SelectItem>
                 <SelectItem value="milestones">Milestones</SelectItem>
+                <SelectItem value="meetings">Meetings</SelectItem>
                 <SelectItem value="dataroom">Data Room</SelectItem>
                 <SelectItem value="documents">Documents</SelectItem>
                 <SelectItem value="checklists">Checklists</SelectItem>
@@ -748,6 +917,7 @@ export default function TransactionsDealDetail() {
             <TabsTrigger value="terms" className="flex-shrink-0" data-testid="tab-terms">Deal Terms</TabsTrigger>
             <TabsTrigger value="parties" className="flex-shrink-0" data-testid="tab-parties">Parties</TabsTrigger>
             <TabsTrigger value="milestones" className="flex-shrink-0" data-testid="tab-milestones">Milestones</TabsTrigger>
+            <TabsTrigger value="meetings" className="flex-shrink-0" data-testid="tab-meetings">Meetings</TabsTrigger>
             <TabsTrigger value="dataroom" className="flex-shrink-0" data-testid="tab-dataroom">Data Room</TabsTrigger>
             <TabsTrigger value="documents" className="flex-shrink-0" data-testid="tab-documents">Documents</TabsTrigger>
             <TabsTrigger value="checklists" className="flex-shrink-0" data-testid="tab-checklists">Checklists</TabsTrigger>
@@ -1432,6 +1602,217 @@ export default function TransactionsDealDetail() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="meetings" className="mt-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <CardTitle className="text-lg">Meeting Transcripts & Summaries</CardTitle>
+                  <Button size="sm" onClick={openAddMeetingNoteDialog} data-testid="button-add-meeting-note">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Meeting Note
+                  </Button>
+                </div>
+                <CardDescription>
+                  Transcripts and summaries from Sentinel AI meetings, manual uploads, or third-party integrations
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {meetingNotes.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Mic className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No meeting notes for this deal</p>
+                    <p className="text-sm mt-1">Add transcripts from meetings, upload recordings, or connect third-party tools</p>
+                    <Button variant="outline" size="sm" className="mt-3" onClick={openAddMeetingNoteDialog} data-testid="button-add-first-meeting-note">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add First Meeting Note
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {meetingNotes.map((note: DealMeetingNote) => {
+                      const isExpanded = expandedNoteId === note.id;
+                      const attendeesList = (note.attendees as any[]) || [];
+                      const keyPointsList = (note.keyPoints as string[]) || [];
+                      const actionItemsList = (note.actionItems as any[]) || [];
+                      const decisionsList = (note.decisions as string[]) || [];
+                      return (
+                        <div key={note.id} className="group border rounded-lg" data-testid={`meeting-note-item-${note.id}`}>
+                          <div
+                            className="flex items-start gap-3 p-4 cursor-pointer hover-elevate rounded-lg"
+                            onClick={() => setExpandedNoteId(isExpanded ? null : note.id)}
+                          >
+                            <div className="p-2 rounded-full bg-primary/10 flex-shrink-0">
+                              {note.source === "ambient_intelligence" ? (
+                                <Video className="h-4 w-4 text-primary" />
+                              ) : note.source === "slack" || note.source === "teams" ? (
+                                <MessageSquare className="h-4 w-4 text-primary" />
+                              ) : (
+                                <Mic className="h-4 w-4 text-primary" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium truncate">{note.title}</span>
+                                <Badge variant="secondary">{sourceLabels[note.source] || note.source}</Badge>
+                                {note.duration && (
+                                  <Badge variant="outline">{note.duration} min</Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                                {note.meetingDate && (
+                                  <span>{format(new Date(note.meetingDate), "MMM d, yyyy 'at' h:mm a")}</span>
+                                )}
+                                {attendeesList.length > 0 && (
+                                  <span>{attendeesList.length} attendee{attendeesList.length !== 1 ? "s" : ""}</span>
+                                )}
+                                {note.summary && <span>Summary available</span>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {note.sourceUrl && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={(e) => { e.stopPropagation(); window.open(note.sourceUrl!, "_blank"); }}
+                                  data-testid={`button-open-source-${note.id}`}
+                                >
+                                  <Link2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {note.transcript && !note.summary && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={(e) => { e.stopPropagation(); summarizeMeetingNoteMutation.mutate(note.id); }}
+                                  disabled={summarizeMeetingNoteMutation.isPending}
+                                  data-testid={`button-summarize-${note.id}`}
+                                >
+                                  {summarizeMeetingNoteMutation.isPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="invisible group-hover:visible"
+                                onClick={(e) => { e.stopPropagation(); openEditMeetingNoteDialog(note); }}
+                                data-testid={`button-edit-meeting-note-${note.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="invisible group-hover:visible"
+                                onClick={(e) => { e.stopPropagation(); deleteMeetingNoteMutation.mutate(note.id); }}
+                                data-testid={`button-delete-meeting-note-${note.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </div>
+                          </div>
+                          {isExpanded && (
+                            <div className="px-4 pb-4 space-y-4 border-t pt-4">
+                              {attendeesList.length > 0 && (
+                                <div>
+                                  <h4 className="text-sm font-medium mb-2">Attendees</h4>
+                                  <div className="flex flex-wrap gap-2">
+                                    {attendeesList.map((a: any, i: number) => (
+                                      <Badge key={i} variant="outline">
+                                        {a.name}{a.role ? ` (${a.role})` : ""}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {note.summary && (
+                                <div>
+                                  <h4 className="text-sm font-medium mb-2">Summary</h4>
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{note.summary}</p>
+                                </div>
+                              )}
+                              {keyPointsList.length > 0 && (
+                                <div>
+                                  <h4 className="text-sm font-medium mb-2">Key Points</h4>
+                                  <ul className="list-disc list-inside space-y-1">
+                                    {keyPointsList.map((point: string, i: number) => (
+                                      <li key={i} className="text-sm text-muted-foreground">{point}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {actionItemsList.length > 0 && (
+                                <div>
+                                  <h4 className="text-sm font-medium mb-2">Action Items</h4>
+                                  <div className="space-y-2">
+                                    {actionItemsList.map((item: any, i: number) => (
+                                      <div key={i} className="flex items-start gap-2 text-sm">
+                                        <CheckCircle2 className={`h-4 w-4 mt-0.5 flex-shrink-0 ${item.completed ? "text-green-500" : "text-muted-foreground"}`} />
+                                        <div>
+                                          <span className={item.completed ? "line-through text-muted-foreground" : ""}>{item.description}</span>
+                                          {item.assignee && <span className="text-muted-foreground ml-2">({item.assignee})</span>}
+                                          {item.dueDate && <span className="text-muted-foreground ml-2">Due: {item.dueDate}</span>}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {decisionsList.length > 0 && (
+                                <div>
+                                  <h4 className="text-sm font-medium mb-2">Decisions</h4>
+                                  <ul className="list-disc list-inside space-y-1">
+                                    {decisionsList.map((d: string, i: number) => (
+                                      <li key={i} className="text-sm text-muted-foreground">{d}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {note.transcript && (
+                                <div>
+                                  <div className="flex items-center justify-between gap-2 mb-2">
+                                    <h4 className="text-sm font-medium">Transcript</h4>
+                                    {!note.summary && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => summarizeMeetingNoteMutation.mutate(note.id)}
+                                        disabled={summarizeMeetingNoteMutation.isPending}
+                                        data-testid={`button-summarize-expanded-${note.id}`}
+                                      >
+                                        {summarizeMeetingNoteMutation.isPending ? (
+                                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        ) : (
+                                          <Sparkles className="h-4 w-4 mr-2" />
+                                        )}
+                                        AI Summarize
+                                      </Button>
+                                    )}
+                                  </div>
+                                  <ScrollArea className="h-48 rounded-md border p-3">
+                                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{note.transcript}</p>
+                                  </ScrollArea>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="dataroom" className="mt-6">
             <Card>
               <CardHeader>
@@ -1993,6 +2374,151 @@ export default function TransactionsDealDetail() {
                 data-testid="button-save-milestone"
               >
                 {(addMilestoneMutation.isPending || updateMilestoneMutation.isPending) ? "Saving..." : (editingMilestone ? "Save Changes" : "Add Milestone")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={meetingNoteDialogOpen} onOpenChange={(open) => { if (!open) closeMeetingNoteDialog(); }}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingMeetingNote ? "Edit Meeting Note" : "Add Meeting Note"}</DialogTitle>
+              <DialogDescription>
+                Add a meeting transcript, summary, or notes from any source
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Title *</Label>
+                <Input
+                  placeholder="e.g., Due Diligence Review Call"
+                  value={meetingNoteForm.title}
+                  onChange={(e) => setMeetingNoteForm({ ...meetingNoteForm, title: e.target.value })}
+                  data-testid="input-meeting-note-title"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Meeting Date</Label>
+                  <Input
+                    type="datetime-local"
+                    value={meetingNoteForm.meetingDate}
+                    onChange={(e) => setMeetingNoteForm({ ...meetingNoteForm, meetingDate: e.target.value })}
+                    data-testid="input-meeting-note-date"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Duration (minutes)</Label>
+                  <Input
+                    type="number"
+                    placeholder="60"
+                    value={meetingNoteForm.duration}
+                    onChange={(e) => setMeetingNoteForm({ ...meetingNoteForm, duration: e.target.value })}
+                    data-testid="input-meeting-note-duration"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Source</Label>
+                  <Select value={meetingNoteForm.source} onValueChange={(v) => setMeetingNoteForm({ ...meetingNoteForm, source: v })}>
+                    <SelectTrigger data-testid="select-meeting-note-source">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manual_entry">Manual Entry</SelectItem>
+                      <SelectItem value="manual_upload">Uploaded File</SelectItem>
+                      <SelectItem value="ambient_intelligence">Sentinel AI Meeting</SelectItem>
+                      <SelectItem value="zoom">Zoom</SelectItem>
+                      <SelectItem value="teams">Microsoft Teams</SelectItem>
+                      <SelectItem value="slack">Slack</SelectItem>
+                      <SelectItem value="notion">Notion</SelectItem>
+                      <SelectItem value="monday">Monday.com</SelectItem>
+                      <SelectItem value="motion">Motion</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Source URL (optional)</Label>
+                  <Input
+                    placeholder="https://..."
+                    value={meetingNoteForm.sourceUrl}
+                    onChange={(e) => setMeetingNoteForm({ ...meetingNoteForm, sourceUrl: e.target.value })}
+                    data-testid="input-meeting-note-source-url"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Attendees</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Name"
+                    value={attendeeInput.name}
+                    onChange={(e) => setAttendeeInput({ ...attendeeInput, name: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAttendee(); } }}
+                    className="flex-1"
+                    data-testid="input-attendee-name"
+                  />
+                  <Input
+                    placeholder="Role (optional)"
+                    value={attendeeInput.role}
+                    onChange={(e) => setAttendeeInput({ ...attendeeInput, role: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAttendee(); } }}
+                    className="flex-1"
+                    data-testid="input-attendee-role"
+                  />
+                  <Button variant="outline" size="sm" onClick={addAttendee} data-testid="button-add-attendee">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {meetingNoteForm.attendees.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {meetingNoteForm.attendees.map((a, i) => (
+                      <Badge key={i} variant="secondary" className="gap-1">
+                        {a.name}{a.role ? ` (${a.role})` : ""}
+                        <button onClick={() => removeAttendee(i)} className="ml-1 hover:text-destructive">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Summary</Label>
+                <Textarea
+                  placeholder="Meeting summary or key takeaways..."
+                  value={meetingNoteForm.summary}
+                  onChange={(e) => setMeetingNoteForm({ ...meetingNoteForm, summary: e.target.value })}
+                  rows={3}
+                  data-testid="input-meeting-note-summary"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Transcript</Label>
+                <Textarea
+                  placeholder="Paste the full meeting transcript here..."
+                  value={meetingNoteForm.transcript}
+                  onChange={(e) => setMeetingNoteForm({ ...meetingNoteForm, transcript: e.target.value })}
+                  rows={6}
+                  data-testid="input-meeting-note-transcript"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Paste a transcript and use AI Summarize to automatically extract key points, action items, and decisions
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeMeetingNoteDialog}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveMeetingNote}
+                disabled={!meetingNoteForm.title.trim() || addMeetingNoteMutation.isPending || updateMeetingNoteMutation.isPending}
+                data-testid="button-save-meeting-note"
+              >
+                {(addMeetingNoteMutation.isPending || updateMeetingNoteMutation.isPending) ? "Saving..." : (editingMeetingNote ? "Save Changes" : "Add Meeting Note")}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -12875,6 +12875,139 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  // Deal Meeting Notes CRUD
+  app.get("/api/deals/:dealId/meeting-notes", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+    try {
+      const notes = await db.select()
+        .from(schema.dealMeetingNotes)
+        .where(eq(schema.dealMeetingNotes.dealId, req.params.dealId))
+        .orderBy(sql`${schema.dealMeetingNotes.meetingDate} DESC NULLS LAST`);
+      res.json(notes);
+    } catch (error: any) {
+      console.error("Error fetching deal meeting notes:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/deals/:dealId/meeting-notes", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const { title, meetingDate, source, sourceUrl, transcript, summary, keyPoints, actionItems, decisions, attendees, duration, tags } = req.body;
+      const [note] = await db.insert(schema.dealMeetingNotes).values({
+        title, meetingDate, source, sourceUrl, transcript, summary, keyPoints, actionItems, decisions, attendees, duration, tags,
+        dealId: req.params.dealId,
+        uploadedBy: req.user?.id || null,
+      }).returning();
+      res.status(201).json(note);
+    } catch (error: any) {
+      console.error("Error creating deal meeting note:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/deals/:dealId/meeting-notes/:noteId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const allowedFields = ["title", "meetingDate", "source", "sourceUrl", "transcript", "summary", "keyPoints", "actionItems", "decisions", "attendees", "duration", "tags"];
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      for (const key of allowedFields) {
+        if (req.body[key] !== undefined) {
+          updateData[key] = req.body[key];
+        }
+      }
+      const [updated] = await db.update(schema.dealMeetingNotes)
+        .set(updateData)
+        .where(and(
+          eq(schema.dealMeetingNotes.id, req.params.noteId),
+          eq(schema.dealMeetingNotes.dealId, req.params.dealId),
+        ))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Meeting note not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating deal meeting note:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/deals/:dealId/meeting-notes/:noteId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+    try {
+      const [deleted] = await db.delete(schema.dealMeetingNotes)
+        .where(and(
+          eq(schema.dealMeetingNotes.id, req.params.noteId),
+          eq(schema.dealMeetingNotes.dealId, req.params.dealId),
+        ))
+        .returning();
+      if (!deleted) return res.status(404).json({ message: "Meeting note not found" });
+      res.json({ message: "Meeting note deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting deal meeting note:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/deals/:dealId/meeting-notes/:noteId/summarize", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const [note] = await db.select()
+        .from(schema.dealMeetingNotes)
+        .where(and(
+          eq(schema.dealMeetingNotes.id, req.params.noteId),
+          eq(schema.dealMeetingNotes.dealId, req.params.dealId),
+        ));
+      if (!note) return res.status(404).json({ message: "Meeting note not found" });
+      if (!note.transcript || note.transcript.length < 50) {
+        return res.status(400).json({ message: "Transcript is too short to summarize" });
+      }
+
+      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 2000,
+        messages: [{
+          role: "user",
+          content: `Analyze this meeting transcript and produce a structured summary. Return ONLY a JSON object with these fields:
+{
+  "summary": "2-4 paragraph summary of the meeting",
+  "keyPoints": ["key point 1", "key point 2", ...],
+  "actionItems": [{"description": "action item", "assignee": "person name or null", "dueDate": "YYYY-MM-DD or null", "completed": false}],
+  "decisions": ["decision 1", "decision 2", ...]
+}
+
+Meeting title: ${note.title}
+Transcript:
+${note.transcript.slice(0, 20000)}`
+        }],
+      });
+
+      const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return res.status(500).json({ message: "Failed to parse AI summary" });
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      const [updated] = await db.update(schema.dealMeetingNotes)
+        .set({
+          summary: parsed.summary || note.summary,
+          keyPoints: parsed.keyPoints || note.keyPoints,
+          actionItems: parsed.actionItems || note.actionItems,
+          decisions: parsed.decisions || note.decisions,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.dealMeetingNotes.id, note.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error summarizing meeting note:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/deals/:dealId/issues", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
     try {
       const issues = await db.select()

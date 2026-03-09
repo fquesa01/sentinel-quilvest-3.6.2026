@@ -6592,6 +6592,63 @@ export const insertDealIssueSchema = createInsertSchema(dealIssues).omit({
 });
 export type InsertDealIssue = z.infer<typeof insertDealIssueSchema>;
 
+// Deal Meeting Notes Source Enum
+export const dealMeetingNoteSourceEnum = pgEnum("deal_meeting_note_source", [
+  "ambient_intelligence",
+  "manual_upload",
+  "manual_entry",
+  "motion",
+  "notion",
+  "monday",
+  "slack",
+  "teams",
+  "zoom",
+  "other",
+]);
+
+// Deal Meeting Notes Table
+export const dealMeetingNotes = pgTable("deal_meeting_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  meetingDate: timestamp("meeting_date"),
+  source: dealMeetingNoteSourceEnum("source").default("manual_entry").notNull(),
+  sourceUrl: text("source_url"),
+  transcript: text("transcript"),
+  summary: text("summary"),
+  keyPoints: jsonb("key_points").$type<string[]>().default([]),
+  actionItems: jsonb("action_items").$type<{ description: string; assignee?: string; dueDate?: string; completed?: boolean }[]>().default([]),
+  decisions: jsonb("decisions").$type<string[]>().default([]),
+  attendees: jsonb("attendees").$type<{ name: string; role?: string }[]>().default([]),
+  duration: integer("duration"),
+  tags: text("tags").array(),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  dealIdx: index("idx_deal_meeting_notes_deal").on(table.dealId),
+}));
+
+export const dealMeetingNotesRelations = relations(dealMeetingNotes, ({ one }) => ({
+  deal: one(deals, {
+    fields: [dealMeetingNotes.dealId],
+    references: [deals.id],
+  }),
+  uploader: one(users, {
+    fields: [dealMeetingNotes.uploadedBy],
+    references: [users.id],
+  }),
+}));
+
+export type DealMeetingNote = typeof dealMeetingNotes.$inferSelect;
+export const insertDealMeetingNoteSchema = createInsertSchema(dealMeetingNotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  uploadedBy: true,
+});
+export type InsertDealMeetingNote = z.infer<typeof insertDealMeetingNoteSchema>;
+
 // Deal Types
 export type Deal = typeof deals.$inferSelect;
 export const insertDealSchema = createInsertSchema(deals).omit({
