@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -108,10 +108,20 @@ export default function TransactionsDeals() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(() => {
+  const [initParams] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("createDeal")) {
+    const createDeal = params.get("createDeal");
+    const title = params.get("title");
+    const dealType = params.get("dealType");
+    return { createDeal: !!createDeal, title, dealType };
+  });
+  useEffect(() => {
+    if (initParams.createDeal) {
       window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(() => {
+    if (initParams.createDeal && !initParams.title) {
       return true;
     }
     return false;
@@ -173,6 +183,24 @@ export default function TransactionsDeals() {
       });
     },
   });
+
+  const autoCreateRef = useRef(false);
+  useEffect(() => {
+    if (initParams.createDeal && initParams.title?.trim() && !autoCreateRef.current) {
+      autoCreateRef.current = true;
+      const autoData = {
+        title: initParams.title.trim(),
+        dealType: initParams.dealType || "ma_asset",
+        status: "active",
+        priority: "medium",
+        dealValue: "",
+        dealCurrency: "USD",
+        description: "",
+        closingTargetDate: "",
+      };
+      createDealMutation.mutate(autoData);
+    }
+  }, []);
 
   const deleteDealMutation = useMutation({
     mutationFn: async (dealId: string) => {
