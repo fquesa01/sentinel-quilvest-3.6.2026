@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { processPendingOCROnStartup } from "./services/ocr-service";
 import { processPendingGeminiIndexing } from "./services/transaction-search-service";
+import { seedEquityDDTemplate, seedDebtDDTemplate, seedRealEstateTemplate } from "./scripts/seed-deal-templates";
 
 const app = express();
 
@@ -83,6 +84,17 @@ app.get("/api/health", (_req, res) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    // Auto-seed deal templates if they don't exist
+    (async () => {
+      try {
+        await seedEquityDDTemplate();
+        await seedDebtDDTemplate();
+        await seedRealEstateTemplate();
+        console.log("[Startup] Deal templates seeded/verified");
+      } catch (err) {
+        console.error("[Startup] Error seeding deal templates:", err);
+      }
+    })();
     // Process pending OCR documents on startup
     processPendingOCROnStartup();
     // Process pending Gemini indexing for RAG search (after 15s delay to let OCR start first)
