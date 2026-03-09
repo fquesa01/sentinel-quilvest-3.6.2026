@@ -560,51 +560,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin role switcher (for testing purposes)
-  // Allows designated testing admins to switch between roles
-  app.post("/api/admin/switch-role", isAuthenticated, async (req: any, res) => {
-    try {
-      // Check if user is a designated testing admin
-      const testingAdminEmails = [
-        "frank.quesada@gmail.com",
-        "binhaks@binhaklaw.com",
-        "zoinertejada@gmail.com",
-        "charliewhorton@gmail.com",
-        "rjb@borgheselaw.com",
-      ];
-      const isTestingAdmin = testingAdminEmails.includes(req.user.email);
-      
-      if (!isTestingAdmin && req.user.role !== "admin") {
-        return res.status(403).json({ message: "Unauthorized: Only admins can switch roles" });
-      }
-
-      const { role } = req.body;
-      const validRoles = ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor", "external_counsel"];
-      
-      if (!validRoles.includes(role)) {
-        return res.status(400).json({ message: "Invalid role" });
-      }
-
-      const userId = req.user.id;
-      const previousRole = req.user.role;
-      const updatedUser = await storage.updateUserRole(userId, role);
-      
-      // Update the session user object with the new role
-      req.user.role = role;
-      
-      await logAction(req, "admin_role_switch", "user", userId, { 
-        previousRole,
-        newRole: role 
-      });
-      
-      res.json({ success: true, user: updatedUser });
-    } catch (error: any) {
-      console.error("Error switching role:", error);
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-
   // ===== CLIENT MANAGEMENT ROUTES =====
   
   // Get all clients

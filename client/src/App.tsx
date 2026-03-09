@@ -72,7 +72,6 @@ import GuestLogin from "@/pages/guest-login";
 import GuestDeals from "@/pages/guest-deals";
 import GuestDealView from "@/pages/guest-deal-view";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { RoleSwitcher } from "@/components/role-switcher";
 import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
@@ -94,7 +93,6 @@ function AuthenticatedApp() {
           <header className="flex items-center justify-between px-4 py-3 border-b border-border gap-4">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-4">
-              <RoleSwitcher />
               <NotificationBell />
               <ThemeToggle />
               <Tooltip>
