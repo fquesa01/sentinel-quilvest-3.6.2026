@@ -251,21 +251,21 @@ export default function StartPage() {
           >At Your Service.</h2>
         </div>
 
-        <div className="pb-6 w-full max-w-xl">
+        <div className="pb-6 w-full max-w-2xl">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSubmit();
             }}
           >
-            <div className="bg-card border border-border rounded-[14px] px-4 py-3 flex items-center gap-3">
+            <div className="bg-card border-2 border-border rounded-[16px] px-5 py-4 flex items-center gap-3 shadow-md">
               <Input
                 ref={inputRef}
                 value={isListening ? displayTranscript : commandInput}
                 onChange={(e) => setCommandInput(e.target.value)}
                 placeholder="Ask Emma anything..."
                 disabled={isProcessing || isListening}
-                className="flex-1 bg-transparent border-0 p-0 h-auto text-sm focus-visible:ring-0 placeholder:text-muted-foreground/60"
+                className="flex-1 bg-transparent border-0 p-0 h-auto text-base focus-visible:ring-0 placeholder:text-muted-foreground/50"
                 data-testid="input-command"
               />
               
