@@ -13317,6 +13317,17 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  app.post("/api/deals/:dealId/extract-parties", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const { extractDealParties } = await import("./services/deal-intelligence-service");
+      const result = await extractDealParties(req.params.dealId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error extracting deal parties:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   // Apply template to a deal - creates a checklist
   app.post("/api/deals/:dealId/apply-template/:templateId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {

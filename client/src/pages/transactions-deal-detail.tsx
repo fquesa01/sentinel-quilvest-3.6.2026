@@ -222,6 +222,27 @@ export default function TransactionsDealDetail() {
     removeItemMutation.mutate({ type, updatedItems: currentItems });
   };
 
+  const extractPartiesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${id}/extract-parties`);
+      return res.json();
+    },
+    onSuccess: async (data: any) => {
+      await refetchDeal();
+      const added = data.totalAdded || 0;
+      const found = data.totalFound || 0;
+      const desc = added > 0
+        ? `Added ${added} new ${added === 1 ? "party" : "parties"} (${found} found in documents).`
+        : found > 0
+          ? `Found ${found} ${found === 1 ? "party" : "parties"} but all were already listed.`
+          : "No parties could be identified in the documents.";
+      toast({ title: "Party Extraction Complete", description: desc });
+    },
+    onError: (error: any) => {
+      toast({ title: "Extraction Failed", description: error.message || "Could not extract parties from documents.", variant: "destructive" });
+    },
+  });
+
   // Dialog title labels
   const dialogLabels: Record<string, string> = {
     buyerParties: "Buyer Party",
@@ -828,6 +849,22 @@ export default function TransactionsDealDetail() {
           </TabsContent>
 
           <TabsContent value="parties" className="mt-6 space-y-6">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-sm text-muted-foreground">Manage the parties involved in this transaction.</p>
+              <Button
+                variant="outline"
+                onClick={() => extractPartiesMutation.mutate()}
+                disabled={extractPartiesMutation.isPending}
+                data-testid="button-extract-parties"
+              >
+                {extractPartiesMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4 mr-2" />
+                )}
+                {extractPartiesMutation.isPending ? "Extracting..." : "Extract Parties from Documents"}
+              </Button>
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between gap-2">

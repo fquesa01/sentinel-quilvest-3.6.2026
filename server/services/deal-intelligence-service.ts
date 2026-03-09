@@ -376,3 +376,143 @@ export async function applyDetectedDealType(dealId: string): Promise<{ success: 
     templateApplied,
   };
 }
+
+export async function extractDealParties(dealId: string): Promise<{
+  buyerParties: { name: string }[];
+  sellerParties: { name: string }[];
+  targetEntities: { name: string }[];
+  advisors: { name: string; role?: string }[];
+}> {
+  const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
+  if (!deal) throw new Error("Deal not found");
+
+  const rooms = await db.select({ id: dataRooms.id })
+    .from(dataRooms)
+    .where(eq(dataRooms.dealId, dealId));
+
+  if (rooms.length === 0) {
+    throw new Error("No data rooms found for this deal");
+  }
+
+  const roomIds = rooms.map(r => r.id);
+  const docs = await db.select()
+    .from(dataRoomDocuments)
+    .where(inArray(dataRoomDocuments.dataRoomId, roomIds));
+
+  const docsWithText = docs.filter(d => d.extractedText && d.extractedText.length > 100);
+  if (docsWithText.length === 0) {
+    throw new Error("No documents with extracted text found. Upload and process documents first.");
+  }
+
+  const combinedText = docsWithText
+    .map(d => `--- Document: ${d.fileName} ---\n${(d.extractedText || "").slice(0, 6000)}`)
+    .join("\n\n")
+    .slice(0, 40000);
+
+  console.log(`[DealIntel] Extracting parties from ${docsWithText.length} documents for deal "${deal.title}"`);
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 2000,
+    messages: [{
+      role: "user",
+      content: `Analyze these transaction documents and extract all parties involved. Categorize them into the following groups:
+
+1. **Buyer Parties** — the acquiring entity/entities, purchasers, borrowers (in debt deals), investors
+2. **Seller Parties** — the selling entity/entities, lenders (in debt deals), existing shareholders selling
+3. **Target Entities** — the company/companies being acquired, the target business, the asset being purchased
+4. **Advisors** — law firms, financial advisors, accountants, investment banks, consultants involved
+
+For each party, extract the full legal name as it appears in the documents. For advisors, also identify their role (e.g., "Buyer's Counsel", "Financial Advisor", "Seller's Counsel", "Accounting Firm").
+
+Do NOT include generic/placeholder names. Only include parties that are clearly identified in the documents.
+
+Return ONLY a JSON object in this exact format:
+{
+  "buyerParties": [{"name": "Company A LLC"}],
+  "sellerParties": [{"name": "Company B Inc."}],
+  "targetEntities": [{"name": "Target Corp"}],
+  "advisors": [{"name": "Law Firm LLP", "role": "Buyer's Counsel"}]
+}
+
+If a category has no identified parties, return an empty array for that category.
+
+Documents:
+${combinedText}`
+    }],
+  });
+
+  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("Failed to parse AI response for party extraction");
+  }
+
+  const extracted = JSON.parse(jsonMatch[0]);
+
+  const normalizeName = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+
+  const dedupArray = (arr: any[], seen: Set<string>) => {
+    const unique: any[] = [];
+    for (const item of arr) {
+      if (!item.name) continue;
+      const key = normalizeName(item.name);
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(item);
+      }
+    }
+    return unique;
+  };
+
+  const rawBuyers = Array.isArray(extracted.buyerParties) ? extracted.buyerParties : [];
+  const rawSellers = Array.isArray(extracted.sellerParties) ? extracted.sellerParties : [];
+  const rawTargets = Array.isArray(extracted.targetEntities) ? extracted.targetEntities : [];
+  const rawAdvisors = Array.isArray(extracted.advisors) ? extracted.advisors : [];
+
+  const existingBuyerNames = new Set(((deal.buyerParties || []) as any[]).map((p: any) => normalizeName(typeof p === "string" ? p : p.name || "")));
+  const existingSellerNames = new Set(((deal.sellerParties || []) as any[]).map((p: any) => normalizeName(typeof p === "string" ? p : p.name || "")));
+  const existingTargetNames = new Set(((deal.targetEntities || []) as any[]).map((p: any) => normalizeName(typeof p === "string" ? p : p.name || "")));
+  const existingAdvisorNames = new Set(((deal.advisors || []) as any[]).map((p: any) => normalizeName(typeof p === "string" ? p : p.name || "")));
+
+  const newBuyers = dedupArray(rawBuyers, new Set(existingBuyerNames));
+  const newSellers = dedupArray(rawSellers, new Set(existingSellerNames));
+  const newTargets = dedupArray(rawTargets, new Set(existingTargetNames));
+  const newAdvisors = dedupArray(rawAdvisors, new Set(existingAdvisorNames));
+
+  const mergedBuyers = [...((deal.buyerParties || []) as any[]), ...newBuyers];
+  const mergedSellers = [...((deal.sellerParties || []) as any[]), ...newSellers];
+  const mergedTargets = [...((deal.targetEntities || []) as any[]), ...newTargets];
+  const mergedAdvisors = [...((deal.advisors || []) as any[]), ...newAdvisors];
+
+  await db.update(deals)
+    .set({
+      buyerParties: mergedBuyers,
+      sellerParties: mergedSellers,
+      targetEntities: mergedTargets,
+      advisors: mergedAdvisors,
+      updatedAt: new Date(),
+    })
+    .where(eq(deals.id, dealId));
+
+  const added = {
+    buyerParties: newBuyers.length,
+    sellerParties: newSellers.length,
+    targetEntities: newTargets.length,
+    advisors: newAdvisors.length,
+  };
+  const totalAdded = newBuyers.length + newSellers.length + newTargets.length + newAdvisors.length;
+  const totalFound = rawBuyers.length + rawSellers.length + rawTargets.length + rawAdvisors.length;
+
+  console.log(`[DealIntel] Extracted ${totalAdded} new parties (${totalFound} found total) for deal "${deal.title}"`);
+
+  return {
+    buyerParties: newBuyers,
+    sellerParties: newSellers,
+    targetEntities: newTargets,
+    advisors: newAdvisors,
+    added,
+    totalAdded,
+    totalFound,
+  };
+}
