@@ -974,6 +974,46 @@ export async function interpretUserMessage(
     
     console.log(`[AvaInterpreter] Intent analysis: confidence=${intentAnalysis.confidence}, intent=${intentAnalysis.intent}, entities=`, JSON.stringify(intentAnalysis.extractedEntities));
     
+    const isCreateDealIntent = /\b(create|new|start|add|make|set up|setup)\b.*\b(deal|transaction)\b/i.test(message);
+    const isCreateContactIntent = /\b(create|new|start|add|make|set up|setup)\b.*\b(contact)\b/i.test(message);
+    const isCreateCaseIntent = /\b(create|new|start|add|make|set up|setup)\b.*\b(case|matter)\b/i.test(message);
+    if (isCreateDealIntent && (intentAnalysis.intent === "go_to_deal" || intentAnalysis.intent === "navigation")) {
+      console.log(`[AvaInterpreter] Detected creation intent from message, overriding go_to_deal -> create_deal`);
+      const dealName = intentAnalysis.extractedEntities?.dealName;
+      return {
+        mode: "command",
+        intent: "create_deal",
+        parameters: { title: dealName || undefined },
+        assistantMessage: dealName
+          ? `I'll take you to create the "${dealName}" transaction.`
+          : "I'll take you to create a new transaction.",
+      };
+    }
+    if (isCreateContactIntent && (intentAnalysis.intent === "go_to_deal" || intentAnalysis.intent === "go_to_case" || intentAnalysis.intent === "navigation")) {
+      console.log(`[AvaInterpreter] Detected contact creation intent, overriding -> create_contact`);
+      const contactName = intentAnalysis.extractedEntities?.dealName || intentAnalysis.extractedEntities?.caseName;
+      return {
+        mode: "command",
+        intent: "create_contact",
+        parameters: { name: contactName || undefined },
+        assistantMessage: contactName
+          ? `I'll help you create a contact for "${contactName}".`
+          : "I'll take you to create a new contact.",
+      };
+    }
+    if (isCreateCaseIntent && (intentAnalysis.intent === "go_to_case")) {
+      console.log(`[AvaInterpreter] Detected creation intent from message, overriding go_to_case`);
+      const caseName = intentAnalysis.extractedEntities?.caseName;
+      return {
+        mode: "command",
+        intent: "navigate_to_cases",
+        parameters: {},
+        assistantMessage: caseName
+          ? `I'll take you to create a new case. You can set it up from the cases list.`
+          : "I'll take you to create a new case.",
+      };
+    }
+
     // Reconcile Gemini's extracted entities with actual database records
     let resolvedCase: { id: string; title: string } | null = null;
     let resolvedDeal: { id: string; title: string } | null = null;
