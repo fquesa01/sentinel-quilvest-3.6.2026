@@ -54,6 +54,7 @@ import {
   File,
   Wand2,
   Sparkles,
+  Download,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -500,7 +501,7 @@ export default function TransactionsDealChecklistDetail() {
                                             AI Matched
                                             {item.autoMatchConfidence != null && (
                                               <span className="ml-1 opacity-70">
-                                                {Math.round(item.autoMatchConfidence * 100)}%
+                                                {Math.round(item.autoMatchConfidence)}%
                                               </span>
                                             )}
                                           </Badge>
@@ -508,7 +509,7 @@ export default function TransactionsDealChecklistDetail() {
                                         <TooltipContent>
                                           <p>This item was auto-completed by AI document analysis</p>
                                           {item.autoMatchConfidence != null && (
-                                            <p className="text-xs opacity-70">Confidence: {Math.round(item.autoMatchConfidence * 100)}%</p>
+                                            <p className="text-xs opacity-70">Confidence: {Math.round(item.autoMatchConfidence)}%</p>
                                           )}
                                         </TooltipContent>
                                       </Tooltip>
@@ -538,14 +539,20 @@ export default function TransactionsDealChecklistDetail() {
                                     <TooltipTrigger asChild>
                                       <Badge 
                                         variant={item.hasAutoMatched ? "outline" : "secondary"} 
-                                        className="text-xs cursor-default"
+                                        className="text-xs cursor-pointer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedItemForDocuments(item.id);
+                                          setIsDocumentDialogOpen(true);
+                                        }}
+                                        data-testid={`badge-doc-count-${item.id}`}
                                       >
                                         {item.hasAutoMatched && <Sparkles className="h-3 w-3 mr-1" />}
                                         {item.documentCount} doc{item.documentCount > 1 ? "s" : ""}
                                       </Badge>
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                      {item.hasAutoMatched ? "Includes auto-matched documents" : "Linked documents"}
+                                      {item.hasAutoMatched ? "Click to view matched documents" : "Click to view linked documents"}
                                     </TooltipContent>
                                   </Tooltip>
                                 )}
@@ -636,31 +643,62 @@ export default function TransactionsDealChecklistDetail() {
                       key={link.id}
                       className="flex items-center justify-between p-2 rounded-md bg-muted/30 hover-elevate"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
                         <File className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                        <span className="text-sm truncate">
+                        <button
+                          className="text-sm truncate text-left underline decoration-muted-foreground/40 hover:decoration-foreground cursor-pointer"
+                          onClick={() => {
+                            if (link.documentId) {
+                              window.open(`/api/data-room-documents/${link.documentId}/preview`, "_blank");
+                            }
+                          }}
+                          data-testid={`link-open-doc-${link.id}`}
+                        >
                           {link.document?.name || link.document?.fileName || "Unknown Document"}
-                        </span>
+                        </button>
                         {link.isAutoMatched && (
                           <Badge variant="outline" className="text-xs flex-shrink-0" data-testid={`badge-auto-matched-doc-${link.id}`}>
                             <Sparkles className="h-3 w-3 mr-1" />
-                            AI Matched
+                            AI
                             {link.matchConfidence != null && (
-                              <span className="ml-1 opacity-70">{Math.round(link.matchConfidence * 100)}%</span>
+                              <span className="ml-1 opacity-70">{Math.round(link.matchConfidence)}%</span>
                             )}
                           </Badge>
                         )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 flex-shrink-0"
-                        onClick={() => unlinkDocumentMutation.mutate(link.id)}
-                        disabled={unlinkDocumentMutation.isPending}
-                        data-testid={`button-unlink-doc-${link.id}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                if (link.documentId) {
+                                  window.open(`/api/data-room-documents/${link.documentId}/download`, "_blank");
+                                }
+                              }}
+                              data-testid={`button-download-doc-${link.id}`}
+                            >
+                              <Download className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Download</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => unlinkDocumentMutation.mutate(link.id)}
+                              disabled={unlinkDocumentMutation.isPending}
+                              data-testid={`button-unlink-doc-${link.id}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Remove link</TooltipContent>
+                        </Tooltip>
+                      </div>
                     </div>
                   ))}
                 </div>

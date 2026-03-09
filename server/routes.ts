@@ -13408,16 +13408,20 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
             category = categories[0];
           }
           
-          // Get document count and auto-match status
           const linkedDocs = await db.select({
             id: schema.checklistItemDocuments.id,
             autoMatched: schema.checklistItemDocuments.autoMatched,
+            confidence: schema.checklistItemDocuments.confidence,
           })
             .from(schema.checklistItemDocuments)
             .where(eq(schema.checklistItemDocuments.checklistItemId, item.id));
           
           const documentCount = linkedDocs.length;
           const hasAutoMatched = linkedDocs.some(d => d.autoMatched);
+          const autoMatchedDocs = linkedDocs.filter(d => d.autoMatched && d.confidence != null);
+          const autoMatchConfidence = autoMatchedDocs.length > 0
+            ? Math.max(...autoMatchedDocs.map(d => d.confidence!))
+            : undefined;
           
           return {
             ...item,
@@ -13425,6 +13429,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
             category,
             documentCount,
             hasAutoMatched,
+            autoMatchConfidence,
           };
         })
       );
@@ -13501,7 +13506,6 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     try {
       const docs = await storage.getChecklistItemDocuments(req.params.itemId);
       
-      // Enrich with document details
       const enrichedDocs = await Promise.all(
         docs.map(async (link) => {
           const documents = await db.select()
@@ -13509,6 +13513,8 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
             .where(eq(schema.dataRoomDocuments.id, link.documentId));
           return {
             ...link,
+            isAutoMatched: link.autoMatched,
+            matchConfidence: link.confidence,
             document: documents[0] || null,
           };
         })
@@ -13766,15 +13772,92 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
         }
       }
       
-      // Insert all new links
       if (newLinks.length > 0) {
         await db.insert(schema.checklistItemDocuments).values(newLinks);
+        
+        const itemBestConfidence = new Map<string, number>();
+        for (const link of newLinks) {
+          const current = itemBestConfidence.get(link.checklistItemId) || 0;
+          if (link.confidence > current) {
+            itemBestConfidence.set(link.checklistItemId, link.confidence);
+          }
+        }
+        
+        let completedCount = 0;
+        for (const [itemId, bestConf] of itemBestConfidence.entries()) {
+          if (bestConf >= 60) {
+            await db.update(schema.dealChecklistItems)
+              .set({ status: "complete" })
+              .where(
+                and(
+                  eq(schema.dealChecklistItems.id, itemId),
+                  eq(schema.dealChecklistItems.status, "pending")
+                )
+              );
+            completedCount++;
+          }
+        }
+        
+        console.log(`[Auto-match] ${newLinks.length} links created, ${completedCount} items auto-completed`);
       }
       
+      const pendingItemIds = checklistItems
+        .filter(ci => ci.item.status === "pending")
+        .map(ci => ci.item.id);
+      
+      let retroCompleted = 0;
+      if (pendingItemIds.length > 0) {
+        const allLinks = matchedCount > 0
+          ? await db.select()
+              .from(schema.checklistItemDocuments)
+              .where(inArray(schema.checklistItemDocuments.checklistItemId, pendingItemIds))
+          : existingLinks.filter(l => pendingItemIds.includes(l.checklistItemId));
+        
+        const existingHighConfLinks = allLinks.filter(
+          l => l.autoMatched && l.confidence != null && l.confidence >= 60
+        );
+        const alreadyCompleted = new Set(
+          newLinks.filter(nl => nl.confidence >= 60).map(nl => nl.checklistItemId)
+        );
+        const itemsToComplete = new Set(
+          existingHighConfLinks
+            .map(l => l.checklistItemId)
+            .filter(id => !alreadyCompleted.has(id))
+        );
+        for (const itemId of itemsToComplete) {
+          await db.update(schema.dealChecklistItems)
+            .set({ status: "complete" })
+            .where(
+              and(
+                eq(schema.dealChecklistItems.id, itemId),
+                eq(schema.dealChecklistItems.status, "pending")
+              )
+            );
+          retroCompleted++;
+        }
+        if (retroCompleted > 0) {
+          console.log(`[Auto-match] Retroactively completed ${retroCompleted} previously matched items`);
+        }
+      }
+      
+      const allItems = await db.select()
+        .from(schema.dealChecklistItems)
+        .where(eq(schema.dealChecklistItems.dealChecklistId, checklistId));
+      const totalItems = allItems.length;
+      const completedItems = allItems.filter(
+        i => i.status === "complete" || i.status === "na" || i.status === "waived"
+      ).length;
+      const percentComplete = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+      
+      await db.update(schema.dealChecklists)
+        .set({ completedItems, percentComplete })
+        .where(eq(schema.dealChecklists.id, checklistId));
+      
+      const totalCompleted = matchedCount + retroCompleted;
       res.json({
-        matchedCount,
-        message: matchedCount > 0 
-          ? `Successfully matched ${matchedCount} document(s) to checklist items`
+        matchedCount: totalCompleted,
+        message: totalCompleted > 0 
+          ? `Successfully matched ${totalCompleted} document(s) to checklist items`
           : "No new matches found",
       });
     } catch (error: any) {
