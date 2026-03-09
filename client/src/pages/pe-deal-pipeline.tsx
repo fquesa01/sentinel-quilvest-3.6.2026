@@ -943,6 +943,12 @@ export default function PEDealPipeline() {
                   </span>
                 )}
               </div>
+              <Link href="/relationship-intelligence" onClick={() => setSourcingDetail(null)}>
+                <Button variant="default" className="w-full" data-testid="button-view-in-feed">
+                  View in Intelligence Feed
+                  <ExternalLink className="h-4 w-4 ml-2" />
+                </Button>
+              </Link>
             </div>
           )}
         </DialogContent>
