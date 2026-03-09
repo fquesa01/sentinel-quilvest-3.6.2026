@@ -28447,6 +28447,106 @@ Guidelines:
   // PE DUE DILIGENCE ROUTES
   // =============================================
 
+  // Pipeline Progress - enriches deals with checklist, document, and memo progress
+  app.get("/api/pe/deals/pipeline-progress", isAuthenticated, async (req: any, res) => {
+    try {
+      const allDeals = await db.select().from(schema.deals).orderBy(desc(schema.deals.createdAt));
+
+      const enrichedDeals = await Promise.all(allDeals.map(async (deal) => {
+        const checklists = await db.select({
+          id: schema.dealChecklists.id,
+          totalItems: schema.dealChecklists.totalItems,
+          completedItems: schema.dealChecklists.completedItems,
+          percentComplete: schema.dealChecklists.percentComplete,
+        }).from(schema.dealChecklists).where(eq(schema.dealChecklists.dealId, deal.id));
+
+        let checklistTotal = 0;
+        let checklistCompleted = 0;
+        let checklistPercent = 0;
+        if (checklists.length > 0) {
+          checklistTotal = checklists.reduce((sum, c) => sum + (c.totalItems || 0), 0);
+          checklistCompleted = checklists.reduce((sum, c) => sum + (c.completedItems || 0), 0);
+          checklistPercent = checklistTotal > 0 ? Math.round((checklistCompleted / checklistTotal) * 100) : 0;
+        }
+
+        const rooms = await db.select({ id: schema.dataRooms.id })
+          .from(schema.dataRooms)
+          .where(eq(schema.dataRooms.dealId, deal.id));
+
+        let documentCount = 0;
+        if (rooms.length > 0) {
+          const roomIds = rooms.map(r => r.id);
+          const docResult = await db.select({ count: sql<number>`count(*)::int` })
+            .from(schema.dataRoomDocuments)
+            .where(inArray(schema.dataRoomDocuments.dataRoomId, roomIds));
+          documentCount = docResult[0]?.count || 0;
+        }
+
+        const memos = await db.select({
+          id: schema.investorMemos.id,
+          status: schema.investorMemos.status,
+        }).from(schema.investorMemos).where(eq(schema.investorMemos.dealId, deal.id)).orderBy(desc(schema.investorMemos.createdAt));
+
+        const latestMemo = memos.length > 0 ? memos[0] : null;
+        const memoStatus = latestMemo?.status || null;
+
+        let effectiveStage = "pipeline";
+        if (documentCount > 0 || checklistTotal > 0) {
+          effectiveStage = "preliminary_review";
+        }
+        if (checklistPercent >= 15 && documentCount >= 3) {
+          effectiveStage = "management_meeting";
+        }
+        if (checklistPercent >= 40 || (memoStatus && ["draft", "generating", "extracting", "researching", "modeling", "writing"].includes(memoStatus))) {
+          effectiveStage = "loi_submitted";
+        }
+        if (checklistPercent >= 50 && memoStatus === "review") {
+          effectiveStage = "diligence";
+        }
+        if (checklistPercent >= 75 && memoStatus === "review") {
+          effectiveStage = "exclusivity";
+        }
+        if (checklistPercent >= 90 && memoStatus === "final") {
+          effectiveStage = "definitive_docs";
+        }
+        if (deal.status === "closed") {
+          effectiveStage = "closed";
+        }
+
+        return {
+          id: deal.id,
+          name: deal.title,
+          dealNumber: deal.dealNumber,
+          dealType: deal.dealType,
+          status: deal.status,
+          priority: deal.priority,
+          dealValue: deal.dealValue,
+          dealCurrency: deal.dealCurrency,
+          description: deal.description,
+          createdAt: deal.createdAt,
+          updatedAt: deal.updatedAt,
+          closingTargetDate: deal.closingTargetDate,
+          effectiveStage,
+          progress: {
+            checklistTotal,
+            checklistCompleted,
+            checklistPercent,
+            documentCount,
+            memoStatus,
+            hasChecklist: checklists.length > 0,
+            hasMemo: memos.length > 0,
+            hasDocuments: documentCount > 0,
+          },
+        };
+      }));
+
+      res.json(enrichedDeals);
+    } catch (error: any) {
+      console.error("[Pipeline] Progress error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // PE Deals
   app.get("/api/pe/deals", isAuthenticated, async (req: any, res) => {
     try {

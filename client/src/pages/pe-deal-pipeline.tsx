@@ -53,6 +53,11 @@ import {
   Users,
   FileText,
   Activity,
+  Brain,
+  FolderOpen,
+  ClipboardCheck,
+  ScrollText,
+  Zap,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -93,6 +98,32 @@ interface PEDeal {
   updatedAt: string;
 }
 
+interface EnrichedDeal {
+  id: string;
+  name: string;
+  dealNumber: string;
+  dealType: string;
+  status: string;
+  priority: string;
+  dealValue: string | null;
+  dealCurrency: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+  closingTargetDate: string | null;
+  effectiveStage: string;
+  progress: {
+    checklistTotal: number;
+    checklistCompleted: number;
+    checklistPercent: number;
+    documentCount: number;
+    memoStatus: string | null;
+    hasChecklist: boolean;
+    hasMemo: boolean;
+    hasDocuments: boolean;
+  };
+}
+
 const dealStages = [
   { value: "pipeline", label: "Pipeline", color: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300" },
   { value: "preliminary_review", label: "Preliminary Review", color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300" },
@@ -129,6 +160,7 @@ export default function PEDealPipeline() {
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"pipeline" | "table">("pipeline");
+  const [pipelineMode, setPipelineMode] = useState<"manual" | "intelligent">("intelligent");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [dealToDelete, setDealToDelete] = useState<PEDeal | null>(null);
   const [newDeal, setNewDeal] = useState({
@@ -145,6 +177,11 @@ export default function PEDealPipeline() {
 
   const { data: deals, isLoading } = useQuery<PEDeal[]>({
     queryKey: ["/api/pe/deals"],
+  });
+
+  const { data: enrichedDeals, isLoading: isLoadingEnriched } = useQuery<EnrichedDeal[]>({
+    queryKey: ["/api/pe/deals/pipeline-progress"],
+    enabled: pipelineMode === "intelligent",
   });
 
   const createDealMutation = useMutation({
@@ -221,6 +258,12 @@ export default function PEDealPipeline() {
     return matchesSearch && matchesStage && matchesSector;
   });
 
+  const filteredEnrichedDeals = enrichedDeals?.filter((deal) => {
+    const matchesSearch = deal.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStage = stageFilter === "all" || deal.effectiveStage === stageFilter;
+    return matchesSearch && matchesStage;
+  });
+
   const formatCurrency = (value: string | null | undefined) => {
     if (!value) return "-";
     const num = parseFloat(value);
@@ -236,12 +279,37 @@ export default function PEDealPipeline() {
   };
 
   const getDealsByStage = (stage: string) => {
+    if (pipelineMode === "intelligent") {
+      return filteredEnrichedDeals?.filter(d => d.effectiveStage === stage) || [];
+    }
     return filteredDeals?.filter(d => d.status === stage) || [];
+  };
+
+  const getMemoLabel = (status: string | null) => {
+    if (!status) return null;
+    const labels: Record<string, string> = {
+      draft: "Memo Draft",
+      generating: "Generating",
+      extracting: "Extracting",
+      researching: "Researching",
+      modeling: "Modeling",
+      writing: "Writing",
+      review: "In Review",
+      final: "Final",
+      failed: "Failed",
+    };
+    return labels[status] || status;
   };
 
   const activeStages = stageOrder.filter(s => !["passed", "lost"].includes(s));
 
-  const pipelineStats = {
+  const pipelineStats = pipelineMode === "intelligent" ? {
+    totalDeals: enrichedDeals?.length || 0,
+    activeDeals: enrichedDeals?.filter(d => !["closed", "passed", "lost"].includes(d.effectiveStage)).length || 0,
+    closedDeals: enrichedDeals?.filter(d => d.effectiveStage === "closed").length || 0,
+    totalEV: enrichedDeals?.reduce((sum, d) => sum + (parseFloat(d.dealValue || "0") || 0), 0) || 0,
+    inDueDiligence: enrichedDeals?.filter(d => d.effectiveStage === "diligence").length || 0,
+  } : {
     totalDeals: deals?.length || 0,
     activeDeals: deals?.filter(d => !["closed", "passed", "lost"].includes(d.status)).length || 0,
     closedDeals: deals?.filter(d => d.status === "closed").length || 0,
@@ -267,7 +335,7 @@ export default function PEDealPipeline() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold flex items-center gap-2" data-testid="text-page-title">
             <TrendingUp className="h-6 w-6 text-primary" />
@@ -277,10 +345,31 @@ export default function PEDealPipeline() {
             Pipeline tracking, due diligence management, and institutional memory
           </p>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-deal">
-          <Plus className="h-4 w-4 mr-2" />
-          New Deal
-        </Button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex border rounded-lg">
+            <Button
+              variant={pipelineMode === "intelligent" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setPipelineMode("intelligent")}
+              data-testid="button-mode-intelligent"
+            >
+              <Brain className="h-4 w-4 mr-1" />
+              Auto-Stage
+            </Button>
+            <Button
+              variant={pipelineMode === "manual" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setPipelineMode("manual")}
+              data-testid="button-mode-manual"
+            >
+              Manual
+            </Button>
+          </div>
+          <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-deal">
+            <Plus className="h-4 w-4 mr-2" />
+            New Deal
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-5 gap-4">
@@ -375,19 +464,21 @@ export default function PEDealPipeline() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={sectorFilter} onValueChange={setSectorFilter}>
-          <SelectTrigger className="w-[180px]" data-testid="select-sector-filter">
-            <SelectValue placeholder="All Sectors" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Sectors</SelectItem>
-            {sectors.map((sector) => (
-              <SelectItem key={sector} value={sector}>
-                {sector}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {pipelineMode === "manual" && (
+          <Select value={sectorFilter} onValueChange={setSectorFilter}>
+            <SelectTrigger className="w-[180px]" data-testid="select-sector-filter">
+              <SelectValue placeholder="All Sectors" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sectors</SelectItem>
+              {sectors.map((sector) => (
+                <SelectItem key={sector} value={sector}>
+                  {sector}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <div className="flex border rounded-lg">
           <Button 
             variant={viewMode === "pipeline" ? "secondary" : "ghost"} 
@@ -408,7 +499,16 @@ export default function PEDealPipeline() {
         </div>
       </div>
 
-      {viewMode === "pipeline" ? (
+      {pipelineMode === "intelligent" && isLoadingEnriched ? (
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="min-w-[280px] flex-shrink-0">
+              <Skeleton className="h-8 w-32 mb-3" />
+              <Skeleton className="h-[400px] rounded-lg" />
+            </div>
+          ))}
+        </div>
+      ) : viewMode === "pipeline" ? (
         <div className="flex gap-4 overflow-x-auto pb-4">
           {activeStages.map((stage) => {
             const stageInfo = getStageInfo(stage);
@@ -426,8 +526,67 @@ export default function PEDealPipeline() {
                     <div className="text-center text-sm text-muted-foreground py-8">
                       No deals
                     </div>
+                  ) : pipelineMode === "intelligent" ? (
+                    (stageDeals as EnrichedDeal[]).map((deal) => (
+                      <Link key={deal.id} href={`/deals/${deal.id}`}>
+                        <Card className="cursor-pointer hover-elevate" data-testid={`card-deal-${deal.id}`}>
+                          <CardContent className="p-3">
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium text-sm line-clamp-1" data-testid={`text-deal-name-${deal.id}`}>
+                                  {deal.name}
+                                </h4>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {deal.dealNumber}
+                                </p>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            </div>
+                            {deal.dealValue && (
+                              <div className="mt-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {formatCurrency(deal.dealValue)}
+                                </Badge>
+                              </div>
+                            )}
+                            <div className="mt-3 space-y-2">
+                              {deal.progress.hasChecklist && (
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <ClipboardCheck className="h-3 w-3" />
+                                      <span>Checklist</span>
+                                    </div>
+                                    <span className="text-xs font-medium">{deal.progress.checklistPercent}%</span>
+                                  </div>
+                                  <Progress value={deal.progress.checklistPercent} className="h-1.5" />
+                                </div>
+                              )}
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <FolderOpen className="h-3 w-3" />
+                                  <span>{deal.progress.documentCount} docs</span>
+                                </div>
+                                {deal.progress.memoStatus && (
+                                  <Badge variant="outline" className="text-xs">
+                                    <ScrollText className="h-3 w-3 mr-1" />
+                                    {getMemoLabel(deal.progress.memoStatus)}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            {deal.closingTargetDate && (
+                              <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
+                                <Calendar className="h-3 w-3" />
+                                <span>Target: {format(new Date(deal.closingTargetDate), "MMM d, yyyy")}</span>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </Link>
+                    ))
                   ) : (
-                    stageDeals.map((deal) => (
+                    (stageDeals as PEDeal[]).map((deal) => (
                       <Link key={deal.id} href={`/pe/deals/${deal.id}`}>
                         <Card className="cursor-pointer hover-elevate" data-testid={`card-deal-${deal.id}`}>
                           <CardContent className="p-3">
@@ -476,61 +635,142 @@ export default function PEDealPipeline() {
             <TableHeader>
               <TableRow>
                 <TableHead>Target Company</TableHead>
-                <TableHead>Sector</TableHead>
+                {pipelineMode === "manual" && <TableHead>Sector</TableHead>}
                 <TableHead>Stage</TableHead>
                 <TableHead>Deal Type</TableHead>
-                <TableHead>Enterprise Value</TableHead>
-                <TableHead>Expected Close</TableHead>
+                <TableHead>{pipelineMode === "intelligent" ? "Value" : "Enterprise Value"}</TableHead>
+                {pipelineMode === "intelligent" && <TableHead>Checklist</TableHead>}
+                {pipelineMode === "intelligent" && <TableHead>Documents</TableHead>}
+                {pipelineMode === "intelligent" && <TableHead>Memo</TableHead>}
+                <TableHead>{pipelineMode === "intelligent" ? "Close Target" : "Expected Close"}</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredDeals?.map((deal) => {
-                const stageInfo = getStageInfo(deal.status);
-                return (
-                  <TableRow key={deal.id} data-testid={`row-deal-${deal.id}`}>
-                    <TableCell>
-                      <div>
-                        <span className="font-medium">{deal.name}</span>
-                        {deal.geography && (
-                          <span className="text-xs text-muted-foreground ml-2">({deal.geography})</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{deal.sector}</TableCell>
-                    <TableCell>
-                      <Badge className={stageInfo.color}>{stageInfo.label}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}
-                    </TableCell>
-                    <TableCell>{formatCurrency(deal.enterpriseValue)}</TableCell>
-                    <TableCell>
-                      {deal.expectedCloseDate 
-                        ? format(new Date(deal.expectedCloseDate), "MMM d, yyyy")
-                        : "-"
-                      }
-                    </TableCell>
-                    <TableCell>
-                      {format(new Date(deal.createdAt), "MMM d, yyyy")}
-                    </TableCell>
-                    <TableCell>
-                      <Link href={`/pe/deals/${deal.id}`}>
-                        <Button variant="ghost" size="icon" data-testid={`button-view-deal-${deal.id}`}>
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {(!filteredDeals || filteredDeals.length === 0) && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    No deals found
-                  </TableCell>
-                </TableRow>
+              {pipelineMode === "intelligent" ? (
+                <>
+                  {filteredEnrichedDeals?.map((deal) => {
+                    const stageInfo = getStageInfo(deal.effectiveStage);
+                    return (
+                      <TableRow key={deal.id} data-testid={`row-deal-${deal.id}`}>
+                        <TableCell>
+                          <div>
+                            <span className="font-medium">{deal.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">({deal.dealNumber})</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <Badge className={stageInfo.color}>{stageInfo.label}</Badge>
+                            <Zap className="h-3 w-3 text-amber-500" />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}
+                        </TableCell>
+                        <TableCell>{formatCurrency(deal.dealValue)}</TableCell>
+                        <TableCell>
+                          {deal.progress.hasChecklist ? (
+                            <div className="flex items-center gap-2 min-w-[100px]">
+                              <Progress value={deal.progress.checklistPercent} className="h-1.5 flex-1" />
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">{deal.progress.checklistPercent}%</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1 text-xs">
+                            <FolderOpen className="h-3 w-3 text-muted-foreground" />
+                            <span>{deal.progress.documentCount}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {deal.progress.memoStatus ? (
+                            <Badge variant="outline" className="text-xs">
+                              {getMemoLabel(deal.progress.memoStatus)}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {deal.closingTargetDate
+                            ? format(new Date(deal.closingTargetDate), "MMM d, yyyy")
+                            : "-"
+                          }
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(deal.createdAt), "MMM d, yyyy")}
+                        </TableCell>
+                        <TableCell>
+                          <Link href={`/deals/${deal.id}`}>
+                            <Button variant="ghost" size="icon" data-testid={`button-view-deal-${deal.id}`}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {(!filteredEnrichedDeals || filteredEnrichedDeals.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                        No deals found
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
+              ) : (
+                <>
+                  {filteredDeals?.map((deal) => {
+                    const stageInfo = getStageInfo(deal.status);
+                    return (
+                      <TableRow key={deal.id} data-testid={`row-deal-${deal.id}`}>
+                        <TableCell>
+                          <div>
+                            <span className="font-medium">{deal.name}</span>
+                            {deal.geography && (
+                              <span className="text-xs text-muted-foreground ml-2">({deal.geography})</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{deal.sector}</TableCell>
+                        <TableCell>
+                          <Badge className={stageInfo.color}>{stageInfo.label}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}
+                        </TableCell>
+                        <TableCell>{formatCurrency(deal.enterpriseValue)}</TableCell>
+                        <TableCell>
+                          {deal.expectedCloseDate 
+                            ? format(new Date(deal.expectedCloseDate), "MMM d, yyyy")
+                            : "-"
+                          }
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(deal.createdAt), "MMM d, yyyy")}
+                        </TableCell>
+                        <TableCell>
+                          <Link href={`/pe/deals/${deal.id}`}>
+                            <Button variant="ghost" size="icon" data-testid={`button-view-deal-${deal.id}`}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {(!filteredDeals || filteredDeals.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                        No deals found
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
               )}
             </TableBody>
           </Table>
