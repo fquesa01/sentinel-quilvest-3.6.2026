@@ -14,6 +14,7 @@ import {
   ArrowLeft, FileText, TrendingUp, Brain, MessageSquare,
   Download, RefreshCw, CheckCircle2, Clock, AlertTriangle,
   Sparkles, BarChart3, Shield, Zap, Globe, Building2,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { MemoSectionEditor } from "@/components/investor-memo/memo-section-editor";
 import { FinancialModelPanel } from "@/components/investor-memo/financial-model-panel";
@@ -42,6 +43,7 @@ export default function InvestorMemoBuilder() {
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState("executive_summary");
   const [activeTab, setActiveTab] = useState("memo");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { data: memo, isLoading } = useQuery({
     queryKey: ["/api/memos", memoId],
@@ -102,7 +104,27 @@ export default function InvestorMemoBuilder() {
   }
 
   const sections = (memo.sections || {}) as Record<string, { title: string; content: string; isEdited: boolean; generatedAt: string }>;
-  const sectionKeys = Object.keys(sections);
+
+  const SECTION_ORDER = [
+    "executive_summary",
+    "company_overview",
+    "industry_market_analysis",
+    "competitive_intelligence",
+    "financial_performance",
+    "financial_projections",
+    "valuation",
+    "technology_innovation",
+    "value_creation_plan",
+    "management_organization",
+    "investment_merits",
+    "risk_factors",
+    "appendix",
+  ];
+
+  const sectionKeys = [
+    ...SECTION_ORDER.filter((k) => k in sections),
+    ...Object.keys(sections).filter((k) => !SECTION_ORDER.includes(k)),
+  ];
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -159,43 +181,66 @@ export default function InvestorMemoBuilder() {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Section navigation */}
-        <div className="w-64 border-r bg-muted/30 overflow-y-auto">
-          <div className="p-4">
-            <h3 className="text-sm font-medium text-muted-foreground mb-3">Memo Sections</h3>
-            <nav className="space-y-1">
-              {sectionKeys.map((key) => {
-                const section = sections[key];
-                const Icon = SECTION_ICONS[key] || FileText;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      setActiveSection(key);
-                      setActiveTab("memo");
-                    }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
-                      activeSection === key && activeTab === "memo"
-                        ? "bg-primary/10 text-primary font-medium"
-                        : "hover:bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{section.title}</span>
-                    {section.isEdited && (
-                      <Badge variant="outline" className="ml-auto text-xs px-1.5 py-0">edited</Badge>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
+        {/* Section navigation - collapsible */}
+        {sidebarOpen && (
+          <div className="w-64 border-r bg-muted/30 overflow-y-auto shrink-0">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-muted-foreground">Memo Sections</h3>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSidebarOpen(false)}
+                  data-testid="button-collapse-memo-sections"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </Button>
+              </div>
+              <nav className="space-y-1">
+                {sectionKeys.map((key) => {
+                  const section = sections[key];
+                  const Icon = SECTION_ICONS[key] || FileText;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setActiveSection(key);
+                        setActiveTab("memo");
+                      }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                        activeSection === key && activeTab === "memo"
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "hover:bg-muted text-muted-foreground"
+                      }`}
+                      data-testid={`button-memo-section-${key}`}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{section.title}</span>
+                      {section.isEdited && (
+                        <Badge variant="outline" className="ml-auto text-xs px-1.5 py-0">edited</Badge>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Content area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-            <div className="border-b px-6">
+            <div className="border-b px-6 flex items-center gap-2">
+              {!sidebarOpen && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSidebarOpen(true)}
+                  data-testid="button-expand-memo-sections"
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </Button>
+              )}
               <TabsList className="h-10">
                 <TabsTrigger value="memo" className="gap-2">
                   <FileText className="h-4 w-4" />
