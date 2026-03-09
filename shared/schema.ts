@@ -6508,6 +6508,7 @@ export const dealsRelations = relations(deals, ({ one, many }) => ({
   }),
   participants: many(dealParticipants),
   milestones: many(dealMilestones),
+  issues: many(dealIssues),
 }));
 
 export const dealParticipantsRelations = relations(dealParticipants, ({ one }) => ({
@@ -6535,6 +6536,61 @@ export const dealMilestonesRelations = relations(dealMilestones, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+export const dealIssueSeverityEnum = pgEnum("deal_issue_severity", [
+  "low", "medium", "high", "critical"
+]);
+
+export const dealIssueStatusEnum = pgEnum("deal_issue_status", [
+  "open", "in_progress", "resolved", "closed"
+]);
+
+export const dealIssueCategoryEnum = pgEnum("deal_issue_category", [
+  "legal", "financial", "regulatory", "operational", "environmental", "tax", "ip", "hr", "other"
+]);
+
+export const dealIssues = pgTable("deal_issues", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  severity: dealIssueSeverityEnum("severity").default("medium"),
+  status: dealIssueStatusEnum("status").default("open"),
+  category: dealIssueCategoryEnum("category").default("other"),
+  assigneeId: varchar("assignee_id").references(() => users.id),
+  resolution: text("resolution"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+}, (table) => ({
+  dealIdx: index("idx_deal_issues_deal").on(table.dealId),
+}));
+
+export const dealIssuesRelations = relations(dealIssues, ({ one }) => ({
+  deal: one(deals, {
+    fields: [dealIssues.dealId],
+    references: [deals.id],
+  }),
+  assignee: one(users, {
+    fields: [dealIssues.assigneeId],
+    references: [users.id],
+  }),
+  creator: one(users, {
+    fields: [dealIssues.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export type DealIssue = typeof dealIssues.$inferSelect;
+export const insertDealIssueSchema = createInsertSchema(dealIssues).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  resolvedAt: true,
+  createdBy: true,
+});
+export type InsertDealIssue = z.infer<typeof insertDealIssueSchema>;
 
 // Deal Types
 export type Deal = typeof deals.$inferSelect;

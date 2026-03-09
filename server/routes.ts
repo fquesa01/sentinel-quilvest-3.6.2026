@@ -12875,6 +12875,79 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  app.get("/api/deals/:dealId/issues", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+    try {
+      const issues = await db.select()
+        .from(schema.dealIssues)
+        .where(eq(schema.dealIssues.dealId, req.params.dealId))
+        .orderBy(schema.dealIssues.createdAt);
+      res.json(issues);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/deals/:dealId/issues", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const [issue] = await db.insert(schema.dealIssues).values({
+        dealId: req.params.dealId,
+        title: req.body.title,
+        description: req.body.description || null,
+        severity: req.body.severity || "medium",
+        category: req.body.category || "other",
+        assigneeId: req.body.assigneeId || null,
+        createdBy: req.user?.id || null,
+      }).returning();
+      res.json(issue);
+    } catch (error: any) {
+      console.error("Error creating deal issue:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/deals/:dealId/issues/:issueId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      if (req.body.title !== undefined) updateData.title = req.body.title;
+      if (req.body.description !== undefined) updateData.description = req.body.description;
+      if (req.body.severity !== undefined) updateData.severity = req.body.severity;
+      if (req.body.status !== undefined) {
+        updateData.status = req.body.status;
+        if (req.body.status === "resolved" || req.body.status === "closed") {
+          updateData.resolvedAt = new Date();
+        }
+      }
+      if (req.body.category !== undefined) updateData.category = req.body.category;
+      if (req.body.resolution !== undefined) updateData.resolution = req.body.resolution;
+      if (req.body.assigneeId !== undefined) updateData.assigneeId = req.body.assigneeId;
+
+      const [updated] = await db.update(schema.dealIssues)
+        .set(updateData)
+        .where(and(eq(schema.dealIssues.id, req.params.issueId), eq(schema.dealIssues.dealId, req.params.dealId)))
+        .returning();
+
+      if (!updated) return res.status(404).json({ message: "Issue not found" });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating deal issue:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/deals/:dealId/issues/:issueId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+    try {
+      const [deleted] = await db
+        .delete(schema.dealIssues)
+        .where(and(eq(schema.dealIssues.id, req.params.issueId), eq(schema.dealIssues.dealId, req.params.dealId)))
+        .returning();
+      if (!deleted) return res.status(404).json({ message: "Issue not found" });
+      res.json({ message: "Issue deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting deal issue:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   // Business Transactions Dashboard metrics
   app.get("/api/transactions/dashboard", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
     try {

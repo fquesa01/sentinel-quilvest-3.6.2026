@@ -64,7 +64,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import type { Deal, DealMilestone, DealParticipant } from "@shared/schema";
+import type { Deal, DealMilestone, DealParticipant, DealIssue } from "@shared/schema";
 import { format } from "date-fns";
 
 type DealWithRelations = Deal & {
@@ -112,6 +112,18 @@ export default function TransactionsDealDetail() {
   const [newItemName, setNewItemName] = useState("");
   const [newItemRole, setNewItemRole] = useState("");
   
+  // Issue dialog states
+  const [issueDialogOpen, setIssueDialogOpen] = useState(false);
+  const [editingIssue, setEditingIssue] = useState<DealIssue | null>(null);
+  const [issueForm, setIssueForm] = useState({
+    title: "",
+    description: "",
+    severity: "medium" as string,
+    category: "other" as string,
+    status: "open" as string,
+    resolution: "",
+  });
+
   // Milestone dialog states
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<DealMilestone | null>(null);
@@ -135,6 +147,11 @@ export default function TransactionsDealDetail() {
 
   const { data: participants = [] } = useQuery<DealParticipant[]>({
     queryKey: ["/api/deals", id, "participants"],
+    enabled: !!id,
+  });
+
+  const { data: dealIssues = [] } = useQuery<DealIssue[]>({
+    queryKey: ["/api/deals", id, "issues"],
     enabled: !!id,
   });
 
@@ -242,6 +259,81 @@ export default function TransactionsDealDetail() {
       toast({ title: "Extraction Failed", description: error.message || "Could not extract parties from documents.", variant: "destructive" });
     },
   });
+
+  const createIssueMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", `/api/deals/${id}/issues`, data);
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "issues"] });
+      toast({ title: "Issue Created", description: "The issue has been logged." });
+      setIssueDialogOpen(false);
+      setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
+      setEditingIssue(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create issue.", variant: "destructive" });
+    },
+  });
+
+  const updateIssueMutation = useMutation({
+    mutationFn: async ({ issueId, data }: { issueId: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/deals/${id}/issues/${issueId}`, data);
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "issues"] });
+      toast({ title: "Issue Updated", description: "Changes saved." });
+      setIssueDialogOpen(false);
+      setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
+      setEditingIssue(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update issue.", variant: "destructive" });
+    },
+  });
+
+  const deleteIssueMutation = useMutation({
+    mutationFn: async (issueId: string) => {
+      await apiRequest("DELETE", `/api/deals/${id}/issues/${issueId}`);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "issues"] });
+      toast({ title: "Deleted", description: "Issue removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete issue.", variant: "destructive" });
+    },
+  });
+
+  const handleSaveIssue = () => {
+    if (!issueForm.title.trim()) return;
+    if (editingIssue) {
+      updateIssueMutation.mutate({ issueId: editingIssue.id, data: issueForm });
+    } else {
+      createIssueMutation.mutate(issueForm);
+    }
+  };
+
+  const openEditIssue = (issue: DealIssue) => {
+    setEditingIssue(issue);
+    setIssueForm({
+      title: issue.title,
+      description: issue.description || "",
+      severity: issue.severity || "medium",
+      category: issue.category || "other",
+      status: issue.status || "open",
+      resolution: issue.resolution || "",
+    });
+    setIssueDialogOpen(true);
+  };
+
+  const openNewIssue = () => {
+    setEditingIssue(null);
+    setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
+    setIssueDialogOpen(true);
+  };
 
   // Dialog title labels
   const dialogLabels: Record<string, string> = {
@@ -1225,25 +1317,195 @@ export default function TransactionsDealDetail() {
           <TabsContent value="issues" className="mt-6">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div>
                     <CardTitle className="text-lg">Issue Tracker</CardTitle>
                     <CardDescription>Track and manage deal-related issues</CardDescription>
                   </div>
-                  <Button size="sm" data-testid="button-new-issue">
+                  <Button size="sm" onClick={openNewIssue} data-testid="button-new-issue">
                     <Plus className="h-4 w-4 mr-2" />
                     New Issue
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  <AlertTriangle className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>No issues logged for this deal</p>
-                  <p className="text-sm mt-1">Track due diligence findings and concerns here</p>
-                </div>
+                {dealIssues.length > 0 ? (
+                  <div className="space-y-3">
+                    {dealIssues.map((issue) => {
+                      const severityColors: Record<string, string> = {
+                        low: "bg-muted text-muted-foreground",
+                        medium: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+                        high: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+                        critical: "bg-red-500/10 text-red-600 dark:text-red-400",
+                      };
+                      const statusColors: Record<string, string> = {
+                        open: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                        in_progress: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+                        resolved: "bg-green-500/10 text-green-600 dark:text-green-400",
+                        closed: "bg-muted text-muted-foreground",
+                      };
+                      const categoryLabels: Record<string, string> = {
+                        legal: "Legal", financial: "Financial", regulatory: "Regulatory",
+                        operational: "Operational", environmental: "Environmental",
+                        tax: "Tax", ip: "IP", hr: "HR", other: "Other",
+                      };
+                      return (
+                        <div
+                          key={issue.id}
+                          className="flex items-start justify-between gap-3 p-3 rounded-lg bg-muted/30 group hover-elevate cursor-pointer"
+                          onClick={() => openEditIssue(issue)}
+                          data-testid={`issue-row-${issue.id}`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium truncate" data-testid={`text-issue-title-${issue.id}`}>{issue.title}</span>
+                              <Badge variant="secondary" className={`text-xs ${severityColors[issue.severity || "medium"]}`} data-testid={`badge-severity-${issue.id}`}>
+                                {(issue.severity || "medium").charAt(0).toUpperCase() + (issue.severity || "medium").slice(1)}
+                              </Badge>
+                              <Badge variant="secondary" className={`text-xs ${statusColors[issue.status || "open"]}`} data-testid={`badge-status-${issue.id}`}>
+                                {(issue.status || "open").replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                              </Badge>
+                            </div>
+                            {issue.description && (
+                              <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{issue.description}</p>
+                            )}
+                            <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                              <span>{categoryLabels[issue.category || "other"]}</span>
+                              {issue.createdAt && (
+                                <span>{format(new Date(issue.createdAt), "MMM d, yyyy")}</span>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="shrink-0 invisible group-hover:visible"
+                            onClick={(e) => { e.stopPropagation(); deleteIssueMutation.mutate(issue.id); }}
+                            data-testid={`button-delete-issue-${issue.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <AlertTriangle className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No issues logged for this deal</p>
+                    <p className="text-sm mt-1">Track due diligence findings and concerns here</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
+
+            <Dialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>{editingIssue ? "Edit Issue" : "New Issue"}</DialogTitle>
+                  <DialogDescription>
+                    {editingIssue ? "Update the issue details below." : "Log a new deal-related issue."}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Title</Label>
+                    <Input
+                      value={issueForm.title}
+                      onChange={(e) => setIssueForm(f => ({ ...f, title: e.target.value }))}
+                      placeholder="Brief description of the issue"
+                      data-testid="input-issue-title"
+                    />
+                  </div>
+                  <div>
+                    <Label>Description</Label>
+                    <Textarea
+                      value={issueForm.description}
+                      onChange={(e) => setIssueForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Detailed description..."
+                      data-testid="input-issue-description"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Severity</Label>
+                      <Select value={issueForm.severity} onValueChange={(v) => setIssueForm(f => ({ ...f, severity: v }))}>
+                        <SelectTrigger data-testid="select-issue-severity">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="critical">Critical</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Category</Label>
+                      <Select value={issueForm.category} onValueChange={(v) => setIssueForm(f => ({ ...f, category: v }))}>
+                        <SelectTrigger data-testid="select-issue-category">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="legal">Legal</SelectItem>
+                          <SelectItem value="financial">Financial</SelectItem>
+                          <SelectItem value="regulatory">Regulatory</SelectItem>
+                          <SelectItem value="operational">Operational</SelectItem>
+                          <SelectItem value="environmental">Environmental</SelectItem>
+                          <SelectItem value="tax">Tax</SelectItem>
+                          <SelectItem value="ip">IP</SelectItem>
+                          <SelectItem value="hr">HR</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {editingIssue && (
+                    <>
+                      <div>
+                        <Label>Status</Label>
+                        <Select value={issueForm.status} onValueChange={(v) => setIssueForm(f => ({ ...f, status: v }))}>
+                          <SelectTrigger data-testid="select-issue-status">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="open">Open</SelectItem>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="resolved">Resolved</SelectItem>
+                            <SelectItem value="closed">Closed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {(issueForm.status === "resolved" || issueForm.status === "closed") && (
+                        <div>
+                          <Label>Resolution</Label>
+                          <Textarea
+                            value={issueForm.resolution}
+                            onChange={(e) => setIssueForm(f => ({ ...f, resolution: e.target.value }))}
+                            placeholder="How was this issue resolved?"
+                            data-testid="input-issue-resolution"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIssueDialogOpen(false)} data-testid="button-cancel-issue">
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSaveIssue}
+                    disabled={!issueForm.title.trim() || createIssueMutation.isPending || updateIssueMutation.isPending}
+                    data-testid="button-save-issue"
+                  >
+                    {(createIssueMutation.isPending || updateIssueMutation.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {editingIssue ? "Save Changes" : "Create Issue"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           <TabsContent value="research" className="mt-6">
