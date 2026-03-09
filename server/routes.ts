@@ -13453,6 +13453,133 @@ ${note.transcript.slice(0, 20000)}`
     }
   });
   
+  app.post("/api/deal-templates/generate", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "external_counsel"), async (req: any, res) => {
+    try {
+      const { description, transactionType } = req.body;
+      if (!description) {
+        return res.status(400).json({ message: "Description is required" });
+      }
+
+      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const anthropic = new Anthropic({
+        baseURL: "http://localhost:1106/modelfarm/anthropic",
+        apiKey: "placeholder",
+      });
+
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 8000,
+        messages: [{
+          role: "user",
+          content: `You are an expert deal advisory professional. Generate a comprehensive due diligence checklist template for the following deal/transaction type.
+
+User's description: "${description}"
+${transactionType && transactionType !== "other" ? `Transaction type: ${transactionType}` : ""}
+
+Return a JSON object with this exact structure:
+{
+  "name": "Template Name",
+  "description": "2-3 sentence description of what this template covers",
+  "transactionType": "${transactionType || "other"}",
+  "categories": [
+    {
+      "name": "Category Name",
+      "icon": "FileText",
+      "color": "blue",
+      "items": [
+        {
+          "name": "Checklist item name",
+          "isRequired": true,
+          "isCritical": false,
+          "keywords": ["keyword1", "keyword2"],
+          "description": "Brief guidance on this item"
+        }
+      ]
+    }
+  ]
+}
+
+Guidelines:
+- Generate 6-12 categories with 5-15 items each
+- Use realistic, industry-standard checklist items for the deal type
+- Mark truly essential items as isRequired: true
+- Mark deal-breaking items as isCritical: true (only a few per category)
+- Include relevant document keywords for each item (used for auto-matching uploaded documents)
+- Use these Lucide icon names for categories: FileText, Shield, Scale, Building, Users, DollarSign, Globe, BarChart3, Briefcase, Lock, Map, Gavel, Landmark, TrendingUp, AlertTriangle, ClipboardCheck
+- Use these colors: blue, green, red, purple, orange, cyan, pink, amber, indigo, teal
+- Return ONLY valid JSON, no markdown fences or explanation`,
+        }],
+      });
+
+      const text = response.content[0].type === "text" ? response.content[0].text : "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return res.status(500).json({ message: "Failed to parse AI response" });
+      }
+
+      let generated: any;
+      try {
+        generated = JSON.parse(jsonMatch[0]);
+      } catch {
+        return res.status(500).json({ message: "AI returned invalid JSON" });
+      }
+      if (!generated.name || !Array.isArray(generated.categories) || generated.categories.length === 0) {
+        return res.status(500).json({ message: "AI response missing required fields" });
+      }
+      const slug = generated.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+      const template = await storage.createDealTemplate({
+        name: generated.name,
+        slug: `${slug}-${Date.now()}`,
+        description: generated.description,
+        transactionType: generated.transactionType || transactionType || "other",
+        version: 1,
+        isActive: true,
+        isDefault: false,
+        isSystemTemplate: false,
+        usageCount: 0,
+        createdBy: req.user?.id,
+      });
+
+      let totalItems = 0;
+      for (let ci = 0; ci < generated.categories.length; ci++) {
+        const cat = generated.categories[ci];
+        const category = await storage.createTemplateCategory({
+          templateId: template.id,
+          name: cat.name,
+          icon: cat.icon || "FileText",
+          color: cat.color || "blue",
+          sortOrder: ci + 1,
+          isCollapsible: true,
+          defaultExpanded: true,
+        });
+
+        for (let ii = 0; ii < cat.items.length; ii++) {
+          const item = cat.items[ii];
+          await storage.createTemplateItem({
+            templateId: template.id,
+            categoryId: category.id,
+            name: item.name,
+            itemType: "document",
+            isRequired: item.isRequired || false,
+            isCritical: item.isCritical || false,
+            documentKeywords: JSON.stringify(item.keywords || []),
+            description: item.description || null,
+            sortOrder: totalItems + 1,
+            requiredDocumentCount: 1,
+          });
+          totalItems++;
+        }
+      }
+
+      const result = await storage.getDealTemplateWithDetails(template.id);
+      res.status(201).json(result);
+    } catch (error: any) {
+      console.error("[AI Template Gen] Error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/deal-templates/seed-pe-templates", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
     try {
       const { seedEquityDDTemplate, seedDebtDDTemplate } = await import("./scripts/seed-deal-templates");

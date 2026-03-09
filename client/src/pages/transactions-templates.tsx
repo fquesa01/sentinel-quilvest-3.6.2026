@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -12,7 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import { 
   FileStack,
   Search, 
@@ -24,6 +30,7 @@ import {
   TrendingUp,
   AlertCircle,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import type { DealTemplate } from "@shared/schema";
 
@@ -57,9 +64,38 @@ const typeIcons: Record<string, typeof Building> = {
 export default function TransactionsTemplates() {
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [showGenDialog, setShowGenDialog] = useState(false);
+  const [genDescription, setGenDescription] = useState("");
+  const [genType, setGenType] = useState("other");
+  const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const { data: templates, isLoading, isError, error, refetch } = useQuery<DealTemplate[]>({
     queryKey: ["/api/deal-templates"],
+  });
+
+  const generateTemplate = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/deal-templates/generate", {
+        description: genDescription,
+        transactionType: genType,
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deal-templates"] });
+      setShowGenDialog(false);
+      setGenDescription("");
+      setGenType("other");
+      toast({ title: "Template generated successfully" });
+      const templateId = data?.template?.id || data?.id;
+      if (templateId) {
+        navigate(`/transactions/deal-templates/${templateId}`);
+      }
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to generate template", description: err.message, variant: "destructive" });
+    },
   });
 
   const filteredTemplates = templates?.filter((template) => {
@@ -115,7 +151,7 @@ export default function TransactionsTemplates() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <FileStack className="h-8 w-8 text-primary" />
           <div>
@@ -123,6 +159,10 @@ export default function TransactionsTemplates() {
             <p className="text-muted-foreground">Pre-built transaction checklists for common deal types</p>
           </div>
         </div>
+        <Button onClick={() => setShowGenDialog(true)} data-testid="button-generate-template">
+          <Sparkles className="h-4 w-4 mr-2" />
+          Generate with AI
+        </Button>
       </div>
 
       <Card>
@@ -222,6 +262,69 @@ export default function TransactionsTemplates() {
           })}
         </div>
       )}
+
+      <Dialog open={showGenDialog} onOpenChange={setShowGenDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Generate AI Template
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Transaction Type</label>
+              <Select value={genType} onValueChange={setGenType}>
+                <SelectTrigger data-testid="select-gen-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {transactionTypes.filter(t => t.value !== "all").map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Describe your deal or template needs</label>
+              <Textarea
+                value={genDescription}
+                onChange={(e) => setGenDescription(e.target.value)}
+                placeholder="e.g., SaaS company acquisition with focus on IP due diligence, customer contracts, and technology stack assessment..."
+                className="min-h-[120px]"
+                data-testid="input-gen-description"
+              />
+              <p className="text-xs text-muted-foreground">
+                Be specific about the industry, deal structure, or areas of focus for a more tailored template.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenDialog(false)} disabled={generateTemplate.isPending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => generateTemplate.mutate()}
+              disabled={!genDescription.trim() || generateTemplate.isPending}
+              data-testid="button-submit-generate"
+            >
+              {generateTemplate.isPending ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Generate Template
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
