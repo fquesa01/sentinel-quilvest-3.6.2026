@@ -90,3 +90,10 @@ Comprehensive data models are used for entities such as Users, Communications, A
 - AI questions use Claude claude-sonnet-4-5 via the Anthropic proxy to answer questions about highlighted text
 - Frontend components: `memo-annotations.tsx` (SelectionToolbar, AnnotationInput, MemoAnnotationsPanel, useTextSelection hook)
 - Text selection triggers a floating toolbar; annotations display below the section content grouped by section
+
+### Section Version History
+- Every manual edit and AI regeneration saves a version record in the `memo_section_edits` table (previousContent, newContent, editType, editedBy, aiPrompt, createdAt)
+- Regeneration route now saves the previous content before calling the AI, then updates with new content using the inserted row ID
+- API routes: GET `/api/memos/:memoId/sections/:section/versions` (lists all versions with editor names via user join), POST `.../:section/restore` (accepts versionId, validates it belongs to the correct memo+section, creates a "restore" edit record, then updates the memo)
+- Frontend: "History" button on each section header opens a dialog with a version list (left panel, showing edit type badges + timestamps + editor names) and content preview (right panel) with a "Restore This Version" button
+- Restoring a version also resets any active editing state to prevent accidental overwrites

@@ -1,16 +1,17 @@
 import { useState, useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest, getQueryFn } from "@/lib/queryClient";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Edit2, Save, X, RefreshCw, Sparkles, Clock, FileText } from "lucide-react";
+import { Edit2, Save, X, RefreshCw, Sparkles, Clock, FileText, History, RotateCcw } from "lucide-react";
 import { format } from "date-fns";
 import {
   SelectionToolbar, AnnotationInput, MemoAnnotationsPanel, useTextSelection,
@@ -288,6 +289,28 @@ export function MemoSectionEditor({
   const contentRef = useRef<HTMLDivElement>(null);
   const { toolbarPosition, selectedText, selectionOffset, clearSelection } = useTextSelection(contentRef);
   const [annotationMode, setAnnotationMode] = useState<"comment" | "ai_question" | null>(null);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
+
+  const { data: versions = [] } = useQuery<any[]>({
+    queryKey: ["/api/memos", memoId, "sections", sectionKey, "versions"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: showVersionHistory,
+  });
+
+  const restoreVersion = useMutation({
+    mutationFn: async (versionId: string) => {
+      await apiRequest("POST", `/api/memos/${memoId}/sections/${sectionKey}/restore`, { versionId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/memos", memoId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/memos", memoId, "sections", sectionKey, "versions"] });
+      setShowVersionHistory(false);
+      setPreviewVersionId(null);
+      setIsEditing(false);
+      toast({ title: "Version restored" });
+    },
+  });
 
   const createAnnotation = useMutation({
     mutationFn: async (data: { type: "comment" | "ai_question"; content: string }) => {
@@ -361,6 +384,15 @@ export function MemoSectionEditor({
                 <Sparkles className="h-4 w-4 mr-2" />
               )}
               Regenerate
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowVersionHistory(true)}
+              data-testid="button-version-history"
+            >
+              <History className="h-4 w-4 mr-2" />
+              History
             </Button>
             {isEditing ? (
               <>
@@ -452,6 +484,91 @@ export function MemoSectionEditor({
               Regenerate
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showVersionHistory} onOpenChange={(open) => { setShowVersionHistory(open); if (!open) setPreviewVersionId(null); }}>
+        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Version History: {section.title}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-1 min-h-0 gap-4">
+            <div className="w-72 shrink-0">
+              <ScrollArea className="h-[55vh]">
+                <div className="space-y-1 pr-3">
+                  {versions.length === 0 && (
+                    <p className="text-sm text-muted-foreground py-4 text-center">No previous versions yet</p>
+                  )}
+                  {versions.map((v: any) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setPreviewVersionId(v.id === previewVersionId ? null : v.id)}
+                      className={`w-full text-left p-2.5 rounded-md text-sm transition-colors ${
+                        previewVersionId === v.id
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-muted text-foreground"
+                      }`}
+                      data-testid={`button-version-${v.id}`}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge
+                          variant={v.editType === "manual" ? "secondary" : v.editType === "regeneration" ? "default" : "outline"}
+                          className="text-[10px] px-1.5 py-0"
+                        >
+                          {v.editType === "manual" ? "Edit" : v.editType === "regeneration" ? "AI Regen" : "Restore"}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(v.createdAt), "MMM d, yyyy")}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {format(new Date(v.createdAt), "h:mm a")} by {v.editorName}
+                      </div>
+                      {v.aiPrompt && (
+                        <div className="text-[10px] text-muted-foreground mt-1 italic truncate">
+                          Prompt: {v.aiPrompt}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+            <div className="flex-1 min-w-0 border-l pl-4">
+              {previewVersionId ? (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-medium">Previous Content</h4>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (previewVersionId) {
+                          restoreVersion.mutate(previewVersionId);
+                        }
+                      }}
+                      disabled={restoreVersion.isPending}
+                      data-testid="button-restore-version"
+                    >
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                      Restore This Version
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-[50vh]">
+                    <div className="prose prose-sm max-w-none dark:prose-invert text-xs leading-relaxed whitespace-pre-wrap">
+                      {versions.find((v: any) => v.id === previewVersionId)?.previousContent || "No previous content"}
+                    </div>
+                  </ScrollArea>
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  Select a version to preview its content
+                </div>
+              )}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>

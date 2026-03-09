@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { db } from "../db";
 import {
   investorMemos, memoGenerationRuns, extractedFinancials,
-  financialModels, memoSectionEdits, memoChatMessages, deals,
+  financialModels, memoSectionEdits, memoChatMessages, deals, users,
 } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { generateInvestorMemo, regenerateSection, chatAboutMemo } from "../services/investor-memo-service";
@@ -147,12 +147,122 @@ router.patch("/api/memos/:memoId/sections/:section", async (req: Request, res: R
   }
 });
 
+router.get("/api/memos/:memoId/sections/:section/versions", async (req: Request, res: Response) => {
+  try {
+    const { memoId, section } = req.params;
+
+    const versions = await db.select({
+      id: memoSectionEdits.id,
+      previousContent: memoSectionEdits.previousContent,
+      newContent: memoSectionEdits.newContent,
+      editType: memoSectionEdits.editType,
+      aiPrompt: memoSectionEdits.aiPrompt,
+      createdAt: memoSectionEdits.createdAt,
+      editorFirstName: users.firstName,
+      editorLastName: users.lastName,
+    })
+      .from(memoSectionEdits)
+      .leftJoin(users, eq(memoSectionEdits.editedBy, users.id))
+      .where(and(
+        eq(memoSectionEdits.memoId, memoId),
+        eq(memoSectionEdits.section, section),
+      ))
+      .orderBy(desc(memoSectionEdits.createdAt));
+
+    const result = versions.map((v) => ({
+      id: v.id,
+      previousContent: v.previousContent,
+      newContent: v.newContent,
+      editType: v.editType,
+      aiPrompt: v.aiPrompt,
+      createdAt: v.createdAt,
+      editorName: `${v.editorFirstName || ""} ${v.editorLastName || ""}`.trim() || "Unknown",
+    }));
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/memos/:memoId/sections/:section/restore", async (req: Request, res: Response) => {
+  try {
+    const { memoId, section } = req.params;
+    const { versionId } = req.body;
+    const userId = getUserId(req);
+
+    if (!versionId) return res.status(400).json({ error: "versionId is required" });
+
+    const [version] = await db.select().from(memoSectionEdits).where(and(
+      eq(memoSectionEdits.id, versionId),
+      eq(memoSectionEdits.memoId, memoId),
+      eq(memoSectionEdits.section, section),
+    ));
+    if (!version) return res.status(404).json({ error: "Version not found" });
+
+    const restoreContent = version.previousContent || "";
+
+    const [memo] = await db.select().from(investorMemos).where(eq(investorMemos.id, memoId));
+    if (!memo) return res.status(404).json({ error: "Memo not found" });
+
+    const sections = (memo.sections || {}) as Record<string, any>;
+    const currentContent = sections[section]?.content || "";
+
+    await db.insert(memoSectionEdits).values({
+      memoId,
+      section,
+      previousContent: currentContent,
+      newContent: restoreContent,
+      editedBy: userId,
+      editType: "restore",
+    });
+
+    sections[section] = {
+      ...sections[section],
+      content: restoreContent,
+      isEdited: true,
+      editedAt: new Date().toISOString(),
+      editedBy: userId,
+    };
+
+    await db.update(investorMemos).set({
+      sections: sections as any,
+      updatedAt: new Date(),
+    }).where(eq(investorMemos.id, memoId));
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post("/api/memos/:memoId/regenerate/:section", async (req: Request, res: Response) => {
   try {
     const { memoId, section } = req.params;
     const { prompt } = req.body;
+    const userId = getUserId(req);
+
+    const [memo] = await db.select().from(investorMemos).where(eq(investorMemos.id, memoId));
+    const previousContent = memo
+      ? ((memo.sections || {}) as Record<string, any>)[section]?.content || ""
+      : "";
+
+    const [insertedEdit] = await db.insert(memoSectionEdits).values({
+      memoId,
+      section,
+      previousContent,
+      newContent: "",
+      editedBy: userId,
+      editType: "regeneration",
+      aiPrompt: prompt || null,
+    }).returning({ id: memoSectionEdits.id });
 
     const newContent = await regenerateSection(memoId, section, prompt);
+
+    await db.update(memoSectionEdits)
+      .set({ newContent })
+      .where(eq(memoSectionEdits.id, insertedEdit.id));
+
     res.json({ content: newContent });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
