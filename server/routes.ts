@@ -13390,6 +13390,17 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  app.post("/api/deals/:dealId/milestones/auto-populate", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const { autoPopulateMilestones } = await import("./services/deal-intelligence-service");
+      const result = await autoPopulateMilestones(req.params.dealId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error auto-populating milestones:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   app.post("/api/deals/:dealId/populate-overview", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {
       const { populateDealOverview } = await import("./services/deal-intelligence-service");

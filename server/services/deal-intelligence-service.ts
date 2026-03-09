@@ -4,7 +4,7 @@ import {
   dataRoomDocuments, dataRooms, deals, dealTerms, dealTemplates, 
   dealChecklists, dealChecklistItems, templateItems, 
   checklistItemDocuments, templateCategories,
-  investorMemos,
+  investorMemos, dealMilestones,
 } from "@shared/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 
@@ -687,4 +687,169 @@ ${combinedContext.slice(0, 18000)}`
     fieldsUpdated,
     totalUpdated: fieldsUpdated.length,
   };
+}
+
+export async function autoPopulateMilestones(dealId: string): Promise<{
+  milestonesAdded: number;
+  milestonesList: Array<{ title: string; milestoneType: string; targetDate?: string }>;
+}> {
+  const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
+  if (!deal) throw new Error("Deal not found");
+
+  const existingMilestones = await db.select({ title: dealMilestones.title })
+    .from(dealMilestones)
+    .where(eq(dealMilestones.dealId, dealId));
+  const existingTitles = new Set(existingMilestones.map(m => m.title.toLowerCase().trim()));
+
+  const rooms = await db.select({ id: dataRooms.id })
+    .from(dataRooms)
+    .where(eq(dataRooms.dealId, dealId));
+
+  let docText = "";
+  if (rooms.length > 0) {
+    const roomIds = rooms.map(r => r.id);
+    const docs = await db.select()
+      .from(dataRoomDocuments)
+      .where(inArray(dataRoomDocuments.dataRoomId, roomIds));
+    const docsWithText = docs.filter(d => d.extractedText && d.extractedText.length > 100);
+    if (docsWithText.length > 0) {
+      const perDoc = Math.min(5000, Math.floor(14000 / docsWithText.length));
+      docText = docsWithText
+        .map(d => `--- ${d.fileName} ---\n${(d.extractedText || "").slice(0, perDoc)}`)
+        .join("\n\n");
+    }
+  }
+
+  const memos = await db.select().from(investorMemos).where(eq(investorMemos.dealId, dealId));
+  let memoContext = "";
+  if (memos.length > 0) {
+    const memo = memos[0];
+    const parts = [
+      memo.executiveSummary ? `Executive Summary: ${(memo.executiveSummary as string).slice(0, 1500)}` : "",
+      memo.companyOverview ? `Company Overview: ${(memo.companyOverview as string).slice(0, 800)}` : "",
+      memo.investmentThesis ? `Investment Thesis: ${(memo.investmentThesis as string).slice(0, 800)}` : "",
+    ].filter(Boolean);
+    memoContext = parts.join("\n\n");
+  }
+
+  const terms = await db.select().from(dealTerms).where(eq(dealTerms.dealId, dealId)).limit(1);
+  let termsContext = "";
+  if (terms.length > 0) {
+    const t = terms[0];
+    const termParts = [
+      t.purchasePrice ? `Purchase Price: ${t.purchasePrice}` : "",
+      t.closingDate ? `Closing Date: ${t.closingDate}` : "",
+      t.effectiveDate ? `Effective Date: ${t.effectiveDate}` : "",
+      t.dueDiligenceDeadline ? `Due Diligence Deadline: ${(t as any).dueDiligenceDeadline}` : "",
+      t.closingConditions ? `Closing Conditions: ${t.closingConditions}` : "",
+      t.representationsWarranties ? `Representations & Warranties: ${(t.representationsWarranties as string).slice(0, 500)}` : "",
+    ].filter(Boolean);
+    termsContext = termParts.join("\n");
+  }
+
+  const combinedContext = [docText, memoContext, termsContext].filter(Boolean).join("\n\n---\n\n");
+
+  if (combinedContext.length < 100) {
+    return { milestonesAdded: 0, milestonesList: [] };
+  }
+
+  const validTypes = ["signing", "closing", "regulatory", "financing", "due_diligence", "custom"];
+
+  const existingListStr = existingTitles.size > 0
+    ? `\n\nExisting milestones (DO NOT duplicate these): ${Array.from(existingTitles).join(", ")}`
+    : "";
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 2000,
+    messages: [{
+      role: "user",
+      content: `Analyze these transaction documents and reports for the deal "${deal.title}" (type: ${deal.dealType}) and extract key milestones with their dates.
+
+Return ONLY a JSON array of milestone objects. Each milestone must have:
+- "title": concise milestone name (e.g., "LOI Execution", "Due Diligence Completion", "Regulatory Filing", "Closing")
+- "milestoneType": one of ${JSON.stringify(validTypes)}
+- "description": brief 1-sentence description
+- "targetDate": ISO date string (YYYY-MM-DD) if a date is mentioned or can be reasonably inferred, otherwise null
+- "status": "pending" or "completed" based on context
+
+Extract milestones from:
+- Key transaction dates (signing, closing, LOI, regulatory deadlines)
+- Due diligence phases and deadlines
+- Financing milestones (commitment letters, funding dates)
+- Regulatory approvals needed
+- Conditions precedent deadlines
+- Any action items with deadlines from documents
+
+Only include milestones you can identify from the documents. Do NOT invent milestones or dates.${existingListStr}
+
+Return format: [{"title": "...", "milestoneType": "...", "description": "...", "targetDate": "YYYY-MM-DD or null", "status": "pending"}]
+
+Documents and context:
+${combinedContext.slice(0, 18000)}`
+    }],
+  });
+
+  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const jsonMatch = text.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    console.log("[DealIntel] No milestones JSON found in AI response");
+    return { milestonesAdded: 0, milestonesList: [] };
+  }
+
+  let parsed: any[];
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    console.error("[DealIntel] Failed to parse milestones JSON");
+    return { milestonesAdded: 0, milestonesList: [] };
+  }
+
+  if (!Array.isArray(parsed)) {
+    return { milestonesAdded: 0, milestonesList: [] };
+  }
+
+  const milestonesList: Array<{ title: string; milestoneType: string; targetDate?: string }> = [];
+  let milestonesAdded = 0;
+
+  for (const item of parsed) {
+    if (!item.title || typeof item.title !== "string") continue;
+
+    const normalizedTitle = item.title.toLowerCase().trim();
+    if (existingTitles.has(normalizedTitle)) continue;
+
+    const milestoneType = validTypes.includes(item.milestoneType) ? item.milestoneType : "custom";
+    const status = ["pending", "in_progress", "completed", "delayed", "cancelled"].includes(item.status)
+      ? item.status : "pending";
+
+    let targetDate: Date | null = null;
+    if (item.targetDate) {
+      const d = new Date(item.targetDate);
+      if (!Number.isNaN(d.getTime())) {
+        targetDate = d;
+      }
+    }
+
+    await db.insert(dealMilestones).values({
+      dealId,
+      title: item.title,
+      description: item.description || null,
+      milestoneType,
+      status,
+      targetDate,
+      ...(status === "completed" ? { completedAt: new Date(), actualDate: targetDate || new Date() } : {}),
+    });
+
+    existingTitles.add(normalizedTitle);
+    milestonesAdded++;
+    milestonesList.push({
+      title: item.title,
+      milestoneType,
+      targetDate: item.targetDate || undefined,
+    });
+  }
+
+  console.log(`[DealIntel] Auto-populated ${milestonesAdded} milestones for deal "${deal.title}"`);
+
+  return { milestonesAdded, milestonesList };
 }

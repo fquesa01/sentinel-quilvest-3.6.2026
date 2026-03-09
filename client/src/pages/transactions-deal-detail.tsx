@@ -411,6 +411,26 @@ export default function TransactionsDealDetail() {
     },
   });
 
+  const autoPopulateMilestonesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${id}/milestones/auto-populate`);
+      return res.json();
+    },
+    onSuccess: async (data: any) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "milestones"] });
+      const count = data.milestonesAdded || 0;
+      toast({
+        title: "Milestones Populated",
+        description: count > 0
+          ? `Added ${count} milestone${count > 1 ? "s" : ""} from documents and reports.`
+          : "No new milestones found in documents.",
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Auto-Populate Failed", description: error.message || "Could not extract milestones.", variant: "destructive" });
+    },
+  });
+
   const updateMilestoneMutation = useMutation({
     mutationFn: async ({ milestoneId, data }: { milestoneId: string; data: any }) => {
       const res = await apiRequest("PATCH", `/api/deals/${id}/milestones/${milestoneId}`, data);
@@ -1288,12 +1308,28 @@ export default function TransactionsDealDetail() {
           <TabsContent value="milestones" className="mt-6">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <CardTitle className="text-lg">Deal Milestones</CardTitle>
-                  <Button size="sm" onClick={openAddMilestoneDialog} data-testid="button-add-milestone">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Milestone
-                  </Button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => autoPopulateMilestonesMutation.mutate()}
+                      disabled={autoPopulateMilestonesMutation.isPending}
+                      data-testid="button-auto-populate-milestones"
+                    >
+                      {autoPopulateMilestonesMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-2" />
+                      )}
+                      {autoPopulateMilestonesMutation.isPending ? "Extracting..." : "Auto-Populate"}
+                    </Button>
+                    <Button size="sm" onClick={openAddMilestoneDialog} data-testid="button-add-milestone">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Milestone
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
