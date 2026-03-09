@@ -37,7 +37,7 @@ import BusinessIntelligence from "@/pages/business-intelligence";
 import DocumentIngestion from "@/pages/document-ingestion";
 import ReportsProductions from "@/pages/reports-productions";
 import IssueHeatmapLanding from "@/pages/issue-heatmap-landing";
-import MyQueue from "@/pages/my-queue";
+
 import TransactionsDashboard from "@/pages/transactions-dashboard";
 import TransactionsDeals from "@/pages/transactions-deals";
 import TransactionsDealDetail from "@/pages/transactions-deal-detail";
@@ -122,7 +122,7 @@ function AuthenticatedApp() {
               <Route path="/communication-analytics" component={CommunicationAnalytics} />
               <Route path="/alerts" component={Alerts} />
               <Route path="/issue-heatmap" component={IssueHeatmapLanding} />
-              <Route path="/my-queue" component={MyQueue} />
+
               <Route path="/ambient-intelligence" component={AmbientIntelligence} />
               <Route path="/ambient-intelligence/:sessionId" component={AmbientSession} />
               <Route path="/privileged-research" component={PrivilegedResearch} />

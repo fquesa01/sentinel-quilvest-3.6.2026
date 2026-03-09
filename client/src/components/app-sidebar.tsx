@@ -30,7 +30,7 @@ import {
   Shield,
   Users,
   GraduationCap,
-  Scale,
+
   Radio,
   TrendingUp,
   FileSearch,
@@ -386,40 +386,6 @@ export function AppSidebar() {
                   >
                     <TrendingUp className="h-4 w-4 flex-shrink-0" />
                     <span className="group-data-[collapsible=icon]:hidden">Deal Pipeline</span>
-                  </Link>
-                )}
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                {isCollapsed ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Link
-                        href="/my-queue"
-                        className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover-elevate active-elevate-2 ${
-                          location === "/my-queue" || location.startsWith("/my-queue?")
-                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                            : "text-sidebar-foreground"
-                        }`}
-                        data-testid="link-nav-my-queue"
-                      >
-                        <Scale className="h-4 w-4 flex-shrink-0" />
-                        <span className="group-data-[collapsible=icon]:hidden">My Queue</span>
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>My Queue</TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <Link
-                    href="/my-queue"
-                    className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors hover-elevate active-elevate-2 ${
-                      location === "/my-queue" || location.startsWith("/my-queue?")
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground"
-                    }`}
-                    data-testid="link-nav-my-queue"
-                  >
-                    <Scale className="h-4 w-4 flex-shrink-0" />
-                    <span className="group-data-[collapsible=icon]:hidden">My Queue</span>
                   </Link>
                 )}
               </SidebarMenuItem>

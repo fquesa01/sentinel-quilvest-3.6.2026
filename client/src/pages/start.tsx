@@ -152,13 +152,13 @@ export default function StartPage() {
       if (result.mode === "command" && result.intent) {
         await executeCommand(result.intent, result.parameters || {});
       } else if (result.mode === "qa") {
-        navigate("/my-queue");
+        navigate("/pe/deals");
         sessionStorage.setItem("ava_seed_message", JSON.stringify({
           userMessage: input,
           assistantMessage: result.assistantMessage,
         }));
       } else {
-        navigate("/my-queue");
+        navigate("/pe/deals");
       }
     } catch (error) {
       console.error("Error processing command:", error);

@@ -272,9 +272,9 @@ export async function executeAvaCommand(
     }
 
     case "navigate_to_my_queue":
-      navigate("/my-queue");
+      navigate("/pe/deals");
       closeDrawer?.();
-      return { navigateTo: "/my-queue" };
+      return { navigateTo: "/pe/deals" };
 
     case "navigate_to_interviews": {
       const caseId = parameters.caseId || context?.currentCaseId;

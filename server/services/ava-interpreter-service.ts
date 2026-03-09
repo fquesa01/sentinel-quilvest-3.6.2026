@@ -283,7 +283,6 @@ const NAVIGATION_INTENTS = [
   "navigate_to_case_email_filter",
   "navigate_to_case_recordings",
   "navigate_to_statement",
-  "navigate_to_my_queue",
   "navigate_to_interviews",
   "navigate_to_chat_conversations",
   "navigate_to_document_sets",
@@ -378,7 +377,7 @@ These are questions about SPECIFIC CASE DATA that require looking up information
 
 NAVIGATION COMMANDS (respond with mode: "command"):
 - "Take me to [case name]" / "Open the [case name] case" / "Go to [case name]" → navigate_to_case
-- "Go to my queue" / "Show my queue" → navigate_to_my_queue
+
 - "Open interviews" / "Show interviews" → navigate_to_interviews
 - "Show me emails between [person] and [person]" → navigate_to_case_email_filter
 - "Go to document review" → navigate_to_case_document_review
@@ -609,13 +608,6 @@ User: "Go to transactions"
   "assistantMessage": "Taking you to the transactions list."
 }
 
-User: "Show my queue"
-{
-  "mode": "command",
-  "intent": "navigate_to_my_queue",
-  "parameters": {},
-  "assistantMessage": "Taking you to your queue."
-}
 
 User: "Schedule an interview with John Doe tomorrow at 3pm"
 {
