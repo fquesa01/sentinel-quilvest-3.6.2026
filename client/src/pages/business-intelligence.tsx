@@ -17,11 +17,13 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, FileText, Download, Sparkles, BarChart3, Briefcase, Clock, User, Trash2, History, FileDown, Brain, AlertTriangle, Globe } from "lucide-react";
 
-interface Case {
+interface Deal {
   id: string;
-  caseNumber: string;
+  dealNumber: string;
   title: string;
   status: string;
+  dealType: string;
+  caseId?: string | null;
 }
 
 interface SavedReport {
@@ -37,38 +39,38 @@ interface SavedReport {
 }
 
 export default function BusinessIntelligence() {
-  const [selectedCaseId, setSelectedCaseId] = useState<string>("");
+  const [selectedDealId, setSelectedDealId] = useState<string>("");
   const [companyName, setCompanyName] = useState("");
   const [enableAIKnowledgeResearch, setEnableAIKnowledgeResearch] = useState(true);
+  const [useDataLake, setUseDataLake] = useState(false);
   const { toast } = useToast();
 
-  // Fetch cases list
-  const { data: cases = [], isLoading: casesLoading } = useQuery<Case[]>({
-    queryKey: ["/api/cases"],
+  const { data: deals = [], isLoading: dealsLoading } = useQuery<Deal[]>({
+    queryKey: ["/api/deals"],
   });
 
-  // Fetch saved reports for selected case
+  const linkedCaseId = deals.find(d => d.id === selectedDealId)?.caseId;
+
   const { data: savedReports = [], isLoading: reportsLoading, refetch: refetchReports } = useQuery<SavedReport[]>({
-    queryKey: ["/api/business-reports", selectedCaseId],
-    enabled: !!selectedCaseId,
+    queryKey: ["/api/business-reports", linkedCaseId || selectedDealId],
+    enabled: !!selectedDealId && !!(linkedCaseId || selectedDealId),
   });
 
-  // Auto-populate company name when case is selected
   useEffect(() => {
-    if (selectedCaseId) {
-      const selectedCase = cases.find(c => c.id === selectedCaseId);
-      if (selectedCase) {
-        setCompanyName(selectedCase.title);
+    if (selectedDealId) {
+      const selectedDeal = deals.find(d => d.id === selectedDealId);
+      if (selectedDeal) {
+        setCompanyName(selectedDeal.title);
       }
     }
-  }, [selectedCaseId, cases]);
+  }, [selectedDealId, deals]);
 
   const generateSummary = useMutation({
-    mutationFn: async ({ name, caseId, enableWebResearch }: { name: string; caseId: string; enableWebResearch: boolean }) => {
+    mutationFn: async ({ name, dealId, linkedCaseId, enableWebResearch }: { name: string; dealId: string; linkedCaseId?: string | null; enableWebResearch: boolean }) => {
       const response = await fetch("/api/business-summary/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company_name: name, caseId, enableWebResearch }),
+        body: JSON.stringify({ company_name: name, caseId: linkedCaseId || dealId, enableWebResearch }),
       });
 
       if (!response.ok) {
@@ -100,7 +102,7 @@ export default function BusinessIntelligence() {
         description: "Business summary PDF generated and saved successfully",
       });
       // Refresh the saved reports list
-      queryClient.invalidateQueries({ queryKey: ["/api/business-reports", selectedCaseId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/business-reports", linkedCaseId || selectedDealId] });
     },
     onError: (error: Error) => {
       toast({
@@ -114,7 +116,8 @@ export default function BusinessIntelligence() {
   // Download saved report
   const downloadReport = async (reportId: string, fileName: string) => {
     try {
-      const response = await fetch(`/api/business-reports/${selectedCaseId}/${reportId}/download`);
+      const reportCaseId = linkedCaseId || selectedDealId;
+      const response = await fetch(`/api/business-reports/${reportCaseId}/${reportId}/download`);
       if (!response.ok) {
         throw new Error("Failed to download report");
       }
@@ -139,7 +142,8 @@ export default function BusinessIntelligence() {
   // Delete report mutation
   const deleteReport = useMutation({
     mutationFn: async (reportId: string) => {
-      const response = await fetch(`/api/business-reports/${selectedCaseId}/${reportId}`, {
+      const reportCaseId = linkedCaseId || selectedDealId;
+      const response = await fetch(`/api/business-reports/${reportCaseId}/${reportId}`, {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -153,7 +157,7 @@ export default function BusinessIntelligence() {
         title: "Report Deleted",
         description: "The report has been removed from the database",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/business-reports", selectedCaseId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/business-reports", linkedCaseId || selectedDealId] });
     },
     onError: (error: Error) => {
       toast({
@@ -178,10 +182,10 @@ export default function BusinessIntelligence() {
   };
 
   const handleGenerate = () => {
-    if (!selectedCaseId) {
+    if (!selectedDealId) {
       toast({
         title: "Validation Error",
-        description: "Please select a case to analyze",
+        description: "Please select a transaction to analyze",
         variant: "destructive",
       });
       return;
@@ -194,11 +198,10 @@ export default function BusinessIntelligence() {
       });
       return;
     }
-    generateSummary.mutate({ name: companyName, caseId: selectedCaseId, enableWebResearch: enableAIKnowledgeResearch });
+    generateSummary.mutate({ name: companyName, dealId: selectedDealId, linkedCaseId, enableWebResearch: enableAIKnowledgeResearch });
   };
 
-  // Get selected case info for display
-  const selectedCase = cases.find(c => c.id === selectedCaseId);
+  const selectedDeal = deals.find(d => d.id === selectedDealId);
 
   return (
     <div className="flex flex-col h-full overflow-auto">
@@ -222,39 +225,39 @@ export default function BusinessIntelligence() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="case-select">
+                <Label htmlFor="deal-select">
                   <span className="flex items-center gap-2">
                     <Briefcase className="h-4 w-4" />
-                    Select Case to Analyze
+                    Select Transaction to Analyze
                   </span>
                 </Label>
                 <Select
-                  value={selectedCaseId}
-                  onValueChange={setSelectedCaseId}
-                  disabled={generateSummary.isPending || casesLoading}
+                  value={selectedDealId}
+                  onValueChange={setSelectedDealId}
+                  disabled={generateSummary.isPending || dealsLoading}
                 >
                   <SelectTrigger 
-                    id="case-select"
-                    data-testid="select-case"
+                    id="deal-select"
+                    data-testid="select-deal"
                     className="w-full"
                   >
-                    <SelectValue placeholder={casesLoading ? "Loading cases..." : "Select a case..."} />
+                    <SelectValue placeholder={dealsLoading ? "Loading transactions..." : "Select a transaction..."} />
                   </SelectTrigger>
                   <SelectContent>
-                    {cases.map((c) => (
-                      <SelectItem key={c.id} value={c.id} data-testid={`case-option-${c.id}`}>
+                    {deals.map((d) => (
+                      <SelectItem key={d.id} value={d.id} data-testid={`deal-option-${d.id}`}>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{c.caseNumber}</span>
+                          <span className="font-medium">{d.dealNumber}</span>
                           <span className="text-muted-foreground">-</span>
-                          <span>{c.title}</span>
+                          <span>{d.title}</span>
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedCase && (
+                {selectedDeal && (
                   <p className="text-xs text-muted-foreground">
-                    Status: {selectedCase.status}
+                    Status: {selectedDeal.status} · Type: {selectedDeal.dealType.replace(/_/g, ' ')}
                   </p>
                 )}
               </div>
@@ -267,10 +270,10 @@ export default function BusinessIntelligence() {
                   placeholder="Enter company or client name"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  disabled={generateSummary.isPending || !selectedCaseId}
+                  disabled={generateSummary.isPending || !selectedDealId}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Auto-populated from case title. You can customize if needed.
+                  Auto-populated from transaction title. You can customize if needed.
                 </p>
               </div>
 
@@ -292,6 +295,27 @@ export default function BusinessIntelligence() {
                   data-testid="toggle-ai-research"
                   checked={enableAIKnowledgeResearch}
                   onCheckedChange={setEnableAIKnowledgeResearch}
+                  disabled={generateSummary.isPending}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-violet-50/50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                    <Label htmlFor="data-lake-toggle" className="font-medium cursor-pointer">
+                      My Data Lake
+                    </Label>
+                  </div>
+                  <p className="text-xs text-violet-800 dark:text-violet-200 max-w-md">
+                    Cross-reference analysis with your uploaded documents in My Data Lake for deeper insights.
+                  </p>
+                </div>
+                <Switch
+                  id="data-lake-toggle"
+                  data-testid="toggle-data-lake"
+                  checked={useDataLake}
+                  onCheckedChange={setUseDataLake}
                   disabled={generateSummary.isPending}
                 />
               </div>
@@ -382,27 +406,30 @@ export default function BusinessIntelligence() {
               <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-4 rounded-lg">
                 <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
                   <BarChart3 className="h-4 w-4" />
-                  Data Sources {selectedCase && <span className="font-normal text-muted-foreground">for {selectedCase.caseNumber}</span>}
+                  Data Sources {selectedDeal && <span className="font-normal text-muted-foreground">for {selectedDeal.dealNumber}</span>}
                 </h4>
                 <ul className="text-sm space-y-1 text-muted-foreground">
-                  {selectedCase ? (
+                  {selectedDeal ? (
                     <>
-                      <li>• Communications from case: <strong>{selectedCase.title}</strong></li>
-                      <li>• Evidence files and attachments linked to case</li>
+                      <li>• Transaction data: <strong>{selectedDeal.title}</strong></li>
+                      <li>• Documents and attachments linked to transaction</li>
                       <li>• AI-powered analysis with evidence citations</li>
                       <li>• Confidence scoring for all assertions</li>
-                      <li className="text-sky-600 dark:text-sky-300">• Entity extraction: employees, third parties, vendors with communication counts</li>
+                      <li className="text-sky-600 dark:text-sky-300">• Entity extraction: counterparties, advisors, vendors</li>
+                      {useDataLake && (
+                        <li className="text-violet-600 dark:text-violet-300">• My Data Lake: cross-referencing your uploaded documents</li>
+                      )}
                       {enableAIKnowledgeResearch && (
                         <li className="text-emerald-600 dark:text-emerald-300">• Live web search: media coverage, litigation history, regulatory actions</li>
                       )}
                     </>
                   ) : (
                     <>
-                      <li>• Select a case to analyze its communications</li>
-                      <li>• Evidence files and attachments will be included</li>
+                      <li>• Select a transaction to analyze</li>
+                      <li>• Documents and attachments will be included</li>
                       <li>• AI-powered analysis with evidence citations</li>
                       <li>• Confidence scoring for all assertions</li>
-                      <li className="text-sky-600 dark:text-sky-300">• Entity extraction: employees, third parties, vendors with communication counts</li>
+                      <li className="text-sky-600 dark:text-sky-300">• Entity extraction: counterparties, advisors, vendors</li>
                       {enableAIKnowledgeResearch && (
                         <li className="text-emerald-600 dark:text-emerald-300">• Live web search: media coverage, litigation history, regulatory actions</li>
                       )}
@@ -413,7 +440,7 @@ export default function BusinessIntelligence() {
 
               <Button 
                 onClick={handleGenerate}
-                disabled={generateSummary.isPending || !selectedCaseId}
+                disabled={generateSummary.isPending || !selectedDealId}
                 size="lg"
                 className="w-full"
                 data-testid="button-generate-summary"
@@ -434,8 +461,8 @@ export default function BusinessIntelligence() {
               {generateSummary.isPending && (
                 <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-4 rounded-lg">
                   <p className="text-sm text-amber-900 dark:text-amber-100">
-                    <strong>Please wait:</strong> The AI is comprehensively analyzing ALL communications in your case{enableAIKnowledgeResearch ? ', researching media coverage and litigation history,' : ''}, 
-                    and generating a thorough {enableAIKnowledgeResearch ? '14' : '12'}-section business intelligence report. For large cases with thousands of documents, this can take 30 minutes or more. Quality over speed.
+                    <strong>Please wait:</strong> The AI is comprehensively analyzing ALL data in your transaction{enableAIKnowledgeResearch ? ', researching media coverage and litigation history,' : ''}, 
+                    and generating a thorough {enableAIKnowledgeResearch ? '14' : '12'}-section business intelligence report. For large transactions with thousands of documents, this can take 30 minutes or more. Quality over speed.
                   </p>
                 </div>
               )}
@@ -443,7 +470,7 @@ export default function BusinessIntelligence() {
           </Card>
 
           {/* Saved Reports Section */}
-          {selectedCaseId && (
+          {selectedDealId && (
             <Card data-testid="card-saved-reports">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -454,7 +481,7 @@ export default function BusinessIntelligence() {
                   )}
                 </CardTitle>
                 <CardDescription>
-                  Previously generated business intelligence reports for this case
+                  Previously generated business intelligence reports for this transaction
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -465,7 +492,7 @@ export default function BusinessIntelligence() {
                 ) : savedReports.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                    <p>No saved reports for this case yet</p>
+                    <p>No saved reports for this transaction yet</p>
                     <p className="text-sm">Generate a report above to get started</p>
                   </div>
                 ) : (

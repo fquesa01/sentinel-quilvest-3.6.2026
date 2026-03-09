@@ -320,7 +320,7 @@ export function AISuggestionsPanel({
                   <SuggestionCard
                     key={suggestion.id}
                     suggestion={suggestion}
-                    dealId={caseId}
+                    dealId={dealId}
                     onViewDocument={onViewDocument}
                     onDismiss={() => onDismissSuggestion(suggestion.id)}
                     onDismissDocument={(docId) => onDismissDocument(suggestion.id, docId)}
