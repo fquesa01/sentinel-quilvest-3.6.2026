@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "../db";
-import { extractedFinancials } from "@shared/schema";
+import { extractedFinancials, investorMemos } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import type { ClassifiedDocument } from "./document-classification-service";
 
 const anthropic = new Anthropic({
@@ -309,6 +310,14 @@ export async function persistExtraction(
   dealId: string,
   extraction: ExtractionResult
 ): Promise<void> {
+  const [memoExists] = await db.select({ id: investorMemos.id })
+    .from(investorMemos)
+    .where(eq(investorMemos.id, memoId));
+  if (!memoExists) {
+    console.warn(`[FinExtract] Memo ${memoId} no longer exists, skipping extraction persist`);
+    return;
+  }
+
   const truncYear = (y?: string) => y ? y.substring(0, 50) : undefined;
 
   for (const stmt of extraction.incomeStatements) {

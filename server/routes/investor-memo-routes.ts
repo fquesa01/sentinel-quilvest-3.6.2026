@@ -399,11 +399,19 @@ router.post("/api/deals/:dealId/memos/auto-generate", async (req: Request, res: 
     const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
     if (!deal) return res.status(404).json({ error: "Deal not found" });
 
-    const existingGenerating = await db.select({ id: investorMemos.id })
+    const existingGenerating = await db.select({ id: investorMemos.id, updatedAt: investorMemos.updatedAt })
       .from(investorMemos)
       .where(and(eq(investorMemos.dealId, dealId), eq(investorMemos.status, "generating")));
+    
+    const STUCK_THRESHOLD_MS = 10 * 60 * 1000;
     for (const stuck of existingGenerating) {
-      console.log(`[MemoRoutes] Cleaning up stuck memo ${stuck.id}`);
+      const age = Date.now() - (stuck.updatedAt?.getTime() || 0);
+      if (age < STUCK_THRESHOLD_MS) {
+        console.log(`[MemoRoutes] Memo ${stuck.id} is still generating (${Math.round(age / 1000)}s old), skipping cleanup`);
+        return res.status(409).json({ error: "A memo is currently being generated for this deal. Please wait for it to complete." });
+      }
+      console.log(`[MemoRoutes] Cleaning up stuck memo ${stuck.id} (${Math.round(age / 1000)}s old)`);
+      await db.delete(extractedFinancials).where(eq(extractedFinancials.memoId, stuck.id));
       await db.delete(memoGenerationRuns).where(eq(memoGenerationRuns.memoId, stuck.id));
       await db.delete(investorMemos).where(eq(investorMemos.id, stuck.id));
     }
