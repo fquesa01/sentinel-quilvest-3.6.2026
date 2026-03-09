@@ -48,6 +48,10 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
 (async () => {
   const server = await registerRoutes(app);
 
