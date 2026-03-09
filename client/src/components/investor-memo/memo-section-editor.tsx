@@ -18,8 +18,9 @@ function formatInlineText(text: string): (string | JSX.Element)[] {
   while (remaining.length > 0) {
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
     const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
+    const bareUrlMatch = remaining.match(/(?<!\()(https?:\/\/[^\s,;)"'<>]+)/);
 
-    let firstMatch: "bold" | "link" | null = null;
+    let firstMatch: "bold" | "link" | "bareUrl" | null = null;
     let firstIndex = Infinity;
 
     if (boldMatch && boldMatch.index !== undefined && boldMatch.index < firstIndex) {
@@ -29,6 +30,10 @@ function formatInlineText(text: string): (string | JSX.Element)[] {
     if (linkMatch && linkMatch.index !== undefined && linkMatch.index < firstIndex) {
       firstMatch = "link";
       firstIndex = linkMatch.index;
+    }
+    if (bareUrlMatch && bareUrlMatch.index !== undefined && bareUrlMatch.index < firstIndex) {
+      firstMatch = "bareUrl";
+      firstIndex = bareUrlMatch.index;
     }
 
     if (firstMatch === "bold" && boldMatch && boldMatch.index !== undefined) {
@@ -63,6 +68,30 @@ function formatInlineText(text: string): (string | JSX.Element)[] {
         parts.push(`[${linkText}]`);
       }
       remaining = remaining.slice(linkMatch.index + linkMatch[0].length);
+    } else if (firstMatch === "bareUrl" && bareUrlMatch && bareUrlMatch.index !== undefined) {
+      if (bareUrlMatch.index > 0) {
+        parts.push(remaining.slice(0, bareUrlMatch.index));
+      }
+      const url = bareUrlMatch[1];
+      let displayUrl = url;
+      try {
+        const parsed = new URL(url);
+        displayUrl = parsed.hostname + (parsed.pathname !== "/" ? parsed.pathname : "");
+        if (displayUrl.length > 60) displayUrl = displayUrl.slice(0, 57) + "...";
+      } catch {}
+      parts.push(
+        <a
+          key={`u-${keyIdx++}`}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary underline underline-offset-2 decoration-primary/40 hover:decoration-primary"
+          data-testid={`link-external-${keyIdx}`}
+        >
+          {displayUrl}
+        </a>
+      );
+      remaining = remaining.slice(bareUrlMatch.index + bareUrlMatch[0].length);
     } else {
       parts.push(remaining);
       break;
