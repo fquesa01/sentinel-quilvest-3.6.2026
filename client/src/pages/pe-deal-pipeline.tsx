@@ -368,18 +368,18 @@ export default function PEDealPipeline() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
+    <div className="p-4 sm:p-6 space-y-6 overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold flex items-center gap-2" data-testid="text-page-title">
-            <TrendingUp className="h-6 w-6 text-primary" />
+            <TrendingUp className="h-6 w-6 text-primary shrink-0" />
             Deal Pipeline
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Pipeline tracking, due diligence management, and institutional memory
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap shrink-0">
           <div className="flex border rounded-lg">
             <Button
               variant={pipelineMode === "intelligent" ? "secondary" : "ghost"}
@@ -406,15 +406,15 @@ export default function PEDealPipeline() {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900 shrink-0">
                 <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-total-deals">{pipelineStats.totalDeals}</p>
+              <div className="min-w-0">
+                <p className="text-2xl font-bold truncate" data-testid="text-total-deals">{pipelineStats.totalDeals}</p>
                 <p className="text-xs text-muted-foreground">Total Deals</p>
               </div>
             </div>
@@ -422,12 +422,12 @@ export default function PEDealPipeline() {
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900 shrink-0">
                 <Activity className="h-5 w-5 text-amber-600 dark:text-amber-400" />
               </div>
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-active-deals">{pipelineStats.activeDeals}</p>
+              <div className="min-w-0">
+                <p className="text-2xl font-bold truncate" data-testid="text-active-deals">{pipelineStats.activeDeals}</p>
                 <p className="text-xs text-muted-foreground">Active Deals</p>
               </div>
             </div>
@@ -435,38 +435,38 @@ export default function PEDealPipeline() {
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900 shrink-0">
                 <FileText className="h-5 w-5 text-orange-600 dark:text-orange-400" />
               </div>
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-due-diligence">{pipelineStats.inDueDiligence}</p>
-                <p className="text-xs text-muted-foreground">In Due Diligence</p>
+              <div className="min-w-0">
+                <p className="text-2xl font-bold truncate" data-testid="text-due-diligence">{pipelineStats.inDueDiligence}</p>
+                <p className="text-xs text-muted-foreground truncate">Due Diligence</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900 shrink-0">
                 <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
               </div>
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-closed-deals">{pipelineStats.closedDeals}</p>
-                <p className="text-xs text-muted-foreground">Closed Deals</p>
+              <div className="min-w-0">
+                <p className="text-2xl font-bold truncate" data-testid="text-closed-deals">{pipelineStats.closedDeals}</p>
+                <p className="text-xs text-muted-foreground">Closed</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900 shrink-0">
                 <DollarSign className="h-5 w-5 text-purple-600 dark:text-purple-400" />
               </div>
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-total-ev">{formatCurrency(pipelineStats.totalEV.toString())}</p>
+              <div className="min-w-0">
+                <p className="text-2xl font-bold truncate" data-testid="text-total-ev">{formatCurrency(pipelineStats.totalEV.toString())}</p>
                 <p className="text-xs text-muted-foreground">Total EV</p>
               </div>
             </div>
@@ -474,8 +474,8 @@ export default function PEDealPipeline() {
         </Card>
       </div>
 
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search deals..."
