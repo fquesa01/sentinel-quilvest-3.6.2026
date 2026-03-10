@@ -1,6 +1,6 @@
 import { db } from "../db";
 import * as schema from "@shared/schema";
-import { eq, desc, asc, sql, count } from "drizzle-orm";
+import { eq, desc, asc, sql, count, inArray } from "drizzle-orm";
 import { openai } from "../ai";
 import type { BusinessSummary, EntityInvolvement, EntityInvolvementEntry } from "@shared/business-summary-types";
 import {
@@ -29,6 +29,7 @@ export interface AnalysisProgress {
 export interface CaseAnalytics {
   // Basic stats
   totalCommunications: number;
+  totalDocuments: number;
   totalAttachments: number;
   dateRange: {
     oldest: Date | null;
@@ -195,7 +196,8 @@ function isLikelyCompanyDomain(domain: string): boolean {
  */
 export async function gatherCaseAnalytics(
   caseId: string,
-  onProgress?: (progress: AnalysisProgress) => void
+  onProgress?: (progress: AnalysisProgress) => void,
+  isDeal: boolean = false
 ): Promise<CaseAnalytics> {
   const startTime = new Date();
   
@@ -244,9 +246,9 @@ export async function gatherCaseAnalytics(
     .orderBy(desc(schema.communications.timestamp))
     .limit(1);
 
-  const oldest = oldestComm?.timestamp || null;
-  const newest = newestComm?.timestamp || null;
-  const spanDays = oldest && newest 
+  let oldest: Date | null = oldestComm?.timestamp || null;
+  let newest: Date | null = newestComm?.timestamp || null;
+  let spanDays = oldest && newest 
     ? Math.ceil((newest.getTime() - oldest.getTime()) / (1000 * 60 * 60 * 24))
     : 0;
 
@@ -464,8 +466,62 @@ export async function gatherCaseAnalytics(
     }
   }
 
+  let totalDocuments = 0;
+
+  if (isDeal) {
+    reportProgress('Gathering Data Room Documents', 7, 8, 'Fetching data room documents...');
+
+    const dataRooms = await db.select({ id: schema.dataRooms.id })
+      .from(schema.dataRooms)
+      .where(eq(schema.dataRooms.dealId, caseId));
+
+    const roomIds = dataRooms.map(r => r.id);
+
+    if (roomIds.length > 0) {
+      const dataRoomDocs = await db.select({
+        id: schema.dataRoomDocuments.id,
+        fileName: schema.dataRoomDocuments.fileName,
+        extractedText: schema.dataRoomDocuments.extractedText,
+        aiSummary: schema.dataRoomDocuments.aiSummary,
+        documentCategory: schema.dataRoomDocuments.documentCategory,
+        uploadedAt: schema.dataRoomDocuments.uploadedAt,
+      })
+        .from(schema.dataRoomDocuments)
+        .where(inArray(schema.dataRoomDocuments.dataRoomId, roomIds));
+
+      totalDocuments = dataRoomDocs.length;
+      console.log(`[BI Analytics] Found ${totalDocuments} data room documents for deal ${caseId}`);
+
+      const docContent = dataRoomDocs
+        .filter(d => (d.extractedText && d.extractedText.length > 50) || (d.aiSummary && d.aiSummary.length > 20))
+        .map(d => ({
+          id: d.id,
+          subject: d.fileName || 'Untitled Document',
+          body: (d.extractedText || d.aiSummary || '').substring(0, 50000),
+          sender: d.documentCategory || 'data_room',
+          recipients: [] as string[],
+          timestamp: d.uploadedAt || new Date(),
+        }));
+
+      sampleContent.push(...docContent);
+      console.log(`[BI Analytics] Added ${docContent.length} data room documents to sample content (total: ${sampleContent.length})`);
+
+      for (const doc of dataRoomDocs) {
+        const ts = doc.uploadedAt;
+        if (ts) {
+          if (!oldest || ts < oldest) oldest = ts;
+          if (!newest || ts > newest) newest = ts;
+        }
+      }
+      if (oldest && newest) {
+        spanDays = Math.ceil((newest.getTime() - oldest.getTime()) / (1000 * 60 * 60 * 24));
+      }
+    }
+  }
+
   return {
     totalCommunications,
+    totalDocuments,
     totalAttachments,
     dateRange: { oldest, newest, spanDays },
     topSenders,
@@ -964,9 +1020,10 @@ export async function generateComprehensiveBusinessSummary(
   companyName: string,
   userId: string,
   enableWebResearch: boolean = true,
-  onProgress?: (progress: AnalysisProgress) => void
+  onProgress?: (progress: AnalysisProgress) => void,
+  isDeal: boolean = false
 ): Promise<BusinessSummary> {
-  console.log(`[BI Service] Starting comprehensive analysis for case ${caseId}`);
+  console.log(`[BI Service] Starting comprehensive analysis for ${isDeal ? 'deal' : 'case'} ${caseId}`);
   
   const overallStart = Date.now();
   
@@ -975,7 +1032,7 @@ export async function generateComprehensiveBusinessSummary(
     stage: 'Data Collection',
     stageNumber: 1,
     totalStages: 5,
-    message: 'Gathering all case communications...',
+    message: isDeal ? 'Gathering deal communications and data room documents...' : 'Gathering all case communications...',
     percentComplete: 0,
     startTime: new Date()
   });
@@ -988,13 +1045,14 @@ export async function generateComprehensiveBusinessSummary(
       totalStages: 5,
       percentComplete: Math.round(p.percentComplete * 0.2) // 0-20%
     });
-  });
+  }, isDeal);
 
-  if (analytics.totalCommunications === 0) {
-    throw new Error(`No communications found for this case. Please upload documents first.`);
+  const totalSources = analytics.totalCommunications + analytics.totalDocuments;
+  if (totalSources === 0) {
+    throw new Error(`No communications or documents found. Please upload documents to the data room first.`);
   }
 
-  console.log(`[BI Service] Analytics gathered: ${analytics.totalCommunications} communications`);
+  console.log(`[BI Service] Analytics gathered: ${analytics.totalCommunications} communications, ${analytics.totalDocuments} data room documents`);
 
   // Stage 2: Topic Analysis
   onProgress?.({
@@ -1102,6 +1160,23 @@ export async function generateComprehensiveBusinessSummary(
     startTime: new Date()
   });
 
+  const dataSources: string[] = [];
+  if (analytics.totalCommunications > 0) dataSources.push('email communications');
+  if (analytics.totalDocuments > 0) dataSources.push('data room documents');
+
+  const docOverviewParts: string[] = [];
+  if (analytics.totalCommunications > 0) {
+    docOverviewParts.push(`${analytics.totalCommunications.toLocaleString()} communications`);
+  }
+  if (analytics.totalDocuments > 0) {
+    docOverviewParts.push(`${analytics.totalDocuments.toLocaleString()} data room documents`);
+  }
+  const docOverview = docOverviewParts.join(' and ');
+
+  const topCommunicatorsLine = analytics.topSenders.length > 0
+    ? `\n\n**Top Communicators:** The most active senders are ${analytics.topSenders.slice(0, 5).map(s => `${s.name} (${s.count} emails)`).join(', ')}.`
+    : '';
+
   // Build the comprehensive business summary
   const summary: BusinessSummary = {
     meta: {
@@ -1109,7 +1184,7 @@ export async function generateComprehensiveBusinessSummary(
       report_date: new Date().toISOString(),
       sources: analytics.sampleContent.slice(0, 50).map((doc, idx) => ({
         id: `doc_${idx + 1}`,
-        type: 'email' as const,
+        type: (doc.recipients.length > 0 ? 'email' : 'other') as 'email' | 'other',
         snippet: `${doc.subject} - ${doc.body.substring(0, 100)}...`,
         redaction_reason: null
       })),
@@ -1119,9 +1194,7 @@ export async function generateComprehensiveBusinessSummary(
     executive_summary: {
       one_paragraph: `${topicAnalysis.executiveSummary}
 
-**Document Overview:** This analysis covers ${analytics.totalCommunications.toLocaleString()} communications spanning from ${analytics.dateRange.oldest?.toLocaleDateString() || 'N/A'} to ${analytics.dateRange.newest?.toLocaleDateString() || 'N/A'} (${analytics.dateRange.spanDays} days). The communications involve ${analytics.allPeople.length} unique individuals across ${analytics.organizations.filter(o => o.isLikelyCompany).length} organizations.
-
-**Top Communicators:** The most active senders are ${analytics.topSenders.slice(0, 5).map(s => `${s.name} (${s.count} emails)`).join(', ')}.`,
+**Document Overview:** This analysis covers ${docOverview} spanning from ${analytics.dateRange.oldest?.toLocaleDateString() || 'N/A'} to ${analytics.dateRange.newest?.toLocaleDateString() || 'N/A'} (${analytics.dateRange.spanDays} days).${analytics.allPeople.length > 0 ? ` The sources involve ${analytics.allPeople.length} unique individuals across ${analytics.organizations.filter(o => o.isLikelyCompany).length} organizations.` : ''}${topCommunicatorsLine}`,
       
       top_metrics: {
         revenue_estimate: null,
@@ -1135,7 +1208,7 @@ export async function generateComprehensiveBusinessSummary(
     business_lines: topicAnalysis.mainTopics.map(topic => ({
       name: topic.topic,
       description: topic.description,
-      data_sources: ['email communications'],
+      data_sources: dataSources,
       workflow_summary: topic.frequency,
       estimated_value_per_case: null,
       evidence: topic.sampleSubjects.map((subj, idx) => ({

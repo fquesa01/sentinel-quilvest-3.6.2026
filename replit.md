@@ -98,6 +98,14 @@ Comprehensive data models are used for entities such as Users, Communications, A
 - **Frontend Panel**: Four new conditional sections in `financial-model-panel.tsx`: Revenue Breakdown by Segment, Expense Breakdown by Category, Staffing Summary, and Detailed Model Assumptions. Each renders only when data is present. When detailed assumptions exist, the basic key assumptions card is hidden. All monetary values use `formatNumber()` directly (no client-side scale adjustment since backend pre-normalizes).
 - **Key files**: `financial-extraction-service.ts`, `financial-model-service.ts`, `financial-model-panel.tsx`
 
+### Client Intelligence Data Sources
+- The Client Intelligence (Business Summary) report generation now sources data from BOTH the `communications` table AND data room documents when the entity is a deal/transaction
+- When `isDeal=true`, `gatherCaseAnalytics` queries `data_rooms` → `data_room_documents` for the deal, fetches `extractedText`/`aiSummary`, and merges them into the sample content for AI analysis
+- The guard condition allows report generation with zero communications as long as data room documents exist
+- Report metadata, executive summary, and business line data sources dynamically reflect which sources contributed (email communications and/or data room documents)
+- Date ranges incorporate both communication timestamps and document upload dates
+- Key files: `server/services/business-intelligence-service.ts`, `server/routes.ts` (POST `/api/business-summary/generate`)
+
 ### Memo Annotations & Collaboration
 - Users can highlight text in any memo section and either "Ask AI" a question or "Add Comment"
 - Annotations are stored in the `memo_annotations` table with type (`comment` or `ai_question`), selected text, author info, and optional AI response

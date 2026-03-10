@@ -2486,10 +2486,11 @@ ${initialAssessment.nextSteps || 'To be determined'}
         enableWebResearch,
         (progress) => {
           console.log(`[Business Summary] Progress: ${progress.stage} - ${progress.message} (${progress.percentComplete}%)`);
-        }
+        },
+        isDeal
       );
 
-      // Get count of communications for metadata
+      // Get count of communications and data room documents for metadata
       const [countResult] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(schema.communications)
@@ -2497,7 +2498,17 @@ ${initialAssessment.nextSteps || 'To be determined'}
       
       const communicationsCount = countResult?.count || 0;
 
-      console.log(`[Business Summary] Comprehensive analysis complete. Analyzed ${communicationsCount} communications.`);
+      let dataRoomDocCount = 0;
+      if (isDeal) {
+        const rooms = await db.select({ id: schema.dataRooms.id }).from(schema.dataRooms).where(eq(schema.dataRooms.dealId, caseId));
+        const roomIds = rooms.map(r => r.id);
+        if (roomIds.length > 0) {
+          const [docCount] = await db.select({ count: sql<number>`count(*)::int` }).from(schema.dataRoomDocuments).where(inArray(schema.dataRoomDocuments.dataRoomId, roomIds));
+          dataRoomDocCount = docCount?.count || 0;
+        }
+      }
+
+      console.log(`[Business Summary] Comprehensive analysis complete. Analyzed ${communicationsCount} communications, ${dataRoomDocCount} data room documents.`);
       console.log(`[Business Summary] Web research included: ${summary.web_research ? 'Yes' : 'No'}`);
       console.log('[Business Summary] Generating PDF...');
 
