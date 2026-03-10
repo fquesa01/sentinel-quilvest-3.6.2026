@@ -631,7 +631,7 @@ export default function PEDealPipeline() {
                     </div>
                   ) : pipelineMode === "intelligent" ? (
                     (stageDeals as EnrichedDeal[]).map((deal) => (
-                      <Link key={deal.id} href={`/deals/${deal.id}`}>
+                      <Link key={deal.id} href={`/pe/deals/${deal.id}`}>
                         <Card className="cursor-pointer hover-elevate" data-testid={`card-deal-${deal.id}`}>
                           <CardContent className="p-3">
                             <div className="flex items-start justify-between gap-1">
@@ -808,7 +808,7 @@ export default function PEDealPipeline() {
                           {format(new Date(deal.createdAt), "MMM d, yyyy")}
                         </TableCell>
                         <TableCell>
-                          <Link href={`/deals/${deal.id}`}>
+                          <Link href={`/pe/deals/${deal.id}`}>
                             <Button variant="ghost" size="icon" data-testid={`button-view-deal-${deal.id}`}>
                               <Eye className="h-4 w-4" />
                             </Button>
