@@ -2456,13 +2456,22 @@ ${initialAssessment.nextSteps || 'To be determined'}
       
       const { company_name, caseId, enableWebResearch } = validationResult.data;
 
-      // Verify case exists
+      // Verify case or deal exists
       const caseData = await storage.getCase(caseId);
+      let entityTitle = "";
+      let isDeal = false;
       if (!caseData) {
-        return res.status(404).json({ message: "Case not found" });
+        const [dealData] = await db.select().from(schema.deals).where(eq(schema.deals.id, caseId)).limit(1);
+        if (!dealData) {
+          return res.status(404).json({ message: "Case not found" });
+        }
+        entityTitle = dealData.name;
+        isDeal = true;
+      } else {
+        entityTitle = caseData.title;
       }
 
-      console.log(`[Business Summary] Starting COMPREHENSIVE analysis for case ${caseId}: ${caseData.title}`);
+      console.log(`[Business Summary] Starting COMPREHENSIVE analysis for ${isDeal ? 'deal' : 'case'} ${caseId}: ${entityTitle}`);
       console.log(`[Business Summary] Web research enabled: ${enableWebResearch}`);
       console.log(`[Business Summary] This analysis will thoroughly process ALL documents (may take 10-20 minutes)`);
 
