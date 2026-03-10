@@ -200,6 +200,38 @@ function dataRoomDocToCommunication(doc: DataRoomDocument): Communication {
   };
 }
 
+function dataLakeItemToCommunication(item: any): Communication {
+  const meta = item.metadata || {};
+  return {
+    id: item.id,
+    communicationType: 'email',
+    subject: meta.subject || item.name || '(No Subject)',
+    body: meta.bodyHtml || meta.bodyText || meta.bodyPreview || '',
+    sender: meta.sender || 'Unknown',
+    recipients: meta.recipients || [],
+    timestamp: meta.date || item.indexedAt || new Date().toISOString(),
+    legalHold: null,
+    emailThreadId: null,
+    fileSize: item.fileSize,
+    fileExtension: null,
+    mimeType: 'message/rfc822',
+    filePath: null,
+    metadata: {
+      isDataLakeItem: true,
+      dataLakeItemId: item.id,
+      parentItemId: meta.parentItemId,
+      parentFileName: meta.parentFileName,
+      cc: meta.cc,
+      senderAddress: meta.senderAddress,
+      hasAttachments: meta.hasAttachments,
+      attachments: meta.attachments,
+      folderPath: meta.folderPath,
+      messageId: meta.messageId,
+      importance: meta.importance,
+    },
+  };
+}
+
 function isImageMimeType(mimeType: string | null | undefined): boolean {
   if (!mimeType) return false;
   return mimeType.startsWith('image/');
@@ -750,7 +782,37 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
     },
     enabled: !!effectiveCaseId && !searchResults && !selectedSetId,
   });
-  
+
+  const { data: dataLakeParentItem } = useQuery<any>({
+    queryKey: ["/api/data-lake/items", effectiveCaseId],
+    queryFn: async () => {
+      const response = await fetch(`/api/data-lake/items/${effectiveCaseId}`, { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!effectiveCaseId && !searchResults && !selectedSetId,
+  });
+
+  const isDataLakeSource = !!dataLakeParentItem && (dataLakeParentItem.itemType === 'email_archive' || dataLakeParentItem.itemType === 'email');
+
+  const { data: dataLakeChildren, isLoading: isLoadingDataLakeChildren } = useQuery<any[]>({
+    queryKey: ["/api/data-lake/items", effectiveCaseId, "children"],
+    queryFn: async () => {
+      const response = await fetch(`/api/data-lake/items/${effectiveCaseId}/children`, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    enabled: isDataLakeSource && dataLakeParentItem?.itemType === 'email_archive',
+  });
+
+  const dataLakeAsCommunications = useMemo(() => {
+    if (isDataLakeSource && dataLakeParentItem?.itemType === 'email') {
+      return [dataLakeItemToCommunication(dataLakeParentItem)];
+    }
+    if (!dataLakeChildren || dataLakeChildren.length === 0) return [];
+    return dataLakeChildren.map(dataLakeItemToCommunication);
+  }, [dataLakeChildren, dataLakeParentItem, isDataLakeSource]);
+
   // Fetch available document sets
   const { data: documentSets = [] } = useQuery<any[]>({
     queryKey: ["/api/document-sets"],
@@ -773,13 +835,14 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
   }, [dataRoomDocs]);
 
   const mergedCommunications = useMemo(() => {
-    if (communications === undefined && dataRoomAsCommunications.length === 0) return undefined;
+    if (communications === undefined && dataRoomAsCommunications.length === 0 && dataLakeAsCommunications.length === 0) return undefined;
     const comms = communications || [];
-    if (dataRoomAsCommunications.length === 0) return comms;
+    const allExtras = [...dataRoomAsCommunications, ...dataLakeAsCommunications];
+    if (allExtras.length === 0) return comms;
     const existingIds = new Set(comms.map(c => c.id));
-    const unique = dataRoomAsCommunications.filter(d => !existingIds.has(d.id));
+    const unique = allExtras.filter(d => !existingIds.has(d.id));
     return [...unique, ...comms];
-  }, [communications, dataRoomAsCommunications]);
+  }, [communications, dataRoomAsCommunications, dataLakeAsCommunications]);
 
   // Use search results if available, otherwise use set documents or merged data
   const unsortedCommunications = searchResults ?? setDocuments ?? mergedCommunications;
@@ -1385,11 +1448,21 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
     enabled: !effectiveCaseId,
   });
 
-  // Fetch data lake items for the selection picker
-  const { data: dataLakeItems = [], isLoading: dataLakeLoading } = useQuery<Array<{ id: string; title: string; sourceType: string; fileType: string; status: string }>>({
+  const { data: rawDataLakeItems = [], isLoading: dataLakeLoading } = useQuery<any[]>({
     queryKey: ['/api/data-lake/items'],
     enabled: !effectiveCaseId,
   });
+  const dataLakeItems = useMemo(() => {
+    return rawDataLakeItems
+      .filter((item: any) => item.itemType !== 'email')
+      .map((item: any) => {
+        const meta = item.metadata || {};
+        const status = meta.processingStatus === 'processing' ? 'Processing...'
+          : meta.processingStatus === 'completed' ? `${meta.childCount || 0} emails`
+          : meta.processingStatus === 'failed' ? 'Failed' : undefined;
+        return { id: item.id, title: item.name, sourceType: item.source, fileType: item.itemType, status };
+      });
+  }, [rawDataLakeItems]);
 
   // Bookmark functionality for the current document
   const { data: userBookmarks = [], refetch: refetchBookmarks } = useQuery<Array<{ id: string; communicationId: string; bookmarkType: string }>>({

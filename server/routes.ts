@@ -58,6 +58,8 @@ import { secEdgarApi } from "./services/sec-edgar-api";
 import { corporateResearchApi } from "./services/corporate-research-api";
 import recordedStatementsRouter from "./routes/recorded-statements";
 import dueDiligenceRouter from "./routes-due-diligence";
+import { parseFile } from "./ingestion/emailParsers";
+import type { SupportedFormat } from "./ingestion/fileDetector";
 import ddBooleanSearchRoutes from "./routes/dd-boolean-search-routes";
 import calendarOAuthRouter from "./routes/calendar-oauth";
 import { registerRelationshipIntelligenceRoutes } from "./routes/relationship-intelligence";
@@ -29169,6 +29171,9 @@ Guidelines:
         pdf: "pdf", docx: "docx", doc: "docx", xlsx: "xlsx", xls: "xlsx",
         msg: "email", eml: "email", pst: "email",
       };
+      const emailFormats: Record<string, SupportedFormat> = {
+        pst: "pst", msg: "msg", eml: "eml",
+      };
       const itemType = typeMap[ext] || "other";
       let filePath: string | null = null;
       try {
@@ -29179,25 +29184,145 @@ Guidelines:
       } catch (storageError) {
         console.error("Object storage upload failed, continuing without file path:", storageError);
       }
-      const item = await storage.createDataLakeItem({
+
+      const isEmailArchive = ext in emailFormats;
+
+      const parentItem = await storage.createDataLakeItem({
         userId: req.user.id,
         source: "upload",
-        itemType,
+        itemType: isEmailArchive ? "email_archive" : itemType,
         name: file.originalname,
         filePath,
         fileSize: file.size,
         geminiIndexed: false,
-        metadata: { mimetype: file.mimetype, uploadedAt: new Date().toISOString() },
+        metadata: {
+          mimetype: file.mimetype,
+          uploadedAt: new Date().toISOString(),
+          ...(isEmailArchive ? { processingStatus: "processing", childCount: 0 } : {}),
+        },
       });
-      res.json(item);
+
+      if (isEmailArchive) {
+        const format = emailFormats[ext];
+        (async () => {
+          try {
+            console.log(`[DataLake] Parsing ${ext} file: ${file.originalname}`);
+            const emails = await parseFile(file.buffer, file.originalname, format);
+            console.log(`[DataLake] Extracted ${emails.length} emails from ${file.originalname}`);
+
+            let created = 0;
+            for (const email of emails) {
+              try {
+                const bodyPreview = email.bodyText
+                  ? email.bodyText.substring(0, 500)
+                  : email.bodyHtml
+                    ? email.bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500)
+                    : "";
+                await storage.createDataLakeItem({
+                  userId: req.user.id,
+                  source: "upload",
+                  itemType: "email",
+                  name: email.subject || "(No Subject)",
+                  filePath: null,
+                  fileSize: null,
+                  geminiIndexed: false,
+                  metadata: {
+                    parentItemId: parentItem.id,
+                    parentFileName: file.originalname,
+                    subject: email.subject,
+                    sender: email.from ? `${email.from.name || ""} <${email.from.address}>`.trim() : null,
+                    senderAddress: email.from?.address || null,
+                    recipients: email.to.map(r => `${r.name || ""} <${r.address}>`.trim()),
+                    cc: email.cc.map(r => `${r.name || ""} <${r.address}>`.trim()),
+                    date: email.sentAt?.toISOString() || email.receivedAt?.toISOString() || null,
+                    bodyText: email.bodyText || "",
+                    bodyHtml: email.bodyHtml || "",
+                    bodyPreview,
+                    hasAttachments: email.hasAttachments,
+                    attachments: email.attachments,
+                    folderPath: email.folderPath,
+                    messageId: email.messageId,
+                    importance: email.importance,
+                  },
+                });
+                created++;
+              } catch (emailErr) {
+                console.error(`[DataLake] Error creating data lake item for email:`, emailErr);
+              }
+            }
+
+            const existingItem = await storage.getDataLakeItem(parentItem.id);
+            if (existingItem) {
+              const updatedMeta = { ...(existingItem.metadata as any || {}), processingStatus: "completed", childCount: created };
+              await db.update(schema.dataLakeItems)
+                .set({ metadata: updatedMeta })
+                .where(eq(schema.dataLakeItems.id, parentItem.id));
+            }
+            console.log(`[DataLake] Successfully processed ${created} emails from ${file.originalname}`);
+          } catch (parseErr) {
+            console.error(`[DataLake] Error parsing email file ${file.originalname}:`, parseErr);
+            try {
+              const existingItem = await storage.getDataLakeItem(parentItem.id);
+              if (existingItem) {
+                const updatedMeta = { ...(existingItem.metadata as any || {}), processingStatus: "failed", error: String(parseErr) };
+                await db.update(schema.dataLakeItems)
+                  .set({ metadata: updatedMeta })
+                  .where(eq(schema.dataLakeItems.id, parentItem.id));
+              }
+            } catch (_) {}
+          }
+        })();
+      }
+
+      res.json(parentItem);
     } catch (error: any) {
       console.error("Error uploading data lake file:", error);
       res.status(500).json({ message: error.message });
     }
   });
 
+  app.get("/api/data-lake/items/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const item = await storage.getDataLakeItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      if (item.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      res.json(item);
+    } catch (error: any) {
+      console.error("Error fetching data lake item:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/data-lake/items/:id/children", isAuthenticated, async (req: any, res) => {
+    try {
+      const parentItem = await storage.getDataLakeItem(req.params.id);
+      if (!parentItem) {
+        return res.status(404).json({ message: "Parent item not found" });
+      }
+      if (parentItem.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const children = await storage.getDataLakeItemsByParent(req.params.id, req.user.id);
+      res.json(children);
+    } catch (error: any) {
+      console.error("Error fetching data lake item children:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.delete("/api/data-lake/items/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const item = await storage.getDataLakeItem(req.params.id);
+      if (item && item.itemType === "email_archive") {
+        const children = await storage.getDataLakeItemsByParent(req.params.id, req.user.id);
+        for (const child of children) {
+          await storage.deleteDataLakeItem(child.id, req.user.id);
+        }
+      }
       await storage.deleteDataLakeItem(req.params.id, req.user.id);
       res.json({ success: true });
     } catch (error: any) {

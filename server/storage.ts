@@ -966,6 +966,8 @@ export interface IStorage {
   getDataLakeItems(userId: string, filters?: { source?: string; itemType?: string; search?: string; limit?: number; offset?: number }): Promise<DataLakeItem[]>;
   createDataLakeItem(item: InsertDataLakeItem): Promise<DataLakeItem>;
   deleteDataLakeItem(id: string, userId: string): Promise<void>;
+  getDataLakeItem(id: string): Promise<DataLakeItem | undefined>;
+  getDataLakeItemsByParent(parentId: string, userId: string): Promise<DataLakeItem[]>;
   getDataLakeStats(userId: string): Promise<{ totalItems: number; emailsIngested: number; filesIndexed: number; activeConnectors: number; totalConnectors: number }>;
   getDataLakeConnectors(userId: string): Promise<DataLakeConnector[]>;
   upsertDataLakeConnector(connector: InsertDataLakeConnector): Promise<DataLakeConnector>;
@@ -6469,9 +6471,15 @@ export class DatabaseStorage implements IStorage {
     const conditions = [eq(dataLakeItems.userId, userId)];
     if (filters?.source) conditions.push(eq(dataLakeItems.source, filters.source));
     if (filters?.itemType === "file") {
-      conditions.push(sql`${dataLakeItems.itemType} != 'email'`);
+      conditions.push(sql`${dataLakeItems.itemType} NOT IN ('email', 'email_archive')`);
+    } else if (filters?.itemType === "email") {
+      conditions.push(sql`${dataLakeItems.itemType} IN ('email', 'email_archive')`);
+      conditions.push(sql`(${dataLakeItems.metadata}->>'parentItemId') IS NULL`);
     } else if (filters?.itemType) {
       conditions.push(eq(dataLakeItems.itemType, filters.itemType));
+    }
+    if (!filters?.itemType) {
+      conditions.push(sql`(${dataLakeItems.metadata}->>'parentItemId') IS NULL`);
     }
     if (filters?.search) conditions.push(ilike(dataLakeItems.name, `%${filters.search}%`));
     return db.select().from(dataLakeItems)
@@ -6490,15 +6498,31 @@ export class DatabaseStorage implements IStorage {
     await db.delete(dataLakeItems).where(and(eq(dataLakeItems.id, id), eq(dataLakeItems.userId, userId)));
   }
 
+  async getDataLakeItem(id: string): Promise<DataLakeItem | undefined> {
+    const [item] = await db.select().from(dataLakeItems).where(eq(dataLakeItems.id, id));
+    return item;
+  }
+
+  async getDataLakeItemsByParent(parentId: string, userId: string): Promise<DataLakeItem[]> {
+    return db.select().from(dataLakeItems)
+      .where(and(
+        eq(dataLakeItems.userId, userId),
+        sql`${dataLakeItems.metadata}->>'parentItemId' = ${parentId}`
+      ))
+      .orderBy(desc(dataLakeItems.indexedAt));
+  }
+
   async getDataLakeStats(userId: string): Promise<{ totalItems: number; emailsIngested: number; filesIndexed: number; activeConnectors: number; totalConnectors: number }> {
     const items = await db.select().from(dataLakeItems).where(eq(dataLakeItems.userId, userId));
     const connectors = await db.select().from(dataLakeConnectors).where(eq(dataLakeConnectors.userId, userId));
     const emailTypes = ['email'];
     const fileTypes = ['pdf', 'docx', 'xlsx', 'other'];
+    const archiveTypes = ['email_archive'];
+    const nonArchiveItems = items.filter(i => !archiveTypes.includes(i.itemType));
     return {
-      totalItems: items.length,
-      emailsIngested: items.filter(i => emailTypes.includes(i.itemType)).length,
-      filesIndexed: items.filter(i => fileTypes.includes(i.itemType)).length,
+      totalItems: nonArchiveItems.length,
+      emailsIngested: nonArchiveItems.filter(i => emailTypes.includes(i.itemType)).length,
+      filesIndexed: nonArchiveItems.filter(i => fileTypes.includes(i.itemType)).length,
       activeConnectors: connectors.filter(c => c.status === 'connected').length,
       totalConnectors: 4,
     };

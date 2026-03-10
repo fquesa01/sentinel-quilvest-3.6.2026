@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,8 @@ import {
   Filter,
   Database,
   Cloud,
+  Eye,
+  Loader2,
 } from "lucide-react";
 import { SiGmail, SiGoogledrive } from "react-icons/si";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -40,6 +43,7 @@ const CONNECTOR_META: Record<string, { name: string; desc: string; icon: any; co
 const TYPE_BADGE_VARIANT: Record<string, string> = {
   pdf: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   email: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  email_archive: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
   docx: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   xlsx: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
   other: "bg-gray-100 text-gray-700 dark:bg-gray-800/30 dark:text-gray-400",
@@ -91,6 +95,7 @@ function formatRelativeTime(dateStr: string | null | undefined): string {
 function getItemTypeIcon(type: string) {
   switch (type) {
     case "email": return Mail;
+    case "email_archive": return Database;
     case "pdf": return FileText;
     case "docx": return File;
     case "xlsx": return Table2;
@@ -99,6 +104,7 @@ function getItemTypeIcon(type: string) {
 }
 
 export default function MyDataLakePage() {
+  const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("upload")) {
@@ -166,9 +172,21 @@ export default function MyDataLakePage() {
       if (!res.ok) throw new Error("Upload failed");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith("/api/data-lake/") });
-      toast({ title: "File uploaded", description: "Your file has been added to the data lake." });
+      const isArchive = data?.itemType === 'email_archive';
+      toast({
+        title: "File uploaded",
+        description: isArchive
+          ? "Your email archive is being processed. Emails will appear shortly."
+          : "Your file has been added to the data lake.",
+      });
+      if (isArchive) {
+        const pollInterval = setInterval(() => {
+          queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith("/api/data-lake/") });
+        }, 3000);
+        setTimeout(() => clearInterval(pollInterval), 60000);
+      }
     },
     onError: () => {
       toast({ title: "Upload failed", description: "Could not upload file. Please try again.", variant: "destructive" });
@@ -553,25 +571,55 @@ export default function MyDataLakePage() {
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${TYPE_BADGE_VARIANT[item.itemType] || TYPE_BADGE_VARIANT.other}`}>
-                                {item.itemType.toUpperCase()}
-                              </span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${TYPE_BADGE_VARIANT[item.itemType] || TYPE_BADGE_VARIANT.other}`}>
+                                  {item.itemType === 'email_archive' ? 'EMAIL ARCHIVE' : item.itemType.toUpperCase()}
+                                </span>
+                                {item.itemType === 'email_archive' && (item.metadata as any)?.processingStatus === 'processing' && (
+                                  <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                                    <Loader2 className="w-3 h-3 animate-spin" /> Processing...
+                                  </span>
+                                )}
+                                {item.itemType === 'email_archive' && (item.metadata as any)?.processingStatus === 'completed' && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {(item.metadata as any)?.childCount || 0} emails
+                                  </span>
+                                )}
+                                {item.itemType === 'email_archive' && (item.metadata as any)?.processingStatus === 'failed' && (
+                                  <span className="text-xs text-destructive">Failed</span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-3 text-muted-foreground capitalize">{item.source}</td>
                             <td className="px-4 py-3 text-muted-foreground">{formatRelativeTime(item.indexedAt as any)}</td>
                             <td className="px-4 py-3 text-muted-foreground">{formatFileSize(item.fileSize)}</td>
                             <td className="px-4 py-3 text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteMutation.mutate(item.id);
-                                }}
-                                data-testid={`button-delete-item-${item.id}`}
-                              >
-                                <Trash2 className="w-4 h-4 text-muted-foreground" />
-                              </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                {item.itemType === 'email_archive' && (item.metadata as any)?.processingStatus === 'completed' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setLocation(`/document-review?caseId=${item.id}`);
+                                    }}
+                                    data-testid={`button-review-item-${item.id}`}
+                                  >
+                                    <Eye className="w-4 h-4 text-muted-foreground" />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteMutation.mutate(item.id);
+                                  }}
+                                  data-testid={`button-delete-item-${item.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         );
