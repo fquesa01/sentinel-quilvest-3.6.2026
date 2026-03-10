@@ -92,6 +92,12 @@ Comprehensive data models are used for entities such as Users, Communications, A
 - Frontend: `FinancialModelPanel` receives `dealId` prop from `investor-memo-builder.tsx`, uses `useQuery` to fetch source documents, and renders clickable links that open document previews in a new tab
 - Each link shows the document filename and optional category badge, with an external link icon on hover
 
+### Financial Model Granular Data Enhancement
+- **Extraction**: Financial document text limit increased from 15K to 50K chars per doc, total context 180K→350K, max_tokens 16K→32K. Six new extraction data types: `revenueSegments`, `expenseBreakdown`, `staffingPlan`, `modelAssumptions`, `productRollout`, `monthlyFinancials` — all persisted to `extracted_financials` table.
+- **Model Service**: New extraction fields are passed to the Claude model prompt. Output schema includes `revenueBreakdown` (revenue by segment/year), `expenseDetail` (expenses by category/year with opex/cogs type), `staffingSummary` (headcount and cost by department/year), and `detailedAssumptions` (categorized assumptions with source attribution). Backend normalizes monetary values in granular sections when raw-dollar correction is applied (same as projections).
+- **Frontend Panel**: Four new conditional sections in `financial-model-panel.tsx`: Revenue Breakdown by Segment, Expense Breakdown by Category, Staffing Summary, and Detailed Model Assumptions. Each renders only when data is present. When detailed assumptions exist, the basic key assumptions card is hidden. All monetary values use `formatNumber()` directly (no client-side scale adjustment since backend pre-normalizes).
+- **Key files**: `financial-extraction-service.ts`, `financial-model-service.ts`, `financial-model-panel.tsx`
+
 ### Memo Annotations & Collaboration
 - Users can highlight text in any memo section and either "Ask AI" a question or "Add Comment"
 - Annotations are stored in the `memo_annotations` table with type (`comment` or `ai_question`), selected text, author info, and optional AI response

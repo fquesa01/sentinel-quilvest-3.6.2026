@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3, FileText, ExternalLink } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Percent, BarChart3, FileText, ExternalLink, PieChart, Users, Lightbulb } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -116,6 +116,12 @@ export function FinancialModelPanel({ model, dealId }: FinancialModelPanelProps)
     }
   }
 
+  const output = model.output || {};
+  const revenueBreakdown = output.revenueBreakdown || [];
+  const expenseDetail = output.expenseDetail || [];
+  const staffingSummary = output.staffingSummary || null;
+  const detailedAssumptions = output.detailedAssumptions || [];
+
   return (
     <div className="space-y-6">
       {/* Scenario Toggle */}
@@ -211,6 +217,172 @@ export function FinancialModelPanel({ model, dealId }: FinancialModelPanelProps)
         </CardContent>
       </Card>
 
+      {/* Revenue Breakdown by Segment */}
+      {revenueBreakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <PieChart className="h-4 w-4" />
+              Revenue Breakdown by Segment ($000s)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 bg-background">Segment</TableHead>
+                  {revenueBreakdown[0]?.values?.map((v: any) => (
+                    <TableHead key={v.year} className="text-right">{v.year}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {revenueBreakdown.map((seg: any, i: number) => (
+                  <TableRow key={i}>
+                    <TableCell className="sticky left-0 bg-background font-medium">{seg.segment}</TableCell>
+                    {seg.values?.map((v: any, j: number) => (
+                      <TableCell key={j} className="text-right tabular-nums">
+                        <div>{formatNumber(v.revenue)}</div>
+                        {v.growthRate != null && (
+                          <div className="text-xs text-muted-foreground">{formatPercent(v.growthRate)}</div>
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Expense Breakdown by Category */}
+      {expenseDetail.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Expense Breakdown by Category ($000s)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 bg-background">Category</TableHead>
+                  <TableHead>Type</TableHead>
+                  {expenseDetail[0]?.values?.map((v: any) => (
+                    <TableHead key={v.year} className="text-right">{v.year}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {expenseDetail.map((exp: any, i: number) => (
+                  <TableRow key={i}>
+                    <TableCell className="sticky left-0 bg-background font-medium">{exp.category}</TableCell>
+                    <TableCell>
+                      <Badge variant={exp.type === "cogs" ? "secondary" : "outline"} data-testid={`badge-expense-type-${i}`}>
+                        {exp.type === "cogs" ? "COGS" : "OpEx"}
+                      </Badge>
+                    </TableCell>
+                    {exp.values?.map((v: any, j: number) => (
+                      <TableCell key={j} className="text-right tabular-nums">
+                        {formatNumber(v.amount)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Staffing Summary */}
+      {staffingSummary?.departments?.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Staffing Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 bg-background">Department</TableHead>
+                  <TableHead>Type</TableHead>
+                  {staffingSummary.departments[0]?.values?.map((v: any) => (
+                    <TableHead key={v.year} className="text-right" colSpan={2}>{v.year}</TableHead>
+                  ))}
+                </TableRow>
+                <TableRow>
+                  <TableHead className="sticky left-0 bg-background"></TableHead>
+                  <TableHead></TableHead>
+                  {staffingSummary.departments[0]?.values?.flatMap((_: any, j: number) => [
+                    <TableHead key={`hc-${j}`} className="text-right text-xs">HC</TableHead>,
+                    <TableHead key={`cost-${j}`} className="text-right text-xs">Cost ($K)</TableHead>,
+                  ])}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {staffingSummary.departments.map((dept: any, i: number) => (
+                  <TableRow key={i}>
+                    <TableCell className="sticky left-0 bg-background font-medium">{dept.name}</TableCell>
+                    <TableCell>
+                      <Badge variant={dept.type === "cogs" ? "secondary" : "outline"} data-testid={`badge-staff-type-${i}`}>
+                        {dept.type === "cogs" ? "COGS" : "Expense"}
+                      </Badge>
+                    </TableCell>
+                    {dept.values?.flatMap((v: any, j: number) => [
+                      <TableCell key={`hc-${j}`} className="text-right tabular-nums">{v.headcount}</TableCell>,
+                      <TableCell key={`cost-${j}`} className="text-right tabular-nums">{formatNumber(v.totalCost)}</TableCell>,
+                    ])}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Detailed Assumptions */}
+      {detailedAssumptions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Lightbulb className="h-4 w-4" />
+              Detailed Model Assumptions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {detailedAssumptions.map((group: any, i: number) => (
+                <div key={i}>
+                  <h4 className="text-sm font-semibold mb-2">{group.category}</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+                    {group.items?.map((item: any, j: number) => (
+                      <div key={j} className="flex items-baseline justify-between gap-2 py-1 border-b border-border/50">
+                        <span className="text-sm text-muted-foreground">{item.label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium tabular-nums">{item.value}</span>
+                          {item.source && (
+                            <Badge variant="outline" className="text-[10px] px-1.5" data-testid={`badge-assumption-source-${i}-${j}`}>
+                              {item.source}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tech Value Creation */}
       {techValue.year1 > 0 && (
         <Card>
@@ -259,40 +431,42 @@ export function FinancialModelPanel({ model, dealId }: FinancialModelPanelProps)
         </Card>
       )}
 
-      {/* Key Assumptions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Key Assumptions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            {assumptions.taxRate != null && (
-              <div><span className="text-muted-foreground">Tax Rate:</span> {formatPercent(assumptions.taxRate)}</div>
-            )}
-            {assumptions.discountRate != null && (
-              <div><span className="text-muted-foreground">Discount Rate (WACC):</span> {formatPercent(assumptions.discountRate)}</div>
-            )}
-            {assumptions.terminalGrowth != null && (
-              <div><span className="text-muted-foreground">Terminal Growth:</span> {formatPercent(assumptions.terminalGrowth)}</div>
-            )}
-            {assumptions.capexPercent != null && (
-              <div><span className="text-muted-foreground">CapEx % Revenue:</span> {formatPercent(assumptions.capexPercent)}</div>
-            )}
-            {assumptions.wcPercent != null && (
-              <div><span className="text-muted-foreground">WC % Revenue:</span> {formatPercent(assumptions.wcPercent)}</div>
-            )}
-            {assumptions.entryMultiple != null && (
-              <div><span className="text-muted-foreground">Entry Multiple:</span> {assumptions.entryMultiple}x</div>
-            )}
-            {assumptions.exitMultiple != null && (
-              <div><span className="text-muted-foreground">Exit Multiple:</span> {assumptions.exitMultiple}x</div>
-            )}
-            {assumptions.debtToEquity != null && (
-              <div><span className="text-muted-foreground">D/E Ratio:</span> {assumptions.debtToEquity}x</div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Key Assumptions (basic view when no detailed assumptions available) */}
+      {detailedAssumptions.length === 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Key Assumptions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              {assumptions.taxRate != null && (
+                <div><span className="text-muted-foreground">Tax Rate:</span> {formatPercent(assumptions.taxRate)}</div>
+              )}
+              {assumptions.discountRate != null && (
+                <div><span className="text-muted-foreground">Discount Rate (WACC):</span> {formatPercent(assumptions.discountRate)}</div>
+              )}
+              {assumptions.terminalGrowth != null && (
+                <div><span className="text-muted-foreground">Terminal Growth:</span> {formatPercent(assumptions.terminalGrowth)}</div>
+              )}
+              {assumptions.capexPercent != null && (
+                <div><span className="text-muted-foreground">CapEx % Revenue:</span> {formatPercent(assumptions.capexPercent)}</div>
+              )}
+              {assumptions.wcPercent != null && (
+                <div><span className="text-muted-foreground">WC % Revenue:</span> {formatPercent(assumptions.wcPercent)}</div>
+              )}
+              {assumptions.entryMultiple != null && (
+                <div><span className="text-muted-foreground">Entry Multiple:</span> {assumptions.entryMultiple}x</div>
+              )}
+              {assumptions.exitMultiple != null && (
+                <div><span className="text-muted-foreground">Exit Multiple:</span> {assumptions.exitMultiple}x</div>
+              )}
+              {assumptions.debtToEquity != null && (
+                <div><span className="text-muted-foreground">D/E Ratio:</span> {assumptions.debtToEquity}x</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {sourceDocuments.length > 0 && (
         <Card>

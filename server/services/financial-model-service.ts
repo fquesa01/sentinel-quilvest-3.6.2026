@@ -75,6 +75,10 @@ export interface FinancialModelOutput {
     year3: number;
     synergies: Array<{ name: string; value: number; timeline: string }>;
   };
+  revenueBreakdown?: Array<{ segment: string; values: Array<{ year: string; revenue: number; growthRate?: number | null }> }>;
+  expenseDetail?: Array<{ category: string; type: string; values: Array<{ year: string; amount: number }> }>;
+  staffingSummary?: { departments: Array<{ name: string; type: string; values: Array<{ year: string; headcount: number; totalCost: number }> }> };
+  detailedAssumptions?: Array<{ category: string; items: Array<{ label: string; value: string; source?: string | null }> }>;
 }
 
 export async function buildFinancialModel(
@@ -98,9 +102,16 @@ export async function buildFinancialModel(
     ...(techAssessment?.ticketToroSynergies || []),
   ].filter((s) => s.applicabilityScore >= 6);
 
+  const revenueSegments = extraction.revenueSegments || [];
+  const expenseBreakdown = extraction.expenseBreakdown || [];
+  const staffingPlan = extraction.staffingPlan || [];
+  const modelAssumptions = extraction.modelAssumptions || [];
+  const productRollout = extraction.productRollout || [];
+  const monthlyFinancials = extraction.monthlyFinancials || [];
+
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-5",
-    max_tokens: 16000,
+    max_tokens: 32000,
     system: `You are a senior PE financial modeler. Build a complete 5-year projection model with three scenarios, DCF valuation, and sensitivity analysis.
 
 Use the following methodology:
@@ -112,6 +123,13 @@ Use the following methodology:
 6. If comparable transactions are available, calculate transaction comps valuation
 7. For PE deals, build an LBO model with leverage assumptions
 8. Include technology value creation from platform synergies in the upside case
+
+CRITICAL — INCORPORATE ALL AVAILABLE DETAIL:
+- If revenue segment data is provided, build projections for EACH segment and include them in revenueBreakdown output
+- If expense breakdown data is provided, project expenses by EACH category and include them in expenseBreakdown output
+- If staffing data is provided, include headcount and cost projections in staffingSummary output
+- If model assumptions are provided in the source documents, incorporate them into the keyAssumptions output AND use them as the basis for your projections instead of generic assumptions
+- The financial model should reflect the ACTUAL detail in the source data — do not simplify or aggregate when granular data is available
 
 CRITICAL UNIT INSTRUCTIONS — READ CAREFULLY:
 - All monetary values (revenue, EBITDA, capex, FCF, enterprise value, etc.) MUST be in THOUSANDS of US dollars.
@@ -135,6 +153,13 @@ Cash Flows: ${JSON.stringify(cashFlows)}
 KPIs: ${JSON.stringify(extraction.kpis)}
 Deal Terms: ${JSON.stringify(extraction.dealTerms)}
 Customer Concentration: ${JSON.stringify(extraction.customerConcentration)}
+
+Revenue by Segment: ${revenueSegments.length > 0 ? JSON.stringify(revenueSegments) : "Not available"}
+Expense Breakdown by Category: ${expenseBreakdown.length > 0 ? JSON.stringify(expenseBreakdown) : "Not available"}
+Staffing Plan: ${staffingPlan.length > 0 ? JSON.stringify(staffingPlan) : "Not available"}
+Source Model Assumptions: ${modelAssumptions.length > 0 ? JSON.stringify(modelAssumptions) : "Not available"}
+Product Rollout Schedule: ${productRollout.length > 0 ? JSON.stringify(productRollout) : "Not available"}
+Monthly Financials: ${monthlyFinancials.length > 0 ? JSON.stringify(monthlyFinancials.slice(0, 36)) : "Not available"}
 
 Comparable Transactions:
 ${compTransactions.map((t) => `${t.buyer} acquired ${t.target} for ${t.dealSize || "undisclosed"} (EV/Rev: ${t.evRevenue || "N/A"}, EV/EBITDA: ${t.evEbitda || "N/A"})`).join("\n")}
@@ -217,6 +242,104 @@ Key synergies: ${techSynergies.map((s) => `${s.capability}: ${s.estimatedRevenue
                 required: ["rowLabel", "colLabel", "value"],
               },
             },
+            revenueBreakdown: {
+              type: "array" as const,
+              description: "Revenue projections by segment/product line across projection years. Only include if segment data was provided. All values in $000s.",
+              items: {
+                type: "object" as const,
+                properties: {
+                  segment: { type: "string" as const },
+                  values: {
+                    type: "array" as const,
+                    items: {
+                      type: "object" as const,
+                      properties: {
+                        year: { type: "string" as const },
+                        revenue: { type: "number" as const, description: "Revenue in $000s" },
+                        growthRate: { type: ["number", "null"] as any },
+                      },
+                      required: ["year", "revenue"],
+                    },
+                  },
+                },
+                required: ["segment", "values"],
+              },
+            },
+            expenseDetail: {
+              type: "array" as const,
+              description: "Projected expenses by department/category across projection years. Only include if expense breakdown was provided. All values in $000s.",
+              items: {
+                type: "object" as const,
+                properties: {
+                  category: { type: "string" as const },
+                  type: { type: "string" as const, enum: ["opex", "cogs"] },
+                  values: {
+                    type: "array" as const,
+                    items: {
+                      type: "object" as const,
+                      properties: {
+                        year: { type: "string" as const },
+                        amount: { type: "number" as const, description: "Amount in $000s" },
+                      },
+                      required: ["year", "amount"],
+                    },
+                  },
+                },
+                required: ["category", "type", "values"],
+              },
+            },
+            staffingSummary: {
+              type: "object" as const,
+              description: "Staffing and headcount projections. Only include if staffing data was provided.",
+              properties: {
+                departments: {
+                  type: "array" as const,
+                  items: {
+                    type: "object" as const,
+                    properties: {
+                      name: { type: "string" as const },
+                      type: { type: "string" as const, enum: ["expense", "cogs"] },
+                      values: {
+                        type: "array" as const,
+                        items: {
+                          type: "object" as const,
+                          properties: {
+                            year: { type: "string" as const },
+                            headcount: { type: "number" as const },
+                            totalCost: { type: "number" as const, description: "Total cost in $000s" },
+                          },
+                          required: ["year", "headcount", "totalCost"],
+                        },
+                      },
+                    },
+                    required: ["name", "type", "values"],
+                  },
+                },
+              },
+            },
+            detailedAssumptions: {
+              type: "array" as const,
+              description: "All model assumptions organized by category. Include source document assumptions plus any derived assumptions.",
+              items: {
+                type: "object" as const,
+                properties: {
+                  category: { type: "string" as const, description: "e.g. General, Staffing, Taxes & Benefits, Revenue, Expenses, Fund Raise" },
+                  items: {
+                    type: "array" as const,
+                    items: {
+                      type: "object" as const,
+                      properties: {
+                        label: { type: "string" as const },
+                        value: { type: "string" as const },
+                        source: { type: ["string", "null"] as any, description: "Whether from source documents or modeled" },
+                      },
+                      required: ["label", "value"],
+                    },
+                  },
+                },
+                required: ["category", "items"],
+              },
+            },
           },
           required: ["assumptions", "baseProjections", "upsideProjections", "downsideProjections", "baseValuation", "sensitivityTable"],
         },
@@ -260,6 +383,45 @@ Key synergies: ${techSynergies.map((s) => `${s.capability}: ${s.estimatedRevenue
     }
 
     return false;
+  }
+
+  function normalizeBreakdowns(breakdown: any[] | undefined, rawDollars: boolean): any[] | undefined {
+    if (!breakdown || breakdown.length === 0) return undefined;
+    if (!rawDollars) return breakdown;
+    return breakdown.map((seg: any) => ({
+      ...seg,
+      values: seg.values?.map((v: any) => ({
+        ...v,
+        revenue: typeof v.revenue === "number" ? Math.round(v.revenue / 1000) : v.revenue,
+      })),
+    }));
+  }
+
+  function normalizeExpenseDetail(detail: any[] | undefined, rawDollars: boolean): any[] | undefined {
+    if (!detail || detail.length === 0) return undefined;
+    if (!rawDollars) return detail;
+    return detail.map((exp: any) => ({
+      ...exp,
+      values: exp.values?.map((v: any) => ({
+        ...v,
+        amount: typeof v.amount === "number" ? Math.round(v.amount / 1000) : v.amount,
+      })),
+    }));
+  }
+
+  function normalizeStaffing(summary: any | undefined, rawDollars: boolean): any | undefined {
+    if (!summary?.departments?.length) return undefined;
+    if (!rawDollars) return summary;
+    return {
+      ...summary,
+      departments: summary.departments.map((dept: any) => ({
+        ...dept,
+        values: dept.values?.map((v: any) => ({
+          ...v,
+          totalCost: typeof v.totalCost === "number" ? Math.round(v.totalCost / 1000) : v.totalCost,
+        })),
+      })),
+    };
   }
 
   function scaleDown(projections: any[]): ProjectionYear[] {
@@ -343,6 +505,10 @@ Key synergies: ${techSynergies.map((s) => `${s.capability}: ${s.estimatedRevenue
         timeline: `${s.timelineMonths} months`,
       })),
     },
+    revenueBreakdown: normalizeBreakdowns(raw.revenueBreakdown, baseRawDollars),
+    expenseDetail: normalizeExpenseDetail(raw.expenseDetail, baseRawDollars),
+    staffingSummary: normalizeStaffing(raw.staffingSummary, baseRawDollars),
+    detailedAssumptions: raw.detailedAssumptions || undefined,
   };
 
   console.log(`[FinModel] Model complete: ${result.scenarios.base.projections.length} projection years`);
@@ -370,6 +536,10 @@ export async function persistFinancialModel(
         dcf: model.scenarios.base.valuation.dcf?.enterpriseValue || 0,
         comps: model.scenarios.base.valuation.comparableTransactions?.impliedValuationRange?.mid || 0,
       },
+      revenueBreakdown: model.revenueBreakdown || null,
+      expenseDetail: model.expenseDetail || null,
+      staffingSummary: model.staffingSummary || null,
+      detailedAssumptions: model.detailedAssumptions || null,
     },
     techValueCreation: model.techValueCreation as any,
   }).returning();
