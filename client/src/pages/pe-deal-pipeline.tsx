@@ -373,7 +373,7 @@ export default function PEDealPipeline() {
         <div>
           <h1 className="text-2xl font-semibold flex items-center gap-2" data-testid="text-page-title">
             <TrendingUp className="h-6 w-6 text-primary" />
-            PE Deal Intelligence
+            Deal Pipeline
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Pipeline tracking, due diligence management, and institutional memory
