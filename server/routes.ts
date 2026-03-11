@@ -13738,6 +13738,58 @@ Guidelines:
     }
   });
 
+  // Suggest checklist template based on uploaded documents
+  app.post("/api/deals/:dealId/suggest-checklist", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const { suggestChecklistTemplate } = await import("./services/deal-intelligence-service");
+      const result = await suggestChecklistTemplate(req.params.dealId);
+      if (!result) {
+        return res.json({ suggestion: null, message: "No suitable template found" });
+      }
+      const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, req.params.dealId));
+      if (deal) {
+        const settings = (deal.settings || {}) as Record<string, any>;
+        await db.update(schema.deals)
+          .set({
+            settings: {
+              ...settings,
+              checklistSuggestion: result,
+              checklistSuggestionAt: new Date().toISOString(),
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.deals.id, req.params.dealId));
+      }
+      res.json({ suggestion: result });
+    } catch (error: any) {
+      console.error("Error suggesting checklist:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Dismiss checklist suggestion
+  app.post("/api/deals/:dealId/dismiss-checklist-suggestion", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, req.params.dealId));
+      if (!deal) return res.status(404).json({ message: "Deal not found" });
+      const settings = (deal.settings || {}) as Record<string, any>;
+      await db.update(schema.deals)
+        .set({
+          settings: {
+            ...settings,
+            checklistSuggestion: null,
+            checklistSuggestionDismissed: true,
+            checklistSuggestionDismissedAt: new Date().toISOString(),
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.deals.id, req.params.dealId));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Dismiss detected deal type suggestion
   app.post("/api/deals/:dealId/dismiss-detected-type", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {

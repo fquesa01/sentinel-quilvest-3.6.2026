@@ -50,6 +50,7 @@ export async function processDealDocumentIntelligence(documentId: string): Promi
     await classifyDealType(deal, doc);
     await autoCompleteChecklistItems(deal, doc);
     await triggerMemoGeneration(deal);
+    await autoSuggestChecklist(deal);
 
     console.log(`[DealIntel] Completed intelligence processing for document "${doc.fileName}"`);
   } catch (error: any) {
@@ -852,4 +853,211 @@ ${combinedContext.slice(0, 18000)}`
   console.log(`[DealIntel] Auto-populated ${milestonesAdded} milestones for deal "${deal.title}"`);
 
   return { milestonesAdded, milestonesList };
+}
+
+async function autoSuggestChecklist(deal: typeof deals.$inferSelect): Promise<void> {
+  try {
+    const [freshDeal] = await db.select().from(deals).where(eq(deals.id, deal.id));
+    if (!freshDeal) return;
+    const settings = (freshDeal.settings || {}) as Record<string, any>;
+    if (settings.checklistSuggestion || settings.checklistSuggestionDismissed || settings.checklistSuggestionInProgress) {
+      return;
+    }
+
+    const existingChecklists = await db.select({ id: dealChecklists.id })
+      .from(dealChecklists)
+      .where(eq(dealChecklists.dealId, deal.id));
+    if (existingChecklists.length > 0) {
+      return;
+    }
+
+    const allDocs = await db.select({
+      id: dataRoomDocuments.id,
+      fileName: dataRoomDocuments.fileName,
+      aiSummary: dataRoomDocuments.aiSummary,
+      ocrStatus: dataRoomDocuments.ocrStatus,
+    })
+      .from(dataRoomDocuments)
+      .innerJoin(dataRooms, eq(dataRoomDocuments.dataRoomId, dataRooms.id))
+      .where(
+        and(
+          eq(dataRooms.dealId, deal.id),
+          eq(dataRoomDocuments.ocrStatus, "completed")
+        )
+      );
+
+    if (allDocs.length < 1) {
+      return;
+    }
+
+    await db.update(deals)
+      .set({
+        settings: { ...settings, checklistSuggestionInProgress: true },
+        updatedAt: new Date(),
+      })
+      .where(eq(deals.id, deal.id));
+
+    const suggestion = await suggestChecklistTemplate(deal.id);
+
+    const [latestDeal] = await db.select().from(deals).where(eq(deals.id, deal.id));
+    const latestSettings = (latestDeal?.settings || {}) as Record<string, any>;
+
+    if (suggestion && suggestion.templateId) {
+      await db.update(deals)
+        .set({
+          settings: {
+            ...latestSettings,
+            checklistSuggestion: suggestion,
+            checklistSuggestionAt: new Date().toISOString(),
+            checklistSuggestionInProgress: false,
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(deals.id, deal.id));
+      console.log(`[DealIntel] Checklist template suggested for deal "${deal.title}": ${suggestion.templateName} (confidence: ${suggestion.confidence})`);
+    } else {
+      await db.update(deals)
+        .set({
+          settings: { ...latestSettings, checklistSuggestionInProgress: false },
+          updatedAt: new Date(),
+        })
+        .where(eq(deals.id, deal.id));
+    }
+  } catch (error: any) {
+    console.error(`[DealIntel] Auto-suggest checklist error:`, error.message);
+    try {
+      const [d] = await db.select().from(deals).where(eq(deals.id, deal.id));
+      if (d) {
+        const s = (d.settings || {}) as Record<string, any>;
+        await db.update(deals)
+          .set({ settings: { ...s, checklistSuggestionInProgress: false }, updatedAt: new Date() })
+          .where(eq(deals.id, deal.id));
+      }
+    } catch (_) {}
+  }
+}
+
+export interface ChecklistSuggestion {
+  templateId: string;
+  templateName: string;
+  templateSlug: string;
+  confidence: number;
+  reasoning: string;
+  documentMatches: Array<{
+    documentName: string;
+    matchedItems: string[];
+  }>;
+}
+
+export async function suggestChecklistTemplate(dealId: string): Promise<ChecklistSuggestion | null> {
+  const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
+  if (!deal) throw new Error("Deal not found");
+
+  const allDocs = await db.select({
+    id: dataRoomDocuments.id,
+    fileName: dataRoomDocuments.fileName,
+    aiSummary: dataRoomDocuments.aiSummary,
+    extractedText: dataRoomDocuments.extractedText,
+  })
+    .from(dataRoomDocuments)
+    .innerJoin(dataRooms, eq(dataRoomDocuments.dataRoomId, dataRooms.id))
+    .where(
+      and(
+        eq(dataRooms.dealId, deal.id),
+        eq(dataRoomDocuments.ocrStatus, "completed")
+      )
+    );
+
+  if (allDocs.length === 0) {
+    return null;
+  }
+
+  const templates = await db.select({
+    id: dealTemplates.id,
+    name: dealTemplates.name,
+    slug: dealTemplates.slug,
+    description: dealTemplates.description,
+    transactionType: dealTemplates.transactionType,
+  })
+    .from(dealTemplates)
+    .where(eq(dealTemplates.isActive, true));
+
+  if (templates.length === 0) {
+    return null;
+  }
+
+  const templateItemsByTemplate: Record<string, string[]> = {};
+  for (const tmpl of templates) {
+    const items = await db.select({ name: templateItems.name })
+      .from(templateItems)
+      .where(eq(templateItems.templateId, tmpl.id));
+    templateItemsByTemplate[tmpl.id] = items.map(i => i.name);
+  }
+
+  const docSummaries = allDocs.slice(0, 20).map(d => {
+    const summary = d.aiSummary || (d.extractedText || "").slice(0, 500);
+    return `- "${d.fileName}": ${summary.slice(0, 300)}`;
+  }).join("\n");
+
+  const templateDescriptions = templates.map(t => {
+    const items = templateItemsByTemplate[t.id] || [];
+    return `Template: "${t.name}" (id: ${t.id}, slug: ${t.slug}, type: ${t.transactionType})
+Description: ${t.description || "N/A"}
+Sample checklist items: ${items.slice(0, 10).join(", ")}`;
+  }).join("\n\n");
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 1000,
+    messages: [{
+      role: "user",
+      content: `You are a legal transaction analyst. Analyze the uploaded documents for a deal and recommend which checklist template best fits this transaction.
+
+Deal: "${deal.title}" (type: ${deal.dealType || "unknown"})
+
+Uploaded Documents:
+${docSummaries}
+
+Available Templates:
+${templateDescriptions}
+
+Return ONLY a JSON object:
+{
+  "templateId": "the template id",
+  "templateName": "the template name",
+  "templateSlug": "the template slug",
+  "confidence": 0.0 to 1.0,
+  "reasoning": "2-3 sentence explanation of why this template is the best fit based on the documents",
+  "documentMatches": [
+    { "documentName": "filename", "matchedItems": ["checklist item name 1", "checklist item name 2"] }
+  ]
+}
+
+Pick the single best-fit template. If no template fits well (confidence < 0.3), return null.
+Include up to 5 document matches showing which documents satisfy which checklist items.`
+    }],
+  });
+
+  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+
+  const result = JSON.parse(jsonMatch[0]);
+  if (!result || result === null || !result.templateId || result.confidence < 0.3) {
+    return null;
+  }
+
+  const matchedTemplate = templates.find(t => t.id === result.templateId);
+  if (!matchedTemplate) {
+    return null;
+  }
+
+  return {
+    templateId: result.templateId,
+    templateName: result.templateName || matchedTemplate.name,
+    templateSlug: result.templateSlug || matchedTemplate.slug,
+    confidence: result.confidence,
+    reasoning: result.reasoning,
+    documentMatches: (result.documentMatches || []).slice(0, 5),
+  };
 }

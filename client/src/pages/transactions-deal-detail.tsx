@@ -2027,7 +2027,7 @@ export default function TransactionsDealDetail() {
           </TabsContent>
 
           <TabsContent value="checklists" className="mt-6">
-            <ChecklistsTab dealId={id!} dealTitle={deal.title} />
+            <ChecklistsTab dealId={id!} dealTitle={deal.title} dealSettings={(deal.settings || {}) as Record<string, any>} />
           </TabsContent>
 
           <TabsContent value="issues" className="mt-6">
@@ -3055,13 +3055,14 @@ function DocumentSearchTab({ dealId }: { dealId: string }) {
 }
 
 // Checklists Tab Component
-function ChecklistsTab({ dealId, dealTitle }: { dealId: string; dealTitle: string }) {
+function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; dealTitle: string; dealSettings?: Record<string, any> }) {
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isApplyTemplateOpen, setIsApplyTemplateOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [, navigate] = useLocation();
   const [checklistType, setChecklistType] = useState("legal");
+  const [isSuggestionDismissed, setIsSuggestionDismissed] = useState(false);
 
   const { data: checklists = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/deals", dealId, "checklists"],
@@ -3071,6 +3072,59 @@ function ChecklistsTab({ dealId, dealTitle }: { dealId: string; dealTitle: strin
   const { data: templates = [] } = useQuery<any[]>({
     queryKey: ["/api/deal-templates"],
   });
+
+  const suggestion = dealSettings?.checklistSuggestion as {
+    templateId: string;
+    templateName: string;
+    confidence: number;
+    reasoning: string;
+    documentMatches?: Array<{ documentName: string; matchedItems: string[] }>;
+  } | undefined;
+
+  const suggestChecklistMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${dealId}/suggest-checklist`, {});
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId] });
+      if (data.suggestion) {
+        toast({ title: "Suggestion Ready", description: `Recommended: ${data.suggestion.templateName}` });
+      } else {
+        toast({ title: "No Match", description: "Could not find a suitable template for this deal's documents." });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to analyze documents", variant: "destructive" });
+    },
+  });
+
+  const dismissSuggestionMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${dealId}/dismiss-checklist-suggestion`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      setIsSuggestionDismissed(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId] });
+    },
+  });
+
+  const applySuggestedTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      return apiRequest("POST", `/api/deals/${dealId}/apply-template/${templateId}`, {});
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "checklists"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId] });
+      toast({ title: "Template Applied", description: "The suggested checklist has been created from the template." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to apply template", variant: "destructive" });
+    },
+  });
+
+  const showSuggestion = suggestion && !isSuggestionDismissed && checklists.length === 0;
 
   const createChecklistMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string; checklistType?: string }) => {
@@ -3154,16 +3208,90 @@ function ChecklistsTab({ dealId, dealTitle }: { dealId: string; dealTitle: strin
           </div>
         </CardHeader>
         <CardContent>
-          {checklists.length === 0 ? (
+          {showSuggestion && (
+            <div className="mb-4 p-4 rounded-lg border border-primary/30 bg-primary/5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 flex-1">
+                  <Sparkles className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-sm">AI Recommendation: {suggestion.templateName}</p>
+                      <Badge variant={suggestion.confidence >= 0.8 ? "default" : "secondary"} className="text-xs">
+                        {Math.round(suggestion.confidence * 100)}% match
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">{suggestion.reasoning}</p>
+                    {suggestion.documentMatches && suggestion.documentMatches.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">Matching documents:</p>
+                        {suggestion.documentMatches.slice(0, 3).map((match, idx) => (
+                          <div key={idx} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                            <FileText className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                            <span>
+                              <span className="font-medium">{match.documentName}</span>
+                              {match.matchedItems.length > 0 && (
+                                <span className="ml-1">
+                                  ({match.matchedItems.slice(0, 2).join(", ")}{match.matchedItems.length > 2 ? ` +${match.matchedItems.length - 2} more` : ""})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 mt-3">
+                      <Button
+                        size="sm"
+                        onClick={() => applySuggestedTemplateMutation.mutate(suggestion.templateId)}
+                        disabled={applySuggestedTemplateMutation.isPending}
+                        data-testid="button-apply-suggested-template"
+                      >
+                        {applySuggestedTemplateMutation.isPending ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Applying...</>
+                        ) : (
+                          <><CheckCircle2 className="h-4 w-4 mr-2" />Apply This Checklist</>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => dismissSuggestionMutation.mutate()}
+                        disabled={dismissSuggestionMutation.isPending}
+                        data-testid="button-dismiss-suggestion"
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {checklists.length === 0 && !showSuggestion ? (
             <div className="text-center py-8 text-muted-foreground">
               <ListChecks className="h-12 w-12 mx-auto mb-3 opacity-50" />
               <p>No checklists for this deal</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => setIsCreateOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create First Checklist
-              </Button>
+              <div className="flex items-center justify-center gap-2 mt-3">
+                <Button variant="outline" size="sm" onClick={() => setIsCreateOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create First Checklist
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => suggestChecklistMutation.mutate()}
+                  disabled={suggestChecklistMutation.isPending}
+                  data-testid="button-suggest-checklist"
+                >
+                  {suggestChecklistMutation.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Analyzing...</>
+                  ) : (
+                    <><Sparkles className="h-4 w-4 mr-2" />Suggest from Documents</>
+                  )}
+                </Button>
+              </div>
             </div>
-          ) : (
+          ) : checklists.length === 0 ? null : (
             <div className="space-y-3">
               {checklists.map((checklist: any) => (
                 <div
