@@ -50,6 +50,8 @@ import {
   Send,
   Check,
   Ban,
+  Download,
+  Printer,
 } from "lucide-react";
 import type {
   ClosingTransaction,
@@ -1101,9 +1103,36 @@ export default function ClosingDetail() {
               </Badge>
             )}
           </div>
-          <Button variant="outline" size="sm" onClick={openHeaderEdit} data-testid="button-edit-header">
-            <Edit className="h-4 w-4 mr-1" /> Edit Details
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={openHeaderEdit} data-testid="button-edit-header">
+              <Edit className="h-4 w-4 mr-1" /> Edit Details
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="button-download-pdf"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = `/api/closings/${id}/pdf`;
+                link.download = "";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              <Download className="h-4 w-4 mr-1" /> Download PDF
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="button-print-pdf"
+              onClick={() => {
+                window.open(`/api/closings/${id}/pdf?inline=1`, "_blank");
+              }}
+            >
+              <Printer className="h-4 w-4 mr-1" /> Print
+            </Button>
+          </div>
         </div>
       </div>
 

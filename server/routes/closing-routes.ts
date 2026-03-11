@@ -4,6 +4,7 @@ import { eq, and, desc, asc, sql } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { z } from "zod";
 import { isAuthenticated } from "../replitAuth";
+import { generateClosingStatementPDF } from "../services/closing-pdf-service";
 
 const router = Router();
 router.use(isAuthenticated);
@@ -755,6 +756,85 @@ router.delete("/closing-wires/:id", async (req: any, res) => {
       .where(eq(schema.closingWires.id, req.params.id));
     res.json({ success: true });
   } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get("/closings/:id/pdf", async (req: any, res) => {
+  try {
+    const closingId = req.params.id;
+
+    const [closing] = await db.select().from(schema.closingTransactions)
+      .where(eq(schema.closingTransactions.id, closingId));
+    if (!closing) return res.status(404).json({ message: "Closing not found" });
+
+    const lineItems = await db.select().from(schema.closingLineItems)
+      .where(eq(schema.closingLineItems.closingId, closingId))
+      .orderBy(asc(schema.closingLineItems.sortOrder));
+
+    const parties = await db.select().from(schema.closingParties)
+      .where(eq(schema.closingParties.closingId, closingId));
+
+    const prorations = await db.select().from(schema.closingProrations)
+      .where(eq(schema.closingProrations.closingId, closingId));
+
+    const escrows = await db.select().from(schema.closingEscrows)
+      .where(eq(schema.closingEscrows.closingId, closingId));
+
+    const payoffs = await db.select().from(schema.closingPayoffs)
+      .where(eq(schema.closingPayoffs.closingId, closingId));
+
+    const commissions = await db.select().from(schema.closingCommissions)
+      .where(eq(schema.closingCommissions.closingId, closingId));
+
+    const wires = await db.select().from(schema.closingWires)
+      .where(eq(schema.closingWires.closingId, closingId));
+
+    const computedProrations = prorations.map(p => ({
+      ...p,
+      computed: computeProration(p),
+    }));
+
+    const balance = computeBalance(lineItems);
+
+    let totalPayoffs = 0;
+    for (const p of payoffs) totalPayoffs += parseAmount(p.totalPayoff);
+    let totalCommissions = 0;
+    for (const c of commissions) totalCommissions += parseAmount(c.amount);
+    let totalEscrows = 0;
+    for (const e of escrows) totalEscrows += parseAmount(e.amount);
+    let totalWires = 0;
+    for (const w of wires) totalWires += parseAmount(w.amount);
+
+    const pdfData = {
+      closing,
+      lineItems,
+      parties,
+      prorations: computedProrations,
+      escrows,
+      payoffs,
+      commissions,
+      wires,
+      balance,
+      totals: {
+        payoffs: totalPayoffs.toFixed(2),
+        commissions: totalCommissions.toFixed(2),
+        escrows: totalEscrows.toFixed(2),
+        wires: totalWires.toFixed(2),
+      },
+    };
+
+    const doc = generateClosingStatementPDF(pdfData);
+
+    const filename = `${(closing.title || "Closing-Statement").replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-")}-${closingId.slice(0, 8)}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    const disposition = req.query.inline === "1" ? "inline" : "attachment";
+    res.setHeader("Content-Disposition", `${disposition}; filename="${filename}"`);
+
+    doc.pipe(res);
+    doc.end();
+  } catch (error: any) {
+    console.error("Error generating closing PDF:", error);
     res.status(500).json({ message: error.message });
   }
 });
