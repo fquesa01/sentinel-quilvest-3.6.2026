@@ -473,87 +473,201 @@ function renderCDPage1(doc: PDFKit.PDFDocument, data: ClosingData) {
   doc.y = fy;
 }
 
+function renderCDSectionItems(doc: PDFKit.PDFDocument, items: any[], sectionLabel: string) {
+  if (doc.y > doc.page.height - 80) doc.addPage();
+  const headerY = doc.y;
+  drawBoxFill(doc, 55, headerY, doc.page.width - 110, 14, "#f0f4f8");
+  doc.fontSize(8).font("Helvetica-Bold").text(sectionLabel, 60, headerY + 3, { width: doc.page.width - 120 });
+  doc.y = headerY + 16;
+
+  if (items.length === 0) {
+    doc.fontSize(7.5).font("Helvetica").fillColor("#888888").text("(No items entered)", 60);
+    doc.fillColor("#000000");
+    doc.moveDown(0.2);
+    return 0;
+  }
+
+  let total = 0;
+  for (const item of items) {
+    if (doc.y > doc.page.height - 50) doc.addPage();
+    const amt = parseAmt(item.amount);
+    total += amt;
+    const y = doc.y;
+    doc.fontSize(7.5).font("Helvetica");
+    doc.text(item.lineNumber || "", 60, y, { width: 30 });
+    doc.text(item.description || "", 90, y, { width: 310 });
+    doc.text(fmtCurrency(amt), 410, y, { width: 80, align: "right" });
+    doc.y = y + 12;
+  }
+  drawLine(doc);
+  doc.moveDown(0.1);
+  const ty = doc.y;
+  doc.fontSize(7.5).font("Helvetica-Bold");
+  doc.text(`${sectionLabel} Total:`, 90, ty, { width: 310 });
+  doc.text(fmtCurrency(total), 410, ty, { width: 80, align: "right" });
+  doc.y = ty + 14;
+  return total;
+}
+
+function cdFilterItems(data: ClosingData, ...keys: string[]): any[] {
+  return data.lineItems.filter(li => keys.includes((li as any).cdSection));
+}
+
 function renderCDSections(doc: PDFKit.PDFDocument, data: ClosingData) {
+  const c = data.closing;
+  const firmName = getFirmName(data);
+
   doc.addPage();
   renderCDPage1(doc, data);
 
-  const cdPages = [
-    {
-      pageTitle: "PAGE 1 — LOAN TERMS",
-      sections: [
-        { key: "loan_terms", label: "LOAN TERMS" },
-      ],
-    },
-    {
-      pageTitle: "PAGE 2 — PROJECTED PAYMENTS & COSTS",
-      sections: [
-        { key: "projected_payments", label: "PROJECTED PAYMENTS" },
-        { key: "closing_costs", label: "CLOSING COSTS", aliases: ["origination_charges", "services_not_shopped", "services_shopped", "taxes_govt", "prepaids", "initial_escrow", "other_costs", "total_closing_costs"] },
-      ],
-    },
-    {
-      pageTitle: "PAGE 4 — CALCULATING CASH TO CLOSE",
-      sections: [
-        { key: "cash_to_close", label: "CALCULATING CASH TO CLOSE", aliases: ["summaries_borrower"] },
-      ],
-    },
-    {
-      pageTitle: "PAGE 5 — SUMMARIES & ADDITIONAL INFO",
-      sections: [
-        { key: "summaries", label: "SUMMARIES OF TRANSACTIONS", aliases: ["summaries_seller", "summaries_borrower", "additional_info", "contact_info"] },
-      ],
-    },
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 14, "#e8edf3");
+  doc.fontSize(8).font("Helvetica-Bold").fillColor("#1a365d")
+    .text("PAGE 1 OF 5 — LOAN TERMS", 55, doc.y + 2, { width: doc.page.width - 110 });
+  doc.fillColor("#000000");
+  doc.y += 16;
+
+  renderCDSectionItems(doc, cdFilterItems(data, "loan_terms"), "LOAN TERMS");
+
+  const loanAmt = parseAmt(c.loanAmount);
+  if (loanAmt > 0) {
+    doc.moveDown(0.3);
+    const boxY = doc.y;
+    drawBox(doc, 55, boxY, doc.page.width - 110, 50);
+    doc.fontSize(7).font("Helvetica-Bold").text("Loan Amount", 60, boxY + 3);
+    doc.fontSize(9).font("Helvetica").text(fmtCurrency(loanAmt), 60, boxY + 14);
+    doc.fontSize(7).font("Helvetica-Bold").text("Interest Rate", 200, boxY + 3);
+    doc.fontSize(9).font("Helvetica").text("See Loan Estimate", 200, boxY + 14);
+    doc.fontSize(7).font("Helvetica-Bold").text("Loan Purpose", 360, boxY + 3);
+    doc.fontSize(9).font("Helvetica").text("Purchase", 360, boxY + 14);
+    doc.fontSize(7).font("Helvetica-Bold").text("Loan Product", 60, boxY + 30);
+    doc.fontSize(9).font("Helvetica").text("See Loan Estimate", 60, boxY + 38);
+    doc.y = boxY + 54;
+  }
+
+  doc.addPage();
+  drawBoxFill(doc, 50, 45, doc.page.width - 100, 14, "#e8edf3");
+  doc.fontSize(8).font("Helvetica-Bold").fillColor("#1a365d")
+    .text("PAGE 2 OF 5 — PROJECTED PAYMENTS", 55, 47, { width: doc.page.width - 110 });
+  doc.fillColor("#000000");
+  doc.y = 62;
+
+  renderCDSectionItems(doc, cdFilterItems(data, "projected_payments"), "PROJECTED PAYMENTS");
+  doc.moveDown(0.5);
+  renderCDSectionItems(doc, cdFilterItems(data, "closing_costs", "costs_at_closing"), "COSTS AT CLOSING");
+
+  doc.addPage();
+  drawBoxFill(doc, 50, 45, doc.page.width - 100, 14, "#e8edf3");
+  doc.fontSize(8).font("Helvetica-Bold").fillColor("#1a365d")
+    .text("PAGE 3 OF 5 — CLOSING COST DETAILS", 55, 47, { width: doc.page.width - 110 });
+  doc.fillColor("#000000");
+  doc.y = 62;
+
+  const closingCostSections = [
+    { keys: ["origination_charges"], label: "A. ORIGINATION CHARGES" },
+    { keys: ["services_not_shopped"], label: "B. SERVICES BORROWER DID NOT SHOP FOR" },
+    { keys: ["services_shopped"], label: "C. SERVICES BORROWER DID SHOP FOR" },
+    { keys: ["taxes_govt", "government_fees"], label: "D. TAXES AND OTHER GOVERNMENT FEES" },
+    { keys: ["prepaids"], label: "E. PREPAIDS" },
+    { keys: ["initial_escrow", "escrow_at_closing"], label: "F. INITIAL ESCROW PAYMENT AT CLOSING" },
+    { keys: ["other_costs", "other"], label: "G. OTHER" },
+    { keys: ["total_closing_costs"], label: "H. TOTAL CLOSING COSTS (Borrower-Paid)" },
   ];
 
-  for (const page of cdPages) {
-    drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 14, "#e8edf3");
-    doc.fontSize(8).font("Helvetica-Bold").fillColor("#1a365d")
-      .text(page.pageTitle, 55, doc.y + 2, { width: doc.page.width - 110 });
-    doc.fillColor("#000000");
-    doc.y += 16;
-
-    for (const sec of page.sections) {
-      const secAliases = (sec as any).aliases || [];
-      const matchKeys = [sec.key, ...secAliases];
-      const items = data.lineItems.filter(li => matchKeys.includes((li as any).cdSection));
-      if (doc.y > doc.page.height - 80) doc.addPage();
-
-      const headerY = doc.y;
-      drawBoxFill(doc, 55, headerY, doc.page.width - 110, 14, "#f0f4f8");
-      doc.fontSize(8).font("Helvetica-Bold").text(sec.label, 60, headerY + 3, { width: doc.page.width - 120 });
-      doc.y = headerY + 16;
-
-      if (items.length === 0) {
-        doc.fontSize(7.5).font("Helvetica").fillColor("#888888").text("(No items entered)", 60);
-        doc.fillColor("#000000");
-        doc.moveDown(0.2);
-      } else {
-        for (const item of items) {
-          if (doc.y > doc.page.height - 50) doc.addPage();
-          const y = doc.y;
-          doc.fontSize(7.5).font("Helvetica");
-          doc.text(item.lineNumber || "", 60, y, { width: 30 });
-          doc.text(item.description || "", 90, y, { width: 310 });
-          doc.text(fmtCurrency(parseAmt(item.amount)), 410, y, { width: 80, align: "right" });
-          doc.y = y + 12;
-        }
-        const total = items.reduce((s, i) => s + parseAmt(i.amount), 0);
-        drawLine(doc);
-        doc.moveDown(0.1);
-        doc.fontSize(7.5).font("Helvetica-Bold");
-        const ty = doc.y;
-        doc.text(`${sec.label} Total:`, 90, ty, { width: 310 });
-        doc.text(fmtCurrency(total), 410, ty, { width: 80, align: "right" });
-        doc.y = ty + 14;
-      }
-    }
-
-    if (page !== cdPages[cdPages.length - 1]) {
-      doc.addPage();
+  let totalAllClosingCosts = 0;
+  for (const sec of closingCostSections) {
+    const items = data.lineItems.filter(li => sec.keys.includes((li as any).cdSection));
+    if (items.length > 0) {
+      totalAllClosingCosts += renderCDSectionItems(doc, items, sec.label);
+      doc.moveDown(0.2);
     }
   }
 
-  if (doc.y > doc.page.height - 80) doc.addPage();
+  const unallocatedCosts = data.lineItems.filter(li =>
+    (li as any).cdSection === "closing_costs" &&
+    !closingCostSections.some(sec => sec.keys.includes((li as any).cdSection))
+  );
+  if (unallocatedCosts.length > 0) {
+    totalAllClosingCosts += renderCDSectionItems(doc, unallocatedCosts, "CLOSING COSTS (General)");
+  }
+
+  if (doc.y > doc.page.height - 40) doc.addPage();
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 16, "#f0f4f8");
+  doc.fontSize(8.5).font("Helvetica-Bold")
+    .text("TOTAL CLOSING COSTS:", 55, doc.y + 3)
+    .text(fmtCurrency(totalAllClosingCosts), 410, doc.y - 9, { width: 80, align: "right" });
+  doc.y += 20;
+
+  doc.addPage();
+  drawBoxFill(doc, 50, 45, doc.page.width - 100, 14, "#e8edf3");
+  doc.fontSize(8).font("Helvetica-Bold").fillColor("#1a365d")
+    .text("PAGE 4 OF 5 — CALCULATING CASH TO CLOSE", 55, 47, { width: doc.page.width - 110 });
+  doc.fillColor("#000000");
+  doc.y = 62;
+
+  renderCDSectionItems(doc, cdFilterItems(data, "cash_to_close"), "CALCULATING CASH TO CLOSE");
+  doc.moveDown(0.5);
+  renderCDSectionItems(doc, cdFilterItems(data, "summaries", "summaries_borrower"), "SUMMARIES OF TRANSACTIONS — BORROWER'S TRANSACTION");
+
+  const borrowerDebits = data.lineItems.filter(li => li.side === "buyer_debit");
+  const borrowerCredits = data.lineItems.filter(li => li.side === "buyer_credit");
+  if (borrowerDebits.length > 0 || borrowerCredits.length > 0) {
+    const totalDebits = borrowerDebits.reduce((s, i) => s + parseAmt(i.amount), 0);
+    const totalCredits = borrowerCredits.reduce((s, i) => s + parseAmt(i.amount), 0);
+    doc.moveDown(0.3);
+    drawBoxFill(doc, 55, doc.y, doc.page.width - 110, 26, "#f0f4f8");
+    const bsY = doc.y;
+    doc.fontSize(7.5).font("Helvetica-Bold")
+      .text("Due from Borrower at Closing:", 60, bsY + 3)
+      .text(fmtCurrency(totalDebits), 410, bsY + 3, { width: 80, align: "right" })
+      .text("Paid Already by/on Behalf of Borrower:", 60, bsY + 14)
+      .text(`(${fmtCurrency(totalCredits)})`, 410, bsY + 14, { width: 80, align: "right" });
+    doc.y = bsY + 30;
+  }
+
+  doc.addPage();
+  drawBoxFill(doc, 50, 45, doc.page.width - 100, 14, "#e8edf3");
+  doc.fontSize(8).font("Helvetica-Bold").fillColor("#1a365d")
+    .text("PAGE 5 OF 5 — SELLER'S TRANSACTION & ADDITIONAL INFORMATION", 55, 47, { width: doc.page.width - 110 });
+  doc.fillColor("#000000");
+  doc.y = 62;
+
+  renderCDSectionItems(doc, cdFilterItems(data, "summaries", "summaries_seller"), "SUMMARIES OF TRANSACTIONS — SELLER'S TRANSACTION");
+
+  const sellerCredits = data.lineItems.filter(li => li.side === "seller_credit");
+  const sellerDebits = data.lineItems.filter(li => li.side === "seller_debit");
+  if (sellerCredits.length > 0 || sellerDebits.length > 0) {
+    const totalSC = sellerCredits.reduce((s, i) => s + parseAmt(i.amount), 0);
+    const totalSD = sellerDebits.reduce((s, i) => s + parseAmt(i.amount), 0);
+    doc.moveDown(0.3);
+    drawBoxFill(doc, 55, doc.y, doc.page.width - 110, 26, "#f0f4f8");
+    const ssY = doc.y;
+    doc.fontSize(7.5).font("Helvetica-Bold")
+      .text("Due to Seller at Closing:", 60, ssY + 3)
+      .text(fmtCurrency(totalSC), 410, ssY + 3, { width: 80, align: "right" })
+      .text("Reductions in Amount Due to Seller:", 60, ssY + 14)
+      .text(`(${fmtCurrency(totalSD)})`, 410, ssY + 14, { width: 80, align: "right" });
+    doc.y = ssY + 30;
+  }
+
+  doc.moveDown(0.5);
+  renderCDSectionItems(doc, cdFilterItems(data, "additional_info"), "ADDITIONAL INFORMATION ABOUT THIS LOAN");
+
+  doc.moveDown(0.5);
+  if (doc.y > doc.page.height - 120) doc.addPage();
+  const contactHeaderY = doc.y;
+  drawBoxFill(doc, 55, contactHeaderY, doc.page.width - 110, 14, "#f0f4f8");
+  doc.fontSize(8).font("Helvetica-Bold").text("CONTACT INFORMATION", 60, contactHeaderY + 3, { width: doc.page.width - 120 });
+  doc.y = contactHeaderY + 16;
+
+  for (const party of data.parties) {
+    if (doc.y > doc.page.height - 30) doc.addPage();
+    const pY = doc.y;
+    doc.fontSize(7).font("Helvetica-Bold").text((party.role || "").replace(/_/g, " ").toUpperCase(), 60, pY, { width: 80 });
+    doc.font("Helvetica").text(`${party.name}${party.company ? ` (${party.company})` : ""}`, 140, pY, { width: 200 });
+    if (party.email) doc.text(party.email, 350, pY, { width: 140 });
+    doc.y = pY + 12;
+  }
+
   doc.moveDown(1);
   doc.fontSize(7).font("Helvetica").fillColor("#666666");
   doc.text("By signing, you are only confirming that you have received this form. You do not have to accept this loan because you have received this form or signed a loan application.", 50, doc.y, { width: doc.page.width - 100 });
@@ -911,29 +1025,98 @@ function render1031Exchange(doc: PDFKit.PDFDocument, data: ClosingData) {
 function renderPortfolio(doc: PDFKit.PDFDocument, data: ClosingData) {
   doc.addPage();
   const label = typeLabels[data.closing.transactionType] || "PORTFOLIO SETTLEMENT STATEMENT";
+  const firmName = getFirmName(data);
   doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text(label.toUpperCase(), { align: "center" });
   doc.fillColor("#000000");
+  doc.moveDown(0.2);
+  doc.fontSize(9).font("Helvetica").text(firmName, { align: "center" });
   doc.moveDown(0.5);
 
   const sources = data.lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
   const uses = data.lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
 
-  sectionHeader(doc, "CAPITAL SUMMARY");
+  sectionHeader(doc, "PORTFOLIO SUMMARY");
+
+  const halfW = (doc.page.width - 110) / 2;
+  let fy = doc.y;
+  renderFormField(doc, "Property", data.closing.propertyAddress || "", 50, fy, doc.page.width - 100, 24);
+  fy += 28;
+  renderFormField(doc, "Purchase Price", fmtCurrency(parseAmt(data.closing.purchasePrice)), 50, fy, halfW, 24);
+  renderFormField(doc, "File Number", data.closing.fileNumber || "", (doc.page.width / 2) + 5, fy, halfW, 24);
+  fy += 28;
+  renderFormField(doc, "Closing Date", fmtDate(data.closing.closingDate), 50, fy, halfW, 24);
+  renderFormField(doc, "Status", (data.closing.status || "draft").replace(/_/g, " ").toUpperCase(), (doc.page.width / 2) + 5, fy, halfW, 24);
+  fy += 30;
+  doc.y = fy;
+
+  sectionHeader(doc, "CAPITAL SOURCES");
   for (const item of sources) {
     tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
   }
   const totalCap = sources.reduce((s, i) => s + parseAmt(i.amount), 0);
   drawLine(doc);
-  tableRow(doc, [{ text: "TOTAL CAPITAL:", width: 380, bold: true }, { text: fmtCurrency(totalCap), width: 100, align: "right", bold: true }]);
+  tableRow(doc, [{ text: "TOTAL SOURCES:", width: 380, bold: true }, { text: fmtCurrency(totalCap), width: 100, align: "right", bold: true }]);
 
   doc.moveDown(0.5);
-  sectionHeader(doc, "ALLOCATIONS");
+  sectionHeader(doc, "ALLOCATIONS & USES");
   for (const item of uses) {
     tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
   }
   const totalAlloc = uses.reduce((s, i) => s + parseAmt(i.amount), 0);
   drawLine(doc);
   tableRow(doc, [{ text: "TOTAL ALLOCATED:", width: 380, bold: true }, { text: fmtCurrency(totalAlloc), width: 100, align: "right", bold: true }]);
+
+  doc.moveDown(0.5);
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 16, "#f0f4f8");
+  const diff = totalCap - totalAlloc;
+  doc.fontSize(8.5).font("Helvetica-Bold")
+    .text(Math.abs(diff) < 0.01 ? "BALANCE: VERIFIED" : "VARIANCE:", 55, doc.y + 3)
+    .text(fmtCurrency(diff), 410, doc.y - 9, { width: 80, align: "right" });
+  doc.y += 20;
+
+  const properties = new Map<string, any[]>();
+  for (const item of data.lineItems) {
+    const prop = (item as any).propertyName || (item as any).property || null;
+    if (prop) {
+      if (!properties.has(prop)) properties.set(prop, []);
+      properties.get(prop)!.push(item);
+    }
+  }
+
+  if (properties.size > 1) {
+    for (const [propertyName, items] of properties) {
+      doc.addPage();
+      drawBoxFill(doc, 50, 45, doc.page.width - 100, 18, "#1a365d");
+      doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff")
+        .text(`PROPERTY: ${propertyName}`, 55, 49, { width: doc.page.width - 110 });
+      doc.fillColor("#000000");
+      doc.y = 66;
+
+      const propSources = items.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
+      const propUses = items.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
+
+      if (propSources.length > 0) {
+        sectionHeader(doc, "Sources");
+        for (const item of propSources) {
+          tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+        }
+        const total = propSources.reduce((s, i) => s + parseAmt(i.amount), 0);
+        drawLine(doc);
+        tableRow(doc, [{ text: "Subtotal:", width: 380, bold: true }, { text: fmtCurrency(total), width: 100, align: "right", bold: true }]);
+      }
+
+      if (propUses.length > 0) {
+        doc.moveDown(0.3);
+        sectionHeader(doc, "Uses & Allocations");
+        for (const item of propUses) {
+          tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+        }
+        const total = propUses.reduce((s, i) => s + parseAmt(i.amount), 0);
+        drawLine(doc);
+        tableRow(doc, [{ text: "Subtotal:", width: 380, bold: true }, { text: fmtCurrency(total), width: 100, align: "right", bold: true }]);
+      }
+    }
+  }
 }
 
 function renderLenderFunding(doc: PDFKit.PDFDocument, data: ClosingData) {

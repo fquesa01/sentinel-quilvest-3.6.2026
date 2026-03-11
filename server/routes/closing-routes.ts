@@ -807,6 +807,10 @@ router.get("/closings/:id/pdf", async (req: any, res) => {
     let totalWires = 0;
     for (const w of wires) totalWires += parseAmount(w.amount);
 
+    const titleCo = parties.find((p: any) => p.role === "title_company" || p.role === "settlement_agent" || p.role === "escrow_agent");
+    const firmName = titleCo?.company || titleCo?.name || "Settlement Agent";
+    const firmAddress = titleCo?.address || "";
+
     const pdfData = {
       closing,
       lineItems,
@@ -823,6 +827,8 @@ router.get("/closings/:id/pdf", async (req: any, res) => {
         escrows: totalEscrows.toFixed(2),
         wires: totalWires.toFixed(2),
       },
+      firmName,
+      firmAddress,
     };
 
     const doc = generateClosingStatementPDF(pdfData);
@@ -880,6 +886,10 @@ router.post("/closings/:id/save-to-data-room", async (req: any, res) => {
     let totalWires = 0;
     for (const w of wires) totalWires += parseAmount(w.amount);
 
+    const drTitleCo = parties.find((p: any) => p.role === "title_company" || p.role === "settlement_agent" || p.role === "escrow_agent");
+    const drFirmName = drTitleCo?.company || drTitleCo?.name || "Settlement Agent";
+    const drFirmAddress = drTitleCo?.address || "";
+
     const pdfDoc = generateClosingStatementPDF({
       closing,
       lineItems,
@@ -896,6 +906,8 @@ router.post("/closings/:id/save-to-data-room", async (req: any, res) => {
         escrows: totalEscrows.toFixed(2),
         wires: totalWires.toFixed(2),
       },
+      firmName: drFirmName,
+      firmAddress: drFirmAddress,
     });
 
     const chunks: Buffer[] = [];
