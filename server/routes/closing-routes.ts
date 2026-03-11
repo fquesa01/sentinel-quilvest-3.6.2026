@@ -1026,8 +1026,8 @@ router.post("/closings/extract-from-document", async (req: any, res) => {
 router.post("/closings/extract-preview", async (req: any, res) => {
   try {
     const { documentId, dealId } = req.body;
-    if (!documentId) {
-      return res.status(400).json({ message: "documentId is required" });
+    if (!documentId || !dealId) {
+      return res.status(400).json({ message: "documentId and dealId are required" });
     }
 
     const [document] = await db.select().from(schema.dataRoomDocuments)
@@ -1037,13 +1037,11 @@ router.post("/closings/extract-preview", async (req: any, res) => {
       return res.status(404).json({ message: "Document not found" });
     }
 
-    if (dealId) {
-      const dataRooms = await db.select().from(schema.dataRooms)
-        .where(eq(schema.dataRooms.dealId, dealId));
-      const dataRoomIds = new Set(dataRooms.map(dr => dr.id));
-      if (!dataRoomIds.has(document.dataRoomId)) {
-        return res.status(403).json({ message: "Document does not belong to this deal" });
-      }
+    const dataRooms = await db.select().from(schema.dataRooms)
+      .where(eq(schema.dataRooms.dealId, dealId));
+    const dataRoomIds = new Set(dataRooms.map(dr => dr.id));
+    if (!dataRoomIds.has(document.dataRoomId)) {
+      return res.status(403).json({ message: "Document does not belong to this deal" });
     }
 
     const { ObjectStorageService } = await import("../objectStorage");

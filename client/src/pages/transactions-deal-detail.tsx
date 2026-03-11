@@ -476,7 +476,7 @@ export default function TransactionsDealDetail() {
     if (!extractDocId) return;
     setExtracting(true);
     try {
-      const res = await apiRequest("POST", `/api/closings/extract-preview`, { documentId: extractDocId });
+      const res = await apiRequest("POST", `/api/closings/extract-preview`, { documentId: extractDocId, dealId: id });
       const data: ExtractionPreview = await res.json();
       setExtractPreview(data);
     } catch (err: unknown) {
