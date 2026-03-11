@@ -62,6 +62,7 @@ interface StatementFormProps {
   closing: ClosingData;
   lineItems: LineItem[];
   onAddItem?: (section: string, defaults?: Record<string, string>) => void;
+  onUpdateItem?: (itemId: string, updates: Record<string, unknown>) => void;
 }
 
 function formatCurrency(val: string | null | undefined): string {
@@ -791,7 +792,7 @@ export function ConstructionSourcesUsesForm({ closing, lineItems, onAddItem }: S
   );
 }
 
-export function ConstructionDrawForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function ConstructionDrawForm({ closing, lineItems, onAddItem, onUpdateItem }: StatementFormProps) {
   const draws = lineItems.filter(li => li.hudSection === "draw" || li.altaCategory === "draw");
   const retainage = lineItems.filter(li => li.hudSection === "retainage" || li.altaCategory === "retainage");
   const changeOrders = lineItems.filter(li => li.hudSection === "change_order" || li.altaCategory === "change_order");
@@ -871,18 +872,57 @@ export function ConstructionDrawForm({ closing, lineItems, onAddItem }: Statemen
           <CardContent>
             <div className="space-y-3">
               {milestoneData.map((ms, idx) => (
-                <div key={ms.id || idx} className="flex items-center gap-3 text-sm" data-testid={`milestone-row-${idx}`}>
-                  <Badge variant={ms.status === "complete" ? "default" : ms.status === "in_progress" ? "secondary" : "outline"} className="text-xs shrink-0">
-                    {ms.status === "complete" ? "Done" : ms.status === "in_progress" ? "Active" : "Pending"}
-                  </Badge>
-                  <span className="flex-1 truncate">{ms.description || `Milestone ${idx + 1}`}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{ms.completionPct}%</span>
-                  <div className="w-20 bg-muted rounded-full h-1.5 shrink-0">
-                    <div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${Math.min(ms.completionPct, 100)}%` }} />
+                <div key={ms.id || idx} className="space-y-2 p-2 rounded-md border" data-testid={`milestone-row-${idx}`}>
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="flex-1 truncate font-medium">{ms.description || `Milestone ${idx + 1}`}</span>
+                    <span className="font-mono text-xs shrink-0">
+                      {formatCurrency(ms.drawnAmt.toString())} / {formatCurrency(ms.budgetAmt.toString())}
+                    </span>
                   </div>
-                  <span className="font-mono text-xs shrink-0">
-                    {formatCurrency(ms.drawnAmt.toString())} / {formatCurrency(ms.budgetAmt.toString())}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <div className="w-full bg-muted rounded-full h-1.5">
+                        <div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${Math.min(ms.completionPct, 100)}%` }} />
+                      </div>
+                    </div>
+                    <span className="font-mono text-xs text-muted-foreground w-8 text-right">{ms.completionPct}%</span>
+                  </div>
+                  {onUpdateItem && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Select
+                        value={ms.status}
+                        onValueChange={(val) => onUpdateItem(String(ms.id), { metadata: { ...((ms.metadata as MilestoneMetadata) || {}), status: val } })}
+                      >
+                        <SelectTrigger className="w-28" data-testid={`select-milestone-status-${idx}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="in_progress">In Progress</SelectItem>
+                          <SelectItem value="complete">Complete</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        className="w-20"
+                        placeholder="%"
+                        defaultValue={ms.completionPct}
+                        onBlur={(e) => onUpdateItem(String(ms.id), { metadata: { ...((ms.metadata as MilestoneMetadata) || {}), completionPercent: e.target.value } })}
+                        data-testid={`input-milestone-pct-${idx}`}
+                      />
+                      <Label className="text-xs text-muted-foreground">%</Label>
+                      <Input
+                        type="number"
+                        className="w-28"
+                        placeholder="Drawn amt"
+                        defaultValue={ms.drawnAmt || ""}
+                        onBlur={(e) => onUpdateItem(String(ms.id), { metadata: { ...((ms.metadata as MilestoneMetadata) || {}), drawnAmount: e.target.value } })}
+                        data-testid={`input-milestone-drawn-${idx}`}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

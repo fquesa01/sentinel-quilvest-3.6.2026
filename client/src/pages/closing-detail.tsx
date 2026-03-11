@@ -1370,6 +1370,9 @@ export default function ClosingDetail() {
                     }
                     setLineItemDialog(true);
                   }}
+                  onUpdateItem={(itemId, updates) => {
+                    updateLineItemMutation.mutate({ itemId, data: updates });
+                  }}
                 />
               );
             }

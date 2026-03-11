@@ -13547,6 +13547,7 @@ export const closingLineItems = pgTable("closing_line_items", {
   paidTo: varchar("paid_to", { length: 255 }),
   isAdjustment: boolean("is_adjustment").default(false),
   sortOrder: integer("sort_order").default(0),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   closingIdx: index("idx_closing_li_closing").on(table.closingId),
