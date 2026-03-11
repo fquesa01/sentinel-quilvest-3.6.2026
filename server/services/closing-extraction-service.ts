@@ -6,13 +6,14 @@ import { storage } from "../storage";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY! });
 
-const VALID_PARTY_ROLES = new Set([
-  "buyer", "seller", "lender", "title_company", "escrow_agent",
-  "closing_attorney", "broker_buyer", "broker_seller", "surveyor",
-  "appraiser", "inspector", "qi_intermediary", "guarantor", "investor", "other",
-]);
+type PartyRole = (typeof schema.closingPartyRoleEnum.enumValues)[number];
+type LineItemCategory = (typeof schema.closingLineItemCategoryEnum.enumValues)[number];
+type LineItemSide = (typeof schema.closingLineItemSideEnum.enumValues)[number];
+type TransactionType = (typeof schema.closingTransactionTypeEnum.enumValues)[number];
 
-const PARTY_ROLE_MAP: Record<string, string> = {
+const VALID_PARTY_ROLES = new Set<string>(schema.closingPartyRoleEnum.enumValues);
+
+const PARTY_ROLE_MAP: Record<string, PartyRole> = {
   borrower: "buyer",
   settlement_agent: "escrow_agent",
   attorney: "closing_attorney",
@@ -22,17 +23,9 @@ const PARTY_ROLE_MAP: Record<string, string> = {
   trustee: "other",
 };
 
-const VALID_CATEGORIES = new Set([
-  "purchase_price", "earnest_money", "loan_amount", "seller_credit", "buyer_credit",
-  "title_insurance", "escrow_fee", "recording_fee", "transfer_tax",
-  "property_tax_proration", "insurance_proration", "hoa_proration", "rent_proration",
-  "commission", "attorney_fee", "inspection_fee", "appraisal_fee", "survey_fee",
-  "loan_origination", "loan_discount", "prepaid_interest", "mortgage_insurance",
-  "payoff_first_mortgage", "payoff_second_mortgage", "payoff_other_lien",
-  "construction_draw", "holdback", "reserve", "adjustment", "other",
-]);
+const VALID_CATEGORIES = new Set<string>(schema.closingLineItemCategoryEnum.enumValues);
 
-const CATEGORY_MAP: Record<string, string> = {
+const CATEGORY_MAP: Record<string, LineItemCategory> = {
   deposit: "earnest_money",
   closing_cost: "escrow_fee",
   closing_costs: "escrow_fee",
@@ -46,30 +39,36 @@ const CATEGORY_MAP: Record<string, string> = {
   credit: "buyer_credit",
 };
 
-const VALID_SIDES = new Set([
-  "source", "use", "buyer_debit", "buyer_credit", "seller_debit", "seller_credit",
-]);
+const VALID_SIDES = new Set<string>(schema.closingLineItemSideEnum.enumValues);
 
-function normalizePartyRole(role: string): string {
+const VALID_TRANSACTION_TYPES = new Set<string>(schema.closingTransactionTypeEnum.enumValues);
+
+function normalizePartyRole(role: string): PartyRole {
   const lower = role.toLowerCase().replace(/[\s-]/g, "_");
-  if (VALID_PARTY_ROLES.has(lower)) return lower;
+  if (VALID_PARTY_ROLES.has(lower)) return lower as PartyRole;
   if (PARTY_ROLE_MAP[lower]) return PARTY_ROLE_MAP[lower];
   return "other";
 }
 
-function normalizeCategory(category: string): string {
+function normalizeCategory(category: string): LineItemCategory {
   const lower = category.toLowerCase().replace(/[\s-]/g, "_");
-  if (VALID_CATEGORIES.has(lower)) return lower;
+  if (VALID_CATEGORIES.has(lower)) return lower as LineItemCategory;
   if (CATEGORY_MAP[lower]) return CATEGORY_MAP[lower];
   return "other";
 }
 
-function normalizeSide(side: string): string {
+function normalizeSide(side: string): LineItemSide {
   const lower = side.toLowerCase().replace(/[\s-]/g, "_");
-  if (VALID_SIDES.has(lower)) return lower;
+  if (VALID_SIDES.has(lower)) return lower as LineItemSide;
   if (lower === "buyer" || lower === "debit") return "buyer_debit";
   if (lower === "seller") return "seller_debit";
   return "use";
+}
+
+function normalizeTransactionType(type: string): TransactionType {
+  const lower = type.toLowerCase().replace(/[\s-]/g, "_");
+  if (VALID_TRANSACTION_TYPES.has(lower)) return lower as TransactionType;
+  return "closing_disclosure";
 }
 
 interface ExtractedClosingData {
@@ -274,11 +273,12 @@ export async function extractClosingFromDocument(
       validation,
       confidence,
     };
-  } catch (error: any) {
-    console.error("[ClosingExtraction] Error:", error.message);
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error("[ClosingExtraction] Error:", errMsg);
     return {
       success: false,
-      validation: [{ severity: "error", field: "extraction", message: `Extraction failed: ${error.message}` }],
+      validation: [{ severity: "error", field: "extraction", message: `Extraction failed: ${errMsg}` }],
       confidence: 0,
     };
   }
@@ -431,11 +431,12 @@ export async function extractAndCreateClosing(
     const { ObjectStorageService } = await import("../objectStorage");
     const objectStorage = new ObjectStorageService();
     fileBuffer = await objectStorage.downloadAsBuffer(document.storagePath!);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
     return {
       extraction: {
         success: false,
-        validation: [{ severity: "error", field: "file", message: `Could not read document file: ${err.message}` }],
+        validation: [{ severity: "error", field: "file", message: `Could not read document file: ${errMsg}` }],
         confidence: 0,
       },
     };
@@ -455,7 +456,7 @@ export async function extractAndCreateClosing(
 
   const [closing] = await db.insert(schema.closingTransactions).values({
     dealId,
-    transactionType: data.statementType as any,
+    transactionType: normalizeTransactionType(data.statementType),
     title: data.title || `Extracted: ${document.fileName}`,
     propertyAddress: data.propertyAddress || null,
     purchasePrice: data.purchasePrice || null,
@@ -475,7 +476,7 @@ export async function extractAndCreateClosing(
       await db.insert(schema.closingParties).values({
         closingId: closing.id,
         name: party.name,
-        role: normalizePartyRole(party.role) as any,
+        role: normalizePartyRole(party.role),
         entityType: party.company || null,
         address: party.address || null,
         phone: party.phone || null,
@@ -500,8 +501,8 @@ export async function extractAndCreateClosing(
         closingId: closing.id,
         description: li.description,
         amount: li.amount || "0",
-        side: normalizedSide as any,
-        category: normalizeCategory(li.category || "other") as any,
+        side: normalizedSide,
+        category: normalizeCategory(li.category || "other"),
         hudSection: li.hudSection || null,
         altaCategory: li.altaCategory || null,
         cdSection: li.cdSection || null,
@@ -518,7 +519,7 @@ export async function extractAndCreateClosing(
         itemName: p.itemName,
         annualAmount: p.annualAmount || "0",
         dailyRate: p.dailyRate || null,
-        method: (p.method as any) || "calendar_day",
+        method: p.method || "calendar_day",
         buyerCredit: p.buyerCredit || "0",
         sellerCredit: p.sellerCredit || "0",
       });
