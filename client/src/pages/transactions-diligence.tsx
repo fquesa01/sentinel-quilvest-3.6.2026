@@ -268,7 +268,7 @@ export default function TransactionsDiligence() {
           <ClipboardList className="h-8 w-8 text-primary" />
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">Diligence - Docs & Checklists</h1>
-            <p className="text-muted-foreground">Manage templates, request lists, and due diligence checklists</p>
+            <p className="text-muted-foreground">Manage templates, request lists, and due diligence checklists. Checklists auto-apply as you upload documents to your deal data room.</p>
           </div>
         </div>
       </div>
