@@ -137,17 +137,31 @@ function renderFormField(doc: PDFKit.PDFDocument, label: string, value: string, 
   doc.fontSize(8).font("Helvetica").fillColor("#000000").text(value || "", x + 2, y + 8, { width: w - 4 });
 }
 
+function renderFirmBranding(doc: PDFKit.PDFDocument, data: ClosingData) {
+  const firmName = getFirmName(data);
+  const titleCo = data.parties.find(p => p.role === "title_company" || p.role === "settlement_agent" || p.role === "escrow_agent");
+
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 40, "#1a365d");
+  const brandY = doc.y;
+  doc.fontSize(14).font("Helvetica-Bold").fillColor("#ffffff").text(firmName.toUpperCase(), 50, brandY + 5, { align: "center", width: doc.page.width - 100 });
+  if (data.firmAddress || titleCo?.address) {
+    doc.fontSize(8).font("Helvetica").text(data.firmAddress || titleCo?.address || "", 50, brandY + 22, { align: "center", width: doc.page.width - 100 });
+  }
+  if (titleCo?.phone || titleCo?.email) {
+    const contactLine = [titleCo.phone, titleCo.email].filter(Boolean).join(" | ");
+    doc.fontSize(7).text(contactLine, 50, brandY + 31, { align: "center", width: doc.page.width - 100 });
+  }
+  doc.fillColor("#000000");
+  doc.y = brandY + 44;
+}
+
 function renderCoverPage(doc: PDFKit.PDFDocument, data: ClosingData) {
   const c = data.closing;
   const typeLabel = typeLabels[c.transactionType] || c.transactionType;
   const firmName = getFirmName(data);
 
-  doc.moveDown(4);
-  doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text(firmName.toUpperCase(), { align: "center" });
-  doc.fillColor("#000000");
-  if (data.firmAddress) {
-    doc.fontSize(9).font("Helvetica").text(data.firmAddress, { align: "center" });
-  }
+  doc.moveDown(2);
+  renderFirmBranding(doc, data);
   doc.moveDown(0.3);
   doc.fontSize(8).fillColor("#999999").text("CONFIDENTIAL", { align: "center" });
   doc.moveDown(3);
@@ -433,6 +447,114 @@ function renderHud1Sections(doc: PDFKit.PDFDocument, data: ClosingData) {
   doc.fontSize(7).font("Helvetica").text("Seller Signature", 55, doc.y + 2);
   doc.text("Date", 300, doc.y + 2);
   doc.y += 20;
+  drawLine(doc, doc.y);
+  doc.fontSize(7).font("Helvetica").text("Settlement Agent Signature", 55, doc.y + 2);
+  doc.text("Date", 300, doc.y + 2);
+}
+
+function renderHud1aSections(doc: PDFKit.PDFDocument, data: ClosingData) {
+  const c = data.closing;
+  const firmName = getFirmName(data);
+  const borrower = data.parties.find(p => p.role === "buyer" || p.role === "borrower");
+  const lender = data.parties.find(p => p.role === "lender");
+
+  doc.addPage();
+  drawBoxFill(doc, 50, 45, doc.page.width - 100, 24, "#1a365d");
+  doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff")
+    .text("U.S. DEPARTMENT OF HOUSING AND URBAN DEVELOPMENT", 50, 49, { align: "center", width: doc.page.width - 100 });
+  doc.fillColor("#000000");
+  doc.y = 72;
+  doc.fontSize(14).font("Helvetica-Bold").text("SETTLEMENT STATEMENT (HUD-1A)", { align: "center" });
+  doc.moveDown(0.2);
+  doc.fontSize(7).font("Helvetica").fillColor("#666666")
+    .text("For Refinance and Subordinate Lien Transactions Only", { align: "center" });
+  doc.fillColor("#000000");
+  doc.moveDown(0.5);
+
+  const halfW = (doc.page.width - 110) / 2;
+  let fy = doc.y;
+  renderFormField(doc, "A. Settlement Agent", firmName, 50, fy, halfW, 28);
+  renderFormField(doc, "B. File Number", c.fileNumber || "", (doc.page.width / 2) + 5, fy, halfW, 28);
+  fy += 32;
+  renderFormField(doc, "C. Property Location", c.propertyAddress || "", 50, fy, doc.page.width - 100, 28);
+  fy += 32;
+  renderFormField(doc, "D. Borrower", borrower?.name || "", 50, fy, halfW, 28);
+  renderFormField(doc, "E. Lender", lender?.name || lender?.company || "", (doc.page.width / 2) + 5, fy, halfW, 28);
+  fy += 32;
+  renderFormField(doc, "F. Settlement Date", fmtDate(c.closingDate), 50, fy, halfW / 2, 28);
+  renderFormField(doc, "G. Loan Amount", fmtCurrency(parseAmt(c.loanAmount)), 50 + halfW / 2 + 4, fy, halfW / 2, 28);
+  renderFormField(doc, "H. Disbursement Date", fmtDate(c.disbursementDate), (doc.page.width / 2) + 5, fy, halfW, 28);
+  fy += 34;
+  doc.y = fy;
+
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 18, "#1a365d");
+  doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff")
+    .text("SETTLEMENT CHARGES (Sections 700-1300)", 55, doc.y + 4, { width: doc.page.width - 110 });
+  doc.fillColor("#000000");
+  doc.y += 20;
+
+  const hud1aSections = [
+    { num: "700", label: "TOTAL REAL ESTATE BROKER FEES" },
+    { num: "800", label: "ITEMS PAYABLE IN CONNECTION WITH LOAN" },
+    { num: "900", label: "ITEMS REQUIRED BY LENDER TO BE PAID IN ADVANCE" },
+    { num: "1000", label: "RESERVES DEPOSITED WITH LENDER" },
+    { num: "1100", label: "TITLE CHARGES" },
+    { num: "1200", label: "GOVERNMENT RECORDING AND TRANSFER CHARGES" },
+    { num: "1300", label: "ADDITIONAL SETTLEMENT CHARGES" },
+  ];
+
+  let totalCharges = 0;
+  for (const sec of hud1aSections) {
+    const items = data.lineItems.filter(li => li.hudSection === sec.num);
+    totalCharges += renderHudSectionItems(doc, items, sec.num, sec.label);
+  }
+
+  if (doc.y > doc.page.height - 60) doc.addPage();
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 16, "#f0f4f8");
+  doc.fontSize(9).font("Helvetica-Bold")
+    .text("1400. TOTAL SETTLEMENT CHARGES:", 55, doc.y + 3)
+    .text(fmtCurrency(totalCharges), 410, doc.y - 9, { width: 80, align: "right" });
+  doc.y += 20;
+
+  doc.moveDown(0.5);
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 18, "#1a365d");
+  doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff")
+    .text("LOAN DISBURSEMENT", 55, doc.y + 4, { width: doc.page.width - 110 });
+  doc.fillColor("#000000");
+  doc.y += 20;
+
+  const loanAmt = parseAmt(c.loanAmount);
+  const disbursementItems = [
+    { label: "1500. Gross Amount Due from Borrower (Loan Amount)", amount: loanAmt },
+    { label: "1501. Less: Total Settlement Charges (Line 1400)", amount: -totalCharges },
+  ];
+  const netDisbursement = loanAmt - totalCharges;
+
+  for (const item of disbursementItems) {
+    const y = doc.y;
+    doc.fontSize(8).font("Helvetica");
+    doc.text(item.label, 55, y, { width: 360 });
+    doc.text(fmtCurrency(Math.abs(item.amount)), 410, y, { width: 80, align: "right" });
+    doc.y = y + 14;
+  }
+  drawLine(doc);
+  const netY = doc.y;
+  doc.fontSize(8.5).font("Helvetica-Bold");
+  doc.text("1502. Cash to/from Borrower:", 55, netY, { width: 360 });
+  doc.text(fmtCurrency(netDisbursement), 410, netY, { width: 80, align: "right" });
+  doc.y = netY + 18;
+
+  if (doc.y > doc.page.height - 80) doc.addPage();
+  doc.moveDown(1);
+  doc.fontSize(7).font("Helvetica").fillColor("#666666");
+  doc.text("I have carefully reviewed the HUD-1A Settlement Statement and to the best of my knowledge and belief, it is a true and accurate account of this transaction.", 50, doc.y, { width: doc.page.width - 100 });
+  doc.fillColor("#000000");
+  doc.moveDown(1.5);
+  const sigY = doc.y;
+  drawLine(doc, sigY);
+  doc.fontSize(7).font("Helvetica").text("Borrower Signature", 55, sigY + 2);
+  doc.text("Date", 300, sigY + 2);
+  doc.y = sigY + 25;
   drawLine(doc, doc.y);
   doc.fontSize(7).font("Helvetica").text("Settlement Agent Signature", 55, doc.y + 2);
   doc.text("Date", 300, doc.y + 2);
@@ -791,21 +913,53 @@ function renderCashSettlement(doc: PDFKit.PDFDocument, data: ClosingData) {
   doc.text("Date", 300, doc.y + 2);
 }
 
+function isBuyerItem(li: any): boolean {
+  return li.paidBy === "buyer" || li.side === "buyer_debit" || li.side === "buyer_credit" || li.side === "source";
+}
+
+function isSellerItem(li: any): boolean {
+  return li.paidBy === "seller" || li.side === "seller_debit" || li.side === "seller_credit";
+}
+
 function renderAltaSections(doc: PDFKit.PDFDocument, data: ClosingData) {
   doc.addPage();
   const txType = data.closing.transactionType;
   const isCombo = txType === "alta_combined";
+  const isBuyerOnly = txType === "alta_buyer";
+  const isSellerOnly = txType === "alta_seller";
+  const firmName = getFirmName(data);
+  const buyer = data.parties.find(p => p.role === "buyer" || p.role === "borrower");
+  const seller = data.parties.find(p => p.role === "seller");
 
   drawBoxFill(doc, 50, 45, doc.page.width - 100, 20, "#1a365d");
   doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff")
     .text("AMERICAN LAND TITLE ASSOCIATION", 50, 48, { align: "center", width: doc.page.width - 100 });
   doc.fillColor("#000000");
   doc.y = 68;
-  doc.fontSize(12).font("Helvetica-Bold").text("SETTLEMENT STATEMENT", { align: "center" });
-  doc.moveDown(0.3);
-  doc.fontSize(8.5).font("Helvetica");
-  doc.text(`Property: ${data.closing.propertyAddress || "N/A"}    Settlement Date: ${fmtDate(data.closing.closingDate)}    Sale Price: ${fmtCurrency(parseAmt(data.closing.purchasePrice))}`);
-  doc.moveDown(0.5);
+
+  const variantLabel = isCombo ? "SETTLEMENT STATEMENT — COMBINED" : isBuyerOnly ? "SETTLEMENT STATEMENT — BUYER" : "SETTLEMENT STATEMENT — SELLER";
+  doc.fontSize(12).font("Helvetica-Bold").text(variantLabel, { align: "center" });
+  doc.moveDown(0.2);
+  doc.fontSize(9).font("Helvetica").text(firmName, { align: "center" });
+  doc.moveDown(0.4);
+
+  const halfW = (doc.page.width - 110) / 2;
+  let fy = doc.y;
+  renderFormField(doc, "Property", data.closing.propertyAddress || "", 50, fy, doc.page.width - 100, 24);
+  fy += 28;
+  renderFormField(doc, "Settlement Date", fmtDate(data.closing.closingDate), 50, fy, halfW / 2, 24);
+  renderFormField(doc, "Sale Price", fmtCurrency(parseAmt(data.closing.purchasePrice)), 50 + halfW / 2 + 4, fy, halfW / 2, 24);
+  renderFormField(doc, "File Number", data.closing.fileNumber || "", (doc.page.width / 2) + 5, fy, halfW, 24);
+  fy += 28;
+
+  if (isCombo || isBuyerOnly) {
+    renderFormField(doc, "Buyer/Borrower", buyer?.name || "", 50, fy, halfW, 24);
+  }
+  if (isCombo || isSellerOnly) {
+    renderFormField(doc, "Seller", seller?.name || "", isCombo ? (doc.page.width / 2) + 5 : 50, fy, halfW, 24);
+  }
+  fy += 28;
+  doc.y = fy;
 
   const cats = ["financial", "prorations", "commissions", "title", "taxes", "payoffs", "escrows", "other"];
   const catLabels: Record<string, string> = {
@@ -814,64 +968,84 @@ function renderAltaSections(doc: PDFKit.PDFDocument, data: ClosingData) {
     escrows: "ESCROW & RESERVES", other: "OTHER CHARGES",
   };
 
+  let grandTotalDebit = 0;
+  let grandTotalCredit = 0;
+
   if (isCombo) {
+    tableRow(doc, [
+      { text: "", width: 200 },
+      { text: "Buyer Debit", width: 80, align: "right", bold: true },
+      { text: "Buyer Credit", width: 80, align: "right", bold: true },
+      { text: "Seller Debit", width: 80, align: "right", bold: true },
+      { text: "Seller Credit", width: 80, align: "right", bold: true },
+    ]);
+    drawLine(doc);
+
     for (const cat of cats) {
       const allItems = data.lineItems.filter(li => (li as any).altaCategory === cat);
       if (allItems.length === 0) continue;
       sectionHeader(doc, catLabels[cat] || cat.toUpperCase());
-      const buyerItems = allItems.filter(li => li.paidBy === "buyer" || li.side === "buyer_debit" || li.side === "buyer_credit");
-      const sellerItems = allItems.filter(li => li.paidBy === "seller" || li.side === "seller_debit" || li.side === "seller_credit");
-      const otherItems = allItems.filter(li => !buyerItems.includes(li) && !sellerItems.includes(li));
-
-      if (buyerItems.length > 0) {
-        doc.fontSize(8).font("Helvetica-Bold").text("Buyer:", 55);
-        for (const item of buyerItems) {
-          tableRow(doc, [
-            { text: "", width: 15 },
-            { text: item.description || "", width: 350 },
-            { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" },
-          ]);
-        }
-      }
-      if (sellerItems.length > 0) {
-        doc.fontSize(8).font("Helvetica-Bold").text("Seller:", 55);
-        for (const item of sellerItems) {
-          tableRow(doc, [
-            { text: "", width: 15 },
-            { text: item.description || "", width: 350 },
-            { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" },
-          ]);
-        }
-      }
-      if (otherItems.length > 0) {
-        for (const item of otherItems) {
-          tableRow(doc, [
-            { text: "", width: 15 },
-            { text: item.description || "", width: 350 },
-            { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" },
-          ]);
-        }
+      for (const item of allItems) {
+        const amt = parseAmt(item.amount);
+        const isBD = item.side === "buyer_debit";
+        const isBC = item.side === "buyer_credit";
+        const isSD = item.side === "seller_debit";
+        const isSC = item.side === "seller_credit";
+        tableRow(doc, [
+          { text: item.description || "", width: 200 },
+          { text: isBD ? fmtCurrency(amt) : "", width: 80, align: "right" },
+          { text: isBC ? fmtCurrency(amt) : "", width: 80, align: "right" },
+          { text: isSD ? fmtCurrency(amt) : "", width: 80, align: "right" },
+          { text: isSC ? fmtCurrency(amt) : "", width: 80, align: "right" },
+        ]);
       }
     }
   } else {
+    const sideFilter = isBuyerOnly ? isBuyerItem : isSellerItem;
+    const partyLabel = isBuyerOnly ? "BUYER" : "SELLER";
+
+    tableRow(doc, [
+      { text: "Description", width: 250, bold: true },
+      { text: `${partyLabel} Debit`, width: 100, align: "right", bold: true },
+      { text: `${partyLabel} Credit`, width: 100, align: "right", bold: true },
+    ]);
+    drawLine(doc);
+
     for (const cat of cats) {
-      const items = data.lineItems.filter(li => (li as any).altaCategory === cat);
+      const allCatItems = data.lineItems.filter(li => (li as any).altaCategory === cat);
+      const items = allCatItems.filter(sideFilter);
       if (items.length === 0) continue;
       sectionHeader(doc, catLabels[cat] || cat.toUpperCase());
+
       for (const item of items) {
+        const amt = parseAmt(item.amount);
+        const isDebit = item.side === (isBuyerOnly ? "buyer_debit" : "seller_debit") || item.side === "use";
+        const isCredit = item.side === (isBuyerOnly ? "buyer_credit" : "seller_credit") || item.side === "source";
+        if (isDebit) grandTotalDebit += amt;
+        if (isCredit) grandTotalCredit += amt;
         tableRow(doc, [
-          { text: item.description || "", width: 380 },
-          { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" },
+          { text: item.description || "", width: 250 },
+          { text: isDebit ? fmtCurrency(amt) : "", width: 100, align: "right" },
+          { text: isCredit ? fmtCurrency(amt) : "", width: 100, align: "right" },
         ]);
       }
-      const total = items.reduce((s, i) => s + parseAmt(i.amount), 0);
-      drawLine(doc);
-      doc.moveDown(0.1);
-      tableRow(doc, [
-        { text: `${catLabels[cat] || cat} Total:`, width: 380, bold: true },
-        { text: fmtCurrency(total), width: 100, align: "right", bold: true },
-      ]);
     }
+
+    doc.moveDown(0.5);
+    drawLine(doc);
+    tableRow(doc, [
+      { text: "TOTALS:", width: 250, bold: true },
+      { text: fmtCurrency(grandTotalDebit), width: 100, align: "right", bold: true },
+      { text: fmtCurrency(grandTotalCredit), width: 100, align: "right", bold: true },
+    ]);
+
+    const net = grandTotalCredit - grandTotalDebit;
+    drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 16, "#f0f4f8");
+    const netLabel = isBuyerOnly ? "CASH DUE FROM BUYER:" : "CASH DUE TO SELLER:";
+    doc.fontSize(8.5).font("Helvetica-Bold")
+      .text(netLabel, 55, doc.y + 3)
+      .text(fmtCurrency(Math.abs(net)), 410, doc.y - 9, { width: 80, align: "right" });
+    doc.y += 20;
   }
 }
 
@@ -1303,8 +1477,10 @@ export function generateClosingStatementPDF(data: ClosingData): PDFKit.PDFDocume
   const txType = data.closing.transactionType;
   switch (txType) {
     case "hud1":
-    case "hud1a":
       renderHud1Sections(doc, data);
+      break;
+    case "hud1a":
+      renderHud1aSections(doc, data);
       break;
     case "closing_disclosure":
     case "seller_closing_disclosure":
