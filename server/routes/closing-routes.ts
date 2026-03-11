@@ -224,6 +224,7 @@ router.post("/deals/:dealId/closings", async (req: any, res) => {
         }
         if (lineItems.length > 0) {
           await db.insert(schema.closingLineItems).values(lineItems);
+          await recomputeClosingBalance(closing.id);
         }
 
         if (terms.propertyAddress || terms.purchasePrice) {
