@@ -75,7 +75,15 @@ function computeBalance(lineItems: schema.ClosingLineItem[]) {
   };
 }
 
-function computeProration(proration: schema.ClosingProration) {
+type ProrationInput = {
+  annualAmount: string | null;
+  periodStartDate: string | null;
+  periodEndDate: string | null;
+  prorateDate: string | null;
+  method?: string | null;
+};
+
+function computeProration(proration: ProrationInput) {
   const annual = parseAmount(proration.annualAmount);
   if (!annual || !proration.periodStartDate || !proration.periodEndDate || !proration.prorateDate) {
     return { dailyRate: "0", buyerCredit: "0", sellerCredit: "0", daysInPeriod: 0, buyerDays: 0, sellerDays: 0 };
@@ -475,7 +483,7 @@ router.get("/closings/:closingId/prorations", async (req: any, res) => {
 router.post("/closings/:closingId/prorations", async (req: any, res) => {
   try {
     const data = { ...req.body, closingId: req.params.closingId };
-    const computed = computeProration(data as any);
+    const computed = computeProration(data);
     const [proration] = await db.insert(schema.closingProrations).values({
       ...data,
       dailyRate: computed.dailyRate,
@@ -504,7 +512,7 @@ router.patch("/closing-prorations/:id", async (req: any, res) => {
         .where(eq(schema.closingProrations.id, req.params.id));
       if (existing) {
         const full = { ...existing, ...merged };
-        const computed = computeProration(full as any);
+        const computed = computeProration(full);
         merged.dailyRate = computed.dailyRate;
         merged.buyerCredit = computed.buyerCredit;
         merged.sellerCredit = computed.sellerCredit;
