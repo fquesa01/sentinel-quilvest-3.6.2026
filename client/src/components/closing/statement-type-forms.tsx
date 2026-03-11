@@ -41,7 +41,7 @@ interface LineItem {
   id: number;
   description: string;
   amount: string;
-  lineType: string;
+  side: string;
   hudSection?: string | null;
   altaCategory?: string | null;
   cdSection?: string | null;
@@ -389,8 +389,8 @@ export function AltaForm({ closing, lineItems, onAddItem }: StatementFormProps) 
 }
 
 export function SourcesUsesForm({ closing, lineItems, onAddItem }: StatementFormProps) {
-  const sources = lineItems.filter(li => li.lineType === "source");
-  const uses = lineItems.filter(li => li.lineType === "use");
+  const sources = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
+  const uses = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
   const totalSources = sumItems(sources);
   const totalUses = sumItems(uses);
   const difference = totalSources - totalUses;
@@ -430,7 +430,7 @@ export function SourcesUsesForm({ closing, lineItems, onAddItem }: StatementForm
             title="Sources of Funds"
             icon={<ArrowUpRight className="h-4 w-4 text-green-500" />}
             items={sources}
-            onAdd={() => onAddItem?.("source", { lineType: "source" })}
+            onAdd={() => onAddItem?.("source", { side: "source" })}
           />
         </div>
         <div className="space-y-3">
@@ -438,7 +438,7 @@ export function SourcesUsesForm({ closing, lineItems, onAddItem }: StatementForm
             title="Uses of Funds"
             icon={<ArrowDownRight className="h-4 w-4 text-red-500" />}
             items={uses}
-            onAdd={() => onAddItem?.("use", { lineType: "use" })}
+            onAdd={() => onAddItem?.("use", { side: "use" })}
           />
         </div>
       </div>
@@ -447,8 +447,8 @@ export function SourcesUsesForm({ closing, lineItems, onAddItem }: StatementForm
 }
 
 export function FundsFlowForm({ closing, lineItems, onAddItem }: StatementFormProps) {
-  const incoming = lineItems.filter(li => li.lineType === "source");
-  const outgoing = lineItems.filter(li => li.lineType === "use");
+  const incoming = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
+  const outgoing = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
   const totalIn = sumItems(incoming);
   const totalOut = sumItems(outgoing);
 
@@ -484,7 +484,7 @@ export function FundsFlowForm({ closing, lineItems, onAddItem }: StatementFormPr
             title="Incoming Wires"
             icon={<ArrowUpRight className="h-4 w-4 text-green-500" />}
             items={incoming}
-            onAdd={() => onAddItem?.("incoming", { lineType: "source" })}
+            onAdd={() => onAddItem?.("incoming", { side: "source" })}
           />
           {incoming.map(item => (
             <div key={item.id} className="pl-6 text-xs text-muted-foreground">
@@ -498,7 +498,7 @@ export function FundsFlowForm({ closing, lineItems, onAddItem }: StatementFormPr
             title="Outgoing Wires"
             icon={<ArrowDownRight className="h-4 w-4 text-red-500" />}
             items={outgoing}
-            onAdd={() => onAddItem?.("outgoing", { lineType: "use" })}
+            onAdd={() => onAddItem?.("outgoing", { side: "use" })}
           />
           {outgoing.map(item => (
             <div key={item.id} className="pl-6 text-xs text-muted-foreground">
@@ -513,8 +513,8 @@ export function FundsFlowForm({ closing, lineItems, onAddItem }: StatementFormPr
 }
 
 export function Exchange1031Form({ closing, lineItems, onAddItem }: StatementFormProps) {
-  const relinquished = lineItems.filter(li => li.hudSection === "relinquished" || li.lineType === "source");
-  const replacement = lineItems.filter(li => li.hudSection === "replacement" || li.lineType === "use");
+  const relinquished = lineItems.filter(li => li.hudSection === "relinquished" || (li.side === "source" && !li.hudSection));
+  const replacement = lineItems.filter(li => li.hudSection === "replacement" || (li.side === "use" && !li.hudSection));
   const exchangeFunds = lineItems.filter(li => li.hudSection === "exchange_funds");
 
   return (
@@ -544,14 +544,14 @@ export function Exchange1031Form({ closing, lineItems, onAddItem }: StatementFor
           title="Relinquished Property Proceeds"
           icon={<Home className="h-4 w-4 text-amber-500" />}
           items={relinquished}
-          onAdd={() => onAddItem?.("relinquished", { hudSection: "relinquished", lineType: "source" })}
+          onAdd={() => onAddItem?.("relinquished", { hudSection: "relinquished", side: "source" })}
         />
         <Separator />
         <SectionBlock
           title="Replacement Property Costs"
           icon={<Home className="h-4 w-4 text-blue-500" />}
           items={replacement}
-          onAdd={() => onAddItem?.("replacement", { hudSection: "replacement", lineType: "use" })}
+          onAdd={() => onAddItem?.("replacement", { hudSection: "replacement", side: "use" })}
         />
         <Separator />
         <SectionBlock
@@ -566,8 +566,8 @@ export function Exchange1031Form({ closing, lineItems, onAddItem }: StatementFor
 }
 
 export function PortfolioForm({ closing, lineItems, onAddItem }: StatementFormProps) {
-  const summaryItems = lineItems.filter(li => li.lineType === "source" || li.hudSection === "summary");
-  const allocations = lineItems.filter(li => li.lineType === "use" || li.hudSection === "allocation");
+  const summaryItems = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit" || li.hudSection === "summary");
+  const allocations = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit" || li.hudSection === "allocation");
 
   return (
     <div className="space-y-6">
@@ -597,7 +597,7 @@ export function PortfolioForm({ closing, lineItems, onAddItem }: StatementFormPr
             title="Capital Summary"
             icon={<DollarSign className="h-4 w-4 text-green-500" />}
             items={summaryItems}
-            onAdd={() => onAddItem?.("summary", { lineType: "source", hudSection: "summary" })}
+            onAdd={() => onAddItem?.("summary", { side: "source", hudSection: "summary" })}
           />
         </div>
         <div className="space-y-3">
@@ -605,7 +605,7 @@ export function PortfolioForm({ closing, lineItems, onAddItem }: StatementFormPr
             title="Allocations"
             icon={<Layers className="h-4 w-4 text-blue-500" />}
             items={allocations}
-            onAdd={() => onAddItem?.("allocation", { lineType: "use", hudSection: "allocation" })}
+            onAdd={() => onAddItem?.("allocation", { side: "use", hudSection: "allocation" })}
           />
         </div>
       </div>
@@ -614,8 +614,8 @@ export function PortfolioForm({ closing, lineItems, onAddItem }: StatementFormPr
 }
 
 export function LenderFundingForm({ closing, lineItems, onAddItem }: StatementFormProps) {
-  const loanProceeds = lineItems.filter(li => li.lineType === "source");
-  const disbursements = lineItems.filter(li => li.lineType === "use");
+  const loanProceeds = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
+  const disbursements = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
   const totalProceeds = sumItems(loanProceeds);
   const totalDisbursed = sumItems(disbursements);
 
@@ -650,13 +650,13 @@ export function LenderFundingForm({ closing, lineItems, onAddItem }: StatementFo
           title="Loan Proceeds"
           icon={<ArrowUpRight className="h-4 w-4 text-green-500" />}
           items={loanProceeds}
-          onAdd={() => onAddItem?.("proceeds", { lineType: "source" })}
+          onAdd={() => onAddItem?.("proceeds", { side: "source" })}
         />
         <SectionBlock
           title="Disbursements"
           icon={<ArrowDownRight className="h-4 w-4 text-red-500" />}
           items={disbursements}
-          onAdd={() => onAddItem?.("disbursement", { lineType: "use" })}
+          onAdd={() => onAddItem?.("disbursement", { side: "use" })}
         />
       </div>
     </div>
@@ -664,8 +664,8 @@ export function LenderFundingForm({ closing, lineItems, onAddItem }: StatementFo
 }
 
 export function CashSettlementForm({ closing, lineItems, onAddItem }: StatementFormProps) {
-  const receipts = lineItems.filter(li => li.lineType === "source");
-  const payments = lineItems.filter(li => li.lineType === "use");
+  const receipts = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
+  const payments = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
   const totalReceipts = sumItems(receipts);
   const totalPayments = sumItems(payments);
   const net = totalReceipts - totalPayments;
@@ -703,13 +703,13 @@ export function CashSettlementForm({ closing, lineItems, onAddItem }: StatementF
           title="Receipts"
           icon={<ArrowUpRight className="h-4 w-4 text-green-500" />}
           items={receipts}
-          onAdd={() => onAddItem?.("receipt", { lineType: "source" })}
+          onAdd={() => onAddItem?.("receipt", { side: "source" })}
         />
         <SectionBlock
           title="Payments"
           icon={<ArrowDownRight className="h-4 w-4 text-red-500" />}
           items={payments}
-          onAdd={() => onAddItem?.("payment", { lineType: "use" })}
+          onAdd={() => onAddItem?.("payment", { side: "use" })}
         />
       </div>
     </div>
