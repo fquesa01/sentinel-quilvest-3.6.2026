@@ -4,6 +4,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { processPendingOCROnStartup } from "./services/ocr-service";
 import { processPendingGeminiIndexing } from "./services/transaction-search-service";
 import { seedEquityDDTemplate, seedDebtDDTemplate, seedRealEstateTemplate } from "./scripts/seed-deal-templates";
+import { seedAllREClosingTemplates } from "./scripts/seed-re-closing-templates";
 
 const app = express();
 
@@ -90,6 +91,7 @@ app.get("/api/health", (_req, res) => {
         await seedEquityDDTemplate();
         await seedDebtDDTemplate();
         await seedRealEstateTemplate();
+        await seedAllREClosingTemplates();
         console.log("[Startup] Deal templates seeded/verified");
       } catch (err) {
         console.error("[Startup] Error seeding deal templates:", err);
