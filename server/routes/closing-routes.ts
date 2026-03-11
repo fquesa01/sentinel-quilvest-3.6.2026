@@ -3,8 +3,10 @@ import { db } from "../db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { z } from "zod";
+import { isAuthenticated } from "../replitAuth";
 
 const router = Router();
+router.use(isAuthenticated);
 
 const closingTransactionTypeLabels: Record<string, string> = {
   closing_disclosure: "Closing Disclosure",

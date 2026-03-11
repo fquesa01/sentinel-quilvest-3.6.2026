@@ -13536,6 +13536,8 @@ export const closingLineItems = pgTable("closing_line_items", {
   closingId: varchar("closing_id").references(() => closingTransactions.id, { onDelete: "cascade" }).notNull(),
   lineNumber: integer("line_number"),
   hudSection: varchar("hud_section", { length: 10 }),
+  altaCategory: varchar("alta_category", { length: 100 }),
+  cdSection: varchar("cd_section", { length: 100 }),
   category: closingLineItemCategoryEnum("category").notNull(),
   side: closingLineItemSideEnum("side").notNull(),
   description: varchar("description", { length: 500 }).notNull(),
