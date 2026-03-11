@@ -853,6 +853,7 @@ export default function TransactionsDealDetail() {
       title: deal.title,
       description: deal.description,
       dealValue: deal.dealValue,
+      dealType: deal.dealType,
       status: deal.status,
       priority: deal.priority,
     });
@@ -2188,6 +2189,22 @@ export default function TransactionsDealDetail() {
                   rows={3}
                   data-testid="input-edit-description"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Deal Type</Label>
+                <Select
+                  value={editForm.dealType || "other"}
+                  onValueChange={(v) => setEditForm({ ...editForm, dealType: v as any })}
+                >
+                  <SelectTrigger data-testid="select-edit-deal-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(dealTypeLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
