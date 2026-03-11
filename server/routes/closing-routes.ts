@@ -5,6 +5,7 @@ import * as schema from "@shared/schema";
 import { z } from "zod";
 import { isAuthenticated } from "../replitAuth";
 import { generateClosingStatementPDF } from "../services/closing-pdf-service";
+import { ObjectStorageService } from "../objectStorage";
 
 const router = Router();
 router.use(isAuthenticated);
@@ -835,6 +836,113 @@ router.get("/closings/:id/pdf", async (req: any, res) => {
     doc.end();
   } catch (error: any) {
     console.error("Error generating closing PDF:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post("/closings/:id/save-to-data-room", async (req: any, res) => {
+  try {
+    const closingId = req.params.id;
+
+    const [closing] = await db.select().from(schema.closingTransactions)
+      .where(eq(schema.closingTransactions.id, closingId));
+    if (!closing) return res.status(404).json({ message: "Closing not found" });
+
+    const [dataRoom] = await db.select().from(schema.dataRooms)
+      .where(eq(schema.dataRooms.dealId, closing.dealId));
+    if (!dataRoom) return res.status(404).json({ message: "No data room found for this deal. Create a data room first." });
+
+    const lineItems = await db.select().from(schema.closingLineItems)
+      .where(eq(schema.closingLineItems.closingId, closingId))
+      .orderBy(asc(schema.closingLineItems.sortOrder));
+    const parties = await db.select().from(schema.closingParties)
+      .where(eq(schema.closingParties.closingId, closingId));
+    const prorations = await db.select().from(schema.closingProrations)
+      .where(eq(schema.closingProrations.closingId, closingId));
+    const escrows = await db.select().from(schema.closingEscrows)
+      .where(eq(schema.closingEscrows.closingId, closingId));
+    const payoffs = await db.select().from(schema.closingPayoffs)
+      .where(eq(schema.closingPayoffs.closingId, closingId));
+    const commissions = await db.select().from(schema.closingCommissions)
+      .where(eq(schema.closingCommissions.closingId, closingId));
+    const wires = await db.select().from(schema.closingWires)
+      .where(eq(schema.closingWires.closingId, closingId));
+
+    const computedProrations = prorations.map(p => ({ ...p, computed: computeProration(p) }));
+    const balance = computeBalance(lineItems);
+
+    let totalPayoffs = 0;
+    for (const p of payoffs) totalPayoffs += parseAmount(p.totalPayoff);
+    let totalCommissions = 0;
+    for (const c of commissions) totalCommissions += parseAmount(c.amount);
+    let totalEscrows = 0;
+    for (const e of escrows) totalEscrows += parseAmount(e.amount);
+    let totalWires = 0;
+    for (const w of wires) totalWires += parseAmount(w.amount);
+
+    const pdfDoc = generateClosingStatementPDF({
+      closing,
+      lineItems,
+      parties,
+      prorations: computedProrations,
+      escrows,
+      payoffs,
+      commissions,
+      wires,
+      balance,
+      totals: {
+        payoffs: totalPayoffs.toFixed(2),
+        commissions: totalCommissions.toFixed(2),
+        escrows: totalEscrows.toFixed(2),
+        wires: totalWires.toFixed(2),
+      },
+    });
+
+    const chunks: Buffer[] = [];
+    pdfDoc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    await new Promise<void>((resolve, reject) => {
+      pdfDoc.on("end", resolve);
+      pdfDoc.on("error", reject);
+      pdfDoc.end();
+    });
+    const pdfBuffer = Buffer.concat(chunks);
+
+    const typeLabel = closingTransactionTypeLabels[closing.transactionType] || closing.transactionType;
+    const fileName = `${typeLabel} - ${closing.title || "Closing Statement"} - ${new Date().toISOString().slice(0, 10)}.pdf`;
+
+    let storagePath: string | undefined;
+    try {
+      const objectStorage = new ObjectStorageService();
+      const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const targetPath = `data-rooms/${dataRoom.id}/closing-statements/${Date.now()}_${safeName}`;
+      await objectStorage.uploadBuffer(targetPath, pdfBuffer, "application/pdf");
+      storagePath = targetPath;
+    } catch (storageErr: any) {
+      console.warn("[SaveToDataRoom] Object storage upload failed, document record will be created without storage path:", storageErr.message);
+    }
+
+    const [document] = await db.insert(schema.dataRoomDocuments).values({
+      dataRoomId: dataRoom.id,
+      fileName,
+      fileSize: pdfBuffer.length,
+      fileType: "application/pdf",
+      storagePath: storagePath || null,
+      description: `Generated ${typeLabel} for closing "${closing.title}"`,
+      documentCategory: "closing_statement",
+      tags: ["closing", "generated", closing.transactionType],
+      uploadedBy: req.user?.id,
+      metadata: { closingId, transactionType: closing.transactionType, generatedAt: new Date().toISOString() },
+    }).returning();
+
+    res.json({
+      success: true,
+      documentId: document.id,
+      fileName,
+      dataRoomId: dataRoom.id,
+      message: `Closing statement saved to data room "${dataRoom.name}"`,
+    });
+  } catch (error: any) {
+    console.error("Error saving closing PDF to data room:", error);
     res.status(500).json({ message: error.message });
   }
 });

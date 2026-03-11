@@ -52,6 +52,7 @@ import {
   Ban,
   Download,
   Printer,
+  FolderOpen,
 } from "lucide-react";
 import type {
   ClosingTransaction,
@@ -407,6 +408,19 @@ export default function ClosingDetail() {
   const { data: wires = [], refetch: refetchWires } = useQuery<ClosingWire[]>({
     queryKey: ["/api/closings", id, "wires"],
     enabled: !!id,
+  });
+
+  const saveToDataRoomMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/closings/${id}/save-to-data-room`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Saved to Data Room", description: data.message || "Closing statement saved to the data room." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.message || "Failed to save to data room.", variant: "destructive" });
+    },
   });
 
   const updateClosingMutation = useMutation({
@@ -1131,6 +1145,20 @@ export default function ClosingDetail() {
               }}
             >
               <Printer className="h-4 w-4 mr-1" /> Print
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="button-save-to-data-room"
+              disabled={saveToDataRoomMutation.isPending}
+              onClick={() => saveToDataRoomMutation.mutate()}
+            >
+              {saveToDataRoomMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <FolderOpen className="h-4 w-4 mr-1" />
+              )}
+              Save to Data Room
             </Button>
           </div>
         </div>
