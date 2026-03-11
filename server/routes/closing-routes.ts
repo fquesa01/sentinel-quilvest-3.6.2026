@@ -811,6 +811,17 @@ router.get("/closings/:id/pdf", async (req: any, res) => {
     const firmName = titleCo?.company || titleCo?.name || "Settlement Agent";
     const firmAddress = titleCo?.address || "";
 
+    const orgRows = await db.select().from(schema.organizationSettings).limit(1);
+    const orgSettings = orgRows[0] || null;
+    const orgBranding = orgSettings ? {
+      firmName: orgSettings.firmName,
+      firmAddress: orgSettings.firmAddress || undefined,
+      firmPhone: orgSettings.firmPhone || undefined,
+      firmEmail: orgSettings.firmEmail || undefined,
+      firmWebsite: orgSettings.firmWebsite || undefined,
+      logoUrl: orgSettings.logoUrl || undefined,
+    } : undefined;
+
     const pdfData = {
       closing,
       lineItems,
@@ -829,6 +840,7 @@ router.get("/closings/:id/pdf", async (req: any, res) => {
       },
       firmName,
       firmAddress,
+      orgBranding,
     };
 
     const doc = generateClosingStatementPDF(pdfData);
@@ -890,6 +902,17 @@ router.post("/closings/:id/save-to-data-room", async (req: any, res) => {
     const drFirmName = drTitleCo?.company || drTitleCo?.name || "Settlement Agent";
     const drFirmAddress = drTitleCo?.address || "";
 
+    const drOrgRows = await db.select().from(schema.organizationSettings).limit(1);
+    const drOrgSettings = drOrgRows[0] || null;
+    const drOrgBranding = drOrgSettings ? {
+      firmName: drOrgSettings.firmName,
+      firmAddress: drOrgSettings.firmAddress || undefined,
+      firmPhone: drOrgSettings.firmPhone || undefined,
+      firmEmail: drOrgSettings.firmEmail || undefined,
+      firmWebsite: drOrgSettings.firmWebsite || undefined,
+      logoUrl: drOrgSettings.logoUrl || undefined,
+    } : undefined;
+
     const pdfDoc = generateClosingStatementPDF({
       closing,
       lineItems,
@@ -908,6 +931,7 @@ router.post("/closings/:id/save-to-data-room", async (req: any, res) => {
       },
       firmName: drFirmName,
       firmAddress: drFirmAddress,
+      orgBranding: drOrgBranding,
     });
 
     const chunks: Buffer[] = [];

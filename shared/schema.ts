@@ -13702,3 +13702,22 @@ export const insertClosingWireSchema = createInsertSchema(closingWires).omit({
   confirmedAt: true,
 });
 export type InsertClosingWire = z.infer<typeof insertClosingWireSchema>;
+
+export const organizationSettings = pgTable("organization_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  firmName: varchar("firm_name", { length: 255 }).notNull(),
+  firmAddress: text("firm_address"),
+  firmPhone: varchar("firm_phone", { length: 50 }),
+  firmEmail: varchar("firm_email", { length: 255 }),
+  firmWebsite: varchar("firm_website", { length: 255 }),
+  logoUrl: text("logo_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export const insertOrganizationSettingsSchema = createInsertSchema(organizationSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertOrganizationSettings = z.infer<typeof insertOrganizationSettingsSchema>;
+export type OrganizationSettings = typeof organizationSettings.$inferSelect;

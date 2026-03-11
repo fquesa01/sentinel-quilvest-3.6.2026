@@ -1,6 +1,15 @@
 import PDFDocument from "pdfkit";
 import { format } from "date-fns";
 
+interface OrgBranding {
+  firmName?: string;
+  firmAddress?: string;
+  firmPhone?: string;
+  firmEmail?: string;
+  firmWebsite?: string;
+  logoUrl?: string;
+}
+
 interface ClosingData {
   closing: any;
   lineItems: any[];
@@ -14,6 +23,7 @@ interface ClosingData {
   totals: { payoffs: string; commissions: string; escrows: string; wires: string };
   firmName?: string;
   firmAddress?: string;
+  orgBranding?: OrgBranding;
 }
 
 const typeLabels: Record<string, string> = {
@@ -73,10 +83,26 @@ function fmtDate(val: string | null | undefined): string {
 }
 
 function getFirmName(data: ClosingData): string {
+  if (data.orgBranding?.firmName) return data.orgBranding.firmName;
   if (data.firmName) return data.firmName;
   const titleCo = data.parties.find(p => p.role === "title_company" || p.role === "settlement_agent" || p.role === "escrow_agent");
   if (titleCo) return titleCo.company || titleCo.name;
   return "Settlement Agent";
+}
+
+function getOrgAddress(data: ClosingData): string {
+  if (data.orgBranding?.firmAddress) return data.orgBranding.firmAddress;
+  if (data.firmAddress) return data.firmAddress;
+  const titleCo = data.parties.find(p => p.role === "title_company" || p.role === "settlement_agent" || p.role === "escrow_agent");
+  return titleCo?.address || "";
+}
+
+function getOrgContact(data: ClosingData): { phone?: string; email?: string; website?: string } {
+  if (data.orgBranding) {
+    return { phone: data.orgBranding.firmPhone, email: data.orgBranding.firmEmail, website: data.orgBranding.firmWebsite };
+  }
+  const titleCo = data.parties.find(p => p.role === "title_company" || p.role === "settlement_agent" || p.role === "escrow_agent");
+  return { phone: titleCo?.phone, email: titleCo?.email };
 }
 
 function addPageFooter(doc: PDFKit.PDFDocument, pageNum: number, totalPages: number, closing: any, firmName: string) {
@@ -139,17 +165,18 @@ function renderFormField(doc: PDFKit.PDFDocument, label: string, value: string, 
 
 function renderFirmBranding(doc: PDFKit.PDFDocument, data: ClosingData) {
   const firmName = getFirmName(data);
-  const titleCo = data.parties.find(p => p.role === "title_company" || p.role === "settlement_agent" || p.role === "escrow_agent");
+  const address = getOrgAddress(data);
+  const contact = getOrgContact(data);
 
   drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 40, "#1a365d");
   const brandY = doc.y;
   doc.fontSize(14).font("Helvetica-Bold").fillColor("#ffffff").text(firmName.toUpperCase(), 50, brandY + 5, { align: "center", width: doc.page.width - 100 });
-  if (data.firmAddress || titleCo?.address) {
-    doc.fontSize(8).font("Helvetica").text(data.firmAddress || titleCo?.address || "", 50, brandY + 22, { align: "center", width: doc.page.width - 100 });
+  if (address) {
+    doc.fontSize(8).font("Helvetica").text(address, 50, brandY + 22, { align: "center", width: doc.page.width - 100 });
   }
-  if (titleCo?.phone || titleCo?.email) {
-    const contactLine = [titleCo.phone, titleCo.email].filter(Boolean).join(" | ");
-    doc.fontSize(7).text(contactLine, 50, brandY + 31, { align: "center", width: doc.page.width - 100 });
+  const contactParts = [contact.phone, contact.email, contact.website].filter(Boolean);
+  if (contactParts.length > 0) {
+    doc.fontSize(7).text(contactParts.join(" | "), 50, brandY + 31, { align: "center", width: doc.page.width - 100 });
   }
   doc.fillColor("#000000");
   doc.y = brandY + 44;
@@ -309,14 +336,14 @@ function renderHudSectionItems(doc: PDFKit.PDFDocument, items: any[], sectionNum
   return sectionTotal;
 }
 
-function renderHud1Sections(doc: PDFKit.PDFDocument, data: ClosingData) {
+function renderHud1Sections(doc: PDFKit.PDFDocument, data: ClosingData, firstPage = false) {
   const c = data.closing;
   const firmName = getFirmName(data);
   const borrower = data.parties.find(p => p.role === "buyer" || p.role === "borrower");
   const seller = data.parties.find(p => p.role === "seller");
   const lender = data.parties.find(p => p.role === "lender");
 
-  doc.addPage();
+  if (!firstPage) doc.addPage();
   drawBoxFill(doc, 50, 45, doc.page.width - 100, 24, "#1a365d");
   doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff")
     .text("U.S. DEPARTMENT OF HOUSING AND URBAN DEVELOPMENT", 50, 49, { align: "center", width: doc.page.width - 100 });
@@ -452,13 +479,13 @@ function renderHud1Sections(doc: PDFKit.PDFDocument, data: ClosingData) {
   doc.text("Date", 300, doc.y + 2);
 }
 
-function renderHud1aSections(doc: PDFKit.PDFDocument, data: ClosingData) {
+function renderHud1aSections(doc: PDFKit.PDFDocument, data: ClosingData, firstPage = false) {
   const c = data.closing;
   const firmName = getFirmName(data);
   const borrower = data.parties.find(p => p.role === "buyer" || p.role === "borrower");
   const lender = data.parties.find(p => p.role === "lender");
 
-  doc.addPage();
+  if (!firstPage) doc.addPage();
   drawBoxFill(doc, 50, 45, doc.page.width - 100, 24, "#1a365d");
   doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff")
     .text("U.S. DEPARTMENT OF HOUSING AND URBAN DEVELOPMENT", 50, 49, { align: "center", width: doc.page.width - 100 });
@@ -635,11 +662,11 @@ function cdFilterItems(data: ClosingData, ...keys: string[]): any[] {
   return data.lineItems.filter(li => keys.includes((li as any).cdSection));
 }
 
-function renderCDSections(doc: PDFKit.PDFDocument, data: ClosingData) {
+function renderCDSections(doc: PDFKit.PDFDocument, data: ClosingData, firstPage = false) {
   const c = data.closing;
   const firmName = getFirmName(data);
 
-  doc.addPage();
+  if (!firstPage) doc.addPage();
   renderCDPage1(doc, data);
 
   drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 14, "#e8edf3");
@@ -1472,19 +1499,24 @@ export function generateClosingStatementPDF(data: ClosingData): PDFKit.PDFDocume
     },
   });
 
-  renderCoverPage(doc, data);
-
   const txType = data.closing.transactionType;
+  const officialFormTypes = ["hud1", "hud1a", "closing_disclosure", "seller_closing_disclosure"];
+  const isOfficialForm = officialFormTypes.includes(txType);
+
+  if (!isOfficialForm) {
+    renderCoverPage(doc, data);
+  }
+
   switch (txType) {
     case "hud1":
-      renderHud1Sections(doc, data);
+      renderHud1Sections(doc, data, isOfficialForm);
       break;
     case "hud1a":
-      renderHud1aSections(doc, data);
+      renderHud1aSections(doc, data, isOfficialForm);
       break;
     case "closing_disclosure":
     case "seller_closing_disclosure":
-      renderCDSections(doc, data);
+      renderCDSections(doc, data, isOfficialForm);
       break;
     case "cash_settlement":
       renderCashSettlement(doc, data);
