@@ -154,6 +154,15 @@ const dealTypeLabels: Record<string, string> = {
   leasehold_financing: "Leasehold Financing",
 };
 
+const representationRoleLabels: Record<string, string> = {
+  buyer: "Representing Buyer",
+  seller: "Representing Seller",
+  lender: "Representing Lender",
+  borrower: "Representing Borrower",
+  investor: "Representing Investor",
+  investee: "Representing Investee",
+};
+
 export default function TransactionsDealDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -1040,6 +1049,7 @@ export default function TransactionsDealDetail() {
       description: deal.description,
       dealValue: deal.dealValue,
       dealType: deal.dealType,
+      representationRole: deal.representationRole,
       status: deal.status,
       priority: deal.priority,
     });
@@ -1069,9 +1079,17 @@ export default function TransactionsDealDetail() {
                   {deal.priority || "Medium"} Priority
                 </Badge>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                {deal.dealNumber} • {dealTypeLabels[deal.dealType] || deal.dealType}
-              </p>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <p className="text-sm text-muted-foreground">
+                  {deal.dealNumber} • {dealTypeLabels[deal.dealType] || deal.dealType}
+                </p>
+                {deal.representationRole && (
+                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20" data-testid="badge-representation-role">
+                    <Scale className="h-3 w-3 mr-1" />
+                    {representationRoleLabels[deal.representationRole] || deal.representationRole}
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -1276,6 +1294,12 @@ export default function TransactionsDealDetail() {
                     <div>
                       <Label className="text-muted-foreground">Deal Type</Label>
                       <p className="font-medium">{dealTypeLabels[deal.dealType] || deal.dealType}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Your Firm Represents</Label>
+                      <p className="font-medium" data-testid="text-representation-role">
+                        {representationRoleLabels[deal.representationRole || ""] ? representationRoleLabels[deal.representationRole!].replace("Representing ", "") : "—"}
+                      </p>
                     </div>
                     <div>
                       <Label className="text-muted-foreground">Sub-Type</Label>
@@ -2626,21 +2650,55 @@ export default function TransactionsDealDetail() {
                   data-testid="input-edit-description"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Deal Type</Label>
-                <Select
-                  value={editForm.dealType || "other"}
-                  onValueChange={(v) => setEditForm({ ...editForm, dealType: v as any })}
-                >
-                  <SelectTrigger data-testid="select-edit-deal-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(dealTypeLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Deal Type</Label>
+                  <Select
+                    value={editForm.dealType || "other"}
+                    onValueChange={(v) => {
+                      const lendingTypes = ["debt", "cmbs", "construction_loan", "loan_assumption", "heloc", "refinance", "commercial_refinance", "reverse_mortgage", "leasehold_financing"];
+                      const investmentTypes = ["investment", "capital_stack", "reit_contribution", "opportunity_zone"];
+                      let opts: { value: string }[];
+                      if (lendingTypes.includes(v)) opts = [{ value: "lender" }, { value: "borrower" }];
+                      else if (investmentTypes.includes(v)) opts = [{ value: "investor" }, { value: "investee" }];
+                      else opts = [{ value: "buyer" }, { value: "seller" }];
+                      const currentValid = opts.some(o => o.value === editForm.representationRole);
+                      setEditForm({ ...editForm, dealType: v as any, representationRole: currentValid ? editForm.representationRole : undefined });
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-edit-deal-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(dealTypeLabels).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Your Firm Represents</Label>
+                  <Select
+                    value={editForm.representationRole || ""}
+                    onValueChange={(v) => setEditForm({ ...editForm, representationRole: v as any })}
+                  >
+                    <SelectTrigger data-testid="select-edit-representation-role">
+                      <SelectValue placeholder="Select side..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(() => {
+                        const dt = editForm.dealType || "other";
+                        const lendingTypes = ["debt", "cmbs", "construction_loan", "loan_assumption", "heloc", "refinance", "commercial_refinance", "reverse_mortgage", "leasehold_financing"];
+                        const investmentTypes = ["investment", "capital_stack", "reit_contribution", "opportunity_zone"];
+                        if (lendingTypes.includes(dt)) return [{ value: "lender", label: "Lender" }, { value: "borrower", label: "Borrower" }];
+                        if (investmentTypes.includes(dt)) return [{ value: "investor", label: "Investor" }, { value: "investee", label: "Investee" }];
+                        return [{ value: "buyer", label: "Buyer" }, { value: "seller", label: "Seller" }];
+                      })().map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

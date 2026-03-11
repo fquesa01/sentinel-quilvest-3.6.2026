@@ -100,6 +100,28 @@ const dealTypes = [
   { group: "Specialized", value: "other", label: "Other" },
 ];
 
+function getRepresentationOptions(dealType: string): { value: string; label: string }[] {
+  const lendingTypes = ["debt", "cmbs", "construction_loan", "loan_assumption", "heloc", "refinance", "commercial_refinance", "reverse_mortgage", "leasehold_financing"];
+  const investmentTypes = ["investment", "capital_stack", "reit_contribution", "opportunity_zone"];
+
+  if (lendingTypes.includes(dealType)) {
+    return [
+      { value: "lender", label: "Lender" },
+      { value: "borrower", label: "Borrower" },
+    ];
+  }
+  if (investmentTypes.includes(dealType)) {
+    return [
+      { value: "investor", label: "Investor" },
+      { value: "investee", label: "Investee" },
+    ];
+  }
+  return [
+    { value: "buyer", label: "Buyer" },
+    { value: "seller", label: "Seller" },
+  ];
+}
+
 const dealStatuses = [
   { value: "pipeline", label: "Pipeline" },
   { value: "active", label: "Active" },
@@ -160,6 +182,7 @@ export default function TransactionsDeals() {
   const [newDeal, setNewDeal] = useState({
     title: "",
     dealType: "ma_asset",
+    representationRole: "",
     status: "active",
     priority: "medium",
     dealValue: "",
@@ -194,6 +217,7 @@ export default function TransactionsDeals() {
       setNewDeal({
         title: "",
         dealType: "ma_asset",
+        representationRole: "",
         status: "active",
         priority: "medium",
         dealValue: "",
@@ -362,7 +386,11 @@ export default function TransactionsDeals() {
                   <Label>Deal Type</Label>
                   <Select
                     value={newDeal.dealType}
-                    onValueChange={(v) => setNewDeal({ ...newDeal, dealType: v })}
+                    onValueChange={(v) => {
+                      const opts = getRepresentationOptions(v);
+                      const currentValid = opts.some(o => o.value === newDeal.representationRole);
+                      setNewDeal({ ...newDeal, dealType: v, representationRole: currentValid ? newDeal.representationRole : "" });
+                    }}
                   >
                     <SelectTrigger data-testid="select-deal-type">
                       <SelectValue />
@@ -371,6 +399,24 @@ export default function TransactionsDeals() {
                       {dealTypes.map((type) => (
                         <SelectItem key={type.value} value={type.value}>
                           {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Your Firm Represents</Label>
+                  <Select
+                    value={newDeal.representationRole}
+                    onValueChange={(v) => setNewDeal({ ...newDeal, representationRole: v })}
+                  >
+                    <SelectTrigger data-testid="select-representation-role">
+                      <SelectValue placeholder="Select side..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getRepresentationOptions(newDeal.dealType).map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
                         </SelectItem>
                       ))}
                     </SelectContent>

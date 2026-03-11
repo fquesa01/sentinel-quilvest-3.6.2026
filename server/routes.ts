@@ -16626,17 +16626,11 @@ Guidelines:
 
   // Get available document types for generation
   app.get("/api/document-generation/types", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
-    const documentTypes = [
-      { id: 'psa', name: 'Purchase and Sale Agreement', description: 'Full PSA with all exhibits' },
-      { id: 'amendment', name: 'Amendment to PSA', description: 'Amendment for modified terms' },
-      { id: 'assignment', name: 'Assignment of PSA', description: 'Assignment to new buyer entity' },
-      { id: 'deed', name: 'Deed', description: 'Conveyance document' },
-      { id: 'bill_of_sale', name: 'Bill of Sale', description: 'Personal property transfer' },
-      { id: 'assignment_of_leases', name: 'Assignment of Leases', description: 'Lease assignment and assumption' },
-      { id: 'closing_certificate', name: 'Closing Certificate', description: 'Seller/Buyer closing certificate' },
-      { id: 'firpta', name: 'FIRPTA Certificate', description: 'Non-foreign seller certification' },
-    ];
-    res.json(documentTypes);
+    const { documentGenerationService } = await import("./services/document-generation-service");
+    const dealType = req.query.dealType as string | undefined;
+    const representationRole = req.query.representationRole as string | undefined;
+    const types = documentGenerationService.getDocumentTypes(dealType, representationRole);
+    res.json(types);
   });
 
   // Get generated documents for a deal

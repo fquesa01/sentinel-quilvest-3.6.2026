@@ -6460,6 +6460,7 @@ export const deals = pgTable("deals", {
   subType: varchar("sub_type", { length: 100 }),
   status: dealStatusEnum("status").default("active"),
   priority: dealPriorityEnum("priority").default("medium"),
+  representationRole: varchar("representation_role", { length: 50 }),
   dealValue: text("deal_value"),
   dealCurrency: varchar("deal_currency", { length: 10 }).default("USD"),
   dealStructure: text("deal_structure"),

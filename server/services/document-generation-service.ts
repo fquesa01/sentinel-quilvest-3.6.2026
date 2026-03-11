@@ -25,9 +25,25 @@ interface GenerationResult {
   error?: string;
 }
 
-const DOCUMENT_TEMPLATES: Record<string, { name: string; sections: string[] }> = {
+interface DocumentTemplate {
+  name: string;
+  sections: string[];
+  roles?: string[];
+  dealTypes?: string[];
+  category: "closing" | "lending" | "investment" | "general" | "corporate";
+}
+
+const RE_DEAL_TYPES = ["real_estate", "residential_financed", "residential_cash", "new_construction", "commercial_financed", "commercial_cash", "sale_leaseback", "exchange_1031", "condo_subdivision", "deed_in_lieu", "foreclosure_reo", "short_sale", "estate_probate", "portfolio_bulk", "distressed_asset", "co_op", "mixed_use"];
+const MA_DEAL_TYPES = ["ma_asset", "ma_stock", "merger", "jv", "franchise"];
+const LENDING_DEAL_TYPES = ["debt", "cmbs", "construction_loan", "loan_assumption", "heloc", "refinance", "commercial_refinance", "reverse_mortgage", "leasehold_financing"];
+const INVESTMENT_DEAL_TYPES = ["investment", "capital_stack", "reit_contribution", "opportunity_zone"];
+const LEASE_DEAL_TYPES = ["ground_lease", "sale_leaseback"];
+
+const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   psa: {
     name: "Purchase and Sale Agreement",
+    category: "closing",
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
     sections: [
       "Recitals",
       "Definitions",
@@ -48,6 +64,8 @@ const DOCUMENT_TEMPLATES: Record<string, { name: string; sections: string[] }> =
   },
   amendment: {
     name: "Amendment to Purchase and Sale Agreement",
+    category: "closing",
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
     sections: [
       "Recitals",
       "Amendment of Terms",
@@ -57,6 +75,8 @@ const DOCUMENT_TEMPLATES: Record<string, { name: string; sections: string[] }> =
   },
   assignment: {
     name: "Assignment of Purchase and Sale Agreement",
+    category: "closing",
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
     sections: [
       "Recitals",
       "Assignment",
@@ -68,6 +88,9 @@ const DOCUMENT_TEMPLATES: Record<string, { name: string; sections: string[] }> =
   },
   deed: {
     name: "Special Warranty Deed",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES],
     sections: [
       "Grantor Information",
       "Grantee Information",
@@ -77,8 +100,24 @@ const DOCUMENT_TEMPLATES: Record<string, { name: string; sections: string[] }> =
       "Acknowledgment"
     ]
   },
+  quitclaim_deed: {
+    name: "Quitclaim Deed",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES],
+    sections: [
+      "Grantor Information",
+      "Grantee Information",
+      "Property Description",
+      "Quitclaim Language",
+      "Acknowledgment"
+    ]
+  },
   bill_of_sale: {
     name: "Bill of Sale",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
     sections: [
       "Seller Information",
       "Buyer Information",
@@ -90,6 +129,8 @@ const DOCUMENT_TEMPLATES: Record<string, { name: string; sections: string[] }> =
   },
   assignment_of_leases: {
     name: "Assignment and Assumption of Leases",
+    category: "closing",
+    dealTypes: [...RE_DEAL_TYPES, ...LEASE_DEAL_TYPES],
     sections: [
       "Recitals",
       "Assignment of Leases",
@@ -101,6 +142,7 @@ const DOCUMENT_TEMPLATES: Record<string, { name: string; sections: string[] }> =
   },
   closing_certificate: {
     name: "Closing Certificate",
+    category: "closing",
     sections: [
       "Recitals",
       "Representations and Warranties",
@@ -111,16 +153,356 @@ const DOCUMENT_TEMPLATES: Record<string, { name: string; sections: string[] }> =
   },
   firpta: {
     name: "FIRPTA Affidavit",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES],
     sections: [
       "Transferor Information",
       "Certification of Non-Foreign Status",
       "Tax Identification Number",
       "Acknowledgment"
     ]
-  }
+  },
+  title_affidavit: {
+    name: "Title Affidavit",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES],
+    sections: [
+      "Affiant Information",
+      "Property Description",
+      "Ownership Statement",
+      "Liens and Encumbrances",
+      "No Outstanding Disputes",
+      "Sworn Statement",
+      "Notarization"
+    ]
+  },
+  owners_affidavit: {
+    name: "Owner's Affidavit",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES],
+    sections: [
+      "Affiant Information",
+      "Property Ownership Confirmation",
+      "No Undisclosed Liens",
+      "No Parties in Possession",
+      "No Boundary Disputes",
+      "Sworn Statement",
+      "Notarization"
+    ]
+  },
+  llc_affidavit: {
+    name: "LLC / Entity Authority Affidavit",
+    category: "corporate",
+    sections: [
+      "Entity Information",
+      "Formation and Good Standing",
+      "Authorization to Transact",
+      "Authorized Signatories",
+      "No Pending Dissolution",
+      "Sworn Statement",
+      "Notarization"
+    ]
+  },
+  corporate_resolution: {
+    name: "Corporate Resolution / Consent",
+    category: "corporate",
+    sections: [
+      "Corporation Information",
+      "Board or Shareholder Action",
+      "Resolved Transaction Details",
+      "Authorized Officers",
+      "Certification",
+      "Execution"
+    ]
+  },
+  loan_agreement: {
+    name: "Loan Agreement",
+    category: "lending",
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Definitions",
+      "Loan Terms and Conditions",
+      "Interest Rate and Payments",
+      "Disbursement",
+      "Representations and Warranties",
+      "Affirmative Covenants",
+      "Negative Covenants",
+      "Events of Default",
+      "Remedies",
+      "Miscellaneous",
+      "Execution"
+    ]
+  },
+  promissory_note: {
+    name: "Promissory Note",
+    category: "lending",
+    roles: ["borrower"],
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Principal Amount",
+      "Interest Rate",
+      "Payment Schedule",
+      "Maturity Date",
+      "Prepayment Terms",
+      "Default Provisions",
+      "Maker Execution"
+    ]
+  },
+  mortgage_deed_of_trust: {
+    name: "Mortgage / Deed of Trust",
+    category: "lending",
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Parties",
+      "Recitals",
+      "Granting Clause",
+      "Property Description",
+      "Obligations Secured",
+      "Borrower Covenants",
+      "Insurance Requirements",
+      "Tax and Assessment Obligations",
+      "Default and Acceleration",
+      "Foreclosure Provisions",
+      "Release Provisions",
+      "Execution and Acknowledgment"
+    ]
+  },
+  security_agreement: {
+    name: "Security Agreement (UCC)",
+    category: "lending",
+    roles: ["lender"],
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Grant of Security Interest",
+      "Collateral Description",
+      "Debtor Representations",
+      "Debtor Covenants",
+      "Events of Default",
+      "Remedies",
+      "Execution"
+    ]
+  },
+  ucc_financing_statement: {
+    name: "UCC Financing Statement",
+    category: "lending",
+    roles: ["lender"],
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Debtor Information",
+      "Secured Party Information",
+      "Collateral Description",
+      "Filing Instructions"
+    ]
+  },
+  guaranty: {
+    name: "Guaranty Agreement",
+    category: "lending",
+    roles: ["lender"],
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Guaranty of Obligations",
+      "Guarantor Representations",
+      "Guarantor Covenants",
+      "Waivers",
+      "Events of Default",
+      "Remedies",
+      "Execution"
+    ]
+  },
+  snda: {
+    name: "Subordination, Non-Disturbance and Attornment Agreement",
+    category: "lending",
+    dealTypes: [...LENDING_DEAL_TYPES, ...LEASE_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Subordination",
+      "Non-Disturbance",
+      "Attornment",
+      "Lender Protections",
+      "Tenant Obligations",
+      "Execution"
+    ]
+  },
+  subscription_agreement: {
+    name: "Subscription Agreement",
+    category: "investment",
+    roles: ["investor"],
+    dealTypes: [...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Subscription and Purchase",
+      "Purchase Price and Payment",
+      "Representations of Subscriber",
+      "Accredited Investor Certification",
+      "Risk Acknowledgment",
+      "Restrictions on Transfer",
+      "Indemnification",
+      "Execution"
+    ]
+  },
+  ppm: {
+    name: "Private Placement Memorandum",
+    category: "investment",
+    roles: ["investee"],
+    dealTypes: [...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Executive Summary",
+      "Investment Overview",
+      "Risk Factors",
+      "Terms of the Offering",
+      "Use of Proceeds",
+      "Management Team",
+      "Financial Projections",
+      "Subscription Procedures",
+      "Tax Considerations",
+      "Legal Matters"
+    ]
+  },
+  operating_agreement: {
+    name: "Operating Agreement (LLC)",
+    category: "investment",
+    dealTypes: [...INVESTMENT_DEAL_TYPES, "joint_venture"],
+    sections: [
+      "Formation",
+      "Members and Interests",
+      "Capital Contributions",
+      "Distributions",
+      "Management and Voting",
+      "Transfer Restrictions",
+      "Dissolution",
+      "Execution"
+    ]
+  },
+  board_resolution: {
+    name: "Board Resolution",
+    category: "corporate",
+    sections: [
+      "Corporation Information",
+      "Meeting or Written Consent",
+      "Resolved Actions",
+      "Authorization of Officers",
+      "Certification",
+      "Execution"
+    ]
+  },
+  estoppel_certificate: {
+    name: "Estoppel Certificate",
+    category: "closing",
+    dealTypes: [...RE_DEAL_TYPES, ...LEASE_DEAL_TYPES],
+    sections: [
+      "Tenant/Landlord Information",
+      "Lease Identification",
+      "Confirmation of Lease Terms",
+      "Rent and Security Deposit Status",
+      "No Defaults",
+      "No Modifications",
+      "Execution"
+    ]
+  },
+  lease_agreement: {
+    name: "Commercial Lease Agreement",
+    category: "closing",
+    dealTypes: [...LEASE_DEAL_TYPES, ...RE_DEAL_TYPES],
+    sections: [
+      "Parties",
+      "Premises Description",
+      "Lease Term",
+      "Rent and Escalations",
+      "Operating Expenses",
+      "Permitted Use",
+      "Maintenance and Repairs",
+      "Insurance",
+      "Default and Remedies",
+      "Assignment and Subletting",
+      "Execution"
+    ]
+  },
+  letter_of_intent: {
+    name: "Letter of Intent",
+    category: "general",
+    sections: [
+      "Parties",
+      "Transaction Overview",
+      "Key Terms",
+      "Due Diligence Period",
+      "Exclusivity",
+      "Conditions to Closing",
+      "Confidentiality",
+      "Non-Binding Nature",
+      "Execution"
+    ]
+  },
+  closing_statement: {
+    name: "Closing Statement / Settlement Statement",
+    category: "closing",
+    dealTypes: [...RE_DEAL_TYPES],
+    sections: [
+      "Transaction Summary",
+      "Buyer Credits and Debits",
+      "Seller Credits and Debits",
+      "Prorations",
+      "Closing Costs",
+      "Net Proceeds / Amount Due",
+      "Certification"
+    ]
+  },
+  environmental_indemnity: {
+    name: "Environmental Indemnity Agreement",
+    category: "closing",
+    roles: ["buyer", "borrower"],
+    dealTypes: [...RE_DEAL_TYPES, ...LENDING_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Definitions",
+      "Environmental Representations",
+      "Indemnification Obligations",
+      "Remediation Requirements",
+      "Insurance",
+      "Execution"
+    ]
+  },
 };
 
 export class DocumentGenerationService {
+  getDocumentTypes(dealType?: string, representationRole?: string): { id: string; name: string; description: string; category: string; recommended: boolean }[] {
+    const categoryLabels: Record<string, string> = {
+      closing: "Closing Documents",
+      lending: "Lending Documents",
+      investment: "Investment Documents",
+      corporate: "Corporate & Entity Documents",
+      general: "General Documents",
+    };
+
+    const results: { id: string; name: string; description: string; category: string; recommended: boolean }[] = [];
+
+    for (const [id, template] of Object.entries(DOCUMENT_TEMPLATES)) {
+      const matchesDealType = !template.dealTypes || !dealType || template.dealTypes.includes(dealType);
+      const matchesRole = !template.roles || !representationRole || template.roles.includes(representationRole);
+      const recommended = matchesDealType && matchesRole;
+
+      results.push({
+        id,
+        name: template.name,
+        description: `${template.sections.length} sections`,
+        category: categoryLabels[template.category] || template.category,
+        recommended,
+      });
+    }
+
+    results.sort((a, b) => {
+      if (a.recommended !== b.recommended) return a.recommended ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return results;
+  }
+
   async generateDocument(request: DocumentGenerationRequest): Promise<GenerationResult> {
     try {
       const terms = await db.query.dealTerms.findFirst({

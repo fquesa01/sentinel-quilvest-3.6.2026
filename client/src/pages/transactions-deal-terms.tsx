@@ -1141,6 +1141,8 @@ export default function TransactionsDealTerms() {
         onOpenChange={setGenerateDialogOpen}
         dealId={dealId!}
         dealTitle={deal?.title || ""}
+        dealType={deal?.dealType}
+        representationRole={deal?.representationRole}
       />
     </div>
   );

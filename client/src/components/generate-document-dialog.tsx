@@ -41,6 +41,8 @@ interface DocumentType {
   id: string;
   name: string;
   description: string;
+  category: string;
+  recommended: boolean;
 }
 
 interface GenerateDocumentDialogProps {
@@ -48,6 +50,8 @@ interface GenerateDocumentDialogProps {
   onOpenChange: (open: boolean) => void;
   dealId: string;
   dealTitle: string;
+  dealType?: string;
+  representationRole?: string | null;
 }
 
 export function GenerateDocumentDialog({
@@ -55,13 +59,25 @@ export function GenerateDocumentDialog({
   onOpenChange,
   dealId,
   dealTitle,
+  dealType,
+  representationRole,
 }: GenerateDocumentDialogProps) {
   const { toast } = useToast();
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [customInstructions, setCustomInstructions] = useState("");
 
+  const queryParams = new URLSearchParams();
+  if (dealType) queryParams.set("dealType", dealType);
+  if (representationRole) queryParams.set("representationRole", representationRole);
+  const typesUrl = `/api/document-generation/types${queryParams.toString() ? `?${queryParams}` : ""}`;
+
   const { data: documentTypes, isLoading: typesLoading } = useQuery<DocumentType[]>({
-    queryKey: ["/api/document-generation/types"],
+    queryKey: ["/api/document-generation/types", dealType, representationRole],
+    queryFn: async () => {
+      const res = await fetch(typesUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch document types");
+      return res.json();
+    },
     enabled: open,
   });
 
@@ -139,36 +155,65 @@ export function GenerateDocumentDialog({
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {documentTypes?.map((type) => (
-                    <Card
-                      key={type.id}
-                      className={`cursor-pointer transition-colors hover-elevate ${
-                        selectedType === type.id
-                          ? "border-primary bg-primary/5"
-                          : ""
-                      }`}
-                      onClick={() => setSelectedType(type.id)}
-                      data-testid={`card-doc-type-${type.id}`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-lg ${
-                            selectedType === type.id ? "bg-primary/20" : "bg-muted"
-                          }`}>
-                            <FileCheck className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">{type.name}</p>
-                            <p className="text-xs text-muted-foreground">{type.description}</p>
-                          </div>
-                          {selectedType === type.id && (
-                            <CheckCircle2 className="h-4 w-4 text-primary ml-auto" />
+                <div className="space-y-4">
+                  {(() => {
+                    const grouped = (documentTypes || []).reduce<Record<string, DocumentType[]>>((acc, type) => {
+                      const key = type.recommended ? `Recommended — ${type.category}` : type.category;
+                      if (!acc[key]) acc[key] = [];
+                      acc[key].push(type);
+                      return acc;
+                    }, {});
+                    const sortedKeys = Object.keys(grouped).sort((a, b) => {
+                      const aRec = a.startsWith("Recommended");
+                      const bRec = b.startsWith("Recommended");
+                      if (aRec !== bRec) return aRec ? -1 : 1;
+                      return a.localeCompare(b);
+                    });
+                    return sortedKeys.map((groupKey) => (
+                      <div key={groupKey}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{groupKey}</p>
+                          {groupKey.startsWith("Recommended") && (
+                            <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-[10px]" data-testid="badge-recommended-section">
+                              <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                              For your deal
+                            </Badge>
                           )}
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        <div className="grid grid-cols-2 gap-3">
+                          {grouped[groupKey].map((type) => (
+                            <Card
+                              key={type.id}
+                              className={`cursor-pointer transition-colors hover-elevate ${
+                                selectedType === type.id
+                                  ? "border-primary bg-primary/5"
+                                  : ""
+                              }`}
+                              onClick={() => setSelectedType(type.id)}
+                              data-testid={`card-doc-type-${type.id}`}
+                            >
+                              <CardContent className="p-4">
+                                <div className="flex items-start gap-3">
+                                  <div className={`p-2 rounded-lg ${
+                                    selectedType === type.id ? "bg-primary/20" : "bg-muted"
+                                  }`}>
+                                    <FileCheck className="h-4 w-4" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-medium text-sm">{type.name}</p>
+                                    <p className="text-xs text-muted-foreground">{type.description}</p>
+                                  </div>
+                                  {selectedType === type.id && (
+                                    <CheckCircle2 className="h-4 w-4 text-primary ml-auto shrink-0" />
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               )}
             </div>
