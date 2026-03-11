@@ -32,6 +32,7 @@ const closingTransactionTypeLabels: Record<string, string> = {
   portfolio_settlement: "Portfolio Settlement",
   ground_lease_closing: "Ground Lease Closing",
   master_closing: "Master Closing Statement",
+  reit_contribution: "REIT Contribution",
 };
 
 function parseAmount(val: string | null | undefined): number {
@@ -984,6 +985,19 @@ router.post("/closings/extract-from-document", async (req: any, res) => {
       return res.status(400).json({ message: "documentId and dealId are required" });
     }
 
+    const [document] = await db.select().from(schema.dataRoomDocuments)
+      .where(eq(schema.dataRoomDocuments.id, documentId));
+    if (!document) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+
+    const dataRooms = await db.select().from(schema.dataRooms)
+      .where(eq(schema.dataRooms.dealId, dealId));
+    const dataRoomIds = new Set(dataRooms.map(dr => dr.id));
+    if (!dataRoomIds.has(document.dataRoomId)) {
+      return res.status(403).json({ message: "Document does not belong to this deal" });
+    }
+
     const { extractAndCreateClosing } = await import("../services/closing-extraction-service");
     const result = await extractAndCreateClosing(documentId, dealId, req.user.id);
 
@@ -1002,15 +1016,16 @@ router.post("/closings/extract-from-document", async (req: any, res) => {
       confidence: result.extraction.confidence,
       data: result.extraction.data,
     });
-  } catch (error: any) {
-    console.error("Error extracting closing from document:", error);
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error("Error extracting closing from document:", errMsg);
+    res.status(500).json({ message: errMsg });
   }
 });
 
 router.post("/closings/extract-preview", async (req: any, res) => {
   try {
-    const { documentId } = req.body;
+    const { documentId, dealId } = req.body;
     if (!documentId) {
       return res.status(400).json({ message: "documentId is required" });
     }
@@ -1020,6 +1035,15 @@ router.post("/closings/extract-preview", async (req: any, res) => {
 
     if (!document) {
       return res.status(404).json({ message: "Document not found" });
+    }
+
+    if (dealId) {
+      const dataRooms = await db.select().from(schema.dataRooms)
+        .where(eq(schema.dataRooms.dealId, dealId));
+      const dataRoomIds = new Set(dataRooms.map(dr => dr.id));
+      if (!dataRoomIds.has(document.dataRoomId)) {
+        return res.status(403).json({ message: "Document does not belong to this deal" });
+      }
     }
 
     const { ObjectStorageService } = await import("../objectStorage");
@@ -1039,9 +1063,10 @@ router.post("/closings/extract-preview", async (req: any, res) => {
       validation: result.validation,
       confidence: result.confidence,
     });
-  } catch (error: any) {
-    console.error("Error previewing extraction:", error);
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error("Error previewing extraction:", errMsg);
+    res.status(500).json({ message: errMsg });
   }
 });
 
