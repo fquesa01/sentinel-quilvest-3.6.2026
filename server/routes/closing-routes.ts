@@ -977,6 +977,187 @@ router.post("/closings/:id/save-to-data-room", async (req: any, res) => {
   }
 });
 
+router.post("/closings/extract-from-document", async (req: any, res) => {
+  try {
+    const { documentId, dealId } = req.body;
+    if (!documentId || !dealId) {
+      return res.status(400).json({ message: "documentId and dealId are required" });
+    }
+
+    const { extractAndCreateClosing } = await import("../services/closing-extraction-service");
+    const result = await extractAndCreateClosing(documentId, dealId, req.user.id);
+
+    if (!result.extraction.success) {
+      return res.status(400).json({
+        success: false,
+        validation: result.extraction.validation,
+        confidence: result.extraction.confidence,
+      });
+    }
+
+    res.json({
+      success: true,
+      closingId: result.closingId,
+      validation: result.extraction.validation,
+      confidence: result.extraction.confidence,
+      data: result.extraction.data,
+    });
+  } catch (error: any) {
+    console.error("Error extracting closing from document:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post("/closings/extract-preview", async (req: any, res) => {
+  try {
+    const { documentId } = req.body;
+    if (!documentId) {
+      return res.status(400).json({ message: "documentId is required" });
+    }
+
+    const [document] = await db.select().from(schema.dataRoomDocuments)
+      .where(eq(schema.dataRoomDocuments.id, documentId));
+
+    if (!document) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+
+    const { ObjectStorageService } = await import("../objectStorage");
+    const objectStorage = new ObjectStorageService();
+    const fileBuffer = await objectStorage.downloadBuffer(document.storagePath!);
+
+    const { extractClosingFromDocument } = await import("../services/closing-extraction-service");
+    const result = await extractClosingFromDocument(
+      fileBuffer,
+      document.fileName,
+      document.fileType || "application/pdf"
+    );
+
+    res.json({
+      success: result.success,
+      data: result.data,
+      validation: result.validation,
+      confidence: result.confidence,
+    });
+  } catch (error: any) {
+    console.error("Error previewing extraction:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post("/closings/:id/validate", async (req: any, res) => {
+  try {
+    const closingId = req.params.id;
+
+    const [closing] = await db.select().from(schema.closingTransactions)
+      .where(eq(schema.closingTransactions.id, closingId));
+    if (!closing) return res.status(404).json({ message: "Closing not found" });
+
+    const lineItems = await db.select().from(schema.closingLineItems)
+      .where(eq(schema.closingLineItems.closingId, closingId));
+    const parties = await db.select().from(schema.closingParties)
+      .where(eq(schema.closingParties.closingId, closingId));
+    const prorations = await db.select().from(schema.closingProrations)
+      .where(eq(schema.closingProrations.closingId, closingId));
+    const payoffs = await db.select().from(schema.closingPayoffs)
+      .where(eq(schema.closingPayoffs.closingId, closingId));
+
+    const issues: Array<{ severity: string; field: string; message: string; suggestion?: string }> = [];
+
+    if (!closing.propertyAddress) {
+      issues.push({ severity: "warning", field: "propertyAddress", message: "No property address specified" });
+    }
+    if (!closing.closingDate) {
+      issues.push({ severity: "warning", field: "closingDate", message: "No closing date specified" });
+    }
+    if (parties.length === 0) {
+      issues.push({ severity: "warning", field: "parties", message: "No parties added to this closing" });
+    }
+    if (lineItems.length === 0) {
+      issues.push({ severity: "error", field: "lineItems", message: "No line items in this closing" });
+    }
+
+    const totalSources = lineItems
+      .filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit")
+      .reduce((s, li) => s + parseAmount(li.amount), 0);
+    const totalUses = lineItems
+      .filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit")
+      .reduce((s, li) => s + parseAmount(li.amount), 0);
+    const diff = Math.abs(totalSources - totalUses);
+
+    if (diff > 0.01) {
+      issues.push({
+        severity: "error",
+        field: "balance",
+        message: `Statement does not balance. Sources: $${totalSources.toFixed(2)}, Uses: $${totalUses.toFixed(2)}, Difference: $${diff.toFixed(2)}`,
+        suggestion: "Review line items to identify discrepancies",
+      });
+    }
+
+    for (const li of lineItems) {
+      if (!li.description || li.description.trim() === "") {
+        issues.push({ severity: "warning", field: `lineItem-${li.id}`, message: `Line item #${li.lineNumber || li.id} has no description` });
+      }
+      if (parseAmount(li.amount) === 0) {
+        issues.push({ severity: "info", field: `lineItem-${li.id}`, message: `Line item "${li.description}" has zero amount` });
+      }
+    }
+
+    const pp = parseAmount(closing.purchasePrice);
+    const la = parseAmount(closing.loanAmount);
+    if (la > 0 && pp > 0 && la > pp) {
+      issues.push({
+        severity: "warning",
+        field: "loanVsPurchase",
+        message: `Loan amount ($${la.toFixed(2)}) exceeds purchase price ($${pp.toFixed(2)})`,
+        suggestion: "This may be valid for construction loans, verify manually",
+      });
+    }
+
+    const buyerParty = parties.find(p => p.role === "buyer" || p.role === "borrower");
+    const sellerParty = parties.find(p => p.role === "seller");
+    const officialTypes = ["hud1", "hud1a", "closing_disclosure", "seller_closing_disclosure"];
+    if (officialTypes.includes(closing.transactionType)) {
+      if (!buyerParty) issues.push({ severity: "warning", field: "parties", message: "No buyer/borrower party identified" });
+      if (!sellerParty && closing.transactionType !== "hud1a") {
+        issues.push({ severity: "warning", field: "parties", message: "No seller party identified" });
+      }
+    }
+
+    for (const p of prorations) {
+      const annual = parseAmount(p.annualAmount);
+      const buyer = parseAmount(p.buyerCredit);
+      const seller = parseAmount(p.sellerCredit);
+      if (annual > 0 && buyer + seller > annual * 1.1) {
+        issues.push({
+          severity: "warning",
+          field: `proration-${p.id}`,
+          message: `Proration "${p.itemName}" credits ($${(buyer + seller).toFixed(2)}) exceed annual amount ($${annual.toFixed(2)})`,
+        });
+      }
+    }
+
+    const errorCount = issues.filter(i => i.severity === "error").length;
+    const warningCount = issues.filter(i => i.severity === "warning").length;
+
+    res.json({
+      valid: errorCount === 0,
+      issues,
+      summary: {
+        errors: errorCount,
+        warnings: warningCount,
+        info: issues.filter(i => i.severity === "info").length,
+        totalSources: totalSources.toFixed(2),
+        totalUses: totalUses.toFixed(2),
+        balanced: diff < 0.01,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error validating closing:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 export function registerClosingRoutes(app: any) {
   app.use("/api", router);
 }

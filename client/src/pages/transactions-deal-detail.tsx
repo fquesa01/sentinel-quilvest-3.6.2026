@@ -202,6 +202,10 @@ export default function TransactionsDealDetail() {
   const [newClosingType, setNewClosingType] = useState("");
   const [newClosingTitle, setNewClosingTitle] = useState("");
   const [autoPopulateClosing, setAutoPopulateClosing] = useState(true);
+  const [isExtractDialogOpen, setIsExtractDialogOpen] = useState(false);
+  const [extractDocId, setExtractDocId] = useState("");
+  const [extractPreview, setExtractPreview] = useState<any>(null);
+  const [extracting, setExtracting] = useState(false);
 
   const [isDealTypeDismissed, setIsDealTypeDismissed] = useState(false);
 
@@ -428,6 +432,47 @@ export default function TransactionsDealDetail() {
       title: newClosingTitle || closingTypeLabels[newClosingType] || "New Closing",
       autoPopulate: autoPopulateClosing,
     });
+  };
+
+  const extractClosingMutation = useMutation({
+    mutationFn: async (data: { documentId: string; dealId: string }) => {
+      const res = await apiRequest("POST", `/api/closings/extract-from-document`, data);
+      return res.json();
+    },
+    onSuccess: async (data: any) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "closings"] });
+      toast({
+        title: "Closing Extracted",
+        description: `Extracted ${data.data?.lineItems?.length || 0} line items with ${data.confidence}% confidence.`,
+      });
+      setIsExtractDialogOpen(false);
+      setExtractDocId("");
+      setExtractPreview(null);
+      if (data.closingId) {
+        setLocation(`/transactions/closings/${data.closingId}`);
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "Extraction Failed", description: error.message || "Could not extract closing data.", variant: "destructive" });
+    },
+  });
+
+  const handleExtractPreview = async () => {
+    if (!extractDocId) return;
+    setExtracting(true);
+    try {
+      const res = await apiRequest("POST", `/api/closings/extract-preview`, { documentId: extractDocId });
+      const data = await res.json();
+      setExtractPreview(data);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Preview failed.", variant: "destructive" });
+    }
+    setExtracting(false);
+  };
+
+  const handleExtractConfirm = () => {
+    if (!extractDocId || !id) return;
+    extractClosingMutation.mutate({ documentId: extractDocId, dealId: id });
   };
 
   const createIssueMutation = useMutation({
@@ -2178,13 +2223,23 @@ export default function TransactionsDealDetail() {
                     </CardTitle>
                     <CardDescription>Manage closing transactions, line items, and funds flow</CardDescription>
                   </div>
-                  <Button
-                    onClick={() => setIsCreateClosingOpen(true)}
-                    data-testid="button-create-closing"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Closing
-                  </Button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsExtractDialogOpen(true)}
+                      data-testid="button-extract-closing"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      Extract from PDF
+                    </Button>
+                    <Button
+                      onClick={() => setIsCreateClosingOpen(true)}
+                      data-testid="button-create-closing"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      New Closing
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -2317,6 +2372,109 @@ export default function TransactionsDealDetail() {
                     )}
                     Create
                   </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isExtractDialogOpen} onOpenChange={(open) => { setIsExtractDialogOpen(open); if (!open) { setExtractDocId(""); setExtractPreview(null); } }}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Extract Closing from Document</DialogTitle>
+                  <DialogDescription>
+                    Upload a closing statement PDF and AI will extract parties, line items, amounts, and prorations automatically.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Select Document from Data Room</Label>
+                    <Input
+                      value={extractDocId}
+                      onChange={(e) => setExtractDocId(e.target.value)}
+                      placeholder="Enter document ID from data room"
+                      data-testid="input-extract-doc-id"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Navigate to the data room, find the PDF you want to extract, and copy its document ID.
+                    </p>
+                  </div>
+
+                  {!extractPreview && (
+                    <Button
+                      variant="outline"
+                      onClick={handleExtractPreview}
+                      disabled={!extractDocId || extracting}
+                      data-testid="button-preview-extract"
+                    >
+                      {extracting ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <FileText className="h-4 w-4 mr-2" />
+                      )}
+                      Preview Extraction
+                    </Button>
+                  )}
+
+                  {extractPreview && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{extractPreview.confidence}% confidence</Badge>
+                        {extractPreview.data?.statementType && (
+                          <Badge>{closingTypeLabels[extractPreview.data.statementType] || extractPreview.data.statementType}</Badge>
+                        )}
+                      </div>
+
+                      {extractPreview.data && (
+                        <div className="text-sm space-y-1 p-3 bg-muted/30 rounded-md">
+                          {extractPreview.data.propertyAddress && <p><span className="text-muted-foreground">Property:</span> {extractPreview.data.propertyAddress}</p>}
+                          {extractPreview.data.purchasePrice && <p><span className="text-muted-foreground">Purchase Price:</span> ${parseFloat(extractPreview.data.purchasePrice).toLocaleString()}</p>}
+                          {extractPreview.data.loanAmount && <p><span className="text-muted-foreground">Loan Amount:</span> ${parseFloat(extractPreview.data.loanAmount).toLocaleString()}</p>}
+                          <p><span className="text-muted-foreground">Parties:</span> {extractPreview.data.parties?.length || 0}</p>
+                          <p><span className="text-muted-foreground">Line Items:</span> {extractPreview.data.lineItems?.length || 0}</p>
+                          <p><span className="text-muted-foreground">Prorations:</span> {extractPreview.data.prorations?.length || 0}</p>
+                        </div>
+                      )}
+
+                      {extractPreview.validation && extractPreview.validation.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">Validation Notes:</p>
+                          {extractPreview.validation.slice(0, 5).map((v: any, idx: number) => (
+                            <div key={idx} className="flex items-start gap-1 text-xs">
+                              {v.severity === "error" ? (
+                                <AlertTriangle className="h-3 w-3 text-red-500 shrink-0 mt-0.5" />
+                              ) : v.severity === "warning" ? (
+                                <AlertTriangle className="h-3 w-3 text-yellow-500 shrink-0 mt-0.5" />
+                              ) : (
+                                <CheckCircle2 className="h-3 w-3 text-blue-500 shrink-0 mt-0.5" />
+                              )}
+                              <span>{v.message}</span>
+                            </div>
+                          ))}
+                          {extractPreview.validation.length > 5 && (
+                            <p className="text-xs text-muted-foreground">...and {extractPreview.validation.length - 5} more</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { setIsExtractDialogOpen(false); setExtractDocId(""); setExtractPreview(null); }}>
+                    Cancel
+                  </Button>
+                  {extractPreview && (
+                    <Button
+                      onClick={handleExtractConfirm}
+                      disabled={extractClosingMutation.isPending}
+                      data-testid="button-confirm-extract"
+                    >
+                      {extractClosingMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Plus className="h-4 w-4 mr-2" />
+                      )}
+                      Create Closing from Extraction
+                    </Button>
+                  )}
                 </DialogFooter>
               </DialogContent>
             </Dialog>

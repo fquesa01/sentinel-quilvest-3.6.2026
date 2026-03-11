@@ -353,6 +353,7 @@ export default function ClosingDetail() {
   });
 
   const [closingHeaderEdit, setClosingHeaderEdit] = useState(false);
+  const [validationResult, setValidationResult] = useState<any>(null);
   const [headerForm, setHeaderForm] = useState({
     title: "",
     fileNumber: "",
@@ -420,6 +421,24 @@ export default function ClosingDetail() {
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err?.message || "Failed to save to data room.", variant: "destructive" });
+    },
+  });
+
+  const validateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/closings/${id}/validate`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setValidationResult(data);
+      if (data.valid) {
+        toast({ title: "Validation Passed", description: "All checks passed successfully." });
+      } else {
+        toast({ title: "Validation Complete", description: `Found ${data.summary.errors} errors and ${data.summary.warnings} warnings.`, variant: data.summary.errors > 0 ? "destructive" : "default" });
+      }
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err?.message || "Validation failed.", variant: "destructive" });
     },
   });
 
@@ -1160,9 +1179,69 @@ export default function ClosingDetail() {
               )}
               Save to Data Room
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="button-validate-closing"
+              disabled={validateMutation.isPending}
+              onClick={() => validateMutation.mutate()}
+            >
+              {validateMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+              )}
+              Validate
+            </Button>
           </div>
         </div>
       </div>
+
+      {validationResult && (
+        <Card className={validationResult.valid ? "border-green-500/30" : "border-yellow-500/30"}>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              {validationResult.valid ? (
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-yellow-500" />
+              )}
+              Validation Results
+              <Badge variant="outline" className="ml-2">
+                {validationResult.summary.errors} errors, {validationResult.summary.warnings} warnings
+              </Badge>
+              {validationResult.summary.balanced && (
+                <Badge className="bg-green-500/20 text-green-400 border-green-500/30 ml-1">Balanced</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {validationResult.issues.length === 0 ? (
+              <p className="text-sm text-green-500" data-testid="text-validation-pass">All checks passed</p>
+            ) : (
+              <div className="space-y-2">
+                {validationResult.issues.map((issue: any, idx: number) => (
+                  <div key={idx} className="flex items-start gap-2 text-sm" data-testid={`validation-issue-${idx}`}>
+                    {issue.severity === "error" ? (
+                      <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                    ) : issue.severity === "warning" ? (
+                      <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <span>{issue.message}</span>
+                      {issue.suggestion && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{issue.suggestion}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {(closing.propertyAddress || closing.purchasePrice) && (
         <Card>

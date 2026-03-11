@@ -1427,6 +1427,416 @@ function renderLenderFunding(doc: PDFKit.PDFDocument, data: ClosingData) {
   tableRow(doc, [{ text: "TOTAL DISBURSED:", width: 380, bold: true }, { text: fmtCurrency(totalD), width: 100, align: "right", bold: true }]);
 }
 
+function renderConstructionSourcesUses(doc: PDFKit.PDFDocument, data: ClosingData) {
+  doc.addPage();
+  doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text("CONSTRUCTION SOURCES & USES", { align: "center" });
+  doc.fillColor("#000000");
+  doc.moveDown(0.5);
+
+  const costCategories = [
+    { key: "hard_costs", label: "HARD COSTS" },
+    { key: "soft_costs", label: "SOFT COSTS" },
+    { key: "interest_reserve", label: "INTEREST RESERVES" },
+    { key: "developer_fees", label: "DEVELOPER FEES" },
+    { key: "contingency", label: "CONTINGENCY" },
+  ];
+
+  let totalCosts = 0;
+  sectionHeader(doc, "USES OF FUNDS");
+  for (const cat of costCategories) {
+    const items = data.lineItems.filter(li => li.hudSection === cat.key || (li as any).altaCategory === cat.key);
+    if (items.length === 0) continue;
+    doc.fontSize(9).font("Helvetica-Bold").text(cat.label, 55);
+    doc.moveDown(0.2);
+    for (const item of items) {
+      const amt = parseAmt(item.amount);
+      totalCosts += amt;
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(amt), width: 100, align: "right" }]);
+    }
+    const catTotal = items.reduce((s, i) => s + parseAmt(i.amount), 0);
+    drawLine(doc);
+    tableRow(doc, [{ text: `${cat.label} Subtotal:`, width: 380, bold: true }, { text: fmtCurrency(catTotal), width: 100, align: "right", bold: true }]);
+    doc.moveDown(0.3);
+  }
+
+  drawLine(doc);
+  tableRow(doc, [{ text: "TOTAL PROJECT COST:", width: 380, bold: true }, { text: fmtCurrency(totalCosts), width: 100, align: "right", bold: true }]);
+  doc.moveDown(0.5);
+
+  const sources = data.lineItems.filter(li => li.side === "source" && !li.hudSection && !(li as any).altaCategory);
+  sectionHeader(doc, "SOURCES OF FUNDS");
+  for (const item of sources) {
+    tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+  }
+  const totalSources = sources.reduce((s, i) => s + parseAmt(i.amount), 0);
+  drawLine(doc);
+  tableRow(doc, [{ text: "TOTAL SOURCES:", width: 380, bold: true }, { text: fmtCurrency(totalSources), width: 100, align: "right", bold: true }]);
+
+  doc.moveDown(0.5);
+  const variance = totalSources - totalCosts;
+  doc.fontSize(9).font("Helvetica-Bold")
+    .text(Math.abs(variance) < 0.01 ? "BALANCE: VERIFIED" : "VARIANCE:", 55)
+    .text(fmtCurrency(variance), 410, doc.y - 12, { width: 80, align: "right" });
+}
+
+function renderConstructionDraw(doc: PDFKit.PDFDocument, data: ClosingData) {
+  doc.addPage();
+  doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text("CONSTRUCTION DRAW SCHEDULE", { align: "center" });
+  doc.fillColor("#000000");
+  doc.moveDown(0.3);
+  const loanAmt = parseAmt(data.closing.loanAmount);
+  doc.fontSize(9).font("Helvetica").text(`Total Commitment: ${fmtCurrency(loanAmt)}`, { align: "center" });
+  doc.moveDown(0.5);
+
+  const draws = data.lineItems.filter(li => li.hudSection === "draw" || (li as any).altaCategory === "draw");
+  const retainage = data.lineItems.filter(li => li.hudSection === "retainage" || (li as any).altaCategory === "retainage");
+  const changeOrders = data.lineItems.filter(li => li.hudSection === "change_order" || (li as any).altaCategory === "change_order");
+
+  sectionHeader(doc, "DRAW REQUESTS");
+  tableRow(doc, [
+    { text: "#", width: 30, bold: true },
+    { text: "Description", width: 250, bold: true },
+    { text: "Amount", width: 100, align: "right", bold: true },
+    { text: "Cumulative", width: 100, align: "right", bold: true },
+  ]);
+  drawLine(doc);
+  let cumulative = 0;
+  for (let i = 0; i < draws.length; i++) {
+    const amt = parseAmt(draws[i].amount);
+    cumulative += amt;
+    tableRow(doc, [
+      { text: `${i + 1}`, width: 30 },
+      { text: draws[i].description || "", width: 250 },
+      { text: fmtCurrency(amt), width: 100, align: "right" },
+      { text: fmtCurrency(cumulative), width: 100, align: "right" },
+    ]);
+  }
+  drawLine(doc);
+  tableRow(doc, [
+    { text: "", width: 30 },
+    { text: "TOTAL DRAWN:", width: 250, bold: true },
+    { text: fmtCurrency(cumulative), width: 100, align: "right", bold: true },
+    { text: "", width: 100 },
+  ]);
+
+  if (retainage.length > 0) {
+    doc.moveDown(0.5);
+    sectionHeader(doc, "RETAINAGE HELD");
+    for (const item of retainage) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+    const totalRet = retainage.reduce((s, i) => s + parseAmt(i.amount), 0);
+    drawLine(doc);
+    tableRow(doc, [{ text: "TOTAL RETAINAGE:", width: 380, bold: true }, { text: fmtCurrency(totalRet), width: 100, align: "right", bold: true }]);
+  }
+
+  if (changeOrders.length > 0) {
+    doc.moveDown(0.5);
+    sectionHeader(doc, "CHANGE ORDERS");
+    for (const item of changeOrders) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+  }
+
+  doc.moveDown(0.5);
+  const remaining = loanAmt - cumulative;
+  doc.fontSize(9).font("Helvetica-Bold")
+    .text(`REMAINING BALANCE: ${fmtCurrency(remaining)}`, 55);
+  doc.text(`${loanAmt > 0 ? ((cumulative / loanAmt) * 100).toFixed(1) : "0"}% drawn`, 55);
+}
+
+function renderCMBSFundingMemo(doc: PDFKit.PDFDocument, data: ClosingData) {
+  doc.addPage();
+  doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text("CMBS FUNDING MEMO", { align: "center" });
+  doc.fillColor("#000000");
+  doc.moveDown(0.3);
+  doc.fontSize(9).font("Helvetica")
+    .text(`Property: ${data.closing.propertyAddress || "N/A"}`, { align: "center" })
+    .text(`Loan Amount: ${fmtCurrency(parseAmt(data.closing.loanAmount))}`, { align: "center" });
+  doc.moveDown(0.5);
+
+  const tranches = [
+    { key: "senior_tranche", label: "SENIOR TRANCHE (A-NOTE)" },
+    { key: "mezz_tranche", label: "MEZZANINE TRANCHE (B-NOTE)" },
+    { key: "pref_equity", label: "PREFERRED EQUITY" },
+  ];
+
+  let totalFunding = 0;
+  sectionHeader(doc, "TRANCHE FUNDING");
+  for (const t of tranches) {
+    const items = data.lineItems.filter(li => li.hudSection === t.key || (li as any).altaCategory === t.key);
+    if (items.length === 0) continue;
+    doc.fontSize(9).font("Helvetica-Bold").text(t.label, 55);
+    doc.moveDown(0.2);
+    for (const item of items) {
+      const amt = parseAmt(item.amount);
+      totalFunding += amt;
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(amt), width: 100, align: "right" }]);
+    }
+    const subtotal = items.reduce((s, i) => s + parseAmt(i.amount), 0);
+    drawLine(doc);
+    tableRow(doc, [{ text: `Subtotal:`, width: 380, bold: true }, { text: fmtCurrency(subtotal), width: 100, align: "right", bold: true }]);
+    doc.moveDown(0.3);
+  }
+
+  drawLine(doc);
+  tableRow(doc, [{ text: "TOTAL FUNDING:", width: 380, bold: true }, { text: fmtCurrency(totalFunding), width: 100, align: "right", bold: true }]);
+
+  const defeasance = data.lineItems.filter(li => li.hudSection === "defeasance" || (li as any).altaCategory === "defeasance");
+  if (defeasance.length > 0) {
+    doc.moveDown(0.5);
+    sectionHeader(doc, "DEFEASANCE / YIELD MAINTENANCE");
+    for (const item of defeasance) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+  }
+
+  const disbursements = data.lineItems.filter(li => li.side === "use" && !li.hudSection && !(li as any).altaCategory);
+  if (disbursements.length > 0) {
+    doc.moveDown(0.5);
+    sectionHeader(doc, "DISBURSEMENTS");
+    for (const item of disbursements) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+    const totalD = disbursements.reduce((s, i) => s + parseAmt(i.amount), 0);
+    drawLine(doc);
+    tableRow(doc, [{ text: "TOTAL DISBURSED:", width: 380, bold: true }, { text: fmtCurrency(totalD), width: 100, align: "right", bold: true }]);
+  }
+}
+
+function renderCapitalStack(doc: PDFKit.PDFDocument, data: ClosingData) {
+  doc.addPage();
+  doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text("CAPITAL STACK SUMMARY", { align: "center" });
+  doc.fillColor("#000000");
+  doc.moveDown(0.3);
+  const purchasePrice = parseAmt(data.closing.purchasePrice);
+  doc.fontSize(9).font("Helvetica").text(`Purchase Price / Total Value: ${fmtCurrency(purchasePrice)}`, { align: "center" });
+  doc.moveDown(0.5);
+
+  const layers = [
+    { key: "senior_debt", label: "SENIOR DEBT" },
+    { key: "mezz_debt", label: "MEZZANINE DEBT" },
+    { key: "pref_equity", label: "PREFERRED EQUITY" },
+    { key: "sponsor_equity", label: "SPONSOR / COMMON EQUITY" },
+  ];
+
+  let totalStack = 0;
+  let cumulativePercent = 0;
+
+  sectionHeader(doc, "CAPITAL STRUCTURE");
+  tableRow(doc, [
+    { text: "Layer", width: 200, bold: true },
+    { text: "Amount", width: 100, align: "right", bold: true },
+    { text: "% of Stack", width: 80, align: "right", bold: true },
+    { text: "LTV Range", width: 100, align: "right", bold: true },
+  ]);
+  drawLine(doc);
+
+  const layerTotals: { label: string; total: number }[] = [];
+  for (const layer of layers) {
+    const items = data.lineItems.filter(li => li.hudSection === layer.key || (li as any).altaCategory === layer.key);
+    const layerTotal = items.reduce((s, i) => s + parseAmt(i.amount), 0);
+    totalStack += layerTotal;
+    layerTotals.push({ label: layer.label, total: layerTotal });
+  }
+
+  let runningTotal = 0;
+  for (const lt of layerTotals) {
+    if (lt.total === 0) continue;
+    const pct = totalStack > 0 ? (lt.total / totalStack) * 100 : 0;
+    const ltvLow = purchasePrice > 0 ? (runningTotal / purchasePrice) * 100 : 0;
+    runningTotal += lt.total;
+    const ltvHigh = purchasePrice > 0 ? (runningTotal / purchasePrice) * 100 : 0;
+    tableRow(doc, [
+      { text: lt.label, width: 200 },
+      { text: fmtCurrency(lt.total), width: 100, align: "right" },
+      { text: `${pct.toFixed(1)}%`, width: 80, align: "right" },
+      { text: `${ltvLow.toFixed(1)}% - ${ltvHigh.toFixed(1)}%`, width: 100, align: "right" },
+    ]);
+  }
+
+  drawLine(doc);
+  tableRow(doc, [
+    { text: "TOTAL CAPITALIZATION:", width: 200, bold: true },
+    { text: fmtCurrency(totalStack), width: 100, align: "right", bold: true },
+    { text: "100.0%", width: 80, align: "right", bold: true },
+    { text: "", width: 100 },
+  ]);
+
+  doc.moveDown(0.5);
+  const seniorDebtTotal = layerTotals.find(l => l.label === "SENIOR DEBT")?.total || 0;
+  const ltv = purchasePrice > 0 ? (seniorDebtTotal / purchasePrice) * 100 : 0;
+  doc.fontSize(9).font("Helvetica-Bold").text(`Senior LTV: ${ltv.toFixed(1)}%`, 55);
+  const variance = totalStack - purchasePrice;
+  doc.text(Math.abs(variance) < 0.01 ? "BALANCE: VERIFIED" : `VARIANCE: ${fmtCurrency(variance)}`, 55);
+}
+
+function renderInvestorWaterfall(doc: PDFKit.PDFDocument, data: ClosingData) {
+  doc.addPage();
+  doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text("INVESTOR DISTRIBUTION WATERFALL", { align: "center" });
+  doc.fillColor("#000000");
+  doc.moveDown(0.5);
+
+  const tiers = [
+    { key: "return_of_capital", label: "TIER 1: RETURN OF CAPITAL" },
+    { key: "pref_return", label: "TIER 2: PREFERRED RETURN" },
+    { key: "catch_up", label: "TIER 3: GP CATCH-UP" },
+    { key: "promote", label: "TIER 4: PROMOTE / CARRIED INTEREST" },
+    { key: "residual_split", label: "TIER 5: RESIDUAL SPLIT" },
+  ];
+
+  let totalDistributed = 0;
+  for (const tier of tiers) {
+    const items = data.lineItems.filter(li => li.hudSection === tier.key);
+    if (items.length === 0) continue;
+
+    sectionHeader(doc, tier.label);
+    for (const item of items) {
+      const amt = parseAmt(item.amount);
+      totalDistributed += amt;
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(amt), width: 100, align: "right" }]);
+    }
+    const tierTotal = items.reduce((s, i) => s + parseAmt(i.amount), 0);
+    drawLine(doc);
+    tableRow(doc, [{ text: "Tier Subtotal:", width: 380, bold: true }, { text: fmtCurrency(tierTotal), width: 100, align: "right", bold: true }]);
+  }
+
+  doc.moveDown(0.5);
+  drawLine(doc);
+  doc.moveDown(0.3);
+  doc.fontSize(10).font("Helvetica-Bold")
+    .text("TOTAL DISTRIBUTED:", 55, doc.y, { continued: true })
+    .text(fmtCurrency(totalDistributed), { align: "right" });
+}
+
+function renderGroundLease(doc: PDFKit.PDFDocument, data: ClosingData) {
+  doc.addPage();
+  doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text("GROUND LEASE CLOSING STATEMENT", { align: "center" });
+  doc.fillColor("#000000");
+  doc.moveDown(0.3);
+  doc.fontSize(9).font("Helvetica").text(`Property: ${data.closing.propertyAddress || "N/A"}`, { align: "center" });
+  doc.moveDown(0.5);
+
+  const sections = [
+    { key: "prepaid_rent", label: "PREPAID RENT" },
+    { key: "leasehold_financing", label: "LEASEHOLD FINANCING" },
+    { key: "leasehold_taxes", label: "LEASEHOLD TAXES & ASSESSMENTS" },
+    { key: "closing_costs", label: "CLOSING COSTS" },
+  ];
+
+  let totalCosts = 0;
+  for (const sec of sections) {
+    const items = data.lineItems.filter(li => li.hudSection === sec.key || (li as any).altaCategory === sec.key);
+    if (items.length === 0) continue;
+    sectionHeader(doc, sec.label);
+    for (const item of items) {
+      const amt = parseAmt(item.amount);
+      totalCosts += amt;
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(amt), width: 100, align: "right" }]);
+    }
+    const subtotal = items.reduce((s, i) => s + parseAmt(i.amount), 0);
+    drawLine(doc);
+    tableRow(doc, [{ text: "Subtotal:", width: 380, bold: true }, { text: fmtCurrency(subtotal), width: 100, align: "right", bold: true }]);
+  }
+
+  drawLine(doc);
+  tableRow(doc, [{ text: "TOTAL CLOSING COSTS:", width: 380, bold: true }, { text: fmtCurrency(totalCosts), width: 100, align: "right", bold: true }]);
+
+  const deposits = data.lineItems.filter(li => li.side === "source" && !li.hudSection && !(li as any).altaCategory);
+  if (deposits.length > 0) {
+    doc.moveDown(0.5);
+    sectionHeader(doc, "DEPOSITS & FUNDING");
+    for (const item of deposits) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+    const totalDeposits = deposits.reduce((s, i) => s + parseAmt(i.amount), 0);
+    drawLine(doc);
+    tableRow(doc, [{ text: "TOTAL DEPOSITS:", width: 380, bold: true }, { text: fmtCurrency(totalDeposits), width: 100, align: "right", bold: true }]);
+
+    doc.moveDown(0.3);
+    const net = totalDeposits - totalCosts;
+    doc.fontSize(9).font("Helvetica-Bold")
+      .text(Math.abs(net) < 0.01 ? "BALANCE: VERIFIED" : `NET DUE: ${fmtCurrency(net)}`, 55);
+  }
+}
+
+function renderMasterClosing(doc: PDFKit.PDFDocument, data: ClosingData) {
+  doc.addPage();
+  doc.fontSize(12).font("Helvetica-Bold").fillColor("#1a365d").text("MASTER CLOSING STATEMENT", { align: "center" });
+  doc.fillColor("#000000");
+  doc.moveDown(0.3);
+  doc.fontSize(9).font("Helvetica")
+    .text(`Property: ${data.closing.propertyAddress || "N/A"}`, { align: "center" })
+    .text(`Purchase Price: ${fmtCurrency(parseAmt(data.closing.purchasePrice))}`, { align: "center" });
+  doc.moveDown(0.5);
+
+  const buyerCredits = data.lineItems.filter(li => li.side === "buyer_credit");
+  const buyerDebits = data.lineItems.filter(li => li.side === "buyer_debit");
+  const sellerCredits = data.lineItems.filter(li => li.side === "seller_credit");
+  const sellerDebits = data.lineItems.filter(li => li.side === "seller_debit");
+
+  sectionHeader(doc, "BUYER'S STATEMENT");
+  if (buyerCredits.length > 0) {
+    doc.fontSize(9).font("Helvetica-Bold").text("Credits to Buyer:", 55);
+    doc.moveDown(0.2);
+    for (const item of buyerCredits) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+  }
+  if (buyerDebits.length > 0) {
+    doc.moveDown(0.3);
+    doc.fontSize(9).font("Helvetica-Bold").text("Charges to Buyer:", 55);
+    doc.moveDown(0.2);
+    for (const item of buyerDebits) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+  }
+  const buyerNet = buyerCredits.reduce((s, i) => s + parseAmt(i.amount), 0) - buyerDebits.reduce((s, i) => s + parseAmt(i.amount), 0);
+  drawLine(doc);
+  tableRow(doc, [{ text: "BUYER NET:", width: 380, bold: true }, { text: fmtCurrency(buyerNet), width: 100, align: "right", bold: true }]);
+
+  doc.moveDown(0.5);
+  sectionHeader(doc, "SELLER'S STATEMENT");
+  if (sellerCredits.length > 0) {
+    doc.fontSize(9).font("Helvetica-Bold").text("Credits to Seller:", 55);
+    doc.moveDown(0.2);
+    for (const item of sellerCredits) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+  }
+  if (sellerDebits.length > 0) {
+    doc.moveDown(0.3);
+    doc.fontSize(9).font("Helvetica-Bold").text("Charges to Seller:", 55);
+    doc.moveDown(0.2);
+    for (const item of sellerDebits) {
+      tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+    }
+  }
+  const sellerNet = sellerCredits.reduce((s, i) => s + parseAmt(i.amount), 0) - sellerDebits.reduce((s, i) => s + parseAmt(i.amount), 0);
+  drawLine(doc);
+  tableRow(doc, [{ text: "SELLER NET:", width: 380, bold: true }, { text: fmtCurrency(sellerNet), width: 100, align: "right", bold: true }]);
+
+  const sources = data.lineItems.filter(li => li.side === "source");
+  const uses = data.lineItems.filter(li => li.side === "use");
+  if (sources.length > 0 || uses.length > 0) {
+    doc.moveDown(0.5);
+    sectionHeader(doc, "SOURCES & USES RECONCILIATION");
+    if (sources.length > 0) {
+      doc.fontSize(9).font("Helvetica-Bold").text("Sources:", 55);
+      for (const item of sources) {
+        tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+      }
+    }
+    if (uses.length > 0) {
+      doc.moveDown(0.3);
+      doc.fontSize(9).font("Helvetica-Bold").text("Uses:", 55);
+      for (const item of uses) {
+        tableRow(doc, [{ text: item.description || "", width: 380 }, { text: fmtCurrency(parseAmt(item.amount)), width: 100, align: "right" }]);
+      }
+    }
+  }
+}
+
 function renderProrations(doc: PDFKit.PDFDocument, data: ClosingData) {
   if (data.prorations.length === 0) return;
   if (doc.y > doc.page.height - 150) doc.addPage();
@@ -1610,8 +2020,28 @@ export async function generateClosingStatementPDF(data: ClosingData): Promise<PD
       renderAltaSections(doc, data);
       break;
     case "sources_and_uses":
-    case "construction_sources_uses":
       renderSourcesUses(doc, data);
+      break;
+    case "construction_sources_uses":
+      renderConstructionSourcesUses(doc, data);
+      break;
+    case "construction_draw":
+      renderConstructionDraw(doc, data);
+      break;
+    case "cmbs_funding_memo":
+      renderCMBSFundingMemo(doc, data);
+      break;
+    case "capital_stack":
+      renderCapitalStack(doc, data);
+      break;
+    case "investor_waterfall":
+      renderInvestorWaterfall(doc, data);
+      break;
+    case "ground_lease_closing":
+      renderGroundLease(doc, data);
+      break;
+    case "master_closing":
+      renderMasterClosing(doc, data);
       break;
     case "funds_flow":
       renderFundsFlow(doc, data);
@@ -1621,12 +2051,9 @@ export async function generateClosingStatementPDF(data: ClosingData): Promise<PD
       render1031Exchange(doc, data);
       break;
     case "portfolio_settlement":
-    case "capital_stack":
-    case "investor_waterfall":
       renderPortfolio(doc, data);
       break;
     case "lender_funding":
-    case "cmbs_funding_memo":
       renderLenderFunding(doc, data);
       break;
     default:
