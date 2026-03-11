@@ -719,6 +719,7 @@ export function CashSettlementForm({ closing, lineItems, onAddItem }: StatementF
 export function getStatementTypeForm(statementType: string): React.ComponentType<StatementFormProps> | null {
   switch (statementType) {
     case "closing_disclosure":
+    case "seller_closing_disclosure":
       return ClosingDisclosureForm;
     case "hud1":
     case "hud1a":
@@ -727,20 +728,25 @@ export function getStatementTypeForm(statementType: string): React.ComponentType
     case "alta_buyer":
     case "alta_seller":
       return AltaForm;
-    case "sources_uses":
+    case "sources_and_uses":
+    case "construction_sources_uses":
       return SourcesUsesForm;
     case "funds_flow":
       return FundsFlowForm;
-    case "exchange_1031":
+    case "1031_exchange":
+    case "qi_statement":
       return Exchange1031Form;
-    case "portfolio":
+    case "portfolio_settlement":
     case "capital_stack":
     case "investor_waterfall":
       return PortfolioForm;
     case "lender_funding":
+    case "cmbs_funding_memo":
       return LenderFundingForm;
     case "cash_settlement":
-    case "commercial":
+    case "construction_draw":
+    case "ground_lease_closing":
+    case "master_closing":
       return CashSettlementForm;
     default:
       return null;
