@@ -33,7 +33,7 @@ interface DocumentTemplate {
   category: "closing" | "lending" | "investment" | "general" | "corporate";
 }
 
-const RE_DEAL_TYPES = ["real_estate", "residential_financed", "residential_cash", "new_construction", "commercial_financed", "commercial_cash", "sale_leaseback", "exchange_1031", "condo_subdivision", "deed_in_lieu", "foreclosure_reo", "short_sale", "estate_probate", "portfolio_bulk", "distressed_asset", "co_op", "mixed_use"];
+const RE_DEAL_TYPES = ["real_estate", "residential_financed", "residential_cash", "new_construction", "commercial_financed", "commercial_cash", "sale_leaseback", "exchange_1031", "condo_subdivision", "deed_in_lieu", "foreclosure_reo", "short_sale", "estate_probate", "portfolio_bulk", "distressed_asset", "co_op", "mixed_use", "other"];
 const MA_DEAL_TYPES = ["ma_asset", "ma_stock", "merger", "jv", "franchise"];
 const LENDING_DEAL_TYPES = ["debt", "cmbs", "construction_loan", "loan_assumption", "heloc", "refinance", "commercial_refinance", "reverse_mortgage", "leasehold_financing"];
 const INVESTMENT_DEAL_TYPES = ["investment", "capital_stack", "reit_contribution", "opportunity_zone"];
@@ -240,7 +240,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   promissory_note: {
     name: "Promissory Note",
     category: "lending",
-    roles: ["borrower"],
+    roles: ["lender", "borrower"],
     dealTypes: [...LENDING_DEAL_TYPES],
     sections: [
       "Principal Amount",
@@ -603,7 +603,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   investor_rights_agreement: {
     name: "Investor Rights Agreement",
     category: "investment",
-    roles: ["investor"],
+    roles: ["investor", "investee"],
     dealTypes: [...INVESTMENT_DEAL_TYPES],
     sections: [
       "Recitals",
@@ -635,7 +635,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   capital_call_notice: {
     name: "Capital Call Notice",
     category: "investment",
-    roles: ["investee"],
+    roles: ["investor", "investee"],
     dealTypes: [...INVESTMENT_DEAL_TYPES],
     sections: [
       "Fund Information",
@@ -649,7 +649,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   distribution_notice: {
     name: "Distribution Notice",
     category: "investment",
-    roles: ["investee"],
+    roles: ["investor", "investee"],
     dealTypes: [...INVESTMENT_DEAL_TYPES],
     sections: [
       "Fund Information",
@@ -699,6 +699,96 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
       "Return of Materials",
       "Remedies",
       "Execution"
+    ]
+  },
+  disclosure_schedules: {
+    name: "Disclosure Schedules",
+    category: "closing",
+    roles: ["seller", "investee"],
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES, ...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Schedule Index",
+      "Organization and Good Standing",
+      "Capitalization",
+      "Material Contracts",
+      "Litigation and Proceedings",
+      "Environmental Matters",
+      "Tax Matters",
+      "Employee Matters",
+      "Insurance",
+      "Intellectual Property"
+    ]
+  },
+  reps_warranties_certificate: {
+    name: "Representations and Warranties Certificate",
+    category: "closing",
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Reaffirmation of Representations",
+      "Updates to Disclosure Schedules",
+      "Material Changes",
+      "Bring-Down Certification",
+      "Execution"
+    ]
+  },
+  bring_down_certificate: {
+    name: "Bring-Down Certificate",
+    category: "closing",
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES, ...LENDING_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Confirmation of Representations",
+      "No Material Adverse Change",
+      "Conditions Precedent Satisfied",
+      "Certification",
+      "Execution"
+    ]
+  },
+  organizational_documents: {
+    name: "Organizational Documents Package",
+    category: "corporate",
+    sections: [
+      "Certificate of Formation / Incorporation",
+      "Operating Agreement / Bylaws",
+      "Amendments",
+      "Good Standing Certificate",
+      "Registered Agent Information",
+      "Authorized Signatories",
+      "Incumbency Certificate"
+    ]
+  },
+  investor_questionnaire: {
+    name: "Investor Questionnaire",
+    category: "investment",
+    roles: ["investor"],
+    dealTypes: [...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Investor Identity",
+      "Accredited Investor Status",
+      "Qualified Purchaser Status",
+      "Investment Experience",
+      "Financial Information",
+      "Risk Acknowledgment",
+      "Anti-Money Laundering (AML/KYC)",
+      "ERISA / Benefit Plan Status",
+      "Tax Status and Residency",
+      "Certification and Signature"
+    ]
+  },
+  environmental_assessment_review: {
+    name: "Environmental Assessment Review Letter",
+    category: "closing",
+    roles: ["buyer", "lender"],
+    dealTypes: [...RE_DEAL_TYPES, ...LENDING_DEAL_TYPES],
+    sections: [
+      "Phase I ESA Summary",
+      "Recognized Environmental Conditions",
+      "Historical Use Review",
+      "Regulatory Database Search Results",
+      "Recommendations",
+      "Phase II Requirements",
+      "Risk Assessment"
     ]
   },
 };
