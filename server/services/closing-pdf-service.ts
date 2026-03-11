@@ -85,13 +85,30 @@ function fmtDate(val: string | null | undefined): string {
   try { return format(new Date(val), "MM/dd/yyyy"); } catch { return val; }
 }
 
+function isAllowedLogoUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (!["https:", "http:"].includes(parsed.protocol)) return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.startsWith("169.254.") || host.startsWith("10.") || host.startsWith("192.168.") || host === "[::1]") return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchLogoBuffer(url: string): Promise<Buffer | null> {
+  if (!isAllowedLogoUrl(url)) return null;
   return new Promise((resolve) => {
     const fetcher = url.startsWith("https") ? https : http;
     const req = fetcher.get(url, { timeout: 5000 }, (res) => {
       if (res.statusCode !== 200) { resolve(null); return; }
+      const contentType = res.headers["content-type"] || "";
+      if (!contentType.startsWith("image/")) { resolve(null); return; }
       const chunks: Buffer[] = [];
-      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      let size = 0;
+      res.on("data", (chunk: Buffer) => { size += chunk.length; if (size > 5 * 1024 * 1024) { req.destroy(); resolve(null); return; } chunks.push(chunk); });
       res.on("end", () => resolve(Buffer.concat(chunks)));
       res.on("error", () => resolve(null));
     });

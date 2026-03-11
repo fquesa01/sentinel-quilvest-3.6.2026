@@ -946,23 +946,17 @@ router.post("/closings/:id/save-to-data-room", async (req: any, res) => {
     const typeLabel = closingTransactionTypeLabels[closing.transactionType] || closing.transactionType;
     const fileName = `${typeLabel} - ${closing.title || "Closing Statement"} - ${new Date().toISOString().slice(0, 10)}.pdf`;
 
-    let storagePath: string | undefined;
-    try {
-      const objectStorage = new ObjectStorageService();
-      const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const targetPath = `data-rooms/${dataRoom.id}/closing-statements/${Date.now()}_${safeName}`;
-      await objectStorage.uploadBuffer(targetPath, pdfBuffer, "application/pdf");
-      storagePath = targetPath;
-    } catch (storageErr: any) {
-      console.warn("[SaveToDataRoom] Object storage upload failed, document record will be created without storage path:", storageErr.message);
-    }
+    const objectStorage = new ObjectStorageService();
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const targetPath = `data-rooms/${dataRoom.id}/closing-statements/${Date.now()}_${safeName}`;
+    await objectStorage.uploadBuffer(targetPath, pdfBuffer, "application/pdf");
 
     const [document] = await db.insert(schema.dataRoomDocuments).values({
       dataRoomId: dataRoom.id,
       fileName,
       fileSize: pdfBuffer.length,
       fileType: "application/pdf",
-      storagePath: storagePath || null,
+      storagePath: targetPath,
       description: `Generated ${typeLabel} for closing "${closing.title}"`,
       documentCategory: "closing_statement",
       tags: ["closing", "generated", closing.transactionType],
