@@ -6,6 +6,72 @@ import { storage } from "../storage";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY! });
 
+const VALID_PARTY_ROLES = new Set([
+  "buyer", "seller", "lender", "title_company", "escrow_agent",
+  "closing_attorney", "broker_buyer", "broker_seller", "surveyor",
+  "appraiser", "inspector", "qi_intermediary", "guarantor", "investor", "other",
+]);
+
+const PARTY_ROLE_MAP: Record<string, string> = {
+  borrower: "buyer",
+  settlement_agent: "escrow_agent",
+  attorney: "closing_attorney",
+  broker: "broker_buyer",
+  agent: "broker_buyer",
+  notary: "other",
+  trustee: "other",
+};
+
+const VALID_CATEGORIES = new Set([
+  "purchase_price", "earnest_money", "loan_amount", "seller_credit", "buyer_credit",
+  "title_insurance", "escrow_fee", "recording_fee", "transfer_tax",
+  "property_tax_proration", "insurance_proration", "hoa_proration", "rent_proration",
+  "commission", "attorney_fee", "inspection_fee", "appraisal_fee", "survey_fee",
+  "loan_origination", "loan_discount", "prepaid_interest", "mortgage_insurance",
+  "payoff_first_mortgage", "payoff_second_mortgage", "payoff_other_lien",
+  "construction_draw", "holdback", "reserve", "adjustment", "other",
+]);
+
+const CATEGORY_MAP: Record<string, string> = {
+  deposit: "earnest_money",
+  closing_cost: "escrow_fee",
+  closing_costs: "escrow_fee",
+  title_fee: "title_insurance",
+  tax: "transfer_tax",
+  proration: "property_tax_proration",
+  interest: "prepaid_interest",
+  origination: "loan_origination",
+  discount: "loan_discount",
+  payoff: "payoff_first_mortgage",
+  credit: "buyer_credit",
+};
+
+const VALID_SIDES = new Set([
+  "source", "use", "buyer_debit", "buyer_credit", "seller_debit", "seller_credit",
+]);
+
+function normalizePartyRole(role: string): string {
+  const lower = role.toLowerCase().replace(/[\s-]/g, "_");
+  if (VALID_PARTY_ROLES.has(lower)) return lower;
+  if (PARTY_ROLE_MAP[lower]) return PARTY_ROLE_MAP[lower];
+  return "other";
+}
+
+function normalizeCategory(category: string): string {
+  const lower = category.toLowerCase().replace(/[\s-]/g, "_");
+  if (VALID_CATEGORIES.has(lower)) return lower;
+  if (CATEGORY_MAP[lower]) return CATEGORY_MAP[lower];
+  return "other";
+}
+
+function normalizeSide(side: string): string {
+  const lower = side.toLowerCase().replace(/[\s-]/g, "_");
+  if (VALID_SIDES.has(lower)) return lower;
+  if (lower === "buyer" || lower === "debit") return "buyer_debit";
+  if (lower === "seller") return "seller_debit";
+  return "use";
+}
+
 interface ExtractedClosingData {
   statementType: string;
   title?: string;
@@ -400,7 +466,6 @@ export async function extractAndCreateClosing(
     status: "draft",
     totalSources: "0",
     totalUses: "0",
-    difference: "0",
     balanceValid: false,
     createdBy: userId,
   }).returning();
@@ -410,8 +475,8 @@ export async function extractAndCreateClosing(
       await db.insert(schema.closingParties).values({
         closingId: closing.id,
         name: party.name,
-        role: party.role,
-        company: party.company || null,
+        role: normalizePartyRole(party.role) as any,
+        entityType: party.company || null,
         address: party.address || null,
         phone: party.phone || null,
         email: party.email || null,
@@ -425,7 +490,8 @@ export async function extractAndCreateClosing(
     for (let i = 0; i < data.lineItems.length; i++) {
       const li = data.lineItems[i];
       const amt = parseFloat(li.amount || "0");
-      if (li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit") {
+      const normalizedSide = normalizeSide(li.side || "use");
+      if (normalizedSide === "source" || normalizedSide === "buyer_credit" || normalizedSide === "seller_credit") {
         totalSources += amt;
       } else {
         totalUses += amt;
@@ -434,8 +500,8 @@ export async function extractAndCreateClosing(
         closingId: closing.id,
         description: li.description,
         amount: li.amount || "0",
-        side: li.side || "use",
-        category: li.category || "other",
+        side: normalizedSide as any,
+        category: normalizeCategory(li.category || "other") as any,
         hudSection: li.hudSection || null,
         altaCategory: li.altaCategory || null,
         cdSection: li.cdSection || null,
@@ -478,7 +544,6 @@ export async function extractAndCreateClosing(
     .set({
       totalSources: totalSources.toFixed(2),
       totalUses: totalUses.toFixed(2),
-      difference: diff.toFixed(2),
       balanceValid: Math.abs(diff) < 0.01,
     })
     .where(eq(schema.closingTransactions.id, closing.id));
