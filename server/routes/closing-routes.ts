@@ -1024,7 +1024,7 @@ router.post("/closings/extract-preview", async (req: any, res) => {
 
     const { ObjectStorageService } = await import("../objectStorage");
     const objectStorage = new ObjectStorageService();
-    const fileBuffer = await objectStorage.downloadBuffer(document.storagePath!);
+    const fileBuffer = await objectStorage.downloadAsBuffer(document.storagePath!);
 
     const { extractClosingFromDocument } = await import("../services/closing-extraction-service");
     const result = await extractClosingFromDocument(

@@ -364,7 +364,7 @@ export async function extractAndCreateClosing(
   try {
     const { ObjectStorageService } = await import("../objectStorage");
     const objectStorage = new ObjectStorageService();
-    fileBuffer = await objectStorage.downloadBuffer(document.storagePath!);
+    fileBuffer = await objectStorage.downloadAsBuffer(document.storagePath!);
   } catch (err: any) {
     return {
       extraction: {
