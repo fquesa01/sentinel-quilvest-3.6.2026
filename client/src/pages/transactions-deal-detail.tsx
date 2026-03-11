@@ -78,6 +78,20 @@ type DealWithRelations = Deal & {
   milestones?: DealMilestone[];
 };
 
+interface ExtractionPreview {
+  confidence: number;
+  data?: {
+    statementType?: string;
+    propertyAddress?: string;
+    purchasePrice?: string;
+    loanAmount?: string;
+    parties?: Array<{ name: string; role: string }>;
+    lineItems?: Array<{ description: string; amount: string }>;
+    prorations?: Array<{ itemName: string }>;
+  };
+  validation?: Array<{ severity: string; message: string }>;
+}
+
 const statusColors: Record<string, string> = {
   active: "bg-green-500/20 text-green-400 border-green-500/30",
   pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
@@ -204,7 +218,7 @@ export default function TransactionsDealDetail() {
   const [autoPopulateClosing, setAutoPopulateClosing] = useState(true);
   const [isExtractDialogOpen, setIsExtractDialogOpen] = useState(false);
   const [extractDocId, setExtractDocId] = useState("");
-  const [extractPreview, setExtractPreview] = useState<any>(null);
+  const [extractPreview, setExtractPreview] = useState<ExtractionPreview | null>(null);
   const [extracting, setExtracting] = useState(false);
 
   const [isDealTypeDismissed, setIsDealTypeDismissed] = useState(false);
@@ -440,7 +454,7 @@ export default function TransactionsDealDetail() {
       const res = await apiRequest("POST", `/api/closings/extract-from-document`, data);
       return res.json();
     },
-    onSuccess: async (data: any) => {
+    onSuccess: async (data: { closingId?: string; confidence?: number; data?: { lineItems?: unknown[] } }) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "closings"] });
       toast({
         title: "Closing Extracted",
@@ -453,7 +467,7 @@ export default function TransactionsDealDetail() {
         setLocation(`/transactions/closings/${data.closingId}`);
       }
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({ title: "Extraction Failed", description: error.message || "Could not extract closing data.", variant: "destructive" });
     },
   });
@@ -463,10 +477,11 @@ export default function TransactionsDealDetail() {
     setExtracting(true);
     try {
       const res = await apiRequest("POST", `/api/closings/extract-preview`, { documentId: extractDocId });
-      const data = await res.json();
+      const data: ExtractionPreview = await res.json();
       setExtractPreview(data);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Preview failed.", variant: "destructive" });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Preview failed.";
+      toast({ title: "Error", description: message, variant: "destructive" });
     }
     setExtracting(false);
   };

@@ -98,6 +98,24 @@ const statusLabels: Record<string, string> = {
   voided: "Voided",
 };
 
+interface ValidationIssue {
+  severity: "error" | "warning" | "info";
+  field: string;
+  message: string;
+  suggestion?: string;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  issues: ValidationIssue[];
+  summary: {
+    errors: number;
+    warnings: number;
+    info: number;
+    balanced?: boolean;
+  };
+}
+
 const statusColors: Record<string, string> = {
   draft: "bg-gray-500/20 text-gray-400 border-gray-500/30",
   pending_review: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
@@ -354,7 +372,7 @@ export default function ClosingDetail() {
   });
 
   const [closingHeaderEdit, setClosingHeaderEdit] = useState(false);
-  const [validationResult, setValidationResult] = useState<any>(null);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [headerForm, setHeaderForm] = useState({
     title: "",
     fileNumber: "",
@@ -417,20 +435,20 @@ export default function ClosingDetail() {
       const res = await apiRequest("POST", `/api/closings/${id}/save-to-data-room`);
       return res.json();
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data: { message?: string }) => {
       toast({ title: "Saved to Data Room", description: data.message || "Closing statement saved to the data room." });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Error", description: err?.message || "Failed to save to data room.", variant: "destructive" });
     },
   });
 
   const validateMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<ValidationResult> => {
       const res = await apiRequest("POST", `/api/closings/${id}/validate`);
       return res.json();
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data: ValidationResult) => {
       setValidationResult(data);
       if (data.valid) {
         toast({ title: "Validation Passed", description: "All checks passed successfully." });
@@ -438,7 +456,7 @@ export default function ClosingDetail() {
         toast({ title: "Validation Complete", description: `Found ${data.summary.errors} errors and ${data.summary.warnings} warnings.`, variant: data.summary.errors > 0 ? "destructive" : "default" });
       }
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: "Error", description: err?.message || "Validation failed.", variant: "destructive" });
     },
   });
@@ -1221,7 +1239,7 @@ export default function ClosingDetail() {
               <p className="text-sm text-green-500" data-testid="text-validation-pass">All checks passed</p>
             ) : (
               <div className="space-y-2">
-                {validationResult.issues.map((issue: any, idx: number) => (
+                {validationResult.issues.map((issue: ValidationIssue, idx: number) => (
                   <div key={idx} className="flex items-start gap-2 text-sm" data-testid={`validation-issue-${idx}`}>
                     {issue.severity === "error" ? (
                       <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />

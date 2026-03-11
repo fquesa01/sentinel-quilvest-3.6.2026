@@ -35,7 +35,13 @@ interface ClosingData {
   loanAmount?: string | null;
   earnestMoney?: string | null;
   closingDate?: string | null;
-  [key: string]: any;
+  [key: string]: unknown;
+}
+
+interface MilestoneMetadata {
+  drawnAmount?: string;
+  completionPercent?: string;
+  status?: string;
 }
 
 interface LineItem {
@@ -48,7 +54,8 @@ interface LineItem {
   cdSection?: string | null;
   paidBy?: string | null;
   paidTo?: string | null;
-  [key: string]: any;
+  metadata?: MilestoneMetadata | null;
+  [key: string]: unknown;
 }
 
 interface StatementFormProps {
@@ -798,7 +805,7 @@ export function ConstructionDrawForm({ closing, lineItems, onAddItem }: Statemen
   const pctDrawn = adjustedCommitment > 0 ? Math.round((totalDrawn / adjustedCommitment) * 100) : 0;
 
   const milestoneData = milestones.map(m => {
-    const meta = (m as any).metadata || {};
+    const meta: MilestoneMetadata = (m.metadata as MilestoneMetadata) || {};
     const budgetAmt = parseFloat((m.amount || "0").replace(/[,$\s]/g, "")) || 0;
     const drawnAmt = parseFloat((meta.drawnAmount || "0").toString().replace(/[,$\s]/g, "")) || 0;
     const completionPct = parseInt(meta.completionPercent || "0") || 0;
