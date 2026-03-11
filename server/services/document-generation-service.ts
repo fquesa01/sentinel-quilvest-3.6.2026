@@ -467,6 +467,240 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
       "Execution"
     ]
   },
+  general_warranty_deed: {
+    name: "General Warranty Deed",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES],
+    sections: [
+      "Grantor Information",
+      "Grantee Information",
+      "Property Description",
+      "Full Warranty Covenants",
+      "Conveyance Language",
+      "Acknowledgment"
+    ]
+  },
+  sellers_affidavit: {
+    name: "Seller's Affidavit",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES],
+    sections: [
+      "Affiant / Seller Information",
+      "Property Identification",
+      "Ownership and Authority",
+      "No Undisclosed Liens or Encumbrances",
+      "No Pending Litigation",
+      "No Parties in Possession",
+      "Tax and Assessment Status",
+      "Sworn Statement",
+      "Notarization"
+    ]
+  },
+  sellers_closing_certificate: {
+    name: "Seller's Closing Certificate",
+    category: "closing",
+    roles: ["seller"],
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Representations and Warranties Confirmed",
+      "No Material Adverse Change",
+      "Covenants Performed",
+      "No Defaults",
+      "Execution"
+    ]
+  },
+  buyers_closing_certificate: {
+    name: "Buyer's Closing Certificate",
+    category: "closing",
+    roles: ["buyer"],
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Representations and Warranties Confirmed",
+      "Financing Confirmed",
+      "Covenants Performed",
+      "No Defaults",
+      "Execution"
+    ]
+  },
+  title_commitment_review: {
+    name: "Title Commitment Review Letter",
+    category: "closing",
+    roles: ["buyer"],
+    dealTypes: [...RE_DEAL_TYPES],
+    sections: [
+      "Commitment Summary",
+      "Schedule A — Proposed Insured",
+      "Schedule B-I — Requirements",
+      "Schedule B-II — Exceptions",
+      "Objections and Requests",
+      "Requested Endorsements",
+      "Deadline for Response"
+    ]
+  },
+  survey_review_letter: {
+    name: "Survey Review Letter",
+    category: "closing",
+    roles: ["buyer"],
+    dealTypes: [...RE_DEAL_TYPES],
+    sections: [
+      "Survey Certification",
+      "Property Boundaries",
+      "Easements and Encroachments",
+      "Improvement Location",
+      "Flood Zone Determination",
+      "Objections and Requirements"
+    ]
+  },
+  borrower_certificate: {
+    name: "Borrower's Certificate",
+    category: "lending",
+    roles: ["borrower"],
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Representations and Warranties",
+      "Financial Condition",
+      "No Material Adverse Change",
+      "Compliance with Covenants",
+      "No Events of Default",
+      "Use of Proceeds",
+      "Execution"
+    ]
+  },
+  lender_closing_certificate: {
+    name: "Lender's Closing Certificate",
+    category: "lending",
+    roles: ["lender"],
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Conditions Precedent Satisfied",
+      "Loan Authorization",
+      "Disbursement Instructions",
+      "No Defaults",
+      "Execution"
+    ]
+  },
+  compliance_certificate: {
+    name: "Compliance Certificate",
+    category: "lending",
+    roles: ["borrower"],
+    dealTypes: [...LENDING_DEAL_TYPES],
+    sections: [
+      "Reporting Period",
+      "Financial Covenant Calculations",
+      "Debt Service Coverage Ratio",
+      "Loan-to-Value Ratio",
+      "Net Operating Income",
+      "Certification of Compliance",
+      "Execution"
+    ]
+  },
+  investor_rights_agreement: {
+    name: "Investor Rights Agreement",
+    category: "investment",
+    roles: ["investor"],
+    dealTypes: [...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Definitions",
+      "Information Rights",
+      "Registration Rights",
+      "Preemptive Rights",
+      "Co-Sale Rights",
+      "Board Observation",
+      "Transfer Restrictions",
+      "Execution"
+    ]
+  },
+  investor_side_letter: {
+    name: "Investor Side Letter",
+    category: "investment",
+    roles: ["investor"],
+    dealTypes: [...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Fee Reductions or Waivers",
+      "Reporting Requirements",
+      "Co-Investment Rights",
+      "Most Favored Nation",
+      "Confidentiality",
+      "Execution"
+    ]
+  },
+  capital_call_notice: {
+    name: "Capital Call Notice",
+    category: "investment",
+    roles: ["investee"],
+    dealTypes: [...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Fund Information",
+      "Call Amount and Purpose",
+      "Investor Pro Rata Share",
+      "Payment Instructions",
+      "Due Date",
+      "Default Provisions"
+    ]
+  },
+  distribution_notice: {
+    name: "Distribution Notice",
+    category: "investment",
+    roles: ["investee"],
+    dealTypes: [...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Fund Information",
+      "Distribution Amount",
+      "Waterfall Calculation",
+      "Investor Pro Rata Share",
+      "Tax Withholding",
+      "Payment Method"
+    ]
+  },
+  cap_table_update: {
+    name: "Capitalization Table Summary",
+    category: "investment",
+    dealTypes: [...INVESTMENT_DEAL_TYPES],
+    sections: [
+      "Pre-Transaction Cap Table",
+      "Transaction Details",
+      "New Issuance / Transfer",
+      "Post-Transaction Cap Table",
+      "Dilution Summary",
+      "Certification"
+    ]
+  },
+  indemnification_agreement: {
+    name: "Indemnification Agreement",
+    category: "general",
+    sections: [
+      "Recitals",
+      "Definitions",
+      "Indemnification Obligations",
+      "Procedures for Claims",
+      "Limitations",
+      "Insurance",
+      "Survival",
+      "Execution"
+    ]
+  },
+  confidentiality_agreement: {
+    name: "Confidentiality / NDA",
+    category: "general",
+    sections: [
+      "Parties",
+      "Definition of Confidential Information",
+      "Obligations of Receiving Party",
+      "Permitted Disclosures",
+      "Term and Termination",
+      "Return of Materials",
+      "Remedies",
+      "Execution"
+    ]
+  },
 };
 
 export class DocumentGenerationService {
