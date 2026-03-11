@@ -1,0 +1,551 @@
+
+
+
+A HUD 1 is used for real estate transactions.  Is a HUD 1 only for residential deals?  are there other closing statements for commercial?  if so, how many different types?
+
+A HUD-1 Settlement Statement historically was used in most real estate closings involving federally related mortgage loans, but it is not limited to residential property. The distinction today is less about residential vs. commercial and more about whether the transaction is governed by RESPA / TRID rules.
+
+Below is the clean framework used in practice.
+
+1. HUD-1 Settlement Statement
+Primary historical use:
+Closing statement required under the Real Estate Settlement Procedures Act (RESPA).
+
+Used for
+Federally related mortgage loans
+
+Historically most residential purchases
+
+Also sometimes commercial loans when lenders used RESPA formats
+
+Today
+After the 2015 TRID rule, HUD-1 is mostly eliminated for typical residential purchases.
+
+It is still used for:
+
+Reverse mortgages
+
+Home equity lines of credit (HELOCs)
+
+Manufactured home loans not secured by land
+
+Certain commercial or non-TRID loans where parties still prefer the format
+
+2. Closing Disclosure (CD)
+This replaced the HUD-1 for most consumer residential closings.
+
+Used for
+Residential mortgage loans covered by TRID
+
+Specifically:
+
+1–4 unit residential property
+
+Consumer borrower
+
+Lender financing
+
+Purchase or refinance
+
+Not used for
+Commercial loans
+
+Cash deals
+
+Investment property loans made to business entities
+
+Reverse mortgages
+
+HELOCs
+
+3. ALTA Settlement Statement
+This is the most common closing statement for commercial transactions.
+
+Developed by the American Land Title Association (ALTA).
+
+Used for
+Commercial real estate
+
+Cash transactions
+
+Entity borrowers
+
+Investor deals
+
+1031 exchanges
+
+Versions
+There are typically three versions:
+
+ALTA Buyer Settlement Statement
+
+ALTA Seller Settlement Statement
+
+ALTA Combined Settlement Statement
+
+Commercial closings almost always use these.
+
+4. Custom Settlement Statements
+Commercial transactions frequently use custom closing statements prepared by:
+
+Title company
+
+Closing attorney
+
+Escrow agent
+
+Institutional lender
+
+These are often simply called:
+
+“Settlement Statement”
+or
+“Closing Statement.”
+
+There is no mandated federal format for commercial closings.
+
+5. Loan-Specific Lender Settlement Statements
+Large institutional lenders often require their own formats, especially for:
+
+CMBS loans
+
+Construction loans
+
+Syndicated loans
+
+Mezzanine financing
+
+Examples include:
+
+Lender Funding Statement
+
+Sources and Uses Statement
+
+Loan Disbursement Statement
+
+These often accompany the main settlement statement.
+
+Practical Summary
+Document	Typical Use	Property Type
+HUD-1	Legacy RESPA closings	Some residential, limited modern use
+Closing Disclosure (CD)	TRID residential loans	Consumer residential
+ALTA Settlement Statement	Standard commercial closing	Commercial
+Custom Settlement Statement	Attorney/title prepared	Commercial or cash
+Sources & Uses Statement	Financing summary	Commercial loans
+How Commercial Closings Usually Work
+Most commercial deals include three financial closing documents:
+
+ALTA Settlement Statement
+
+Sources and Uses Statement
+
+Lender Funding Statement
+
+Quick Answer to Your Question
+HUD-1 is not strictly residential, but today it is rarely used except in special residential loans.
+
+Commercial deals usually use ALTA settlement statements or custom closing statements.
+
+There are roughly 4–5 commonly encountered types of closing statements depending on the transaction structure.
+
+If helpful, I can also show you how large commercial real estate deals (office towers, hotels, multifamily) structure their closing statements, which are often much more complex than HUD-1s and can run 20+ pages.
+
+
+give me a complete and comprehensive list for residential and all types of commercial real estate closings - from the most simple to the most complex.  I am building an app for real estate closings and what to ensure that I have all possible forms
+
+To design a complete closing-statement system for a real-estate closing platform, you should think in terms of (1) regulatory documents, (2) settlement/closing statements, and (3) lender funding / disbursement schedules.
+
+Across U.S. real estate transactions there are roughly 12–16 core financial closing statement formats that cover essentially every residential and commercial closing scenario. Below is a comprehensive taxonomy from simplest to most complex.
+
+1. Consumer Residential Closings (TRID Regulated)
+These are governed by RESPA + TILA + TRID rules and have mandatory federal forms.
+
+1.1 Closing Disclosure (CD)
+Standard form required for most residential mortgages.
+
+Used for:
+
+1–4 unit residential property
+
+Consumer borrowers
+
+Purchase or refinance
+
+Mortgage financing
+
+Typical structure:
+
+Loan terms
+
+Projected payments
+
+Closing costs
+
+Cash to close
+
+Loan calculations
+
+Entities involved:
+
+Lender
+
+Settlement agent
+
+Buyer
+
+1.2 Seller Closing Disclosure
+Mirror version of the CD provided to the seller.
+
+Some jurisdictions issue:
+
+Combined CD
+
+Separate seller CD
+
+1.3 Loan Estimate (Pre-Closing but Required)
+Not technically a closing statement but required in TRID workflows.
+
+Your platform should support it because numbers must reconcile with the CD.
+
+2. Residential Transactions Not Covered by TRID
+Certain loans still use the HUD-1.
+
+2.1 HUD-1 Settlement Statement
+Legacy RESPA form.
+
+Still used for:
+
+Reverse mortgages
+
+HELOCs
+
+Manufactured home loans (no land)
+
+Certain private loans
+
+Key sections:
+
+100 series: borrower charges
+
+200 series: seller credits
+
+700 series: broker commissions
+
+800–1300: loan costs and escrows
+
+2.2 HUD-1A
+Simplified version used for refinances without seller involvement.
+
+3. Cash Residential Closings
+When no institutional lender is involved, title companies typically use:
+
+3.1 Cash Settlement Statement
+Often called:
+
+Cash Closing Statement
+
+Owner Settlement Statement
+
+Prepared by:
+
+Title company
+
+Closing attorney
+
+No mandated format.
+
+4. Standard Commercial Real Estate Closings
+Commercial deals usually use ALTA settlement formats.
+
+4.1 ALTA Settlement Statement – Combined
+Single statement showing buyer and seller.
+
+4.2 ALTA Buyer Settlement Statement
+4.3 ALTA Seller Settlement Statement
+These are the most common commercial closing statements in the U.S.
+
+Fields typically include:
+
+Purchase price
+
+Prorations
+
+Loan payoff
+
+Broker commissions
+
+Transfer taxes
+
+Escrows
+
+5. Institutional Commercial Loan Closings
+Large commercial loans include lender funding schedules.
+
+5.1 Sources and Uses Statement
+Shows:
+
+Sources:
+
+Loan proceeds
+
+Equity
+
+Deposits
+
+Uses:
+
+Purchase price
+
+Fees
+
+Escrows
+
+Payoffs
+
+Used in:
+
+Commercial purchases
+
+Development
+
+recapitalizations
+
+5.2 Lender Funding Statement
+Also called:
+
+Funding Authorization
+
+Disbursement Authorization
+
+Shows exactly how loan proceeds are disbursed.
+
+5.3 Closing Funds Flow Statement
+Often used by large law firms.
+
+Shows precise wire movements.
+
+Example:
+
+Source	Amount	Destination
+Bank loan	$20M	Escrow
+Equity	$10M	Escrow
+Escrow	$28M	Seller
+Escrow	$2M	Reserves
+6. Construction Loan Closings
+More complex deals often include multiple funding schedules.
+
+6.1 Construction Sources and Uses
+Includes:
+
+Hard costs
+
+Soft costs
+
+Interest reserves
+
+Developer fees
+
+6.2 Construction Draw Schedule
+Tracks future loan disbursements.
+
+6.3 Development Budget
+Often attached to closing statements.
+
+7. CMBS / Structured Finance Closings
+Very large deals (office towers, hotels, malls).
+
+Typical documents:
+
+7.1 CMBS Funding Memo
+Prepared by closing counsel.
+
+Includes:
+
+tranche funding
+
+defeasance calculations
+
+loan allocations
+
+7.2 Structured Funds Flow
+Shows:
+
+mortgage
+
+mezzanine
+
+preferred equity
+
+8. Multi-Layer Capital Stack Closings
+Used in:
+
+private equity real estate
+
+opportunity zone deals
+
+REIT transactions
+
+Documents include:
+
+8.1 Capital Stack Summary
+Sources:
+
+Senior debt
+
+Mezzanine debt
+
+Preferred equity
+
+Sponsor equity
+
+8.2 Investor Distribution Waterfall Statement
+Used when equity investors close simultaneously.
+
+9. 1031 Exchange Closings
+Exchange accommodators require specific statements.
+
+9.1 1031 Exchange Settlement Statement
+Includes:
+
+exchange funds
+
+replacement property calculations
+
+intermediary balances
+
+9.2 Qualified Intermediary Funds Statement
+Prepared by exchange company.
+
+10. Portfolio and Bulk Asset Closings
+Used when multiple properties close simultaneously.
+
+10.1 Portfolio Settlement Statement
+Shows:
+
+allocation by property
+
+prorations
+
+multi-property taxes
+
+10.2 Property Allocation Schedule
+Important for accounting.
+
+11. Leasehold / Ground Lease Transactions
+Complex deals include:
+
+11.1 Ground Lease Closing Statement
+Includes:
+
+prepaid rent
+
+leasehold financing
+
+leasehold taxes
+
+12. REIT / Institutional Transactions
+Very large deals use:
+
+12.1 Master Closing Statement
+Shows all transaction components.
+
+12.2 REIT Contribution Statement
+Used when properties are contributed into a REIT.
+
+COMPLETE MASTER LIST
+Your software should support at least these core closing statement types:
+
+Residential
+Closing Disclosure (CD)
+
+Seller Closing Disclosure
+
+HUD-1
+
+HUD-1A
+
+Cash Settlement Statement
+
+Standard Commercial
+ALTA Combined Settlement Statement
+
+ALTA Buyer Statement
+
+ALTA Seller Statement
+
+Financing Statements
+Sources and Uses Statement
+
+Lender Funding Statement
+
+Funds Flow Statement
+
+Development / Construction
+Construction Sources & Uses
+
+Construction Draw Schedule
+
+Advanced / Institutional
+CMBS Funding Memo
+
+Capital Stack Statement
+
+Investor Waterfall Statement
+
+Special Transactions
+1031 Exchange Settlement Statement
+
+Qualified Intermediary Statement
+
+Portfolio Settlement Statement
+
+Property Allocation Statement
+
+Realistic Maximum Coverage
+If your system supports about 20 closing statement templates, it will cover virtually every real estate transaction in the U.S.
+
+That includes:
+
+Residential mortgages
+
+Cash deals
+
+Commercial purchases
+
+Development
+
+Structured finance
+
+Exchanges
+
+Portfolio transactions
+
+💡 Product Design Tip
+
+For a closing platform, the best architecture is not separate forms but a modular funds-flow engine.
+
+Core components:
+
+Transaction
+ ├── Parties
+ ├── Sources
+ ├── Uses
+ ├── Escrows
+ ├── Prorations
+ ├── Taxes
+ ├── Payoffs
+ ├── Commissions
+ └── Wires
+Every closing statement can be generated from that model.
+
+If you'd like, I can also give you:
+
+1. The full field schema used by title companies (300+ fields)
+2. The exact ALTA + HUD data structure
+3. A database model for building a closing platform
+
+which will save you months of development mistakes.
+
+
+
+
