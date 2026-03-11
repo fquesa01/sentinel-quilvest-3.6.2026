@@ -8,6 +8,8 @@ import { isAuthenticated, requireRole } from './replitAuth';
 import { ObjectStorageService, objectStorageClient } from './objectStorage';
 import { randomUUID } from 'crypto';
 import { storage as dbStorage } from './storage';
+import { db } from './db';
+import * as schema from '@shared/schema';
 
 const router = Router();
 
@@ -29,11 +31,13 @@ interface UploadSessionMeta {
   totalChunks: number;
   compressed: boolean;
   caseId: string;
-  uploadType: 'document' | 'evidence' | 'ingestion';
+  uploadType: 'document' | 'evidence' | 'ingestion' | 'data_room';
   fileType: string;
   userId: string;
   createdAt: number;
   uploadedChunks: number[];
+  roomId?: string;
+  folderId?: string | null;
 }
 
 // Ensure upload directory exists
@@ -95,6 +99,37 @@ function getUploadedChunks(sessionId: string): number[] {
   return chunkIndices.sort((a, b) => a - b);
 }
 
+async function createDataRoomDocument(meta: UploadSessionMeta, objectStoragePath: string, fileSize: number) {
+  if (meta.uploadType !== 'data_room' || !meta.roomId) return null;
+
+  const [doc] = await db
+    .insert(schema.dataRoomDocuments)
+    .values({
+      dataRoomId: meta.roomId,
+      folderId: meta.folderId || null,
+      fileName: meta.fileName,
+      fileType: meta.fileType || 'application/octet-stream',
+      fileSize: fileSize,
+      storagePath: objectStoragePath,
+      uploadedBy: meta.userId,
+      ocrStatus: "pending",
+    })
+    .returning();
+
+  const { queueDocumentsForOCR } = await import("./services/ocr-service");
+  queueDocumentsForOCR([doc.id]);
+
+  try {
+    const { queueDocumentsForGeminiIndexing } = await import("./services/transaction-search-service");
+    queueDocumentsForGeminiIndexing([doc.id]);
+  } catch (e) {
+    // indexing is optional
+  }
+
+  console.log(`[ChunkedUpload] Created data room document: ${doc.id} for room ${meta.roomId}`);
+  return doc;
+}
+
 // Roles allowed to upload documents
 const UPLOAD_ALLOWED_ROLES = ['admin', 'compliance_officer', 'attorney', 'external_counsel'];
 
@@ -115,20 +150,45 @@ router.post('/init', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), asyn
       compressed,
       caseId,
       uploadType,
-      fileType
+      fileType,
+      roomId,
+      folderId
     } = req.body;
 
-    if (!sessionId || !fileName || !fileSize || !caseId) {
+    if (!sessionId || !fileName || !fileSize) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    // Validate case exists and user has access
-    const caseData = await dbStorage.getCase(caseId);
-    if (!caseData) {
-      console.log(`[ChunkedUpload] Case not found: ${caseId}`);
-      return res.status(404).json({ message: 'Case not found' });
+    if (uploadType === 'data_room') {
+      if (!roomId) {
+        return res.status(400).json({ message: 'Missing roomId for data_room upload' });
+      }
+      const { eq } = await import('drizzle-orm');
+      const room = await db.select().from(schema.peDataRooms).where(eq(schema.peDataRooms.id, roomId)).limit(1);
+      if (room.length === 0) {
+        return res.status(404).json({ message: 'Data room not found' });
+      }
+      if (folderId) {
+        const { and } = await import('drizzle-orm');
+        const folder = await db.select().from(schema.dataRoomFolders)
+          .where(and(eq(schema.dataRoomFolders.id, folderId), eq(schema.dataRoomFolders.dataRoomId, roomId)))
+          .limit(1);
+        if (folder.length === 0) {
+          return res.status(400).json({ message: 'Folder does not belong to this data room' });
+        }
+      }
+      console.log(`[ChunkedUpload] Data room upload validated: room ${roomId}`);
+    } else {
+      if (!caseId) {
+        return res.status(400).json({ message: 'Missing caseId' });
+      }
+      const caseData = await dbStorage.getCase(caseId);
+      if (!caseData) {
+        console.log(`[ChunkedUpload] Case not found: ${caseId}`);
+        return res.status(404).json({ message: 'Case not found' });
+      }
+      console.log(`[ChunkedUpload] Case validated: ${caseId} - ${caseData.title}`);
     }
-    console.log(`[ChunkedUpload] Case validated: ${caseId} - ${caseData.title}`);
 
     // Check for existing session
     const existingMeta = loadSessionMeta(sessionId);
@@ -156,12 +216,14 @@ router.post('/init', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), asyn
       actualSize: actualSize || fileSize,
       totalChunks,
       compressed: compressed || false,
-      caseId,
+      caseId: caseId || '',
       uploadType: uploadType || 'document',
       fileType: fileType || 'application/octet-stream',
       userId,
       createdAt: Date.now(),
-      uploadedChunks: []
+      uploadedChunks: [],
+      roomId: roomId || undefined,
+      folderId: folderId || null,
     };
     
     saveSessionMeta(meta);
@@ -300,11 +362,16 @@ router.post('/finalize', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), 
       const objectStoragePath = `/objects/uploads/${objectId}/${meta.fileName}`;
       console.log(`[ChunkedUpload] Uploaded decompressed file to object storage: ${objectStoragePath}`);
       
-      // Clean up all chunks
+      // Clean up all chunks and session directory
       for (let i = 0; i < meta.totalChunks; i++) {
         const chunkPath = join(sessionDir, `chunk_${i}`);
         if (existsSync(chunkPath)) unlinkSync(chunkPath);
       }
+      const compressedMetaPath = join(sessionDir, 'meta.json');
+      if (existsSync(compressedMetaPath)) unlinkSync(compressedMetaPath);
+      try { require('fs').rmdirSync(sessionDir); } catch (e) {}
+
+      const dataRoomDoc = await createDataRoomDocument(meta, objectStoragePath, decompressed.length);
       
       return res.json({
         success: true,
@@ -315,7 +382,8 @@ router.post('/finalize', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), 
         filePath: '',
         objectStoragePath,
         caseId: meta.caseId,
-        uploadType: meta.uploadType
+        uploadType: meta.uploadType,
+        dataRoomDocument: dataRoomDoc || undefined,
       });
     }
 
@@ -400,6 +468,8 @@ router.post('/finalize', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), 
       // Directory might not be empty, ignore
     }
 
+    const dataRoomDoc = await createDataRoomDocument(meta, objectStoragePath, totalBytesStreamed);
+
     res.json({
       success: true,
       fileName: meta.fileName,
@@ -409,7 +479,8 @@ router.post('/finalize', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), 
       filePath: '',
       objectStoragePath,
       caseId: meta.caseId,
-      uploadType: meta.uploadType
+      uploadType: meta.uploadType,
+      dataRoomDocument: dataRoomDoc || undefined,
     });
   } catch (error: any) {
     console.error('[ChunkedUpload] Finalize error:', error);

@@ -265,6 +265,7 @@ export default function TransactionsDataRoomDetail() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; fileName: string }>({ current: 0, total: 0, fileName: "" });
   const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
   const [isActivityPanelOpen, setIsActivityPanelOpen] = useState(false);
   const [isFolderPermissionsOpen, setIsFolderPermissionsOpen] = useState(false);
@@ -506,6 +507,80 @@ export default function TransactionsDataRoomDetail() {
     },
   });
 
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB per chunk
+  const DIRECT_UPLOAD_LIMIT = 20 * 1024 * 1024; // 20MB - use direct upload for smaller files
+
+  const uploadFileChunked = async (file: File) => {
+    const sessionId = crypto.randomUUID();
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const fileType = file.type || 'application/octet-stream';
+
+    const initRes = await fetch('/api/chunked-upload/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        sessionId,
+        fileName: file.name,
+        fileSize: file.size,
+        actualSize: file.size,
+        totalChunks,
+        compressed: false,
+        uploadType: 'data_room',
+        fileType,
+        roomId,
+        folderId: selectedFolderId || null,
+      }),
+    });
+    if (!initRes.ok) throw new Error(await initRes.text());
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      const chunkForm = new FormData();
+      chunkForm.append('sessionId', sessionId);
+      chunkForm.append('chunkIndex', String(i));
+      chunkForm.append('chunk', chunk);
+
+      const chunkRes = await fetch('/api/chunked-upload/chunk', {
+        method: 'POST',
+        credentials: 'include',
+        body: chunkForm,
+      });
+      if (!chunkRes.ok) throw new Error(`Chunk ${i} failed: ${await chunkRes.text()}`);
+    }
+
+    const finalRes = await fetch('/api/chunked-upload/finalize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ sessionId }),
+    });
+    if (!finalRes.ok) throw new Error(await finalRes.text());
+    return finalRes.json();
+  };
+
+  const uploadFileDirect = async (file: File) => {
+    const formData = new FormData();
+    formData.append("files", file);
+    if (selectedFolderId) {
+      formData.append("folderId", selectedFolderId);
+    }
+
+    const response = await fetch(`/api/data-rooms/${roomId}/upload`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    return response.json();
+  };
+
   const handleFileUpload = async () => {
     if (uploadFiles.length === 0) {
       toast({ title: "Please select files to upload", variant: "destructive" });
@@ -513,33 +588,42 @@ export default function TransactionsDataRoomDetail() {
     }
 
     setIsUploading(true);
+    const total = uploadFiles.length;
+    let succeeded = 0;
+    let failed = 0;
+
     try {
-      const formData = new FormData();
-      uploadFiles.forEach((file) => {
-        formData.append("files", file);
-      });
-      if (selectedFolderId) {
-        formData.append("folderId", selectedFolderId);
-      }
+      for (let i = 0; i < total; i++) {
+        const file = uploadFiles[i];
+        setUploadProgress({ current: i + 1, total, fileName: file.name });
 
-      const response = await fetch(`/api/data-rooms/${roomId}/upload`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
+        try {
+          const isZip = file.name.toLowerCase().endsWith('.zip');
+          if (!isZip && file.size > DIRECT_UPLOAD_LIMIT) {
+            await uploadFileChunked(file);
+          } else {
+            await uploadFileDirect(file);
+          }
+          succeeded++;
+        } catch (err: any) {
+          failed++;
+          console.error(`Failed to upload ${file.name}:`, err);
+          toast({ title: `Failed to upload ${file.name}`, description: err.message, variant: "destructive" });
+        }
       }
 
       await queryClient.invalidateQueries({ queryKey: ["/api/data-rooms", roomId] });
-      setIsUploadOpen(false);
-      setUploadFiles([]);
-      toast({ title: `Successfully uploaded ${uploadFiles.length} file(s)` });
+
+      if (succeeded > 0) {
+        setIsUploadOpen(false);
+        setUploadFiles([]);
+        toast({ title: `Successfully uploaded ${succeeded} file(s)${failed > 0 ? `, ${failed} failed` : ''}` });
+      }
     } catch (error: any) {
       toast({ title: "Upload failed", description: error.message, variant: "destructive" });
     } finally {
       setIsUploading(false);
+      setUploadProgress({ current: 0, total: 0, fileName: "" });
     }
   };
 
@@ -937,7 +1021,9 @@ export default function TransactionsDataRoomDetail() {
                       disabled={isUploading || uploadFiles.length === 0}
                       data-testid="button-submit-upload"
                     >
-                      {isUploading ? "Uploading..." : `Upload ${uploadFiles.length} file(s)`}
+                      {isUploading 
+                        ? `Uploading ${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.fileName}` 
+                        : `Upload ${uploadFiles.length} file(s)`}
                     </Button>
                   </div>
                 </DialogContent>
