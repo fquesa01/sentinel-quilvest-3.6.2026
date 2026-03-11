@@ -581,6 +581,11 @@ export default function TransactionsDiligence() {
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
                               {template.isSystemTemplate && <Badge variant="secondary" className="text-xs">System</Badge>}
                               {template.isDefault && <Badge variant="outline" className="text-xs">Default</Badge>}
+                              {template.transactionType && (
+                                <Badge variant="default" className="text-xs" data-testid={`badge-deal-type-${template.id}`}>
+                                  {transactionTypes.find(t => t.value === template.transactionType)?.label || template.transactionType}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                         </div>
