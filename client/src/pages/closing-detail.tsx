@@ -27,6 +27,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { getStatementTypeForm } from "@/components/closing/statement-type-forms";
+import { ProrationCalculator } from "@/components/closing/proration-calculator";
 import {
   ArrowLeft,
   Plus,
@@ -1197,7 +1199,29 @@ export default function ClosingDetail() {
             </Button>
           </div>
 
-          {lineItems.length === 0 ? (
+          {(() => {
+            const StatementForm = getStatementTypeForm(txType);
+            if (StatementForm) {
+              return (
+                <StatementForm
+                  closing={closing}
+                  lineItems={lineItems}
+                  onAddItem={(section, defaults) => {
+                    resetLineItemForm();
+                    if (defaults) {
+                      Object.entries(defaults).forEach(([key, value]) => {
+                        setLineItemForm(prev => ({ ...prev, [key]: value }));
+                      });
+                    }
+                    setLineItemDialog(true);
+                  }}
+                />
+              );
+            }
+            return null;
+          })()}
+
+          {lineItems.length === 0 && !getStatementTypeForm(txType) ? (
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
                 No line items yet. Add your first line item to begin building the closing statement.
@@ -1205,7 +1229,7 @@ export default function ClosingDetail() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {sections.map(section => {
+              {!getStatementTypeForm(txType) && sections.map(section => {
                 const sectionItems = grouped[section.key] || [];
                 if (sectionItems.length === 0 && Object.keys(grouped).length > 1) return null;
                 const sectionTotal = sectionItems.reduce((s, li) => s + parseFloat(li.amount?.replace(/[,$\s]/g, "") || "0"), 0);
@@ -1322,6 +1346,21 @@ export default function ClosingDetail() {
               <Plus className="h-4 w-4 mr-1" /> Add Proration
             </Button>
           </div>
+
+          <ProrationCalculator
+            closingDate={closing.closingDate || undefined}
+            onApply={(data) => {
+              setProrationForm({
+                itemName: data.itemName,
+                annualAmount: data.annualAmount,
+                periodStartDate: data.periodStartDate,
+                periodEndDate: data.periodEndDate,
+                prorateDate: data.prorateDate,
+                method: data.method,
+              });
+              setProrationDialog(true);
+            }}
+          />
 
           {prorations.length === 0 ? (
             <Card>
