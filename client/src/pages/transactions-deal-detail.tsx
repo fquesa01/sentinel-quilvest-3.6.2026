@@ -70,7 +70,7 @@ import {
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { ShareDealDialog } from "@/components/share-deal-dialog";
-import type { Deal, DealMilestone, DealParticipant, DealIssue, DealMeetingNote } from "@shared/schema";
+import type { Deal, DealMilestone, DealParticipant, DealIssue, DealMeetingNote, ClosingTransaction } from "@shared/schema";
 import { format } from "date-fns";
 
 type DealWithRelations = Deal & {
@@ -192,6 +192,16 @@ export default function TransactionsDealDetail() {
     queryKey: ["/api/data-rooms"],
     select: (rooms) => rooms.filter((r: any) => r.dealId === id),
   });
+
+  const { data: closings = [], isLoading: closingsLoading } = useQuery<ClosingTransaction[]>({
+    queryKey: ["/api/deals", id, "closings"],
+    enabled: !!id,
+  });
+
+  const [isCreateClosingOpen, setIsCreateClosingOpen] = useState(false);
+  const [newClosingType, setNewClosingType] = useState("");
+  const [newClosingTitle, setNewClosingTitle] = useState("");
+  const [autoPopulateClosing, setAutoPopulateClosing] = useState(true);
 
   const [isDealTypeDismissed, setIsDealTypeDismissed] = useState(false);
 
@@ -339,6 +349,86 @@ export default function TransactionsDealDetail() {
       });
     },
   });
+
+  const closingTypeLabels: Record<string, string> = {
+    closing_disclosure: "Closing Disclosure",
+    seller_closing_disclosure: "Seller Closing Disclosure",
+    hud1: "HUD-1",
+    hud1a: "HUD-1A",
+    cash_settlement: "Cash Settlement Statement",
+    alta_combined: "ALTA Combined",
+    alta_buyer: "ALTA Buyer Statement",
+    alta_seller: "ALTA Seller Statement",
+    sources_and_uses: "Sources & Uses",
+    lender_funding: "Lender Funding Sheet",
+    funds_flow: "Funds Flow",
+    construction_sources_uses: "Construction Sources & Uses",
+    construction_draw: "Construction Draw Schedule",
+    cmbs_funding_memo: "CMBS Funding Memo",
+    capital_stack: "Capital Stack",
+    investor_waterfall: "Investor Waterfall",
+    "1031_exchange": "1031 Exchange",
+    qi_statement: "QI Statement",
+    portfolio_settlement: "Portfolio Settlement",
+    ground_lease_closing: "Ground Lease Closing",
+    master_closing: "Master Closing Statement",
+  };
+
+  const closingStatusLabels: Record<string, string> = {
+    draft: "Draft",
+    pending_review: "Pending Review",
+    approved: "Approved",
+    executed: "Executed",
+    voided: "Voided",
+  };
+
+  const closingStatusColors: Record<string, string> = {
+    draft: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+    pending_review: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    approved: "bg-green-500/20 text-green-400 border-green-500/30",
+    executed: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    voided: "bg-red-500/20 text-red-400 border-red-500/30",
+  };
+
+  const createClosingMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", `/api/deals/${id}/closings`, data);
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "closings"] });
+      toast({ title: "Closing Created", description: "New closing transaction has been created." });
+      setIsCreateClosingOpen(false);
+      setNewClosingType("");
+      setNewClosingTitle("");
+      setAutoPopulateClosing(true);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to create closing.", variant: "destructive" });
+    },
+  });
+
+  const deleteClosingMutation = useMutation({
+    mutationFn: async (closingId: string) => {
+      await apiRequest("DELETE", `/api/closings/${closingId}`);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "closings"] });
+      toast({ title: "Deleted", description: "Closing transaction removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete closing.", variant: "destructive" });
+    },
+  });
+
+  const handleCreateClosing = () => {
+    if (!newClosingType) return;
+    createClosingMutation.mutate({
+      transactionType: newClosingType,
+      title: newClosingTitle || closingTypeLabels[newClosingType] || "New Closing",
+      autoPopulate: autoPopulateClosing,
+    });
+  };
 
   const createIssueMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -2077,22 +2167,158 @@ export default function TransactionsDealDetail() {
             <BackgroundResearchTab dealId={id!} />
           </TabsContent>
 
-          <TabsContent value="closing" className="mt-6">
+          <TabsContent value="closing" className="mt-6 space-y-6">
             <Card>
               <CardHeader>
-                <div>
-                  <CardTitle className="text-lg">Closing Management</CardTitle>
-                  <CardDescription>Manage closing conditions and deliverables</CardDescription>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Scale className="h-5 w-5" />
+                      Closing Statements
+                    </CardTitle>
+                    <CardDescription>Manage closing transactions, line items, and funds flow</CardDescription>
+                  </div>
+                  <Button
+                    onClick={() => setIsCreateClosingOpen(true)}
+                    data-testid="button-create-closing"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Closing
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  <ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>Closing checklist not yet created</p>
-                  <p className="text-sm mt-1">Create a closing checklist from the Checklists tab</p>
-                </div>
+                {closingsLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                ) : closings.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Scale className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No closing statements yet</p>
+                    <p className="text-sm mt-1">Create a closing statement to manage funds flow, line items, and settlement details</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {closings.map((closing) => (
+                      <div
+                        key={closing.id}
+                        className="flex items-center justify-between gap-4 p-4 border rounded-md hover-elevate cursor-pointer"
+                        data-testid={`card-closing-${closing.id}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium truncate" data-testid={`text-closing-title-${closing.id}`}>{closing.title}</span>
+                            <Badge variant="outline" className={closingStatusColors[closing.status || "draft"]}>
+                              {closingStatusLabels[closing.status || "draft"]}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
+                            <span data-testid={`text-closing-type-${closing.id}`}>{closingTypeLabels[closing.transactionType] || closing.transactionType}</span>
+                            {closing.fileNumber && <span>File: {closing.fileNumber}</span>}
+                            {closing.closingDate && <span>Date: {format(new Date(closing.closingDate), "MMM d, yyyy")}</span>}
+                            {closing.purchasePrice && <span>Price: ${parseFloat(closing.purchasePrice).toLocaleString()}</span>}
+                          </div>
+                          {closing.balanceValid !== null && (
+                            <div className="flex items-center gap-2 mt-1">
+                              {closing.balanceValid ? (
+                                <span className="text-xs text-green-500 flex items-center gap-1">
+                                  <CheckCircle2 className="h-3 w-3" /> Balanced
+                                </span>
+                              ) : (
+                                <span className="text-xs text-yellow-500 flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3" /> Unbalanced (Sources: ${parseFloat(closing.totalSources || "0").toLocaleString()}, Uses: ${parseFloat(closing.totalUses || "0").toLocaleString()})
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm("Delete this closing statement?")) {
+                                deleteClosingMutation.mutate(closing.id);
+                              }
+                            }}
+                            data-testid={`button-delete-closing-${closing.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
+
+            <Dialog open={isCreateClosingOpen} onOpenChange={setIsCreateClosingOpen}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Create Closing Statement</DialogTitle>
+                  <DialogDescription>
+                    Select a closing statement type. Data from deal terms will be auto-populated if available.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="closingType">Statement Type</Label>
+                    <Select value={newClosingType} onValueChange={setNewClosingType}>
+                      <SelectTrigger data-testid="select-closing-type">
+                        <SelectValue placeholder="Select type..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(closingTypeLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="closingTitle">Title (optional)</Label>
+                    <Input
+                      id="closingTitle"
+                      value={newClosingTitle}
+                      onChange={(e) => setNewClosingTitle(e.target.value)}
+                      placeholder={newClosingType ? closingTypeLabels[newClosingType] : "Auto-generated from type"}
+                      data-testid="input-closing-title"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="autoPopulate"
+                      checked={autoPopulateClosing}
+                      onChange={(e) => setAutoPopulateClosing(e.target.checked)}
+                      className="rounded border-input"
+                      data-testid="checkbox-auto-populate"
+                    />
+                    <Label htmlFor="autoPopulate" className="text-sm cursor-pointer">
+                      Auto-populate from deal terms (buyer, seller, property, purchase price)
+                    </Label>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsCreateClosingOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={handleCreateClosing}
+                    disabled={!newClosingType || createClosingMutation.isPending}
+                    data-testid="button-submit-closing"
+                  >
+                    {createClosingMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4 mr-2" />
+                    )}
+                    Create
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           <TabsContent value="reports" className="mt-6">

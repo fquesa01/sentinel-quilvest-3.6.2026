@@ -63,6 +63,7 @@ import type { SupportedFormat } from "./ingestion/fileDetector";
 import ddBooleanSearchRoutes from "./routes/dd-boolean-search-routes";
 import calendarOAuthRouter from "./routes/calendar-oauth";
 import { registerRelationshipIntelligenceRoutes } from "./routes/relationship-intelligence";
+import { registerClosingRoutes } from "./routes/closing-routes";
 
 // Helper to extract email from various formats (e.g., "John Doe <john@example.com>" -> "john@example.com")
 function extractEmail(input: string): string | null {
@@ -314,6 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPrivilegeLogRoutes(app);
   registerChecklistRoutes(app);
   registerRelationshipIntelligenceRoutes(app);
+  registerClosingRoutes(app);
 
   // Investor memo engine routes
   app.use(investorMemoRouter);

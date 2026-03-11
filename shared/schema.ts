@@ -13393,3 +13393,310 @@ export const insertDealShareSchema = createInsertSchema(dealShares).omit({
   createdAt: true,
 });
 export type InsertDealShare = z.infer<typeof insertDealShareSchema>;
+
+export const closingTransactionTypeEnum = pgEnum("closing_transaction_type", [
+  "closing_disclosure",
+  "seller_closing_disclosure",
+  "hud1",
+  "hud1a",
+  "cash_settlement",
+  "alta_combined",
+  "alta_buyer",
+  "alta_seller",
+  "sources_and_uses",
+  "lender_funding",
+  "funds_flow",
+  "construction_sources_uses",
+  "construction_draw",
+  "cmbs_funding_memo",
+  "capital_stack",
+  "investor_waterfall",
+  "1031_exchange",
+  "qi_statement",
+  "portfolio_settlement",
+  "ground_lease_closing",
+  "master_closing",
+]);
+
+export const closingStatusEnum = pgEnum("closing_status", [
+  "draft",
+  "pending_review",
+  "approved",
+  "executed",
+  "voided",
+]);
+
+export const closingLineItemCategoryEnum = pgEnum("closing_line_item_category", [
+  "purchase_price",
+  "earnest_money",
+  "loan_amount",
+  "seller_credit",
+  "buyer_credit",
+  "title_insurance",
+  "escrow_fee",
+  "recording_fee",
+  "transfer_tax",
+  "property_tax_proration",
+  "insurance_proration",
+  "hoa_proration",
+  "rent_proration",
+  "commission",
+  "attorney_fee",
+  "inspection_fee",
+  "appraisal_fee",
+  "survey_fee",
+  "loan_origination",
+  "loan_discount",
+  "prepaid_interest",
+  "mortgage_insurance",
+  "payoff_first_mortgage",
+  "payoff_second_mortgage",
+  "payoff_other_lien",
+  "construction_draw",
+  "holdback",
+  "reserve",
+  "adjustment",
+  "other",
+]);
+
+export const closingLineItemSideEnum = pgEnum("closing_line_item_side", [
+  "source",
+  "use",
+  "buyer_debit",
+  "buyer_credit",
+  "seller_debit",
+  "seller_credit",
+]);
+
+export const closingPartyRoleEnum = pgEnum("closing_party_role", [
+  "buyer",
+  "seller",
+  "lender",
+  "title_company",
+  "escrow_agent",
+  "closing_attorney",
+  "broker_buyer",
+  "broker_seller",
+  "surveyor",
+  "appraiser",
+  "inspector",
+  "qi_intermediary",
+  "guarantor",
+  "investor",
+  "other",
+]);
+
+export const closingWireStatusEnum = pgEnum("closing_wire_status", [
+  "pending",
+  "sent",
+  "confirmed",
+  "failed",
+  "cancelled",
+]);
+
+export const closingTransactions = pgTable("closing_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  transactionType: closingTransactionTypeEnum("transaction_type").notNull(),
+  status: closingStatusEnum("status").default("draft"),
+  title: varchar("title", { length: 500 }).notNull(),
+  fileNumber: varchar("file_number", { length: 100 }),
+  closingDate: date("closing_date"),
+  disbursementDate: date("disbursement_date"),
+  propertyAddress: text("property_address"),
+  purchasePrice: text("purchase_price"),
+  loanAmount: text("loan_amount"),
+  earnestMoney: text("earnest_money"),
+  notes: text("notes"),
+  balanceValid: boolean("balance_valid").default(false),
+  totalSources: text("total_sources").default("0"),
+  totalUses: text("total_uses").default("0"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  dealIdx: index("idx_closing_tx_deal").on(table.dealId),
+  typeIdx: index("idx_closing_tx_type").on(table.transactionType),
+  statusIdx: index("idx_closing_tx_status").on(table.status),
+}));
+
+export type ClosingTransaction = typeof closingTransactions.$inferSelect;
+export const insertClosingTransactionSchema = createInsertSchema(closingTransactions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  balanceValid: true,
+  totalSources: true,
+  totalUses: true,
+});
+export type InsertClosingTransaction = z.infer<typeof insertClosingTransactionSchema>;
+
+export const closingLineItems = pgTable("closing_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closingId: varchar("closing_id").references(() => closingTransactions.id, { onDelete: "cascade" }).notNull(),
+  lineNumber: integer("line_number"),
+  hudSection: varchar("hud_section", { length: 10 }),
+  category: closingLineItemCategoryEnum("category").notNull(),
+  side: closingLineItemSideEnum("side").notNull(),
+  description: varchar("description", { length: 500 }).notNull(),
+  amount: text("amount").notNull().default("0"),
+  paidBy: varchar("paid_by", { length: 50 }),
+  paidTo: varchar("paid_to", { length: 255 }),
+  isAdjustment: boolean("is_adjustment").default(false),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  closingIdx: index("idx_closing_li_closing").on(table.closingId),
+  sideIdx: index("idx_closing_li_side").on(table.side),
+}));
+
+export type ClosingLineItem = typeof closingLineItems.$inferSelect;
+export const insertClosingLineItemSchema = createInsertSchema(closingLineItems).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertClosingLineItem = z.infer<typeof insertClosingLineItemSchema>;
+
+export const closingParties = pgTable("closing_parties", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closingId: varchar("closing_id").references(() => closingTransactions.id, { onDelete: "cascade" }).notNull(),
+  role: closingPartyRoleEnum("role").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  entityType: varchar("entity_type", { length: 50 }),
+  address: text("address"),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  taxId: varchar("tax_id", { length: 50 }),
+  signerName: varchar("signer_name", { length: 255 }),
+  signerTitle: varchar("signer_title", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  closingIdx: index("idx_closing_party_closing").on(table.closingId),
+}));
+
+export type ClosingParty = typeof closingParties.$inferSelect;
+export const insertClosingPartySchema = createInsertSchema(closingParties).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertClosingParty = z.infer<typeof insertClosingPartySchema>;
+
+export const closingProrations = pgTable("closing_prorations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closingId: varchar("closing_id").references(() => closingTransactions.id, { onDelete: "cascade" }).notNull(),
+  itemName: varchar("item_name", { length: 255 }).notNull(),
+  annualAmount: text("annual_amount").notNull().default("0"),
+  periodStartDate: date("period_start_date"),
+  periodEndDate: date("period_end_date"),
+  prorateDate: date("prorate_date"),
+  daysInPeriod: integer("days_in_period"),
+  buyerDays: integer("buyer_days"),
+  sellerDays: integer("seller_days"),
+  dailyRate: text("daily_rate"),
+  buyerCredit: text("buyer_credit").default("0"),
+  sellerCredit: text("seller_credit").default("0"),
+  method: varchar("method", { length: 20 }).default("calendar_day"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  closingIdx: index("idx_closing_proration_closing").on(table.closingId),
+}));
+
+export type ClosingProration = typeof closingProrations.$inferSelect;
+export const insertClosingProrationSchema = createInsertSchema(closingProrations).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertClosingProration = z.infer<typeof insertClosingProrationSchema>;
+
+export const closingEscrows = pgTable("closing_escrows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closingId: varchar("closing_id").references(() => closingTransactions.id, { onDelete: "cascade" }).notNull(),
+  escrowType: varchar("escrow_type", { length: 100 }).notNull(),
+  holder: varchar("holder", { length: 255 }),
+  amount: text("amount").notNull().default("0"),
+  depositDate: date("deposit_date"),
+  releaseCondition: text("release_condition"),
+  status: varchar("status", { length: 50 }).default("held"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  closingIdx: index("idx_closing_escrow_closing").on(table.closingId),
+}));
+
+export type ClosingEscrow = typeof closingEscrows.$inferSelect;
+export const insertClosingEscrowSchema = createInsertSchema(closingEscrows).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertClosingEscrow = z.infer<typeof insertClosingEscrowSchema>;
+
+export const closingPayoffs = pgTable("closing_payoffs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closingId: varchar("closing_id").references(() => closingTransactions.id, { onDelete: "cascade" }).notNull(),
+  lienType: varchar("lien_type", { length: 100 }).notNull(),
+  lender: varchar("lender", { length: 255 }),
+  accountNumber: varchar("account_number", { length: 100 }),
+  currentBalance: text("current_balance").notNull().default("0"),
+  perDiemInterest: text("per_diem_interest"),
+  payoffGoodThrough: date("payoff_good_through"),
+  totalPayoff: text("total_payoff").notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  closingIdx: index("idx_closing_payoff_closing").on(table.closingId),
+}));
+
+export type ClosingPayoff = typeof closingPayoffs.$inferSelect;
+export const insertClosingPayoffSchema = createInsertSchema(closingPayoffs).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertClosingPayoff = z.infer<typeof insertClosingPayoffSchema>;
+
+export const closingCommissions = pgTable("closing_commissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closingId: varchar("closing_id").references(() => closingTransactions.id, { onDelete: "cascade" }).notNull(),
+  recipientName: varchar("recipient_name", { length: 255 }).notNull(),
+  recipientRole: varchar("recipient_role", { length: 100 }),
+  basisAmount: text("basis_amount"),
+  rate: text("rate"),
+  amount: text("amount").notNull().default("0"),
+  paidBy: varchar("paid_by", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  closingIdx: index("idx_closing_commission_closing").on(table.closingId),
+}));
+
+export type ClosingCommission = typeof closingCommissions.$inferSelect;
+export const insertClosingCommissionSchema = createInsertSchema(closingCommissions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertClosingCommission = z.infer<typeof insertClosingCommissionSchema>;
+
+export const closingWires = pgTable("closing_wires", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closingId: varchar("closing_id").references(() => closingTransactions.id, { onDelete: "cascade" }).notNull(),
+  direction: varchar("direction", { length: 20 }).notNull(),
+  fromParty: varchar("from_party", { length: 255 }),
+  toParty: varchar("to_party", { length: 255 }),
+  amount: text("amount").notNull().default("0"),
+  bankName: varchar("bank_name", { length: 255 }),
+  routingNumber: varchar("routing_number", { length: 20 }),
+  accountNumber: varchar("account_number", { length: 50 }),
+  reference: varchar("reference", { length: 255 }),
+  status: closingWireStatusEnum("status").default("pending"),
+  sentAt: timestamp("sent_at"),
+  confirmedAt: timestamp("confirmed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  closingIdx: index("idx_closing_wire_closing").on(table.closingId),
+  statusIdx: index("idx_closing_wire_status").on(table.status),
+}));
+
+export type ClosingWire = typeof closingWires.$inferSelect;
+export const insertClosingWireSchema = createInsertSchema(closingWires).omit({
+  id: true,
+  createdAt: true,
+  sentAt: true,
+  confirmedAt: true,
+});
+export type InsertClosingWire = z.infer<typeof insertClosingWireSchema>;
