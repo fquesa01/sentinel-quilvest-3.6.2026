@@ -1491,6 +1491,47 @@ function renderConstructionDraw(doc: PDFKit.PDFDocument, data: ClosingData) {
   const draws = data.lineItems.filter(li => li.hudSection === "draw" || (li as any).altaCategory === "draw");
   const retainage = data.lineItems.filter(li => li.hudSection === "retainage" || (li as any).altaCategory === "retainage");
   const changeOrders = data.lineItems.filter(li => li.hudSection === "change_order" || (li as any).altaCategory === "change_order");
+  const milestones = data.lineItems.filter(li => li.hudSection === "milestone" || (li as any).altaCategory === "milestone");
+
+  if (milestones.length > 0) {
+    sectionHeader(doc, "MILESTONE SCHEDULE");
+    tableRow(doc, [
+      { text: "Milestone", width: 200, bold: true },
+      { text: "Budget", width: 80, align: "right", bold: true },
+      { text: "Drawn", width: 80, align: "right", bold: true },
+      { text: "% Complete", width: 60, align: "right", bold: true },
+      { text: "Status", width: 60, bold: true },
+    ]);
+    drawLine(doc);
+    for (const ms of milestones) {
+      const meta = (ms as any).metadata || {};
+      const budgetAmt = parseAmt(ms.amount);
+      const drawnAmt = parseFloat((meta.drawnAmount || "0").toString().replace(/[,$\s]/g, "")) || 0;
+      const completionPct = parseInt(meta.completionPercent || "0") || 0;
+      const status = (meta.status || "pending").replace(/_/g, " ");
+      tableRow(doc, [
+        { text: ms.description || "", width: 200 },
+        { text: fmtCurrency(budgetAmt), width: 80, align: "right" },
+        { text: fmtCurrency(drawnAmt), width: 80, align: "right" },
+        { text: `${completionPct}%`, width: 60, align: "right" },
+        { text: status, width: 60 },
+      ]);
+    }
+    const totalBudget = milestones.reduce((s, ms) => s + parseAmt(ms.amount), 0);
+    const totalMsDrawn = milestones.reduce((s, ms) => {
+      const meta = (ms as any).metadata || {};
+      return s + (parseFloat((meta.drawnAmount || "0").toString().replace(/[,$\s]/g, "")) || 0);
+    }, 0);
+    drawLine(doc);
+    tableRow(doc, [
+      { text: "MILESTONE TOTALS:", width: 200, bold: true },
+      { text: fmtCurrency(totalBudget), width: 80, align: "right", bold: true },
+      { text: fmtCurrency(totalMsDrawn), width: 80, align: "right", bold: true },
+      { text: "", width: 60 },
+      { text: "", width: 60 },
+    ]);
+    doc.moveDown(0.5);
+  }
 
   sectionHeader(doc, "DRAW REQUESTS");
   tableRow(doc, [
@@ -1974,6 +2015,74 @@ function renderWires(doc: PDFKit.PDFDocument, data: ClosingData) {
   ]);
 }
 
+function renderREITContribution(doc: PDFKit.PDFDocument, data: ClosingData) {
+  checkPage(doc);
+  sectionHeader(doc, "REIT CONTRIBUTION STATEMENT");
+
+  const contributedAssets = data.lineItems.filter(li => li.hudSection === "contributed_assets");
+  const opUnits = data.lineItems.filter(li => li.hudSection === "op_units");
+  const assumedLiabilities = data.lineItems.filter(li => li.hudSection === "assumed_liabilities");
+  const cashConsideration = data.lineItems.filter(li => li.hudSection === "cash_consideration");
+  const closingAdj = data.lineItems.filter(li => li.hudSection === "closing_adjustments");
+
+  const sections = [
+    { label: "CONTRIBUTED ASSETS", items: contributedAssets },
+    { label: "OP UNITS ISSUED", items: opUnits },
+    { label: "ASSUMED LIABILITIES", items: assumedLiabilities },
+    { label: "CASH CONSIDERATION", items: cashConsideration },
+    { label: "CLOSING ADJUSTMENTS", items: closingAdj },
+  ];
+
+  for (const section of sections) {
+    checkPage(doc);
+    doc.fontSize(9).font("Helvetica-Bold").text(section.label, 50);
+    doc.moveDown(0.3);
+    tableRow(doc, [
+      { text: "Description", width: 280, bold: true },
+      { text: "Buyer", width: 90, align: "right", bold: true },
+      { text: "Seller", width: 90, align: "right", bold: true },
+    ]);
+    drawLine(doc);
+    let total = 0;
+    for (const li of section.items) {
+      const amt = parseAmt(li.amount);
+      total += amt;
+      tableRow(doc, [
+        { text: li.description || "", width: 280 },
+        { text: li.side === "buyer" || li.side === "source" ? fmtCurrency(amt) : "", width: 90, align: "right" },
+        { text: li.side === "seller" || li.side === "use" ? fmtCurrency(amt) : "", width: 90, align: "right" },
+      ]);
+    }
+    drawLine(doc);
+    tableRow(doc, [
+      { text: `TOTAL ${section.label}:`, width: 280, bold: true },
+      { text: fmtCurrency(total), width: 180, align: "right", bold: true },
+    ]);
+    doc.moveDown(0.5);
+  }
+
+  const totalAssets = contributedAssets.reduce((s, li) => s + parseAmt(li.amount), 0);
+  const totalConsideration = opUnits.reduce((s, li) => s + parseAmt(li.amount), 0)
+    + cashConsideration.reduce((s, li) => s + parseAmt(li.amount), 0);
+  const variance = totalAssets - totalConsideration;
+
+  checkPage(doc);
+  sectionHeader(doc, "CONTRIBUTION SUMMARY");
+  tableRow(doc, [
+    { text: "Total Contributed Assets:", width: 320, bold: true },
+    { text: fmtCurrency(totalAssets), width: 140, align: "right", bold: true },
+  ]);
+  tableRow(doc, [
+    { text: "Total Consideration (OP Units + Cash):", width: 320, bold: true },
+    { text: fmtCurrency(totalConsideration), width: 140, align: "right", bold: true },
+  ]);
+  drawLine(doc);
+  tableRow(doc, [
+    { text: "VARIANCE:", width: 320, bold: true },
+    { text: fmtCurrency(variance), width: 140, align: "right", bold: true },
+  ]);
+}
+
 export async function generateClosingStatementPDF(data: ClosingData): Promise<PDFKit.PDFDocument> {
   if (data.orgBranding?.logoUrl && !data.orgBranding.logoBuffer) {
     const buf = await fetchLogoBuffer(data.orgBranding.logoUrl);
@@ -2042,6 +2151,9 @@ export async function generateClosingStatementPDF(data: ClosingData): Promise<PD
       break;
     case "master_closing":
       renderMasterClosing(doc, data);
+      break;
+    case "reit_contribution":
+      renderREITContribution(doc, data);
       break;
     case "funds_flow":
       renderFundsFlow(doc, data);

@@ -13416,6 +13416,7 @@ export const closingTransactionTypeEnum = pgEnum("closing_transaction_type", [
   "portfolio_settlement",
   "ground_lease_closing",
   "master_closing",
+  "reit_contribution",
 ]);
 
 export const closingStatusEnum = pgEnum("closing_status", [

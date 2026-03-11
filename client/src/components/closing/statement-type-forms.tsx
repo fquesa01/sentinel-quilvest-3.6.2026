@@ -23,6 +23,7 @@ import {
   CreditCard,
   Percent,
   Scale,
+  Target,
 } from "lucide-react";
 
 interface ClosingData {
@@ -787,10 +788,22 @@ export function ConstructionDrawForm({ closing, lineItems, onAddItem }: Statemen
   const draws = lineItems.filter(li => li.hudSection === "draw" || li.altaCategory === "draw");
   const retainage = lineItems.filter(li => li.hudSection === "retainage" || li.altaCategory === "retainage");
   const changeOrders = lineItems.filter(li => li.hudSection === "change_order" || li.altaCategory === "change_order");
+  const milestones = lineItems.filter(li => li.hudSection === "milestone" || li.altaCategory === "milestone");
   const totalDrawn = sumItems(draws);
   const totalRetainage = sumItems(retainage);
+  const totalChangeOrders = sumItems(changeOrders);
   const loanAmt = parseFloat((closing.loanAmount || "0").replace(/[,$\s]/g, "")) || 0;
-  const remaining = loanAmt - totalDrawn;
+  const adjustedCommitment = loanAmt + totalChangeOrders;
+  const remaining = adjustedCommitment - totalDrawn;
+  const pctDrawn = adjustedCommitment > 0 ? Math.round((totalDrawn / adjustedCommitment) * 100) : 0;
+
+  const milestoneData = milestones.map(m => {
+    const meta = (m as any).metadata || {};
+    const budgetAmt = parseFloat((m.amount || "0").replace(/[,$\s]/g, "")) || 0;
+    const drawnAmt = parseFloat((meta.drawnAmount || "0").toString().replace(/[,$\s]/g, "")) || 0;
+    const completionPct = parseInt(meta.completionPercent || "0") || 0;
+    return { ...m, budgetAmt, drawnAmt, completionPct, status: meta.status || "pending" };
+  });
 
   return (
     <div className="space-y-6">
@@ -801,13 +814,17 @@ export function ConstructionDrawForm({ closing, lineItems, onAddItem }: Statemen
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div>
               <Label className="text-xs text-muted-foreground">Total Commitment</Label>
               <p className="text-sm font-mono font-bold" data-testid="text-draw-commitment">{formatCurrency(closing.loanAmount)}</p>
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">Total Drawn</Label>
+              <Label className="text-xs text-muted-foreground">Adjusted (w/ COs)</Label>
+              <p className="text-sm font-mono font-bold" data-testid="text-draw-adjusted">{formatCurrency(adjustedCommitment.toString())}</p>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Total Drawn ({pctDrawn}%)</Label>
               <p className="text-sm font-mono font-bold text-amber-500" data-testid="text-draw-total">{formatCurrency(totalDrawn.toString())}</p>
             </div>
             <div>
@@ -821,10 +838,55 @@ export function ConstructionDrawForm({ closing, lineItems, onAddItem }: Statemen
               </p>
             </div>
           </div>
+          <div className="mt-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs text-muted-foreground">Draw Progress</span>
+              <span className="text-xs font-mono font-medium">{pctDrawn}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all ${pctDrawn > 100 ? "bg-red-500" : pctDrawn > 75 ? "bg-amber-500" : "bg-green-500"}`}
+                style={{ width: `${Math.min(pctDrawn, 100)}%` }}
+                data-testid="progress-draw"
+              />
+            </div>
+          </div>
         </CardContent>
       </Card>
 
+      {milestoneData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Target className="h-4 w-4" /> Milestone Tracker
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {milestoneData.map((ms, idx) => (
+                <div key={ms.id || idx} className="flex items-center gap-3 text-sm" data-testid={`milestone-row-${idx}`}>
+                  <Badge variant={ms.status === "complete" ? "default" : ms.status === "in_progress" ? "secondary" : "outline"} className="text-xs shrink-0">
+                    {ms.status === "complete" ? "Done" : ms.status === "in_progress" ? "Active" : "Pending"}
+                  </Badge>
+                  <span className="flex-1 truncate">{ms.description || `Milestone ${idx + 1}`}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{ms.completionPct}%</span>
+                  <div className="w-20 bg-muted rounded-full h-1.5 shrink-0">
+                    <div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${Math.min(ms.completionPct, 100)}%` }} />
+                  </div>
+                  <span className="font-mono text-xs shrink-0">
+                    {formatCurrency(ms.drawnAmt.toString())} / {formatCurrency(ms.budgetAmt.toString())}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="space-y-4">
+        <SectionBlock title="Milestones" icon={<Target className="h-4 w-4 text-teal-500" />} items={milestones}
+          onAdd={() => onAddItem?.("milestone", { hudSection: "milestone", side: "source" })} />
+        <Separator />
         <SectionBlock title="Draw Requests" icon={<ArrowDownRight className="h-4 w-4 text-blue-500" />} items={draws}
           onAdd={() => onAddItem?.("draw", { hudSection: "draw", side: "use" })} />
         <Separator />
@@ -1220,6 +1282,8 @@ export function getStatementTypeForm(statementType: string): React.ComponentType
       return GroundLeaseForm;
     case "master_closing":
       return MasterClosingForm;
+    case "reit_contribution":
+      return REITContributionForm;
     case "funds_flow":
       return FundsFlowForm;
     case "1031_exchange":

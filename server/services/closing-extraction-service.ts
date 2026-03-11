@@ -83,6 +83,7 @@ Identify the statement type from these options:
 - investor_waterfall
 - ground_lease_closing
 - master_closing
+- reit_contribution
 - lender_funding
 - funds_flow
 - portfolio_settlement

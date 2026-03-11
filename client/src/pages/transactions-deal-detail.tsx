@@ -376,6 +376,7 @@ export default function TransactionsDealDetail() {
     portfolio_settlement: "Portfolio Settlement",
     ground_lease_closing: "Ground Lease Closing",
     master_closing: "Master Closing Statement",
+    reit_contribution: "REIT Contribution Statement",
   };
 
   const closingStatusLabels: Record<string, string> = {
