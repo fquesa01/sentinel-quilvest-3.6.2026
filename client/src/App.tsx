@@ -50,6 +50,7 @@ import TransactionsChecklistDetail from "@/pages/transactions-checklist-detail";
 import TransactionsDealChecklistDetail from "@/pages/transactions-deal-checklist-detail";
 import TransactionsDealTemplateDetail from "@/pages/transactions-deal-template-detail";
 import TransactionsDealTerms from "@/pages/transactions-deal-terms";
+import ClosingDetail from "@/pages/closing-detail";
 import TransactionsDocumentSearch from "@/pages/transactions-document-search";
 import TransactionsTemplates from "@/pages/transactions-templates";
 import TransactionsDiligence from "@/pages/transactions-diligence";
@@ -137,6 +138,7 @@ function AuthenticatedApp() {
               <Route path="/transactions/deals" component={TransactionsDeals} />
               <Route path="/transactions/deals/:id" component={TransactionsDealDetail} />
               <Route path="/transactions/deals/:id/terms" component={TransactionsDealTerms} />
+              <Route path="/transactions/closings/:id" component={ClosingDetail} />
               <Route path="/transactions/diligence" component={TransactionsDiligence} />
               <Route path="/transactions/request-lists" component={TransactionsRequestLists} />
               <Route path="/transactions/request-lists/:id" component={TransactionsRequestListDetail} />

@@ -2205,6 +2205,7 @@ export default function TransactionsDealDetail() {
                       <div
                         key={closing.id}
                         className="flex items-center justify-between gap-4 p-4 border rounded-md hover-elevate cursor-pointer"
+                        onClick={() => setLocation(`/transactions/closings/${closing.id}`)}
                         data-testid={`card-closing-${closing.id}`}
                       >
                         <div className="flex-1 min-w-0">
