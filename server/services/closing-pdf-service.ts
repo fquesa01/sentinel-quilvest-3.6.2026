@@ -1,5 +1,7 @@
 import PDFDocument from "pdfkit";
 import { format } from "date-fns";
+import https from "https";
+import http from "http";
 
 interface OrgBranding {
   firmName?: string;
@@ -8,6 +10,7 @@ interface OrgBranding {
   firmEmail?: string;
   firmWebsite?: string;
   logoUrl?: string;
+  logoBuffer?: Buffer;
 }
 
 interface ClosingData {
@@ -80,6 +83,50 @@ function fmtCurrency(val: number): string {
 function fmtDate(val: string | null | undefined): string {
   if (!val) return "";
   try { return format(new Date(val), "MM/dd/yyyy"); } catch { return val; }
+}
+
+async function fetchLogoBuffer(url: string): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    const fetcher = url.startsWith("https") ? https : http;
+    const req = fetcher.get(url, { timeout: 5000 }, (res) => {
+      if (res.statusCode !== 200) { resolve(null); return; }
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+      res.on("error", () => resolve(null));
+    });
+    req.on("error", () => resolve(null));
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+  });
+}
+
+function renderLogo(doc: PDFKit.PDFDocument, data: ClosingData, x: number, y: number, maxW: number, maxH: number): number {
+  const logo = data.orgBranding?.logoBuffer;
+  if (!logo || logo.length === 0) return 0;
+  try {
+    doc.image(logo, x, y, { fit: [maxW, maxH] });
+    return maxH + 4;
+  } catch {
+    return 0;
+  }
+}
+
+function renderOfficialFormHeader(doc: PDFKit.PDFDocument, data: ClosingData) {
+  const firmName = getFirmName(data);
+  const address = getOrgAddress(data);
+  const contact = getOrgContact(data);
+  const startY = doc.y;
+  const logoHeight = renderLogo(doc, data, doc.page.width - 50 - 60, 50, 60, 30);
+  doc.fontSize(7).font("Helvetica").fillColor("#666666");
+  doc.text(firmName, 50, 50, { width: 200 });
+  if (address) doc.text(address, 50, doc.y, { width: 200 });
+  const contactParts = [contact.phone, contact.email].filter(Boolean);
+  if (contactParts.length > 0) doc.text(contactParts.join(" | "), 50, doc.y, { width: 200 });
+  doc.fillColor("#000000");
+  const headerEnd = Math.max(doc.y, 50 + logoHeight);
+  doc.y = headerEnd + 2;
+  drawLine(doc);
+  doc.y += 4;
 }
 
 function getFirmName(data: ClosingData): string {
@@ -167,19 +214,28 @@ function renderFirmBranding(doc: PDFKit.PDFDocument, data: ClosingData) {
   const firmName = getFirmName(data);
   const address = getOrgAddress(data);
   const contact = getOrgContact(data);
+  const hasLogo = data.orgBranding?.logoBuffer && data.orgBranding.logoBuffer.length > 0;
 
-  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 40, "#1a365d");
+  const brandingHeight = hasLogo ? 60 : 40;
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, brandingHeight, "#1a365d");
   const brandY = doc.y;
-  doc.fontSize(14).font("Helvetica-Bold").fillColor("#ffffff").text(firmName.toUpperCase(), 50, brandY + 5, { align: "center", width: doc.page.width - 100 });
+
+  if (hasLogo) {
+    renderLogo(doc, data, 60, brandY + 5, 50, 50);
+  }
+
+  const textX = hasLogo ? 120 : 50;
+  const textW = hasLogo ? doc.page.width - 170 : doc.page.width - 100;
+  doc.fontSize(14).font("Helvetica-Bold").fillColor("#ffffff").text(firmName.toUpperCase(), textX, brandY + (hasLogo ? 8 : 5), { align: hasLogo ? "left" : "center", width: textW });
   if (address) {
-    doc.fontSize(8).font("Helvetica").text(address, 50, brandY + 22, { align: "center", width: doc.page.width - 100 });
+    doc.fontSize(8).font("Helvetica").text(address, textX, brandY + (hasLogo ? 25 : 22), { align: hasLogo ? "left" : "center", width: textW });
   }
   const contactParts = [contact.phone, contact.email, contact.website].filter(Boolean);
   if (contactParts.length > 0) {
-    doc.fontSize(7).text(contactParts.join(" | "), 50, brandY + 31, { align: "center", width: doc.page.width - 100 });
+    doc.fontSize(7).text(contactParts.join(" | "), textX, brandY + (hasLogo ? 36 : 31), { align: hasLogo ? "left" : "center", width: textW });
   }
   doc.fillColor("#000000");
-  doc.y = brandY + 44;
+  doc.y = brandY + brandingHeight + 4;
 }
 
 function renderCoverPage(doc: PDFKit.PDFDocument, data: ClosingData) {
@@ -344,11 +400,13 @@ function renderHud1Sections(doc: PDFKit.PDFDocument, data: ClosingData, firstPag
   const lender = data.parties.find(p => p.role === "lender");
 
   if (!firstPage) doc.addPage();
-  drawBoxFill(doc, 50, 45, doc.page.width - 100, 24, "#1a365d");
+  renderOfficialFormHeader(doc, data);
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 24, "#1a365d");
+  const hudTitleY = doc.y;
   doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff")
-    .text("U.S. DEPARTMENT OF HOUSING AND URBAN DEVELOPMENT", 50, 49, { align: "center", width: doc.page.width - 100 });
+    .text("U.S. DEPARTMENT OF HOUSING AND URBAN DEVELOPMENT", 50, hudTitleY + 3, { align: "center", width: doc.page.width - 100 });
   doc.fillColor("#000000");
-  doc.y = 72;
+  doc.y = hudTitleY + 27;
   doc.fontSize(14).font("Helvetica-Bold").text("SETTLEMENT STATEMENT (HUD-1)", { align: "center" });
   doc.moveDown(0.2);
   doc.fontSize(7).font("Helvetica").fillColor("#666666")
@@ -486,11 +544,13 @@ function renderHud1aSections(doc: PDFKit.PDFDocument, data: ClosingData, firstPa
   const lender = data.parties.find(p => p.role === "lender");
 
   if (!firstPage) doc.addPage();
-  drawBoxFill(doc, 50, 45, doc.page.width - 100, 24, "#1a365d");
+  renderOfficialFormHeader(doc, data);
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 24, "#1a365d");
+  const hud1aTitleY = doc.y;
   doc.fontSize(10).font("Helvetica-Bold").fillColor("#ffffff")
-    .text("U.S. DEPARTMENT OF HOUSING AND URBAN DEVELOPMENT", 50, 49, { align: "center", width: doc.page.width - 100 });
+    .text("U.S. DEPARTMENT OF HOUSING AND URBAN DEVELOPMENT", 50, hud1aTitleY + 3, { align: "center", width: doc.page.width - 100 });
   doc.fillColor("#000000");
-  doc.y = 72;
+  doc.y = hud1aTitleY + 27;
   doc.fontSize(14).font("Helvetica-Bold").text("SETTLEMENT STATEMENT (HUD-1A)", { align: "center" });
   doc.moveDown(0.2);
   doc.fontSize(7).font("Helvetica").fillColor("#666666")
@@ -667,6 +727,7 @@ function renderCDSections(doc: PDFKit.PDFDocument, data: ClosingData, firstPage 
   const firmName = getFirmName(data);
 
   if (!firstPage) doc.addPage();
+  renderOfficialFormHeader(doc, data);
   renderCDPage1(doc, data);
 
   drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 14, "#e8edf3");
@@ -1486,7 +1547,12 @@ function renderWires(doc: PDFKit.PDFDocument, data: ClosingData) {
   ]);
 }
 
-export function generateClosingStatementPDF(data: ClosingData): PDFKit.PDFDocument {
+export async function generateClosingStatementPDF(data: ClosingData): Promise<PDFKit.PDFDocument> {
+  if (data.orgBranding?.logoUrl && !data.orgBranding.logoBuffer) {
+    const buf = await fetchLogoBuffer(data.orgBranding.logoUrl);
+    if (buf) data.orgBranding.logoBuffer = buf;
+  }
+
   const doc = new PDFDocument({
     size: "LETTER",
     margins: { top: 50, bottom: 50, left: 50, right: 50 },

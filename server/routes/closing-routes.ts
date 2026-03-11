@@ -843,7 +843,7 @@ router.get("/closings/:id/pdf", async (req: any, res) => {
       orgBranding,
     };
 
-    const doc = generateClosingStatementPDF(pdfData);
+    const doc = await generateClosingStatementPDF(pdfData);
 
     const filename = `${(closing.title || "Closing-Statement").replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-")}-${closingId.slice(0, 8)}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
@@ -913,7 +913,7 @@ router.post("/closings/:id/save-to-data-room", async (req: any, res) => {
       logoUrl: drOrgSettings.logoUrl || undefined,
     } : undefined;
 
-    const pdfDoc = generateClosingStatementPDF({
+    const pdfDoc = await generateClosingStatementPDF({
       closing,
       lineItems,
       parties,
