@@ -43,6 +43,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   psa: {
     name: "Purchase and Sale Agreement",
     category: "closing",
+    roles: ["buyer", "seller"],
     dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
     sections: [
       "Recitals",
@@ -65,6 +66,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   amendment: {
     name: "Amendment to Purchase and Sale Agreement",
     category: "closing",
+    roles: ["buyer", "seller"],
     dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
     sections: [
       "Recitals",
@@ -76,6 +78,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   assignment: {
     name: "Assignment of Purchase and Sale Agreement",
     category: "closing",
+    roles: ["buyer"],
     dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
     sections: [
       "Recitals",
@@ -130,6 +133,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   assignment_of_leases: {
     name: "Assignment and Assumption of Leases",
     category: "closing",
+    roles: ["buyer", "seller"],
     dealTypes: [...RE_DEAL_TYPES, ...LEASE_DEAL_TYPES],
     sections: [
       "Recitals",
@@ -143,6 +147,8 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   closing_certificate: {
     name: "Closing Certificate",
     category: "closing",
+    roles: ["buyer", "seller"],
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
     sections: [
       "Recitals",
       "Representations and Warranties",
@@ -221,6 +227,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   loan_agreement: {
     name: "Loan Agreement",
     category: "lending",
+    roles: ["lender", "borrower"],
     dealTypes: [...LENDING_DEAL_TYPES],
     sections: [
       "Recitals",
@@ -255,6 +262,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   mortgage_deed_of_trust: {
     name: "Mortgage / Deed of Trust",
     category: "lending",
+    roles: ["lender", "borrower"],
     dealTypes: [...LENDING_DEAL_TYPES],
     sections: [
       "Parties",
@@ -318,6 +326,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   snda: {
     name: "Subordination, Non-Disturbance and Attornment Agreement",
     category: "lending",
+    roles: ["lender", "borrower"],
     dealTypes: [...LENDING_DEAL_TYPES, ...LEASE_DEAL_TYPES],
     sections: [
       "Recitals",
@@ -367,7 +376,8 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   operating_agreement: {
     name: "Operating Agreement (LLC)",
     category: "investment",
-    dealTypes: [...INVESTMENT_DEAL_TYPES, "joint_venture"],
+    roles: ["investor", "investee"],
+    dealTypes: [...INVESTMENT_DEAL_TYPES, "jv"],
     sections: [
       "Formation",
       "Members and Interests",
@@ -391,9 +401,26 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
       "Execution"
     ]
   },
+  assignment_assumption_agreement: {
+    name: "Assignment and Assumption Agreement",
+    category: "closing",
+    roles: ["buyer"],
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
+    sections: [
+      "Recitals",
+      "Assignment of Rights",
+      "Assumption of Obligations",
+      "Assumed Liabilities",
+      "Excluded Liabilities",
+      "Representations and Warranties",
+      "Indemnification",
+      "Execution"
+    ]
+  },
   estoppel_certificate: {
     name: "Estoppel Certificate",
     category: "closing",
+    roles: ["buyer", "lender"],
     dealTypes: [...RE_DEAL_TYPES, ...LEASE_DEAL_TYPES],
     sections: [
       "Tenant/Landlord Information",
@@ -408,6 +435,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   lease_agreement: {
     name: "Commercial Lease Agreement",
     category: "closing",
+    roles: ["buyer", "seller"],
     dealTypes: [...LEASE_DEAL_TYPES, ...RE_DEAL_TYPES],
     sections: [
       "Parties",
@@ -441,6 +469,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   closing_statement: {
     name: "Closing Statement / Settlement Statement",
     category: "closing",
+    roles: ["buyer", "seller"],
     dealTypes: [...RE_DEAL_TYPES],
     sections: [
       "Transaction Summary",
@@ -663,6 +692,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   cap_table_update: {
     name: "Capitalization Table Summary",
     category: "investment",
+    roles: ["investor", "investee"],
     dealTypes: [...INVESTMENT_DEAL_TYPES],
     sections: [
       "Pre-Transaction Cap Table",
@@ -722,7 +752,8 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   reps_warranties_certificate: {
     name: "Representations and Warranties Certificate",
     category: "closing",
-    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES],
+    roles: ["buyer", "seller", "lender", "borrower"],
+    dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES, ...LENDING_DEAL_TYPES],
     sections: [
       "Recitals",
       "Reaffirmation of Representations",
@@ -735,6 +766,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   bring_down_certificate: {
     name: "Bring-Down Certificate",
     category: "closing",
+    roles: ["buyer", "seller", "lender", "borrower"],
     dealTypes: [...RE_DEAL_TYPES, ...MA_DEAL_TYPES, ...LENDING_DEAL_TYPES],
     sections: [
       "Recitals",
