@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams, Link } from "wouter";
+import { ClosingDocumentsTab } from "@/components/closing-documents-tab";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1119,6 +1120,7 @@ export default function TransactionsDealDetail() {
                 <SelectItem value="checklists">Checklists</SelectItem>
                 <SelectItem value="issues">Issues</SelectItem>
                 <SelectItem value="research">Research</SelectItem>
+                <SelectItem value="closing-docs">Closing Docs</SelectItem>
                 <SelectItem value="closing">Closing</SelectItem>
                 <SelectItem value="reports">Reports</SelectItem>
               </SelectContent>
@@ -1135,6 +1137,7 @@ export default function TransactionsDealDetail() {
             <TabsTrigger value="checklists" className="flex-shrink-0" data-testid="tab-checklists">Checklists</TabsTrigger>
             <TabsTrigger value="issues" className="flex-shrink-0" data-testid="tab-issues">Issues</TabsTrigger>
             <TabsTrigger value="research" className="flex-shrink-0" data-testid="tab-research">Research</TabsTrigger>
+            <TabsTrigger value="closing-docs" className="flex-shrink-0" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
             <TabsTrigger value="closing" className="flex-shrink-0" data-testid="tab-closing">Closing</TabsTrigger>
             <TabsTrigger value="reports" className="flex-shrink-0" data-testid="tab-reports">Reports</TabsTrigger>
           </TabsList>
@@ -2284,6 +2287,10 @@ export default function TransactionsDealDetail() {
 
           <TabsContent value="research" className="mt-6">
             <BackgroundResearchTab dealId={id!} />
+          </TabsContent>
+
+          <TabsContent value="closing-docs" className="mt-6">
+            <ClosingDocumentsTab dealId={id!} />
           </TabsContent>
 
           <TabsContent value="closing" className="mt-6 space-y-6">

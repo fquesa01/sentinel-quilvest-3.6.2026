@@ -64,6 +64,7 @@ import ddBooleanSearchRoutes from "./routes/dd-boolean-search-routes";
 import calendarOAuthRouter from "./routes/calendar-oauth";
 import { registerRelationshipIntelligenceRoutes } from "./routes/relationship-intelligence";
 import { registerClosingRoutes } from "./routes/closing-routes";
+import { registerClosingDocumentsRoutes } from "./routes/closing-documents-routes";
 
 // Helper to extract email from various formats (e.g., "John Doe <john@example.com>" -> "john@example.com")
 function extractEmail(input: string): string | null {
@@ -316,6 +317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerChecklistRoutes(app);
   registerRelationshipIntelligenceRoutes(app);
   registerClosingRoutes(app);
+  registerClosingDocumentsRoutes(app);
 
   // Investor memo engine routes
   app.use(investorMemoRouter);

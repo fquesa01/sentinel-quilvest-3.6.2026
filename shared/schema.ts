@@ -13752,3 +13752,53 @@ export const insertOrganizationSettingsSchema = createInsertSchema(organizationS
 });
 export type InsertOrganizationSettings = z.infer<typeof insertOrganizationSettingsSchema>;
 export type OrganizationSettings = typeof organizationSettings.$inferSelect;
+
+export const closingDocumentStatusEnum = pgEnum("closing_document_status", [
+  "draft", "review", "approved", "executed", "superseded"
+]);
+
+export const closingDocumentSourceEnum = pgEnum("closing_document_source", [
+  "ai_generated", "manual_edit", "voice_edit", "uploaded", "restored"
+]);
+
+export const closingDocuments = pgTable("closing_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").notNull().references(() => deals.id, { onDelete: "cascade" }),
+  documentType: varchar("document_type", { length: 100 }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  content: text("content").notNull().default(""),
+  status: closingDocumentStatusEnum("status").notNull().default("draft"),
+  representationRole: varchar("representation_role", { length: 50 }),
+  generatedFromTerms: boolean("generated_from_terms").default(false),
+  currentVersion: integer("current_version").notNull().default(1),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertClosingDocumentSchema = createInsertSchema(closingDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertClosingDocument = z.infer<typeof insertClosingDocumentSchema>;
+export type ClosingDocument = typeof closingDocuments.$inferSelect;
+
+export const closingDocumentVersions = pgTable("closing_document_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  closingDocumentId: varchar("closing_document_id").notNull().references(() => closingDocuments.id, { onDelete: "cascade" }),
+  versionNumber: integer("version_number").notNull(),
+  content: text("content").notNull(),
+  changeDescription: varchar("change_description", { length: 1000 }),
+  changedBy: varchar("changed_by"),
+  source: closingDocumentSourceEnum("source").notNull().default("manual_edit"),
+  fileUrl: text("file_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertClosingDocumentVersionSchema = createInsertSchema(closingDocumentVersions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertClosingDocumentVersion = z.infer<typeof insertClosingDocumentVersionSchema>;
+export type ClosingDocumentVersion = typeof closingDocumentVersions.$inferSelect;
