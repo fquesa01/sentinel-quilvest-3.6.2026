@@ -10,6 +10,8 @@ import {
   getDocumentVersions,
   exportDocumentToDocx,
   importDocxContent,
+  getDocumentTypesForDeal,
+  DOCUMENT_DISPLAY_NAMES,
 } from "../services/closing-document-service";
 import multer from "multer";
 
@@ -46,6 +48,28 @@ router.get("/api/deals/:dealId/closing-documents", isAuthenticated, async (req: 
     res.json(docsWithVersionCount);
   } catch (error: any) {
     console.error("Error fetching closing documents:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/api/deals/:dealId/closing-documents/expected-types", isAuthenticated, async (req: any, res) => {
+  try {
+    const { dealId } = req.params;
+    const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, dealId));
+    if (!deal) return res.status(404).json({ error: "Deal not found" });
+
+    const dealType = deal.dealType || "real_estate";
+    const role = deal.representationRole || undefined;
+    const docTypes = getDocumentTypesForDeal(dealType, role);
+
+    const expectedTypes = docTypes.map(dt => ({
+      documentType: dt,
+      title: DOCUMENT_DISPLAY_NAMES[dt] || dt.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+    }));
+
+    res.json({ expectedTypes, dealType, representationRole: role || null });
+  } catch (error: any) {
+    console.error("Error fetching expected types:", error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -60,6 +60,8 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
   const [aiInstruction, setAiInstruction] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [generationErrors, setGenerationErrors] = useState<string[]>([]);
+  const [showErrors, setShowErrors] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
@@ -71,6 +73,21 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
       return res.json();
     },
   });
+
+  const { data: expectedData } = useQuery<{ expectedTypes: { documentType: string; title: string }[]; dealType: string; representationRole: string | null }>({
+    queryKey: ["/api/deals", dealId, "closing-documents", "expected-types"],
+    queryFn: async () => {
+      const res = await fetch(`/api/deals/${dealId}/closing-documents/expected-types`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const expectedTypes = expectedData?.expectedTypes || [];
+  const generatedTypeSet = new Set(documents.map((d: any) => d.documentType));
+  const ungeneratedTypes = expectedTypes.filter(et => !generatedTypeSet.has(et.documentType));
+  const hasAnyDocs = documents.length > 0;
+  const allGenerated = ungeneratedTypes.length === 0 && expectedTypes.length > 0;
 
   const selectedDoc = documents.find((d: any) => d.id === selectedDocId);
 
@@ -101,13 +118,27 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents"] });
+      const created = data.documents?.length || 0;
+      const errors = data.errors || [];
+      if (errors.length > 0) {
+        setGenerationErrors(errors);
+        setShowErrors(true);
+      } else {
+        setGenerationErrors([]);
+        setShowErrors(false);
+      }
       toast({
-        title: "Documents Generated",
-        description: `${data.documents?.length || 0} closing documents created.${data.errors?.length ? ` ${data.errors.length} errors occurred.` : ""}`,
+        title: created > 0 ? "Documents Generated" : "Generation Issue",
+        description: created > 0
+          ? `${created} closing document${created !== 1 ? "s" : ""} created successfully.${errors.length > 0 ? ` ${errors.length} could not be generated — see details below.` : ""}`
+          : errors.length > 0
+            ? `No documents were generated. ${errors.length} error${errors.length !== 1 ? "s" : ""} occurred — see details below.`
+            : "All documents already exist for this deal.",
+        variant: errors.length > 0 && created === 0 ? "destructive" : undefined,
       });
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Generation Failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -490,8 +521,49 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
     );
   }
 
+  const generatedCount = documents.length;
+  const totalExpected = expectedTypes.length;
+  const pendingCount = ungeneratedTypes.length;
+
   return (
     <div className="space-y-4">
+      {showErrors && generationErrors.length > 0 && (
+        <Card className="border-destructive/50">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <CardTitle className="text-sm flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                {generationErrors.length} Document{generationErrors.length !== 1 ? "s" : ""} Could Not Be Generated
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowErrors(false)} data-testid="button-dismiss-errors">
+                Dismiss
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1.5">
+              {generationErrors.map((err, i) => (
+                <p key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-destructive flex-shrink-0" />
+                  <span>{err}</span>
+                </p>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => { setGenerationErrors([]); setShowErrors(false); autoGenMutation.mutate(); }}
+              disabled={autoGenMutation.isPending}
+              data-testid="button-retry-generation"
+            >
+              {autoGenMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RotateCcw className="h-4 w-4 mr-1" />}
+              Retry Failed Documents
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -500,16 +572,32 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
                 <FileText className="h-5 w-5" />
                 Closing Documents
               </CardTitle>
-              <CardDescription>Auto-generated legal documents for this deal, with AI editing and version tracking</CardDescription>
+              <CardDescription>
+                {totalExpected > 0 ? (
+                  <>
+                    {generatedCount} of {totalExpected} documents generated
+                    {expectedData?.dealType && (
+                      <span className="ml-1">
+                        for {expectedData.dealType.replace(/_/g, " ")} deal
+                        {expectedData.representationRole ? ` (representing ${expectedData.representationRole})` : ""}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  "Auto-generated legal documents for this deal, with AI editing and version tracking"
+                )}
+              </CardDescription>
             </div>
-            <Button
-              onClick={() => autoGenMutation.mutate()}
-              disabled={autoGenMutation.isPending}
-              data-testid="button-auto-generate-docs"
-            >
-              {autoGenMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-              {autoGenMutation.isPending ? "Generating..." : "Auto-Generate Documents"}
-            </Button>
+            {!allGenerated && (
+              <Button
+                onClick={() => autoGenMutation.mutate()}
+                disabled={autoGenMutation.isPending}
+                data-testid="button-auto-generate-docs"
+              >
+                {autoGenMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                {autoGenMutation.isPending ? "Generating..." : hasAnyDocs ? `Generate Remaining (${pendingCount})` : "Auto-Generate Documents"}
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -517,16 +605,6 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin mr-2" />
               <span className="text-muted-foreground">Loading documents...</span>
-            </div>
-          ) : documents.length === 0 ? (
-            <div className="text-center py-12 space-y-3">
-              <FileText className="h-12 w-12 mx-auto text-muted-foreground/50" />
-              <div>
-                <p className="text-muted-foreground font-medium">No closing documents yet</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Click "Auto-Generate Documents" to create a complete set of closing documents based on this deal's type and terms.
-                </p>
-              </div>
             </div>
           ) : (
             <div className="space-y-2">
@@ -581,6 +659,32 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
                   </AlertDialog>
                 </div>
               ))}
+
+              {ungeneratedTypes.map((et) => (
+                <div
+                  key={`pending-${et.documentType}`}
+                  className="flex items-center gap-3 p-3 rounded-md border border-dashed opacity-70"
+                  data-testid={`closing-doc-pending-${et.documentType}`}
+                >
+                  <FileText className="h-5 w-5 text-muted-foreground/50 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate text-muted-foreground">{et.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Awaiting generation
+                    </p>
+                  </div>
+                  <Badge variant="secondary" className="flex-shrink-0 text-muted-foreground">
+                    Not Generated
+                  </Badge>
+                </div>
+              ))}
+
+              {expectedTypes.length === 0 && documents.length === 0 && (
+                <div className="text-center py-8 space-y-3">
+                  <FileText className="h-10 w-10 mx-auto text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">Loading expected document types...</p>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

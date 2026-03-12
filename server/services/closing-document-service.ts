@@ -36,7 +36,7 @@ const DOCUMENT_TEMPLATES_BY_TYPE: Record<string, { types: string[]; forRole?: st
   ],
 };
 
-const DOCUMENT_DISPLAY_NAMES: Record<string, string> = {
+export const DOCUMENT_DISPLAY_NAMES: Record<string, string> = {
   closing_disclosure: "Closing Disclosure (HUD-1)",
   deed: "Warranty Deed",
   bill_of_sale: "Bill of Sale",
@@ -61,7 +61,7 @@ const DOCUMENT_DISPLAY_NAMES: Record<string, string> = {
   officers_certificate: "Officer's Certificate",
 };
 
-function getDocumentTypesForDeal(dealType: string, role?: string): string[] {
+export function getDocumentTypesForDeal(dealType: string, role?: string): string[] {
   const normalizedType = dealType?.replace(/-/g, "_") || "real_estate";
   const configs = DOCUMENT_TEMPLATES_BY_TYPE[normalizedType] || DOCUMENT_TEMPLATES_BY_TYPE["real_estate"];
   const types: string[] = [];
