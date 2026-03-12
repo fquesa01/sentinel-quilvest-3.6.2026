@@ -62,7 +62,7 @@ export function RichTextEditor({ content, onChange, editable = true, className }
     },
     editorProps: {
       attributes: {
-        class: "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-8 py-6 text-foreground dark:text-white [&_p]:text-foreground dark:[&_p]:text-white [&_li]:text-foreground dark:[&_li]:text-white [&_h1]:text-foreground dark:[&_h1]:text-white [&_h2]:text-foreground dark:[&_h2]:text-white [&_h3]:text-foreground dark:[&_h3]:text-white",
+        class: "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-8 py-6 dark:text-white dark:[&_*]:text-white dark:[&_strong]:text-white dark:[&_em]:text-white dark:[&_u]:text-white dark:[&_a]:text-white",
       },
     },
   });
