@@ -202,6 +202,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   llc_affidavit: {
     name: "LLC / Entity Authority Affidavit",
     category: "corporate",
+    roles: ["buyer", "seller", "lender", "borrower", "investor", "investee"],
     sections: [
       "Entity Information",
       "Formation and Good Standing",
@@ -215,6 +216,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   corporate_resolution: {
     name: "Corporate Resolution / Consent",
     category: "corporate",
+    roles: ["buyer", "seller", "lender", "borrower", "investor", "investee"],
     sections: [
       "Corporation Information",
       "Board or Shareholder Action",
@@ -392,6 +394,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   board_resolution: {
     name: "Board Resolution",
     category: "corporate",
+    roles: ["buyer", "seller", "lender", "borrower", "investor", "investee"],
     sections: [
       "Corporation Information",
       "Meeting or Written Consent",
@@ -454,6 +457,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   letter_of_intent: {
     name: "Letter of Intent",
     category: "general",
+    roles: ["buyer", "seller", "lender", "borrower", "investor", "investee"],
     sections: [
       "Parties",
       "Transaction Overview",
@@ -706,6 +710,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   indemnification_agreement: {
     name: "Indemnification Agreement",
     category: "general",
+    roles: ["buyer", "seller", "lender", "borrower", "investor", "investee"],
     sections: [
       "Recitals",
       "Definitions",
@@ -720,6 +725,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   confidentiality_agreement: {
     name: "Confidentiality / NDA",
     category: "general",
+    roles: ["buyer", "seller", "lender", "borrower", "investor", "investee"],
     sections: [
       "Parties",
       "Definition of Confidential Information",
@@ -780,6 +786,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   organizational_documents: {
     name: "Organizational Documents Package",
     category: "corporate",
+    roles: ["buyer", "seller", "lender", "borrower", "investor", "investee"],
     sections: [
       "Certificate of Formation / Incorporation",
       "Operating Agreement / Bylaws",
