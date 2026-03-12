@@ -20,9 +20,13 @@ const DEAL_TYPE_MAP: Record<string, string> = {
 };
 
 const TEMPLATE_SLUG_MAP: Record<string, string> = {
-  debt: "debt",
-  equity: "equity",
-  real_estate: "real_estate",
+  debt: "pe-debt-due-diligence",
+  equity: "pe-equity-due-diligence",
+  real_estate: "real-estate-purchase-sale",
+  residential_financed: "residential-purchase-financed",
+  residential_cash: "residential-purchase-cash",
+  refinance: "residential-refinance",
+  new_construction: "residential-new-construction",
 };
 
 export async function processDealDocumentIntelligence(documentId: string): Promise<void> {
@@ -125,6 +129,19 @@ ${textSnippet}`
   } catch (error: any) {
     console.error(`[DealIntel] Classification error:`, error.message);
   }
+}
+
+export async function autoCompleteChecklistItemsForDeal(dealId: string): Promise<void> {
+  const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
+  if (!deal) return;
+  const docs = await db.select()
+    .from(dataRoomDocuments)
+    .innerJoin(dataRooms, eq(dataRoomDocuments.dataRoomId, dataRooms.id))
+    .where(and(eq(dataRooms.dealId, dealId), eq(dataRoomDocuments.ocrStatus, "completed")));
+  for (const row of docs) {
+    await autoCompleteChecklistItems(deal, row.data_room_documents);
+  }
+  console.log(`[DealIntel] Auto-sorted ${docs.length} documents into checklists for deal ${dealId}`);
 }
 
 async function autoCompleteChecklistItems(
@@ -367,6 +384,13 @@ export async function applyDetectedDealType(dealId: string): Promise<{ success: 
 
         templateApplied = true;
         console.log(`[DealIntel] Applied template "${template.name}" to deal ${dealId}`);
+
+        // Auto-sort existing documents into the new checklist items
+        try {
+          await autoCompleteChecklistItemsForDeal(dealId);
+        } catch (sortError: any) {
+          console.error(`[DealIntel] Auto-sort error:`, sortError.message);
+        }
       }
     }
   }

@@ -13887,6 +13887,14 @@ Guidelines:
       await storage.updateDealTemplate(templateId, { 
         usageCount: (templateData.template.usageCount || 0) + 1 
       });
+
+      // Auto-sort existing documents into the new checklist items
+      try {
+        const { autoCompleteChecklistItemsForDeal } = await import("./services/deal-intelligence-service");
+        autoCompleteChecklistItemsForDeal(dealId).catch((err: any) => {
+          console.error("[Routes] Auto-sort after template apply error:", err.message);
+        });
+      } catch (_) {}
       
       res.status(201).json({ 
         checklist, 

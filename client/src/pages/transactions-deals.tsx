@@ -213,6 +213,7 @@ export default function TransactionsDeals() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/deals"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/transactions/dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/data-rooms"] });
       setIsCreateDialogOpen(false);
       setNewDeal({
         title: "",

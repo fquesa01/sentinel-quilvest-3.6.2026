@@ -208,7 +208,6 @@ export default function TransactionsDealDetail() {
   // Milestone dialog states
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<DealMilestone | null>(null);
-  const [isCreateDataRoomOpen, setIsCreateDataRoomOpen] = useState(false);
   const [milestoneForm, setMilestoneForm] = useState({
     title: "",
     description: "",
@@ -773,7 +772,6 @@ export default function TransactionsDealDetail() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/data-rooms"] });
-      setIsCreateDataRoomOpen(false);
       toast({
         title: "Data room created",
         description: "The virtual data room has been created successfully.",
@@ -2038,21 +2036,22 @@ export default function TransactionsDealDetail() {
               <CardHeader>
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-lg">Data Rooms</CardTitle>
-                  <Button size="sm" onClick={() => setIsCreateDataRoomOpen(true)} data-testid="button-create-data-room">
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Data Room
-                  </Button>
+                  {dataRooms.length > 0 && (
+                    <Button size="sm" onClick={() => {
+                      const autoName = `${deal.title} - Data Room ${dataRooms.length + 1}`;
+                      createDataRoomMutation.mutate({ name: autoName });
+                    }} data-testid="button-create-data-room">
+                      <Plus className="h-4 w-4 mr-2" />
+                      New Data Room
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
                 {dataRooms.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <FolderOpen className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                    <p>No data rooms for this deal</p>
-                    <Button variant="outline" size="sm" className="mt-3" onClick={() => setIsCreateDataRoomOpen(true)}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create First Data Room
-                    </Button>
+                    <p>Setting up data room...</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -2761,56 +2760,6 @@ export default function TransactionsDealDetail() {
           </DialogContent>
         </Dialog>
 
-        {/* Create Data Room Dialog */}
-        <Dialog open={isCreateDataRoomOpen} onOpenChange={setIsCreateDataRoomOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Create Data Room</DialogTitle>
-              <DialogDescription>
-                Create a new virtual data room for this deal.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.currentTarget);
-              createDataRoomMutation.mutate({
-                name: formData.get("name") as string,
-                description: formData.get("description") as string,
-              });
-            }}>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="room-name">Name *</Label>
-                  <Input
-                    id="room-name"
-                    name="name"
-                    placeholder="e.g., Project Alpha Data Room"
-                    required
-                    data-testid="input-dataroom-name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="room-description">Description</Label>
-                  <Textarea
-                    id="room-description"
-                    name="description"
-                    placeholder="Optional description..."
-                    rows={3}
-                    data-testid="input-dataroom-description"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsCreateDataRoomOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createDataRoomMutation.isPending} data-testid="button-create-dataroom-submit">
-                  {createDataRoomMutation.isPending ? "Creating..." : "Create Data Room"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
 
         {/* Milestone Dialog */}
         <Dialog open={milestoneDialogOpen} onOpenChange={(open) => { if (!open) closeMilestoneDialog(); }}>
