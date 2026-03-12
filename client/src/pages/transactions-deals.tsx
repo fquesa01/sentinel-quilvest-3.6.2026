@@ -243,6 +243,7 @@ export default function TransactionsDeals() {
       const autoData = {
         title: initParams.title.trim(),
         dealType: initParams.dealType || "ma_asset",
+        representationRole: "",
         status: "active",
         priority: "medium",
         dealValue: "",
