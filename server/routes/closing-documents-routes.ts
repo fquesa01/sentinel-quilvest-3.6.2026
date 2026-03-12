@@ -12,6 +12,7 @@ import {
   importDocxContent,
   getDocumentTypesForDeal,
   DOCUMENT_DISPLAY_NAMES,
+  markdownToHtml,
 } from "../services/closing-document-service";
 import multer from "multer";
 
@@ -74,6 +75,68 @@ router.get("/api/deals/:dealId/closing-documents/expected-types", isAuthenticate
   }
 });
 
+router.post("/api/deals/:dealId/closing-documents/upload-new", isAuthenticated, upload.single("file"), async (req: any, res) => {
+  try {
+    const { dealId } = req.params;
+    const userId = req.user?.claims?.sub;
+    const documentType = req.body?.documentType;
+    const versionType = req.body?.versionType || "draft";
+
+    if (!documentType) return res.status(400).json({ error: "documentType is required" });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const originalName = req.file.originalname || "";
+    if (!originalName.toLowerCase().endsWith(".docx")) {
+      return res.status(400).json({ error: "Only .docx files are accepted" });
+    }
+
+    const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, dealId));
+    if (!deal) return res.status(404).json({ error: "Deal not found" });
+
+    const expectedTypes = getDocumentTypesForDeal(deal.dealType || "", deal.representationRole || null);
+    const validTypes = expectedTypes.map(et => et.documentType);
+    if (!validTypes.includes(documentType)) {
+      return res.status(400).json({ error: "Invalid document type for this deal" });
+    }
+
+    const existingDoc = await db.select().from(schema.closingDocuments)
+      .where(and(eq(schema.closingDocuments.dealId, dealId), eq(schema.closingDocuments.documentType, documentType)));
+    if (existingDoc.length > 0) {
+      return res.status(400).json({ error: "Document of this type already exists. Use the existing document's upload." });
+    }
+
+    const content = await importDocxContent(req.file.buffer);
+    const title = DOCUMENT_DISPLAY_NAMES[documentType] || documentType.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase());
+    const status = versionType === "final" ? "executed" : "draft";
+
+    const [doc] = await db.insert(schema.closingDocuments).values({
+      dealId,
+      documentType,
+      title,
+      content,
+      status,
+      representationRole: deal.representationRole,
+      generatedFromTerms: false,
+      currentVersion: 1,
+      createdBy: userId,
+    }).returning();
+
+    await db.insert(schema.closingDocumentVersions).values({
+      closingDocumentId: doc.id,
+      versionNumber: 1,
+      content,
+      changeDescription: versionType === "final" ? "Uploaded final version" : "Uploaded initial draft",
+      changedBy: userId,
+      source: "uploaded",
+    });
+
+    res.json(doc);
+  } catch (error: any) {
+    console.error("Error uploading new document:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/api/deals/:dealId/closing-documents/auto-generate", isAuthenticated, async (req: any, res) => {
   try {
     const { dealId } = req.params;
@@ -91,6 +154,9 @@ router.get("/api/deals/:dealId/closing-documents/:docId", isAuthenticated, async
     const { docId, dealId } = req.params;
     const doc = await getDocForDeal(docId, dealId);
     if (!doc) return res.status(404).json({ error: "Document not found" });
+    if (doc.content && !doc.content.trim().startsWith("<")) {
+      doc.content = markdownToHtml(doc.content);
+    }
     res.json(doc);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -219,6 +285,7 @@ router.post("/api/deals/:dealId/closing-documents/:docId/upload", isAuthenticate
   try {
     const { docId, dealId } = req.params;
     const userId = req.user?.claims?.sub;
+    const versionType = req.body?.versionType || "draft";
 
     const doc = await getDocForDeal(docId, dealId);
     if (!doc) return res.status(404).json({ error: "Document not found" });
@@ -231,8 +298,18 @@ router.post("/api/deals/:dealId/closing-documents/:docId/upload", isAuthenticate
     }
 
     const content = await importDocxContent(req.file.buffer);
-    const updated = await updateDocumentContent(docId, content, userId, "uploaded", "Uploaded revised document");
-    res.json(updated);
+    const description = versionType === "final" ? "Uploaded final version" : "Uploaded draft revision";
+    const updated = await updateDocumentContent(docId, content, userId, "uploaded", description);
+
+    if (versionType === "final") {
+      await db.update(schema.closingDocuments)
+        .set({ status: "executed", updatedAt: new Date() })
+        .where(and(eq(schema.closingDocuments.id, docId), eq(schema.closingDocuments.dealId, dealId)));
+    }
+
+    const [refreshed] = await db.select().from(schema.closingDocuments)
+      .where(and(eq(schema.closingDocuments.id, docId), eq(schema.closingDocuments.dealId, dealId)));
+    res.json(refreshed || updated);
   } catch (error: any) {
     console.error("Error uploading document:", error);
     res.status(500).json({ error: error.message });

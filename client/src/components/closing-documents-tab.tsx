@@ -4,9 +4,10 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import {
   FileText, Download, Upload, Mic, MicOff, Sparkles, History,
   ChevronLeft, Loader2, RotateCcw, Send, Clock, Edit3, Check,
@@ -16,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose,
 } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -62,7 +63,12 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
   const [showVersions, setShowVersions] = useState(false);
   const [generationErrors, setGenerationErrors] = useState<string[]>([]);
   const [showErrors, setShowErrors] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadVersionType, setUploadVersionType] = useState<"draft" | "final">("draft");
+  const [uploadForPlaceholder, setUploadForPlaceholder] = useState<string | null>(null);
+  const [uploadPlaceholderDialogOpen, setUploadPlaceholderDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const placeholderFileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
   const { data: documents = [], isLoading } = useQuery<any[]>({
@@ -205,9 +211,10 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({ file, versionType }: { file: File; versionType: string }) => {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("versionType", versionType);
       const res = await fetch(`/api/deals/${dealId}/closing-documents/${selectedDocId}/upload`, {
         method: "POST",
         body: formData,
@@ -220,7 +227,33 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents", selectedDocId] });
       queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents", selectedDocId, "versions"] });
-      toast({ title: "Uploaded", description: "Document updated from uploaded file." });
+      setUploadDialogOpen(false);
+      toast({ title: "Uploaded", description: `Document uploaded as ${uploadVersionType === "final" ? "final" : "draft"} version.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const uploadNewMutation = useMutation({
+    mutationFn: async ({ file, documentType, versionType }: { file: File; documentType: string; versionType: string }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("documentType", documentType);
+      formData.append("versionType", versionType);
+      const res = await fetch(`/api/deals/${dealId}/closing-documents/upload-new`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents"] });
+      setUploadPlaceholderDialogOpen(false);
+      setUploadForPlaceholder(null);
+      toast({ title: "Uploaded", description: "Document uploaded successfully." });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -281,57 +314,26 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
     setIsRecording(true);
   }, [isRecording, aiEditMutation, toast]);
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      uploadMutation.mutate(file);
+      uploadMutation.mutate({ file, versionType: uploadVersionType });
     }
-  }, [uploadMutation]);
+    e.target.value = "";
+  }, [uploadMutation, uploadVersionType]);
+
+  const handlePlaceholderUploadFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && uploadForPlaceholder) {
+      uploadNewMutation.mutate({ file, documentType: uploadForPlaceholder, versionType: uploadVersionType });
+    }
+    e.target.value = "";
+  }, [uploadNewMutation, uploadForPlaceholder, uploadVersionType]);
 
   const startEditing = useCallback(() => {
     setEditContent(currentDoc?.content || "");
     setIsEditing(true);
   }, [currentDoc]);
-
-  const renderMarkdownPreview = (content: string) => {
-    if (!content) return <p className="text-muted-foreground">No content</p>;
-    const lines = content.split("\n");
-    return (
-      <div className="prose prose-sm dark:prose-invert max-w-none">
-        {lines.map((line, i) => {
-          if (line.startsWith("### ")) return <h3 key={i} className="text-base font-semibold mt-4 mb-1">{line.slice(4)}</h3>;
-          if (line.startsWith("## ")) return <h2 key={i} className="text-lg font-bold mt-6 mb-2">{line.slice(3)}</h2>;
-          if (line.startsWith("# ")) return <h1 key={i} className="text-xl font-bold mt-6 mb-3">{line.slice(2)}</h1>;
-          if (line.startsWith("---")) return <hr key={i} className="my-4" />;
-          if (line.trim() === "") return <div key={i} className="h-2" />;
-          return <p key={i} className="text-sm leading-relaxed">{renderInlineFormatting(line)}</p>;
-        })}
-      </div>
-    );
-  };
-
-  const renderInlineFormatting = (text: string) => {
-    const parts: (string | JSX.Element)[] = [];
-    const regex = /\*\*(.+?)\*\*|\*(.+?)\*/g;
-    let lastIndex = 0;
-    let match;
-    let key = 0;
-    while ((match = regex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(text.slice(lastIndex, match.index));
-      }
-      if (match[1]) {
-        parts.push(<strong key={key++}>{match[1]}</strong>);
-      } else if (match[2]) {
-        parts.push(<em key={key++}>{match[2]}</em>);
-      }
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < text.length) {
-      parts.push(text.slice(lastIndex));
-    }
-    return <>{parts}</>;
-  };
 
   if (selectedDocId && currentDoc) {
     return (
@@ -387,11 +389,43 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
             Word
           </Button>
 
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending} data-testid="button-upload-doc">
-            {uploadMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <FileUp className="h-4 w-4 mr-1" />}
-            Upload
-          </Button>
-          <input ref={fileInputRef} type="file" accept=".docx" className="hidden" onChange={handleFileUpload} />
+          <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={uploadMutation.isPending} data-testid="button-upload-doc">
+                {uploadMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <FileUp className="h-4 w-4 mr-1" />}
+                Upload
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Document Version</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label>Version Type</Label>
+                  <Select value={uploadVersionType} onValueChange={(v) => setUploadVersionType(v as "draft" | "final")}>
+                    <SelectTrigger data-testid="select-upload-version-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="final">Final (marks document as Executed)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Select File (.docx)</Label>
+                  <Input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".docx"
+                    onChange={handleUploadFile}
+                    data-testid="input-upload-file"
+                  />
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Button
             variant={showVersions ? "default" : "outline"}
@@ -449,22 +483,18 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
 
         <div className="flex gap-4">
           <div className={`flex-1 min-w-0 ${showVersions ? "max-w-[65%]" : ""}`}>
-            <Card>
-              <CardContent className="pt-4">
-                {isEditing ? (
-                  <Textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="min-h-[500px] font-mono text-sm"
-                    data-testid="textarea-doc-content"
-                  />
-                ) : (
-                  <div className="min-h-[300px] max-h-[600px] overflow-y-auto" data-testid="div-doc-preview">
-                    {renderMarkdownPreview(currentDoc.content)}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {isEditing ? (
+              <RichTextEditor
+                content={editContent}
+                onChange={(html) => setEditContent(html)}
+                editable={true}
+              />
+            ) : (
+              <RichTextEditor
+                content={currentDoc.content || ""}
+                editable={false}
+              />
+            )}
           </div>
 
           {showVersions && (
@@ -673,6 +703,19 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
                       Awaiting generation
                     </p>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setUploadForPlaceholder(et.documentType);
+                      setUploadVersionType("draft");
+                      setUploadPlaceholderDialogOpen(true);
+                    }}
+                    data-testid={`button-upload-placeholder-${et.documentType}`}
+                  >
+                    <Upload className="h-3.5 w-3.5 mr-1" />
+                    Upload
+                  </Button>
                   <Badge variant="secondary" className="flex-shrink-0 text-muted-foreground">
                     Not Generated
                   </Badge>
@@ -689,6 +732,38 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={uploadPlaceholderDialogOpen} onOpenChange={setUploadPlaceholderDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Document</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Version Type</Label>
+              <Select value={uploadVersionType} onValueChange={(v) => setUploadVersionType(v as "draft" | "final")}>
+                <SelectTrigger data-testid="select-placeholder-upload-version-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="final">Final (marks document as Executed)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Select File (.docx)</Label>
+              <Input
+                ref={placeholderFileInputRef}
+                type="file"
+                accept=".docx"
+                onChange={handlePlaceholderUploadFile}
+                data-testid="input-placeholder-upload-file"
+              />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

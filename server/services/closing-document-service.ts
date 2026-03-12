@@ -73,6 +73,56 @@ export function getDocumentTypesForDeal(dealType: string, role?: string): string
   return types;
 }
 
+function markdownToHtml(md: string): string {
+  if (!md) return "";
+  if (md.trim().startsWith("<")) return md;
+  let html = md
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    .replace(/^---$/gm, "<hr>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+  const lines = html.split("\n");
+  const result: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("<h") || trimmed.startsWith("<hr")) {
+      result.push(trimmed);
+    } else {
+      result.push(`<p>${trimmed}</p>`);
+    }
+  }
+  return result.join("\n");
+}
+
+async function findExistingTemplate(docType: string): Promise<string | null> {
+  try {
+    const existing = await db.select({
+      content: closingDocuments.content,
+      status: closingDocuments.status,
+      updatedAt: closingDocuments.updatedAt,
+    })
+      .from(closingDocuments)
+      .where(eq(closingDocuments.documentType, docType))
+      .orderBy(
+        desc(sql`CASE WHEN ${closingDocuments.status} = 'executed' THEN 4 WHEN ${closingDocuments.status} = 'approved' THEN 3 WHEN ${closingDocuments.status} = 'review' THEN 2 ELSE 1 END`),
+        desc(closingDocuments.updatedAt)
+      )
+      .limit(1);
+
+    if (existing.length > 0 && existing[0].content && existing[0].content.trim().length > 100) {
+      console.log(`[ClosingDocs] Found existing ${docType} template (status: ${existing[0].status}) to use as reference`);
+      return existing[0].content;
+    }
+  } catch (err: any) {
+    console.log(`[ClosingDocs] Could not search for existing templates: ${err.message}`);
+  }
+  return null;
+}
+
 export async function autoGenerateClosingDocuments(
   dealId: string,
   userId?: string
@@ -101,7 +151,9 @@ export async function autoGenerateClosingDocuments(
   for (const docType of toGenerate) {
     try {
       const title = DOCUMENT_DISPLAY_NAMES[docType] || docType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-      const content = await generateDocumentContent(docType, title, termsContext, deal);
+
+      const existingTemplate = await findExistingTemplate(docType);
+      const content = await generateDocumentContent(docType, title, termsContext, deal, existingTemplate);
 
       const [doc] = await db.insert(closingDocuments).values({
         dealId,
@@ -119,13 +171,13 @@ export async function autoGenerateClosingDocuments(
         closingDocumentId: doc.id,
         versionNumber: 1,
         content,
-        changeDescription: "Initial AI-generated draft",
+        changeDescription: existingTemplate ? "Generated from firm template (adapted from prior transaction)" : "Initial AI-generated draft",
         changedBy: userId,
         source: "ai_generated",
       });
 
       results.push(doc);
-      console.log(`[ClosingDocs] Generated "${title}" for deal ${dealId}`);
+      console.log(`[ClosingDocs] Generated "${title}" for deal ${dealId}${existingTemplate ? " (from existing template)" : ""}`);
     } catch (err: any) {
       console.error(`[ClosingDocs] Error generating ${docType}:`, err.message);
       errors.push(`Failed to generate ${DOCUMENT_DISPLAY_NAMES[docType] || docType}: ${err.message}`);
@@ -179,14 +231,26 @@ async function generateDocumentContent(
   docType: string,
   title: string,
   termsContext: string,
-  deal: any
+  deal: any,
+  existingTemplate?: string | null
 ): Promise<string> {
+  let templateSection = "";
+  if (existingTemplate) {
+    const truncated = existingTemplate.length > 8000 ? existingTemplate.substring(0, 8000) + "\n[... truncated for context ...]" : existingTemplate;
+    templateSection = `
+REFERENCE TEMPLATE (from a prior transaction at this firm — the user prefers this style and structure):
+${truncated}
+
+IMPORTANT: Use the reference template above as your starting point. Preserve its structure, clause ordering, legal language style, and formatting. Adapt it to the current deal's specific terms, names, dates, and amounts shown below. Do NOT generate a completely new document — adapt the template.
+`;
+  }
+
   const prompt = `You are a legal document drafting assistant. Generate a complete, professional legal document draft.
 
 DOCUMENT TYPE: ${title}
 TRANSACTION TYPE: ${deal.dealType || "Real Estate"}
 REPRESENTING: ${deal.representationRole || "Not specified"}
-
+${templateSection}
 DEAL INFORMATION:
 ${termsContext}
 
@@ -198,9 +262,11 @@ INSTRUCTIONS:
 5. Use proper legal numbering (Article I, Section 1.1, etc.)
 6. Include signature blocks at the end
 7. Include standard legal boilerplate (governing law, severability, notices, etc.)
-8. Format using Markdown with proper headers (# for titles, ## for articles, ### for sections)
-9. Make the document as complete and production-ready as possible
-10. Include appropriate recitals and definitions section
+8. Format using clean HTML with proper semantic tags: <h1> for the document title, <h2> for articles/major sections, <h3> for subsections, <p> for paragraphs, <strong> for bold text, <em> for emphasis, <ul>/<ol>/<li> for lists, <hr> for horizontal rules
+9. Do NOT use Markdown formatting — output valid HTML only
+10. Make the document as complete and production-ready as possible
+11. Include appropriate recitals and definitions section
+12. Do NOT wrap the output in \`\`\`html code fences — return raw HTML only
 
 Generate the full document now:`;
 
@@ -209,7 +275,9 @@ Generate the full document now:`;
     contents: prompt,
   });
 
-  return response.text || `# ${title}\n\n[Document generation pending - please try again]`;
+  let text = response.text || `<h1>${title}</h1><p>[Document generation pending - please try again]</p>`;
+  text = text.replace(/^```html\s*/i, "").replace(/\s*```$/, "").trim();
+  return text;
 }
 
 export async function aiEditDocument(
@@ -221,7 +289,7 @@ export async function aiEditDocument(
   const [doc] = await db.select().from(closingDocuments).where(eq(closingDocuments.id, docId));
   if (!doc) throw new Error("Document not found");
 
-  const prompt = `You are a legal document editor. Below is an existing legal document. Apply the user's requested changes and return the COMPLETE updated document with all changes incorporated.
+  const prompt = `You are a legal document editor. Below is an existing legal document in HTML format. Apply the user's requested changes and return the COMPLETE updated document with all changes incorporated.
 
 CURRENT DOCUMENT:
 ${doc.content}
@@ -231,10 +299,12 @@ ${instruction}
 
 RULES:
 1. Return the COMPLETE document with the changes applied, not just the changed parts
-2. Preserve all existing formatting (Markdown headers, numbering, etc.)
+2. Preserve all existing HTML formatting (headings, paragraphs, lists, etc.)
 3. Only modify what the user explicitly requested
 4. If adding new clauses, place them in the appropriate section
 5. Maintain professional legal language throughout
+6. Output valid HTML only — do NOT use Markdown
+7. Do NOT wrap the output in \`\`\`html code fences — return raw HTML only
 
 Return the complete updated document:`;
 
@@ -243,7 +313,8 @@ Return the complete updated document:`;
     contents: prompt,
   });
 
-  const newContent = response.text || doc.content;
+  let newContent = response.text || doc.content;
+  newContent = newContent.replace(/^```html\s*/i, "").replace(/\s*```$/, "").trim();
   const newVersion = doc.currentVersion + 1;
 
   await db.insert(closingDocumentVersions).values({
@@ -307,71 +378,166 @@ export async function getDocumentVersions(docId: string) {
     .orderBy(desc(closingDocumentVersions.versionNumber));
 }
 
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, "$1\n")
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, "$1\n")
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, "$1\n")
+    .replace(/<p[^>]*>(.*?)<\/p>/gi, "$1\n")
+    .replace(/<li[^>]*>(.*?)<\/li>/gi, "$1\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<hr[^>]*\/?>/gi, "---\n")
+    .replace(/<strong>(.*?)<\/strong>/gi, "$1")
+    .replace(/<em>(.*?)<\/em>/gi, "$1")
+    .replace(/<u>(.*?)<\/u>/gi, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+interface HtmlNode {
+  tag: string;
+  text: string;
+  children: HtmlNode[];
+  attrs: Record<string, string>;
+}
+
+function parseSimpleHtml(html: string): HtmlNode[] {
+  const nodes: HtmlNode[] = [];
+  const regex = /<(h[1-3]|p|ul|ol|li|hr|br|strong|em|u)([^>]*)(?:\/>|>([\s\S]*?)<\/\1>)|([^<]+)/gi;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    if (match[4]) {
+      const text = match[4].trim();
+      if (text) nodes.push({ tag: "text", text, children: [], attrs: {} });
+    } else if (match[1]) {
+      nodes.push({
+        tag: match[1].toLowerCase(),
+        text: match[3] || "",
+        children: [],
+        attrs: {},
+      });
+    }
+  }
+  return nodes;
+}
+
 export async function exportDocumentToDocx(docId: string): Promise<Buffer> {
   const [doc] = await db.select().from(closingDocuments).where(eq(closingDocuments.id, docId));
   if (!doc) throw new Error("Document not found");
 
   const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import("docx");
 
-  const paragraphs: any[] = [];
-  const lines = doc.content.split("\n");
+  const content = doc.content || "";
+  const isHtml = content.trim().startsWith("<");
 
-  for (const line of lines) {
-    if (line.startsWith("### ")) {
-      paragraphs.push(new Paragraph({
-        text: line.replace("### ", ""),
-        heading: HeadingLevel.HEADING_3,
-        spacing: { before: 200, after: 100 },
-      }));
-    } else if (line.startsWith("## ")) {
-      paragraphs.push(new Paragraph({
-        text: line.replace("## ", ""),
-        heading: HeadingLevel.HEADING_2,
-        spacing: { before: 300, after: 100 },
-      }));
-    } else if (line.startsWith("# ")) {
-      paragraphs.push(new Paragraph({
-        text: line.replace("# ", ""),
-        heading: HeadingLevel.HEADING_1,
-        spacing: { before: 400, after: 200 },
-        alignment: AlignmentType.CENTER,
-      }));
-    } else if (line.startsWith("---")) {
-      paragraphs.push(new Paragraph({
-        text: "",
-        spacing: { before: 200, after: 200 },
-        border: { bottom: { color: "000000", space: 1, style: "single" as any, size: 6 } },
-      }));
-    } else if (line.trim() === "") {
-      paragraphs.push(new Paragraph({ text: "", spacing: { before: 100 } }));
-    } else {
-      const runs: any[] = [];
-      const boldRegex = /\*\*(.*?)\*\*/g;
-      let lastIndex = 0;
-      let match;
-      while ((match = boldRegex.exec(line)) !== null) {
-        if (match.index > lastIndex) {
-          runs.push(new TextRun({ text: line.slice(lastIndex, match.index), size: 24 }));
+  const paragraphs: any[] = [];
+
+  if (isHtml) {
+    const parts = content.split(/(?=<h[1-3][^>]*>)|(?=<p[^>]*>)|(?=<hr[^>]*\/?>)|(?=<ul[^>]*>)|(?=<ol[^>]*>)/gi);
+
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+
+      const h1Match = trimmed.match(/^<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      const h2Match = trimmed.match(/^<h2[^>]*>([\s\S]*?)<\/h2>/i);
+      const h3Match = trimmed.match(/^<h3[^>]*>([\s\S]*?)<\/h3>/i);
+      const pMatch = trimmed.match(/^<p[^>]*>([\s\S]*?)<\/p>/i);
+      const hrMatch = trimmed.match(/^<hr[^>]*\/?>/i);
+      const listMatch = trimmed.match(/^<[ou]l[^>]*>([\s\S]*?)<\/[ou]l>/i);
+
+      if (h1Match) {
+        paragraphs.push(new Paragraph({
+          children: buildDocxRuns(h1Match[1], TextRun),
+          heading: HeadingLevel.HEADING_1,
+          spacing: { before: 400, after: 200 },
+          alignment: AlignmentType.CENTER,
+        }));
+      } else if (h2Match) {
+        paragraphs.push(new Paragraph({
+          children: buildDocxRuns(h2Match[1], TextRun),
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 300, after: 100 },
+        }));
+      } else if (h3Match) {
+        paragraphs.push(new Paragraph({
+          children: buildDocxRuns(h3Match[1], TextRun),
+          heading: HeadingLevel.HEADING_3,
+          spacing: { before: 200, after: 100 },
+        }));
+      } else if (hrMatch) {
+        paragraphs.push(new Paragraph({
+          text: "",
+          spacing: { before: 200, after: 200 },
+          border: { bottom: { color: "000000", space: 1, style: "single" as any, size: 6 } },
+        }));
+      } else if (listMatch) {
+        const items = listMatch[1].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+        for (const item of items) {
+          const itemContent = item.replace(/<\/?li[^>]*>/gi, "").trim();
+          paragraphs.push(new Paragraph({
+            children: buildDocxRuns(itemContent, TextRun),
+            spacing: { after: 60 },
+            indent: { left: 720 },
+          }));
         }
-        runs.push(new TextRun({ text: match[1], bold: true, size: 24 }));
-        lastIndex = match.index + match[0].length;
+      } else if (pMatch) {
+        const pContent = pMatch[1].trim();
+        if (!pContent) {
+          paragraphs.push(new Paragraph({ text: "", spacing: { before: 100 } }));
+        } else {
+          paragraphs.push(new Paragraph({
+            children: buildDocxRuns(pContent, TextRun),
+            spacing: { after: 60 },
+          }));
+        }
       }
-      if (lastIndex < line.length) {
-        runs.push(new TextRun({ text: line.slice(lastIndex), size: 24 }));
-      }
-      if (runs.length === 0) {
-        runs.push(new TextRun({ text: line, size: 24 }));
-      }
-      paragraphs.push(new Paragraph({ children: runs, spacing: { after: 60 } }));
     }
+  } else {
+    const lines = content.split("\n");
+    for (const line of lines) {
+      if (line.startsWith("### ")) {
+        paragraphs.push(new Paragraph({ text: line.replace("### ", ""), heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 100 } }));
+      } else if (line.startsWith("## ")) {
+        paragraphs.push(new Paragraph({ text: line.replace("## ", ""), heading: HeadingLevel.HEADING_2, spacing: { before: 300, after: 100 } }));
+      } else if (line.startsWith("# ")) {
+        paragraphs.push(new Paragraph({ text: line.replace("# ", ""), heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 }, alignment: AlignmentType.CENTER }));
+      } else if (line.startsWith("---")) {
+        paragraphs.push(new Paragraph({ text: "", spacing: { before: 200, after: 200 }, border: { bottom: { color: "000000", space: 1, style: "single" as any, size: 6 } } }));
+      } else if (line.trim() === "") {
+        paragraphs.push(new Paragraph({ text: "", spacing: { before: 100 } }));
+      } else {
+        const runs: any[] = [];
+        const boldRegex = /\*\*(.*?)\*\*/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = boldRegex.exec(line)) !== null) {
+          if (match.index > lastIndex) runs.push(new TextRun({ text: line.slice(lastIndex, match.index), size: 24 }));
+          runs.push(new TextRun({ text: match[1], bold: true, size: 24 }));
+          lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < line.length) runs.push(new TextRun({ text: line.slice(lastIndex), size: 24 }));
+        if (runs.length === 0) runs.push(new TextRun({ text: line, size: 24 }));
+        paragraphs.push(new Paragraph({ children: runs, spacing: { after: 60 } }));
+      }
+    }
+  }
+
+  if (paragraphs.length === 0) {
+    paragraphs.push(new Paragraph({ text: "[Empty document]" }));
   }
 
   const document = new Document({
     sections: [{
       properties: {
-        page: {
-          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
-        },
+        page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } },
       },
       children: paragraphs,
     }],
@@ -381,28 +547,39 @@ export async function exportDocumentToDocx(docId: string): Promise<Buffer> {
   return buffer as Buffer;
 }
 
+function buildDocxRuns(html: string, TextRunClass?: any): any[] {
+  const TextRun = TextRunClass;
+  if (!TextRun) return [];
+  const runs: any[] = [];
+  const regex = /<strong>([\s\S]*?)<\/strong>|<b>([\s\S]*?)<\/b>|<em>([\s\S]*?)<\/em>|<i>([\s\S]*?)<\/i>|<u>([\s\S]*?)<\/u>|([^<]+)/gi;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    if (match[1] || match[2]) {
+      runs.push(new TextRun({ text: stripAllTags(match[1] || match[2]), bold: true, size: 24 }));
+    } else if (match[3] || match[4]) {
+      runs.push(new TextRun({ text: stripAllTags(match[3] || match[4]), italics: true, size: 24 }));
+    } else if (match[5]) {
+      runs.push(new TextRun({ text: stripAllTags(match[5]), underline: {}, size: 24 }));
+    } else if (match[6]) {
+      const text = match[6].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
+      if (text.trim()) runs.push(new TextRun({ text, size: 24 }));
+    }
+  }
+  if (runs.length === 0) {
+    const plainText = stripAllTags(html).trim();
+    if (plainText) runs.push(new TextRun({ text: plainText, size: 24 }));
+  }
+  return runs;
+}
+
+function stripAllTags(s: string): string {
+  return s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
+}
+
 export async function importDocxContent(fileBuffer: Buffer): Promise<string> {
   const mammoth = await import("mammoth");
   const result = await mammoth.convertToHtml({ buffer: fileBuffer });
-  const html = result.value;
-  let markdown = html
-    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, "# $1\n\n")
-    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, "## $1\n\n")
-    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, "### $1\n\n")
-    .replace(/<strong>(.*?)<\/strong>/gi, "**$1**")
-    .replace(/<b>(.*?)<\/b>/gi, "**$1**")
-    .replace(/<em>(.*?)<\/em>/gi, "*$1*")
-    .replace(/<i>(.*?)<\/i>/gi, "*$1*")
-    .replace(/<p[^>]*>(.*?)<\/p>/gi, "$1\n\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<li[^>]*>(.*?)<\/li>/gi, "- $1\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, "\n\n");
-
-  return markdown.trim();
+  return result.value || "";
 }
+
+export { markdownToHtml };
