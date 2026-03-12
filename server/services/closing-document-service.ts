@@ -5,7 +5,7 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.AI_INTEGRATIONS_GOOGLE_AI_STUDIO_API_KEY || "" });
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || "" });
 
 const DOCUMENT_TEMPLATES_BY_TYPE: Record<string, { types: string[]; forRole?: string }[]> = {
   real_estate: [
