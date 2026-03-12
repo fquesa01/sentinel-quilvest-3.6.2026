@@ -455,7 +455,7 @@ const DOCUMENT_TEMPLATES: Record<string, DocumentTemplate> = {
   environmental_indemnity: {
     name: "Environmental Indemnity Agreement",
     category: "closing",
-    roles: ["buyer", "borrower"],
+    roles: ["buyer", "borrower", "lender"],
     dealTypes: [...RE_DEAL_TYPES, ...LENDING_DEAL_TYPES],
     sections: [
       "Recitals",
