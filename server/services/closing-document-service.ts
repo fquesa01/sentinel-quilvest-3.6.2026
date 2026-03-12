@@ -432,70 +432,177 @@ export async function exportDocumentToDocx(docId: string): Promise<Buffer> {
   const [doc] = await db.select().from(closingDocuments).where(eq(closingDocuments.id, docId));
   if (!doc) throw new Error("Document not found");
 
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import("docx");
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, LevelFormat, convertInchesToTwip, TabStopPosition, TabStopType, BorderStyle, NumberFormat } = await import("docx");
 
   const content = doc.content || "";
   const isHtml = content.trim().startsWith("<");
+
+  const FONT = "Times New Roman";
+  const BODY_SIZE = 24;
+  const H1_SIZE = 32;
+  const H2_SIZE = 28;
+  const H3_SIZE = 26;
+
+  function extractAlignment(tagStr: string, AlignType: any): any | undefined {
+    const styleMatch = tagStr.match(/style="([^"]*)"/i);
+    if (!styleMatch) return undefined;
+    const alignMatch = styleMatch[1].match(/text-align:\s*(left|center|right|justify)/i);
+    if (!alignMatch) return undefined;
+    const map: Record<string, any> = {
+      left: AlignType.LEFT,
+      center: AlignType.CENTER,
+      right: AlignType.RIGHT,
+      justify: AlignType.JUSTIFIED,
+    };
+    return map[alignMatch[1].toLowerCase()];
+  }
+
+  function buildRuns(html: string, defaults: { size?: number; bold?: boolean; italics?: boolean; underline?: boolean; font?: string } = {}): any[] {
+    const runs: any[] = [];
+    const baseFont = defaults.font || FONT;
+    const baseSize = defaults.size || BODY_SIZE;
+
+    function processSegment(segment: string, inherited: { bold?: boolean; italics?: boolean; underline?: boolean }) {
+      const regex = /<(strong|b|em|i|u)>([\s\S]*?)<\/\1>|([^<]+)/gi;
+      let m;
+      while ((m = regex.exec(segment)) !== null) {
+        if (m[3]) {
+          const text = decodeHtmlEntities(m[3]);
+          if (text.trim() || text.includes(" ")) {
+            runs.push(new TextRun({
+              text,
+              font: baseFont,
+              size: baseSize,
+              bold: inherited.bold || defaults.bold,
+              italics: inherited.italics || defaults.italics,
+              underline: (inherited.underline || defaults.underline) ? {} : undefined,
+            }));
+          }
+        } else if (m[1] && m[2]) {
+          const tag = m[1].toLowerCase();
+          const innerHtml = m[2];
+          const newInherited = { ...inherited };
+          if (tag === "strong" || tag === "b") newInherited.bold = true;
+          if (tag === "em" || tag === "i") newInherited.italics = true;
+          if (tag === "u") newInherited.underline = true;
+          processSegment(innerHtml, newInherited);
+        }
+      }
+    }
+
+    const cleaned = html.replace(/<br\s*\/?>/gi, "\n");
+    processSegment(cleaned, {
+      bold: defaults.bold,
+      italics: defaults.italics,
+      underline: defaults.underline,
+    });
+
+    if (runs.length === 0) {
+      const plainText = stripAllTags(html).trim();
+      if (plainText) {
+        runs.push(new TextRun({
+          text: plainText,
+          font: baseFont,
+          size: baseSize,
+          bold: defaults.bold,
+          italics: defaults.italics,
+          underline: defaults.underline ? {} : undefined,
+        }));
+      }
+    }
+    return runs;
+  }
 
   const paragraphs: any[] = [];
 
   if (isHtml) {
     const parts = content.split(/(?=<h[1-3][^>]*>)|(?=<p[^>]*>)|(?=<hr[^>]*\/?>)|(?=<ul[^>]*>)|(?=<ol[^>]*>)/gi);
 
+    let listCounter = 0;
+
     for (const part of parts) {
       const trimmed = part.trim();
       if (!trimmed) continue;
 
-      const h1Match = trimmed.match(/^<h1[^>]*>([\s\S]*?)<\/h1>/i);
-      const h2Match = trimmed.match(/^<h2[^>]*>([\s\S]*?)<\/h2>/i);
-      const h3Match = trimmed.match(/^<h3[^>]*>([\s\S]*?)<\/h3>/i);
-      const pMatch = trimmed.match(/^<p[^>]*>([\s\S]*?)<\/p>/i);
+      const h1Match = trimmed.match(/^<h1([^>]*)>([\s\S]*?)<\/h1>/i);
+      const h2Match = trimmed.match(/^<h2([^>]*)>([\s\S]*?)<\/h2>/i);
+      const h3Match = trimmed.match(/^<h3([^>]*)>([\s\S]*?)<\/h3>/i);
+      const pMatch = trimmed.match(/^<p([^>]*)>([\s\S]*?)<\/p>/i);
       const hrMatch = trimmed.match(/^<hr[^>]*\/?>/i);
-      const listMatch = trimmed.match(/^<[ou]l[^>]*>([\s\S]*?)<\/[ou]l>/i);
+      const ulMatch = trimmed.match(/^<ul([^>]*)>([\s\S]*?)<\/ul>/i);
+      const olMatch = trimmed.match(/^<ol([^>]*)>([\s\S]*?)<\/ol>/i);
 
       if (h1Match) {
+        const align = extractAlignment(h1Match[1], AlignmentType) || AlignmentType.CENTER;
         paragraphs.push(new Paragraph({
-          children: buildDocxRuns(h1Match[1], TextRun),
+          children: buildRuns(h1Match[2], { size: H1_SIZE, bold: true }),
           heading: HeadingLevel.HEADING_1,
-          spacing: { before: 400, after: 200 },
-          alignment: AlignmentType.CENTER,
+          spacing: { before: 480, after: 240 },
+          alignment: align,
         }));
       } else if (h2Match) {
+        const align = extractAlignment(h2Match[1], AlignmentType);
         paragraphs.push(new Paragraph({
-          children: buildDocxRuns(h2Match[1], TextRun),
+          children: buildRuns(h2Match[2], { size: H2_SIZE, bold: true }),
           heading: HeadingLevel.HEADING_2,
-          spacing: { before: 300, after: 100 },
+          spacing: { before: 360, after: 120 },
+          alignment: align || AlignmentType.LEFT,
         }));
       } else if (h3Match) {
+        const align = extractAlignment(h3Match[1], AlignmentType);
         paragraphs.push(new Paragraph({
-          children: buildDocxRuns(h3Match[1], TextRun),
+          children: buildRuns(h3Match[2], { size: H3_SIZE, bold: true }),
           heading: HeadingLevel.HEADING_3,
-          spacing: { before: 200, after: 100 },
+          spacing: { before: 240, after: 120 },
+          alignment: align || AlignmentType.LEFT,
         }));
       } else if (hrMatch) {
         paragraphs.push(new Paragraph({
           text: "",
-          spacing: { before: 200, after: 200 },
-          border: { bottom: { color: "000000", space: 1, style: "single" as any, size: 6 } },
+          spacing: { before: 240, after: 240 },
+          border: { bottom: { color: "999999", space: 1, style: "single" as any, size: 4 } },
         }));
-      } else if (listMatch) {
-        const items = listMatch[1].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+      } else if (ulMatch) {
+        const items = ulMatch[2].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
         for (const item of items) {
           const itemContent = item.replace(/<\/?li[^>]*>/gi, "").trim();
           paragraphs.push(new Paragraph({
-            children: buildDocxRuns(itemContent, TextRun),
-            spacing: { after: 60 },
-            indent: { left: 720 },
+            children: [
+              new TextRun({ text: "\u2022  ", font: FONT, size: BODY_SIZE }),
+              ...buildRuns(itemContent),
+            ],
+            spacing: { after: 80, line: 276 },
+            indent: { left: 720, hanging: 360 },
+          }));
+        }
+      } else if (olMatch) {
+        const items = olMatch[2].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+        listCounter = 0;
+        for (const item of items) {
+          listCounter++;
+          const itemContent = item.replace(/<\/?li[^>]*>/gi, "").trim();
+          paragraphs.push(new Paragraph({
+            children: [
+              new TextRun({ text: `${listCounter}.  `, font: FONT, size: BODY_SIZE }),
+              ...buildRuns(itemContent),
+            ],
+            spacing: { after: 80, line: 276 },
+            indent: { left: 720, hanging: 360 },
           }));
         }
       } else if (pMatch) {
-        const pContent = pMatch[1].trim();
+        const pContent = pMatch[2].trim();
+        const align = extractAlignment(pMatch[1], AlignmentType);
         if (!pContent) {
-          paragraphs.push(new Paragraph({ text: "", spacing: { before: 100 } }));
+          paragraphs.push(new Paragraph({
+            text: "",
+            spacing: { before: 120 },
+          }));
         } else {
           paragraphs.push(new Paragraph({
-            children: buildDocxRuns(pContent, TextRun),
-            spacing: { after: 60 },
+            children: buildRuns(pContent),
+            spacing: { after: 120, line: 276 },
+            alignment: align || AlignmentType.JUSTIFIED,
           }));
         }
       }
@@ -504,40 +611,99 @@ export async function exportDocumentToDocx(docId: string): Promise<Buffer> {
     const lines = content.split("\n");
     for (const line of lines) {
       if (line.startsWith("### ")) {
-        paragraphs.push(new Paragraph({ text: line.replace("### ", ""), heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 100 } }));
+        paragraphs.push(new Paragraph({
+          children: [new TextRun({ text: line.replace("### ", ""), font: FONT, size: H3_SIZE, bold: true })],
+          heading: HeadingLevel.HEADING_3,
+          spacing: { before: 240, after: 120 },
+        }));
       } else if (line.startsWith("## ")) {
-        paragraphs.push(new Paragraph({ text: line.replace("## ", ""), heading: HeadingLevel.HEADING_2, spacing: { before: 300, after: 100 } }));
+        paragraphs.push(new Paragraph({
+          children: [new TextRun({ text: line.replace("## ", ""), font: FONT, size: H2_SIZE, bold: true })],
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 360, after: 120 },
+        }));
       } else if (line.startsWith("# ")) {
-        paragraphs.push(new Paragraph({ text: line.replace("# ", ""), heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 }, alignment: AlignmentType.CENTER }));
+        paragraphs.push(new Paragraph({
+          children: [new TextRun({ text: line.replace("# ", ""), font: FONT, size: H1_SIZE, bold: true })],
+          heading: HeadingLevel.HEADING_1,
+          spacing: { before: 480, after: 240 },
+          alignment: AlignmentType.CENTER,
+        }));
       } else if (line.startsWith("---")) {
-        paragraphs.push(new Paragraph({ text: "", spacing: { before: 200, after: 200 }, border: { bottom: { color: "000000", space: 1, style: "single" as any, size: 6 } } }));
+        paragraphs.push(new Paragraph({
+          text: "",
+          spacing: { before: 240, after: 240 },
+          border: { bottom: { color: "999999", space: 1, style: "single" as any, size: 4 } },
+        }));
       } else if (line.trim() === "") {
-        paragraphs.push(new Paragraph({ text: "", spacing: { before: 100 } }));
+        paragraphs.push(new Paragraph({ text: "", spacing: { before: 120 } }));
       } else {
         const runs: any[] = [];
         const boldRegex = /\*\*(.*?)\*\*/g;
         let lastIndex = 0;
-        let match;
-        while ((match = boldRegex.exec(line)) !== null) {
-          if (match.index > lastIndex) runs.push(new TextRun({ text: line.slice(lastIndex, match.index), size: 24 }));
-          runs.push(new TextRun({ text: match[1], bold: true, size: 24 }));
-          lastIndex = match.index + match[0].length;
+        let bm;
+        while ((bm = boldRegex.exec(line)) !== null) {
+          if (bm.index > lastIndex) runs.push(new TextRun({ text: line.slice(lastIndex, bm.index), font: FONT, size: BODY_SIZE }));
+          runs.push(new TextRun({ text: bm[1], bold: true, font: FONT, size: BODY_SIZE }));
+          lastIndex = bm.index + bm[0].length;
         }
-        if (lastIndex < line.length) runs.push(new TextRun({ text: line.slice(lastIndex), size: 24 }));
-        if (runs.length === 0) runs.push(new TextRun({ text: line, size: 24 }));
-        paragraphs.push(new Paragraph({ children: runs, spacing: { after: 60 } }));
+        if (lastIndex < line.length) runs.push(new TextRun({ text: line.slice(lastIndex), font: FONT, size: BODY_SIZE }));
+        if (runs.length === 0) runs.push(new TextRun({ text: line, font: FONT, size: BODY_SIZE }));
+        paragraphs.push(new Paragraph({ children: runs, spacing: { after: 120, line: 276 }, alignment: AlignmentType.JUSTIFIED }));
       }
     }
   }
 
   if (paragraphs.length === 0) {
-    paragraphs.push(new Paragraph({ text: "[Empty document]" }));
+    paragraphs.push(new Paragraph({ children: [new TextRun({ text: "[Empty document]", font: FONT, size: BODY_SIZE })] }));
   }
 
   const document = new Document({
+    styles: {
+      default: {
+        document: {
+          run: {
+            font: FONT,
+            size: BODY_SIZE,
+          },
+        },
+        heading1: {
+          run: {
+            font: FONT,
+            size: H1_SIZE,
+            bold: true,
+          },
+          paragraph: {
+            spacing: { before: 480, after: 240 },
+          },
+        },
+        heading2: {
+          run: {
+            font: FONT,
+            size: H2_SIZE,
+            bold: true,
+          },
+          paragraph: {
+            spacing: { before: 360, after: 120 },
+          },
+        },
+        heading3: {
+          run: {
+            font: FONT,
+            size: H3_SIZE,
+            bold: true,
+          },
+          paragraph: {
+            spacing: { before: 240, after: 120 },
+          },
+        },
+      },
+    },
     sections: [{
       properties: {
-        page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } },
+        page: {
+          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+        },
       },
       children: paragraphs,
     }],
@@ -547,33 +713,18 @@ export async function exportDocumentToDocx(docId: string): Promise<Buffer> {
   return buffer as Buffer;
 }
 
-function buildDocxRuns(html: string, TextRunClass?: any): any[] {
-  const TextRun = TextRunClass;
-  if (!TextRun) return [];
-  const runs: any[] = [];
-  const regex = /<strong>([\s\S]*?)<\/strong>|<b>([\s\S]*?)<\/b>|<em>([\s\S]*?)<\/em>|<i>([\s\S]*?)<\/i>|<u>([\s\S]*?)<\/u>|([^<]+)/gi;
-  let match;
-  while ((match = regex.exec(html)) !== null) {
-    if (match[1] || match[2]) {
-      runs.push(new TextRun({ text: stripAllTags(match[1] || match[2]), bold: true, size: 24 }));
-    } else if (match[3] || match[4]) {
-      runs.push(new TextRun({ text: stripAllTags(match[3] || match[4]), italics: true, size: 24 }));
-    } else if (match[5]) {
-      runs.push(new TextRun({ text: stripAllTags(match[5]), underline: {}, size: 24 }));
-    } else if (match[6]) {
-      const text = match[6].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
-      if (text.trim()) runs.push(new TextRun({ text, size: 24 }));
-    }
-  }
-  if (runs.length === 0) {
-    const plainText = stripAllTags(html).trim();
-    if (plainText) runs.push(new TextRun({ text: plainText, size: 24 }));
-  }
-  return runs;
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
 }
 
 function stripAllTags(s: string): string {
-  return s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
+  return decodeHtmlEntities(s.replace(/<[^>]+>/g, ""));
 }
 
 export async function importDocxContent(fileBuffer: Buffer): Promise<string> {
