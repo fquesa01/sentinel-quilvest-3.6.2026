@@ -4,12 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Shield, CheckCircle2, XCircle, AlertTriangle, Clock, Search,
-  Activity, Filter
+  Activity, Filter, Calendar, ChevronRight, X
 } from "lucide-react";
 
 type ComplianceCheck = {
@@ -75,6 +80,9 @@ export default function RonComplianceDashboard() {
   const [checkTypeFilter, setCheckTypeFilter] = useState<string>("all");
   const [resultFilter, setResultFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [selectedCheck, setSelectedCheck] = useState<ComplianceCheck | null>(null);
 
   const queryParams = new URLSearchParams();
   if (checkTypeFilter !== "all") queryParams.set("checkType", checkTypeFilter);
@@ -92,14 +100,38 @@ export default function RonComplianceDashboard() {
 
   const summary = data?.summary;
   const checks = (data?.checks || []).filter(c => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      c.transactionTitle.toLowerCase().includes(q) ||
-      (c.signerName && c.signerName.toLowerCase().includes(q)) ||
-      c.check.checkType.toLowerCase().includes(q)
-    );
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchesText = (
+        c.transactionTitle.toLowerCase().includes(q) ||
+        (c.signerName && c.signerName.toLowerCase().includes(q)) ||
+        c.check.checkType.toLowerCase().includes(q)
+      );
+      if (!matchesText) return false;
+    }
+
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom);
+      if (new Date(c.check.performedAt) < fromDate) return false;
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      if (new Date(c.check.performedAt) > toDate) return false;
+    }
+
+    return true;
   });
+
+  const clearFilters = () => {
+    setCheckTypeFilter("all");
+    setResultFilter("all");
+    setSearchQuery("");
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  const hasActiveFilters = checkTypeFilter !== "all" || resultFilter !== "all" || searchQuery || dateFrom || dateTo;
 
   return (
     <div className="p-6 space-y-6">
@@ -229,6 +261,29 @@ export default function RonComplianceDashboard() {
             <SelectItem value="review_required">Review Required</SelectItem>
           </SelectContent>
         </Select>
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="w-[140px]"
+            data-testid="input-date-from"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="w-[140px]"
+            data-testid="input-date-to"
+          />
+        </div>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
+            <X className="h-4 w-4 mr-1" /> Clear
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -247,7 +302,12 @@ export default function RonComplianceDashboard() {
               checks.map((item) => {
                 const ResultIcon = resultIcons[item.check.result] || Activity;
                 return (
-                  <div key={item.check.id} className="p-4 flex items-center gap-4 flex-wrap" data-testid={`compliance-check-${item.check.id}`}>
+                  <button
+                    key={item.check.id}
+                    onClick={() => setSelectedCheck(item)}
+                    className="w-full text-left p-4 flex items-center gap-4 flex-wrap hover-elevate"
+                    data-testid={`compliance-check-${item.check.id}`}
+                  >
                     <Badge className={`${resultColors[item.check.result] || ""} min-w-[80px] justify-center`}>
                       <ResultIcon className="h-3 w-3 mr-1" />
                       {item.check.result.replace(/_/g, " ")}
@@ -267,13 +327,78 @@ export default function RonComplianceDashboard() {
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
                       {new Date(item.check.performedAt).toLocaleString()}
                     </span>
-                  </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  </button>
                 );
               })
             )}
           </div>
         </ScrollArea>
       </Card>
+
+      <Dialog open={!!selectedCheck} onOpenChange={(open) => { if (!open) setSelectedCheck(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Compliance Check Details</DialogTitle>
+          </DialogHeader>
+          {selectedCheck && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Badge className={`${resultColors[selectedCheck.check.result] || ""}`}>
+                  {selectedCheck.check.result.replace(/_/g, " ")}
+                </Badge>
+                <span className="text-lg font-medium">
+                  {checkTypeLabels[selectedCheck.check.checkType] || selectedCheck.check.checkType}
+                </span>
+              </div>
+
+              <Separator />
+
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <Label className="text-muted-foreground">Transaction</Label>
+                  <p className="font-medium" data-testid="text-detail-transaction">{selectedCheck.transactionTitle}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Signer</Label>
+                  <p className="font-medium" data-testid="text-detail-signer">{selectedCheck.signerName || "N/A"}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Performed At</Label>
+                  <p className="font-medium" data-testid="text-detail-date">{new Date(selectedCheck.check.performedAt).toLocaleString()}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Provider</Label>
+                  <p className="font-medium" data-testid="text-detail-provider">{selectedCheck.check.provider || "System"}</p>
+                </div>
+                {selectedCheck.check.score !== null && (
+                  <div>
+                    <Label className="text-muted-foreground">Score</Label>
+                    <p className="font-medium" data-testid="text-detail-score">{selectedCheck.check.score}/100</p>
+                  </div>
+                )}
+              </div>
+
+              {selectedCheck.check.details && Object.keys(selectedCheck.check.details).length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <Label className="text-muted-foreground mb-2 block">Check Details</Label>
+                    <div className="space-y-1 text-sm">
+                      {Object.entries(selectedCheck.check.details).map(([key, value]) => (
+                        <div key={key} className="flex items-start gap-2">
+                          <span className="text-muted-foreground min-w-[120px]">{key.replace(/_/g, " ")}:</span>
+                          <span className="font-medium" data-testid={`text-detail-${key}`}>{String(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

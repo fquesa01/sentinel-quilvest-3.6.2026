@@ -1455,6 +1455,26 @@ router.post("/signers/:id/complete-idv", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
+    const credentialStates = ["credential_passed", "liveness_passed", "kba_passed", "ofac_cleared", "fully_verified"];
+    if (!credentialStates.includes(signer.idvStatus)) {
+      return res.status(400).json({ message: `Cannot complete IDV: credential verification not passed (current status: ${signer.idvStatus})` });
+    }
+
+    if (!signer.livenessCheckPassed) {
+      return res.status(400).json({ message: "Cannot complete IDV: liveness check not passed" });
+    }
+
+    if (signer.kbaScore === null || signer.kbaScore === undefined || signer.kbaScore < 4) {
+      return res.status(400).json({ message: `Cannot complete IDV: KBA score insufficient (${signer.kbaScore ?? 0}/5, need 4)` });
+    }
+
+    const compliance = await storage.getRonComplianceChecks(signer.transactionId);
+    const signerCompliance = compliance.filter(c => c.signerId === signer.id);
+    const ofacCheck = signerCompliance.find(c => c.checkType === "ofac");
+    if (!ofacCheck || ofacCheck.result !== "pass") {
+      return res.status(400).json({ message: "Cannot complete IDV: OFAC screening not cleared" });
+    }
+
     await storage.updateRonSigner(req.params.id, {
       idvStatus: "fully_verified",
     });
@@ -1470,6 +1490,80 @@ router.post("/signers/:id/complete-idv", async (req: any, res) => {
     });
 
     res.json({ success: true, idvStatus: "fully_verified" });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// SIGNER JOIN/LEAVE SESSION
+// ============================================================================
+
+router.post("/sessions/:id/join", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.id);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { signerId } = req.body;
+    if (!signerId) return res.status(400).json({ message: "signerId is required" });
+
+    const signer = await storage.getRonSigner(signerId);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+    if (signer.transactionId !== session.transactionId) {
+      return res.status(400).json({ message: "Signer does not belong to this transaction" });
+    }
+
+    await journalService.createJournalEntry({
+      transactionId: session.transactionId,
+      sessionId: session.id,
+      eventType: "signer_joined",
+      actorType: "signer",
+      actorId: signerId,
+      description: `Signer "${signer.firstName} ${signer.lastName}" joined the session`,
+      signerId: signerId,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, message: `${signer.firstName} ${signer.lastName} joined the session` });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/sessions/:id/leave", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.id);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { signerId } = req.body;
+    if (!signerId) return res.status(400).json({ message: "signerId is required" });
+
+    const signer = await storage.getRonSigner(signerId);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+    if (signer.transactionId !== session.transactionId) {
+      return res.status(400).json({ message: "Signer does not belong to this transaction" });
+    }
+
+    await journalService.createJournalEntry({
+      transactionId: session.transactionId,
+      sessionId: session.id,
+      eventType: "signer_left",
+      actorType: "signer",
+      actorId: signerId,
+      description: `Signer "${signer.firstName} ${signer.lastName}" left the session`,
+      signerId: signerId,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, message: `${signer.firstName} ${signer.lastName} left the session` });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });
