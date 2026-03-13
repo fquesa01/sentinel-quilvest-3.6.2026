@@ -35,11 +35,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -1068,7 +1063,7 @@ export default function TransactionsDataRoomDetail() {
                       className={`hover-elevate transition-all duration-300 ${isHighlighted ? 'ring-2 ring-primary ring-offset-2 bg-primary/5' : ''}`}
                       data-testid={`document-${doc.id}`}
                     >
-                      <CardContent className="p-3">
+                      <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className="relative">
@@ -1081,8 +1076,8 @@ export default function TransactionsDataRoomDetail() {
                               )}
                             </div>
                             <div>
-                              <p className="font-medium text-sm">{doc.fileName}</p>
-                              <div className="text-xs text-muted-foreground space-y-0.5">
+                              <p className="font-semibold text-base">{doc.fileName}</p>
+                              <div className="text-sm text-muted-foreground space-y-0.5">
                                 <p>
                                   {doc.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : ""}
                                   {doc.fileSize && uploadDate ? " • " : ""}
@@ -1113,7 +1108,6 @@ export default function TransactionsDataRoomDetail() {
                             <Button 
                               variant="ghost" 
                               size="icon" 
-                              className="h-8 w-8"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handlePreviewDocument(doc.id);
@@ -1126,7 +1120,6 @@ export default function TransactionsDataRoomDetail() {
                             <Button 
                               variant="ghost" 
                               size="icon" 
-                              className="h-8 w-8"
                               onClick={() => handleDownload(doc.id)}
                               data-testid={`button-download-${doc.id}`}
                             >
@@ -1134,7 +1127,7 @@ export default function TransactionsDataRoomDetail() {
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <Button variant="ghost" size="icon">
                                   <MoreVertical className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -1157,23 +1150,15 @@ export default function TransactionsDataRoomDetail() {
                         </div>
                         
                         {aiSummary && (
-                          <Collapsible className="mt-2">
-                            <CollapsibleTrigger asChild>
-                              <button 
-                                className="flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
-                                data-testid={`button-toggle-summary-${doc.id}`}
-                              >
-                                <Sparkles className="h-3 w-3" />
-                                <span>AI Summary</span>
-                                <ChevronDown className="h-3 w-3 transition-transform data-[state=open]:rotate-180" />
-                              </button>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="mt-2">
-                              <div className="text-xs text-muted-foreground bg-muted/50 rounded-md p-2 border-l-2 border-purple-400">
-                                {aiSummary}
-                              </div>
-                            </CollapsibleContent>
-                          </Collapsible>
+                          <div className="mt-3" data-testid={`summary-block-${doc.id}`}>
+                            <div className="flex items-center gap-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 mb-2">
+                              <Sparkles className="h-4 w-4" />
+                              <span>AI Summary</span>
+                            </div>
+                            <div className="text-base leading-relaxed text-foreground/80 bg-muted/30 rounded-md p-4 border-l-4 border-purple-400">
+                              {aiSummary}
+                            </div>
+                          </div>
                         )}
                       </CardContent>
                     </Card>
@@ -1284,11 +1269,11 @@ export default function TransactionsDataRoomDetail() {
             {/* AI Summary */}
             {previewMetadata?.aiSummary && (
               <div className="flex-shrink-0">
-                <div className="flex items-center gap-1.5 text-sm text-purple-600 dark:text-purple-400 mb-1">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span className="font-medium">AI Summary</span>
+                <div className="flex items-center gap-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 mb-2">
+                  <Sparkles className="h-4 w-4" />
+                  <span>AI Summary</span>
                 </div>
-                <div className="text-sm text-muted-foreground bg-muted/50 rounded-md p-2 border-l-2 border-purple-400">
+                <div className="text-base leading-relaxed text-foreground/80 bg-muted/30 rounded-md p-4 border-l-4 border-purple-400">
                   {previewMetadata.aiSummary}
                 </div>
               </div>
