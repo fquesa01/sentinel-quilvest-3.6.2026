@@ -528,8 +528,26 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
 
     // Trigger deal intelligence processing asynchronously (fire-and-forget)
     try {
-      const { processDealDocumentIntelligence } = await import("./deal-intelligence-service");
-      processDealDocumentIntelligence(documentId).catch(err => {
+      const { processDealDocumentIntelligence, populateDealOverview } = await import("./deal-intelligence-service");
+      processDealDocumentIntelligence(documentId).then(async () => {
+        try {
+          const docRow = await db.select().from(dataRoomDocuments).where(eq(dataRoomDocuments.id, documentId));
+          if (docRow[0]) {
+            const { dataRooms: dataRoomsTable } = await import("@shared/schema");
+            const [room] = await db.select().from(dataRoomsTable).where(eq(dataRoomsTable.id, docRow[0].dataRoomId));
+            if (room?.dealId) {
+              const { deals: dealsTable } = await import("@shared/schema");
+              const [deal] = await db.select().from(dealsTable).where(eq(dealsTable.id, room.dealId));
+              if (deal && (!deal.description || !deal.dealStructure || !deal.subType || !deal.dealValue)) {
+                console.log(`[DealIntel] Auto-populating deal overview for "${deal.title}"`);
+                await populateDealOverview(deal.id);
+              }
+            }
+          }
+        } catch (popErr: any) {
+          console.error(`[DealIntel] Auto-populate overview failed:`, popErr.message);
+        }
+      }).catch(err => {
         console.error(`[DealIntel] Background processing failed for ${documentId}:`, err.message);
       });
     } catch (importErr: any) {

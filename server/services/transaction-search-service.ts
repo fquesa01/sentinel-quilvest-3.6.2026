@@ -411,46 +411,88 @@ export async function searchDealDocuments(
   citations: any[];
   documents: any[];
 }> {
-  // Get the file search store for this deal
-  const store = await getDealFileSearchStore(dealId);
-
-  if (!store) {
-    return {
-      answer: "No documents have been indexed for this transaction yet. Please upload documents to the data room first.",
-      citations: [],
-      documents: [],
-    };
-  }
-
-  // Build query filters
-  const queryFilters: fileSearchService.QueryFilters = {};
-  if (filters?.dateRange) {
-    queryFilters.dateRange = filters.dateRange;
-  }
-  if (filters?.documentType) {
-    queryFilters.documentType = filters.documentType;
-  }
-
-  // Use the existing file search service to query
-  const result = await fileSearchService.queryWithFilters(
-    [store.storeName],
-    query,
-    Object.keys(queryFilters).length > 0 ? queryFilters : undefined
-  );
-
-  // Get the related documents from our database
-  const documents = await db
+  const relatedDocuments = await db
     .select()
     .from(schema.dataRoomDocuments)
     .innerJoin(schema.dataRooms, eq(schema.dataRoomDocuments.dataRoomId, schema.dataRooms.id))
     .where(eq(schema.dataRooms.dealId, dealId))
-    .limit(10);
+    .limit(20);
 
-  return {
-    answer: result.text,
-    citations: result.citations || [],
-    documents: documents.map(d => d.data_room_documents),
-  };
+  const docs = relatedDocuments.map(d => d.data_room_documents);
+
+  const store = await getDealFileSearchStore(dealId);
+
+  let answer = "";
+  let citations: any[] = [];
+
+  if (store) {
+    try {
+      const queryFilters: fileSearchService.QueryFilters = {};
+      if (filters?.dateRange) queryFilters.dateRange = filters.dateRange;
+      if (filters?.documentType) queryFilters.documentType = filters.documentType;
+
+      const result = await fileSearchService.queryWithFilters(
+        [store.storeName],
+        query,
+        Object.keys(queryFilters).length > 0 ? queryFilters : undefined
+      );
+
+      answer = result.text || "";
+      citations = result.citations || [];
+    } catch (err: any) {
+      console.error(`[DocSearch] Gemini file search failed for deal ${dealId}:`, err.message);
+    }
+  }
+
+  if (!answer || answer.trim().length < 10) {
+    const fallbackAnswer = await fallbackDocumentSearch(dealId, query, docs);
+    if (fallbackAnswer) {
+      answer = fallbackAnswer;
+    } else if (!answer) {
+      answer = docs.length > 0
+        ? "I found documents in the data room but could not generate a specific answer. The documents may still be processing. Please try again shortly."
+        : "No documents have been uploaded to this deal's data room yet. Please upload documents first.";
+    }
+  }
+
+  return { answer, citations, documents: docs };
+}
+
+async function fallbackDocumentSearch(dealId: string, query: string, docs: any[]): Promise<string | null> {
+  const docsWithText = docs.filter(d => d.extractedText && d.extractedText.length > 50);
+  if (docsWithText.length === 0) return null;
+
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
+
+    const perDoc = Math.min(5000, Math.floor(20000 / docsWithText.length));
+    const docContext = docsWithText
+      .map(d => `--- ${d.fileName} ---\n${(d.extractedText || "").slice(0, perDoc)}`)
+      .join("\n\n");
+
+    const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, dealId));
+    const dealInfo = deal ? `Deal: "${deal.title}" (Type: ${deal.dealType || "unknown"})` : "";
+
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `You are a legal document analyst for a law firm. Analyze the following documents from a transaction data room and answer the user's question.
+
+${dealInfo}
+
+Documents:
+${docContext.slice(0, 25000)}
+
+User's question: ${query}
+
+Provide a detailed, professional answer based on what you can find in these documents. If you cannot find the information, explain what types of documents are present and what information they contain.`,
+    });
+
+    return result.text || null;
+  } catch (err: any) {
+    console.error(`[DocSearch] Fallback search failed:`, err.message);
+    return null;
+  }
 }
 
 // Search documents across multiple deals (enterprise-wide search)
