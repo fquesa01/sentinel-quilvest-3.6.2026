@@ -56,6 +56,13 @@ export async function processDealDocumentIntelligence(documentId: string): Promi
     await triggerMemoGeneration(deal);
     await autoSuggestChecklist(deal);
 
+    try {
+      const { checkAndTriggerCondoAnalysis } = await import("./condo-issue-sheet-service");
+      await checkAndTriggerCondoAnalysis(deal.id, doc.id);
+    } catch (condoErr: any) {
+      console.error(`[DealIntel] Condo analysis error:`, condoErr.message);
+    }
+
     console.log(`[DealIntel] Completed intelligence processing for document "${doc.fileName}"`);
   } catch (error: any) {
     console.error(`[DealIntel] Error processing document ${documentId}:`, error.message);

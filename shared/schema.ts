@@ -13802,3 +13802,29 @@ export const insertClosingDocumentVersionSchema = createInsertSchema(closingDocu
 });
 export type InsertClosingDocumentVersion = z.infer<typeof insertClosingDocumentVersionSchema>;
 export type ClosingDocumentVersion = typeof closingDocumentVersions.$inferSelect;
+
+export const condoIssueSheetStatusEnum = pgEnum("condo_issue_sheet_status", [
+  "pending", "processing", "completed", "failed"
+]);
+
+export const condoIssueSheets = pgTable("condo_issue_sheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").notNull().references(() => deals.id, { onDelete: "cascade" }),
+  status: condoIssueSheetStatusEnum("status").notNull().default("pending"),
+  issueSheet: jsonb("issue_sheet").default({}),
+  sourceDocumentIds: text("source_document_ids").array().default([]),
+  generatedAt: timestamp("generated_at"),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  dealIdx: index("idx_condo_issue_sheets_deal").on(table.dealId),
+}));
+
+export const insertCondoIssueSheetSchema = createInsertSchema(condoIssueSheets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertCondoIssueSheet = z.infer<typeof insertCondoIssueSheetSchema>;
+export type CondoIssueSheet = typeof condoIssueSheets.$inferSelect;

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams, Link } from "wouter";
 import { ClosingDocumentsTab } from "@/components/closing-documents-tab";
+import { CondoSummaryTab } from "@/components/condo-summary-tab";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1139,6 +1140,7 @@ export default function TransactionsDealDetail() {
             <TabsTrigger value="research" data-testid="tab-research">Research</TabsTrigger>
             <TabsTrigger value="closing-docs" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
             <TabsTrigger value="closing" data-testid="tab-closing">Closing</TabsTrigger>
+            <TabsTrigger value="condo-summary" data-testid="tab-condo-summary">Condo Summary</TabsTrigger>
             <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
           </TabsList>
 
@@ -2559,6 +2561,10 @@ export default function TransactionsDealDetail() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          </TabsContent>
+
+          <TabsContent value="condo-summary" className="mt-6">
+            <CondoSummaryTab dealId={id!} />
           </TabsContent>
 
           <TabsContent value="reports" className="mt-6">
