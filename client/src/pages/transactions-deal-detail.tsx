@@ -3195,6 +3195,12 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
 
   const showSuggestion = suggestion && !isSuggestionDismissed && checklists.length === 0;
 
+  const { data: suggestedTemplateDetail } = useQuery<any>({
+    queryKey: ["/api/deal-templates", suggestion?.templateId],
+    enabled: !!suggestion?.templateId && showSuggestion,
+    staleTime: DEAL_DETAIL_STALE_TIME,
+  });
+
   const createChecklistMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string; checklistType?: string }) => {
       return apiRequest("POST", `/api/deals/${dealId}/checklists`, data);
@@ -3334,6 +3340,42 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
                   </div>
                 </div>
               </div>
+
+              {suggestedTemplateDetail && (
+                <div className="mt-4 border-t border-primary/20 pt-4" data-testid="suggested-checklist-preview">
+                  <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <ListChecks className="h-4 w-4 text-primary" />
+                    Checklist Items ({suggestedTemplateDetail.items?.length || 0} items)
+                  </p>
+                  <div className="space-y-3">
+                    {suggestedTemplateDetail.categories
+                      ?.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                      .map((category: any) => {
+                        const categoryItems = (suggestedTemplateDetail.items || [])
+                          .filter((item: any) => item.categoryId === category.id)
+                          .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+                        if (categoryItems.length === 0) return null;
+                        return (
+                          <div key={category.id} className="rounded-md border bg-background p-3">
+                            <p className="text-sm font-medium mb-2">{category.name}</p>
+                            <div className="space-y-1.5">
+                              {categoryItems.map((item: any) => (
+                                <div key={item.id} className="flex items-start gap-2 text-sm text-muted-foreground" data-testid={`preview-item-${item.id}`}>
+                                  <div className="h-4 w-4 rounded border border-muted-foreground/30 flex-shrink-0 mt-0.5" />
+                                  <div>
+                                    <span>{item.name}</span>
+                                    {item.isRequired && <span className="text-destructive ml-1">*</span>}
+                                    {item.isCritical && <Badge variant="secondary" className="ml-2 text-xs">Critical</Badge>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {checklists.length === 0 && !showSuggestion ? (

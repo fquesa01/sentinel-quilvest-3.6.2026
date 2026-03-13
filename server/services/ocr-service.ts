@@ -542,6 +542,15 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
                 console.log(`[DealIntel] Auto-populating deal overview for "${deal.title}"`);
                 await populateDealOverview(deal.id);
               }
+
+              try {
+                const { DealTermsService } = await import("./deal-terms-service");
+                const dealTermsService = new DealTermsService();
+                console.log(`[DealIntel] Auto-extracting deal terms for "${deal.title}"`);
+                await dealTermsService.extractFromAllDocuments(deal.id);
+              } catch (termsErr: any) {
+                console.error(`[DealIntel] Auto-extract deal terms failed:`, termsErr.message);
+              }
             }
           }
         } catch (popErr: any) {
