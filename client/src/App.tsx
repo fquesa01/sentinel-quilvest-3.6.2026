@@ -61,6 +61,7 @@ import AmbientIntelligence from "@/pages/ambient-intelligence";
 import VideoMeetingPage from "@/pages/video-meeting";
 import AmbientSession from "@/pages/ambient-session";
 import PrivilegedResearch from "@/pages/privileged-research";
+import UploadDocuments from "@/pages/upload-documents";
 import PEDealPipeline from "@/pages/pe-deal-pipeline";
 import PEDealDetail from "@/pages/pe-deal-detail";
 import PEDealIntelligence from "@/pages/pe-deal-intelligence";
@@ -129,6 +130,7 @@ function AuthenticatedApp() {
               <Route path="/ambient-intelligence/:sessionId" component={AmbientSession} />
               <Route path="/privileged-research" component={PrivilegedResearch} />
               <Route path="/privileged-research/:sessionId" component={PrivilegedResearch} />
+              <Route path="/upload-documents" component={UploadDocuments} />
               <Route path="/calendar" component={CalendarPage} />
               <Route path="/attorney-queue" component={AttorneyQueue} />
               <Route path="/analytics" component={Analytics} />

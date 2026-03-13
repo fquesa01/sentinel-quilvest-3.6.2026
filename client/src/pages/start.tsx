@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useVoiceRecognition } from "@/hooks/use-voice-recognition";
 import { executeAvaCommand } from "@/lib/ava-command-router";
-import { Mic, MicOff, ArrowRight, Loader2, LayoutGrid, ChevronRight } from "lucide-react";
+import { Mic, MicOff, ArrowRight, Loader2, LayoutGrid, ChevronRight, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function applyGreenTheme() {
@@ -221,6 +221,15 @@ export default function StartPage() {
       iconBg: "bg-gradient-to-br from-blue-900/40 to-blue-950/60",
       iconColor: "text-blue-400",
       onClick: () => navigate("/privileged-research"),
+    },
+    {
+      id: "upload",
+      title: "Upload Documents",
+      description: "Upload files to a deal's data room or create a new deal",
+      icon: Upload,
+      iconBg: "bg-gradient-to-br from-amber-900/60 to-amber-950/80",
+      iconColor: "text-amber-400",
+      onClick: () => navigate("/upload-documents"),
     },
   ];
 
