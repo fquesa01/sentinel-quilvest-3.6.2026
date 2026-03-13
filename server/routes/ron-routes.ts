@@ -853,6 +853,13 @@ router.post("/sessions/:id/start", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
+    if (session.notaryId && req.user.role !== "admin") {
+      const notaryRecord = await storage.getRonNotary(session.notaryId);
+      if (!notaryRecord || !notaryRecord.userId || notaryRecord.userId !== req.user.id) {
+        return res.status(403).json({ message: "Only the assigned notary or an admin can start this session" });
+      }
+    }
+
     if (!["scheduled", "paused"].includes(session.status)) {
       return res.status(400).json({
         message: `Cannot start session in "${session.status}" status. Session must be "scheduled" or "paused".`,
@@ -923,6 +930,13 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
+
+    if (session.notaryId && req.user.role !== "admin") {
+      const notaryRecord = await storage.getRonNotary(session.notaryId);
+      if (!notaryRecord || !notaryRecord.userId || notaryRecord.userId !== req.user.id) {
+        return res.status(403).json({ message: "Only the assigned notary or an admin can complete this session" });
+      }
+    }
 
     if (!["in_progress", "paused"].includes(session.status)) {
       return res.status(400).json({
@@ -1016,6 +1030,16 @@ router.post("/signatures", async (req: any, res) => {
     if (!signer) return res.status(404).json({ message: "Signer not found" });
     if (signer.transactionId !== doc.transactionId) {
       return res.status(400).json({ message: "Signer does not belong to this transaction" });
+    }
+
+    if (req.user.role !== "admin") {
+      const callerEmail = req.user.email || req.user.profileData?.email;
+      if (!callerEmail || !signer.email) {
+        return res.status(403).json({ message: "Cannot verify signer identity: email information is missing" });
+      }
+      if (callerEmail.toLowerCase() !== signer.email.toLowerCase()) {
+        return res.status(403).json({ message: "You can only apply signatures for your own signer identity" });
+      }
     }
 
     if (body.annotationId) {
@@ -1676,15 +1700,17 @@ router.get("/compliance/dashboard", requireRole("admin", "attorney", "external_c
 
     filtered.sort((a, b) => new Date(b.check.performedAt).getTime() - new Date(a.check.performedAt).getTime());
 
+    const hasFilters = checkType || result;
+    const summarySource = hasFilters ? filtered : allChecks;
     const summary = {
-      total: allChecks.length,
-      pass: allChecks.filter(c => c.check.result === "pass").length,
-      fail: allChecks.filter(c => c.check.result === "fail").length,
-      pending: allChecks.filter(c => c.check.result === "pending").length,
-      reviewRequired: allChecks.filter(c => c.check.result === "review_required").length,
+      total: summarySource.length,
+      pass: summarySource.filter(c => c.check.result === "pass").length,
+      fail: summarySource.filter(c => c.check.result === "fail").length,
+      pending: summarySource.filter(c => c.check.result === "pending").length,
+      reviewRequired: summarySource.filter(c => c.check.result === "review_required").length,
       byType: {} as Record<string, number>,
     };
-    for (const c of allChecks) {
+    for (const c of summarySource) {
       summary.byType[c.check.checkType] = (summary.byType[c.check.checkType] || 0) + 1;
     }
 
