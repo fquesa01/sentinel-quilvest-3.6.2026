@@ -14825,7 +14825,40 @@ Guidelines:
             const MAX_SINGLE_FILE_SIZE = 100 * 1024 * 1024; // 100MB per file
             const MAX_COMPRESSION_RATIO = 100; // Prevent zip bombs
             
-            // Filter valid entries (skip directories, hidden files, and suspicious paths)
+            const isHiddenOrSystemSegment = (segment: string) => {
+              return segment.startsWith('.') || segment.includes('__MACOSX') || segment === 'Thumbs.db';
+            };
+
+            const hasHiddenOrSystemSegment = (decodedPath: string) => {
+              const segments = decodedPath.split('/').filter(Boolean);
+              return segments.some(seg => isHiddenOrSystemSegment(seg));
+            };
+
+            const validDirectoryEntries = zipEntries.filter(entry => {
+              if (!entry.isDirectory) return false;
+
+              const entryPath = entry.entryName;
+              let decodedPath: string;
+              try {
+                decodedPath = decodeURIComponent(entryPath);
+              } catch {
+                decodedPath = entryPath;
+              }
+
+              const virtualRoot = '/safe_root';
+              const resolvedPath = pathLib.resolve(virtualRoot, decodedPath);
+              if (!resolvedPath.startsWith(virtualRoot + '/') && resolvedPath !== virtualRoot) {
+                return false;
+              }
+
+              if (hasHiddenOrSystemSegment(decodedPath)) {
+                return false;
+              }
+
+              return true;
+            });
+
+            // Filter valid file entries (skip directories, hidden files, and suspicious paths)
             const validEntries = zipEntries.filter(entry => {
               if (entry.isDirectory) return false;
               
@@ -14847,9 +14880,8 @@ Guidelines:
                 return false;
               }
               
-              // Skip hidden files and system files
-              const fileName = pathLib.basename(decodedPath);
-              if (fileName.startsWith('.') || fileName.startsWith('__MACOSX') || fileName === 'Thumbs.db') {
+              // Skip files with any hidden or system path segments
+              if (hasHiddenOrSystemSegment(decodedPath)) {
                 return false;
               }
               
@@ -14883,22 +14915,109 @@ Guidelines:
               });
             }
             
-            console.log(`[DataRoom] ZIP: Extracting ${validEntries.length} files (${Math.round(totalSize / 1024)}KB total)`);
+            console.log(`[DataRoom] ZIP: Extracting ${validEntries.length} files from ${validDirectoryEntries.length} directories (${Math.round(totalSize / 1024)}KB total)`);
             
             // Create folders for ZIP directory structure and upload files
             const createdFolders: Map<string, string> = new Map(); // path -> folderId
+
+            // Pre-create all directory entries (including empty folders) before processing files
+            for (const dirEntry of validDirectoryEntries) {
+              let decodedPath: string;
+              try {
+                decodedPath = decodeURIComponent(dirEntry.entryName);
+              } catch {
+                decodedPath = dirEntry.entryName;
+              }
+              // Remove trailing slash from directory path
+              const dirPath = decodedPath.replace(/\/+$/, '');
+              if (!dirPath) continue;
+
+              const folderParts = dirPath.split('/').filter(p => p && !isHiddenOrSystemSegment(p));
+              let currentPath = '';
+              let parentFolderId = folderId || null;
+
+              for (const folderName of folderParts) {
+                currentPath = currentPath ? `${currentPath}/${folderName}` : folderName;
+
+                if (!createdFolders.has(currentPath)) {
+                  const conditions = [
+                    eq(schema.dataRoomFolders.dataRoomId, roomId),
+                    eq(schema.dataRoomFolders.name, folderName),
+                  ];
+                  if (parentFolderId) {
+                    conditions.push(eq(schema.dataRoomFolders.parentFolderId, parentFolderId));
+                  } else {
+                    conditions.push(isNull(schema.dataRoomFolders.parentFolderId));
+                  }
+
+                  const existingFolder = await db
+                    .select()
+                    .from(schema.dataRoomFolders)
+                    .where(and(...conditions))
+                    .limit(1);
+
+                  if (existingFolder.length > 0) {
+                    createdFolders.set(currentPath, existingFolder[0].id);
+                    parentFolderId = existingFolder[0].id;
+                  } else {
+                    let skipFolderCreation = false;
+                    const isFirstFolderInPath = currentPath === folderName;
+
+                    if (isFirstFolderInPath && parentFolderId) {
+                      const parentFolder = await db
+                        .select()
+                        .from(schema.dataRoomFolders)
+                        .where(eq(schema.dataRoomFolders.id, parentFolderId))
+                        .limit(1);
+
+                      if (parentFolder.length > 0 && parentFolder[0].name === folderName) {
+                        createdFolders.set(currentPath, parentFolderId);
+                        skipFolderCreation = true;
+                        console.log(`[DataRoom] Skipping duplicate first folder: ${folderName} (same as upload target)`);
+                      }
+                    }
+
+                    if (!skipFolderCreation) {
+                      const [newFolder] = await db
+                        .insert(schema.dataRoomFolders)
+                        .values({
+                          dataRoomId: roomId,
+                          name: folderName,
+                          parentFolderId: parentFolderId,
+                          createdBy: req.user.id,
+                        })
+                        .returning();
+
+                      createdFolders.set(currentPath, newFolder.id);
+                      parentFolderId = newFolder.id;
+                      console.log(`[DataRoom] Created folder from directory entry: ${currentPath}`);
+                    }
+                  }
+                } else {
+                  parentFolderId = createdFolders.get(currentPath) || null;
+                }
+              }
+            }
             
             for (const entry of validEntries) {
               const entryPath = entry.entryName;
               const entryBuffer = entry.getData();
               
+              // Decode entry path to align with directory pre-creation keys
+              let decodedEntryPath: string;
+              try {
+                decodedEntryPath = decodeURIComponent(entryPath);
+              } catch {
+                decodedEntryPath = entryPath;
+              }
+              
               // Determine folder path from ZIP structure
-              const entryDir = pathLib.dirname(entryPath);
+              const entryDir = pathLib.dirname(decodedEntryPath);
               let targetFolderId = folderId || null;
               
               // Create nested folders if needed
               if (entryDir && entryDir !== '.') {
-                const folderParts = entryDir.split('/').filter(p => p && !p.startsWith('.'));
+                const folderParts = entryDir.split('/').filter(p => p && !isHiddenOrSystemSegment(p));
                 let currentPath = '';
                 let parentFolderId = folderId || null;
                 
@@ -14975,7 +15094,7 @@ Guidelines:
               }
               
               // Upload the file
-              const fileName = pathLib.basename(entryPath);
+              const fileName = pathLib.basename(decodedEntryPath);
               const mimeType = getMimeType(fileName);
               const targetPath = `uploads/datarooms/${roomId}/${Date.now()}-${fileName}`;
               
