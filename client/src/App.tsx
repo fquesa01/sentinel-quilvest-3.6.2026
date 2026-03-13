@@ -40,6 +40,7 @@ import IssueHeatmapLanding from "@/pages/issue-heatmap-landing";
 
 import TransactionsDashboard from "@/pages/transactions-dashboard";
 import TransactionsDeals from "@/pages/transactions-deals";
+import BulkIntake from "@/pages/bulk-intake";
 import TransactionsDealDetail from "@/pages/transactions-deal-detail";
 import TransactionsRequestLists from "@/pages/transactions-request-lists";
 import TransactionsRequestListDetail from "@/pages/transactions-request-list-detail";
@@ -136,6 +137,7 @@ function AuthenticatedApp() {
               <Route path="/employee/compliance" component={EmployeeDashboard} />
               <Route path="/transactions/dashboard" component={TransactionsDashboard} />
               <Route path="/transactions/deals" component={TransactionsDeals} />
+              <Route path="/transactions/bulk-intake" component={BulkIntake} />
               <Route path="/transactions/deals/:id" component={TransactionsDealDetail} />
               <Route path="/transactions/deals/:id/terms" component={TransactionsDealTerms} />
               <Route path="/transactions/closings/:id" component={ClosingDetail} />

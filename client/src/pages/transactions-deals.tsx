@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { 
   Plus, 
   Search, 
@@ -40,6 +40,7 @@ import {
   Handshake,
   ArrowLeft,
   Calendar,
+  Upload,
   DollarSign,
   ExternalLink,
   Trash2,
@@ -361,6 +362,13 @@ export default function TransactionsDeals() {
           </div>
         </div>
 
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/transactions/bulk-intake">
+            <Button variant="outline" data-testid="button-bulk-intake">
+              <Upload className="h-4 w-4 mr-2" />
+              Bulk Upload
+            </Button>
+          </Link>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button data-testid="button-create-deal">
@@ -521,6 +529,7 @@ export default function TransactionsDeals() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="flex items-center gap-4 stagger-2">

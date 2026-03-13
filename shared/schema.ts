@@ -13828,3 +13828,49 @@ export const insertCondoIssueSheetSchema = createInsertSchema(condoIssueSheets).
 });
 export type InsertCondoIssueSheet = z.infer<typeof insertCondoIssueSheetSchema>;
 export type CondoIssueSheet = typeof condoIssueSheets.$inferSelect;
+
+export const bulkIntakeStatusEnum = pgEnum("bulk_intake_status", [
+  "uploading", "processing", "clustering", "review", "confirmed", "creating_deals", "completed", "failed"
+]);
+
+export const bulkIntakeSessions = pgTable("bulk_intake_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  status: bulkIntakeStatusEnum("status").default("uploading").notNull(),
+  uploadedBy: varchar("uploaded_by"),
+  totalFiles: integer("total_files").default(0),
+  processedFiles: integer("processed_files").default(0),
+  clusteringResult: jsonb("clustering_result"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type BulkIntakeSession = typeof bulkIntakeSessions.$inferSelect;
+export const insertBulkIntakeSessionSchema = createInsertSchema(bulkIntakeSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const bulkIntakeDocOcrStatusEnum = pgEnum("bulk_intake_doc_ocr_status", [
+  "pending", "processing", "completed", "failed"
+]);
+
+export const bulkIntakeDocuments = pgTable("bulk_intake_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => bulkIntakeSessions.id, { onDelete: "cascade" }).notNull(),
+  fileName: varchar("file_name", { length: 500 }).notNull(),
+  fileSize: integer("file_size"),
+  mimeType: varchar("mime_type", { length: 100 }),
+  storageKey: varchar("storage_key", { length: 1000 }),
+  ocrStatus: bulkIntakeDocOcrStatusEnum("ocr_status").default("pending"),
+  extractedText: text("extracted_text"),
+  documentDate: timestamp("document_date"),
+  aiSummary: text("ai_summary"),
+  assignedCluster: varchar("assigned_cluster", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  sessionIdx: index("bulk_intake_docs_session_idx").on(table.sessionId),
+}));
+
+export type BulkIntakeDocument = typeof bulkIntakeDocuments.$inferSelect;
