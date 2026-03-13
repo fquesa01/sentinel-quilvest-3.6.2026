@@ -1,7 +1,10 @@
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import { ronComplianceChecks, ronSigners } from "@shared/schema";
-import type { InsertRonComplianceCheck } from "@shared/schema";
+import type { InsertRonComplianceCheck, RonComplianceCheck } from "@shared/schema";
+
+type ComplianceCheckType = RonComplianceCheck["checkType"];
+type ComplianceResult = RonComplianceCheck["result"];
 
 interface StateComplianceRule {
   state: string;
@@ -174,10 +177,10 @@ export function getAllSupportedStates(): StateComplianceRule[] {
 export async function runComplianceCheck(params: {
   transactionId: string;
   signerId?: string;
-  checkType: string;
+  checkType: ComplianceCheckType;
   performedBy?: string;
-}): Promise<any> {
-  let result: "pass" | "fail" | "review_required" | "pending" = "pending";
+}): Promise<RonComplianceCheck> {
+  let result: ComplianceResult = "pending";
   let score: number | undefined;
   let details: any = {};
 
@@ -248,9 +251,31 @@ export async function runComplianceCheck(params: {
       };
       break;
     }
-    default: {
+    case "biometric_match": {
       result = "pending";
-      details = { note: `Unknown check type: ${params.checkType}` };
+      details = {
+        provider: "sentinel_ron_stub",
+        note: "Biometric matching stub — connect to biometric vendor for production",
+      };
+      break;
+    }
+    case "device_check": {
+      result = "pass";
+      score = 100;
+      details = {
+        provider: "sentinel_ron_stub",
+        deviceTrusted: true,
+        note: "Device check stub — integrate device fingerprinting for production",
+      };
+      break;
+    }
+    case "corporate_authority": {
+      result = "pending";
+      details = {
+        provider: "sentinel_ron_stub",
+        note: "Corporate authority verification stub — requires manual review in production",
+      };
+      break;
     }
   }
 
@@ -259,8 +284,8 @@ export async function runComplianceCheck(params: {
     .values({
       transactionId: params.transactionId,
       signerId: params.signerId,
-      checkType: params.checkType as any,
-      result: result as any,
+      checkType: params.checkType,
+      result,
       score,
       provider: "sentinel_ron_stub",
       details,
@@ -288,11 +313,11 @@ export async function getSignerComplianceChecks(signerId: string) {
 
 export async function updateComplianceCheck(
   checkId: string,
-  updates: { result?: string; score?: number; details?: any }
+  updates: { result?: ComplianceResult; score?: number; details?: Record<string, unknown> }
 ) {
   const [check] = await db
     .update(ronComplianceChecks)
-    .set(updates as any)
+    .set(updates)
     .where(eq(ronComplianceChecks.id, checkId))
     .returning();
   return check;

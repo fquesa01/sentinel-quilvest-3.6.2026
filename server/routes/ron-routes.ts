@@ -5,6 +5,18 @@ import * as journalService from "../services/ron-journal-service";
 import * as complianceService from "../services/ron-compliance-service";
 import { ObjectStorageService } from "../objectStorage";
 import { storage } from "../storage";
+import type { RonComplianceCheck } from "@shared/schema";
+
+type ComplianceCheckType = RonComplianceCheck["checkType"];
+
+const VALID_COMPLIANCE_CHECK_TYPES: readonly ComplianceCheckType[] = [
+  "ofac", "aml", "pep", "kba", "credential_analysis", "liveness",
+  "biometric_match", "geolocation", "device_check", "corporate_authority"
+] as const;
+
+function isComplianceCheckType(value: unknown): value is ComplianceCheckType {
+  return typeof value === "string" && VALID_COMPLIANCE_CHECK_TYPES.includes(value as ComplianceCheckType);
+}
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
@@ -122,7 +134,7 @@ router.delete("/transactions/:id", async (req: any, res) => {
 
 router.get("/notaries", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
-    const { state, language, status } = req.query;
+    const { state, language, status, available } = req.query;
     const filters: { state?: string; status?: string } = {};
     if (state) filters.state = state as string;
     if (status) filters.status = status as string;
@@ -133,6 +145,17 @@ router.get("/notaries", requireRole("admin", "attorney", "external_counsel"), as
       notaries = notaries.filter((n) =>
         n.languages && Array.isArray(n.languages) && n.languages.includes(language as string)
       );
+    }
+
+    if (available === "true") {
+      const now = new Date();
+      notaries = notaries.filter((n) => {
+        if (n.status !== "active") return false;
+        if (n.commissionExpiration && n.commissionExpiration < now) return false;
+        if (n.bondExpiration && n.bondExpiration < now) return false;
+        if (n.eoInsuranceExpiration && n.eoInsuranceExpiration < now) return false;
+        return true;
+      });
     }
 
     res.json(notaries);
@@ -825,6 +848,10 @@ router.post("/signatures", async (req: any, res) => {
     });
 
     if (body.annotationId) {
+      const annotation = await storage.getRonAnnotation(body.annotationId);
+      if (!annotation || annotation.documentId !== body.documentId) {
+        return res.status(400).json({ message: "Annotation does not belong to this document" });
+      }
       await storage.updateRonAnnotation(body.annotationId, { completed: true, completedAt: new Date() });
     }
 
@@ -982,9 +1009,8 @@ router.post("/transactions/:transactionId/compliance/check", async (req: any, re
     const { checkType, signerId } = req.body;
     if (!checkType) return res.status(400).json({ message: "checkType is required" });
 
-    const validCheckTypes = ["ofac", "aml", "pep", "kba", "credential_analysis", "liveness", "biometric_match", "geolocation", "device_check", "corporate_authority"];
-    if (!validCheckTypes.includes(checkType)) {
-      return res.status(400).json({ message: `Invalid checkType. Must be one of: ${validCheckTypes.join(", ")}` });
+    if (!isComplianceCheckType(checkType)) {
+      return res.status(400).json({ message: `Invalid checkType. Must be one of: ${VALID_COMPLIANCE_CHECK_TYPES.join(", ")}` });
     }
 
     if (signerId) {

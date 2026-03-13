@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import { db } from "../db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
-import { ronJournalEntries } from "@shared/schema";
+import { ronJournalEntries, type RonJournalEntry } from "@shared/schema";
+
+type JournalEventType = RonJournalEntry["eventType"];
 
 function computeHash(data: string): string {
   return crypto.createHash("sha256").update(data).digest("hex");
@@ -11,7 +13,7 @@ export async function createJournalEntry(params: {
   transactionId: string;
   sessionId?: string;
   notaryId?: string;
-  eventType: string;
+  eventType: JournalEventType;
   actorType: string;
   actorId?: string;
   actorName?: string;
@@ -58,7 +60,7 @@ export async function createJournalEntry(params: {
         sessionId: params.sessionId,
         notaryId: params.notaryId,
         sequenceNumber,
-        eventType: params.eventType as any,
+        eventType: params.eventType,
         actorType: params.actorType,
         actorId: params.actorId,
         actorName: params.actorName,
