@@ -686,6 +686,22 @@ router.patch("/sessions/:id", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
+    if (req.body.status && req.body.status !== session.status) {
+      const validTransitions: Record<string, string[]> = {
+        scheduled: ["in_progress", "cancelled"],
+        in_progress: ["paused", "completed", "cancelled"],
+        paused: ["in_progress", "cancelled"],
+        completed: [],
+        cancelled: [],
+      };
+      const allowed = validTransitions[session.status] || [];
+      if (!allowed.includes(req.body.status)) {
+        return res.status(400).json({
+          message: `Invalid session status transition from "${session.status}" to "${req.body.status}". Allowed: ${allowed.join(", ") || "none"}`,
+        });
+      }
+    }
+
     const updates: any = { ...req.body };
     delete updates.id; delete updates.createdAt; delete updates.transactionId;
 
@@ -832,6 +848,13 @@ router.post("/signatures", async (req: any, res) => {
       return res.status(400).json({ message: "Signer does not belong to this transaction" });
     }
 
+    if (body.annotationId) {
+      const annotation = await storage.getRonAnnotation(body.annotationId);
+      if (!annotation || annotation.documentId !== body.documentId) {
+        return res.status(400).json({ message: "Annotation does not belong to this document" });
+      }
+    }
+
     const signature = await storage.createRonSignature({
       signerId: body.signerId,
       documentId: body.documentId,
@@ -848,10 +871,6 @@ router.post("/signatures", async (req: any, res) => {
     });
 
     if (body.annotationId) {
-      const annotation = await storage.getRonAnnotation(body.annotationId);
-      if (!annotation || annotation.documentId !== body.documentId) {
-        return res.status(400).json({ message: "Annotation does not belong to this document" });
-      }
       await storage.updateRonAnnotation(body.annotationId, { completed: true, completedAt: new Date() });
     }
 
