@@ -186,6 +186,24 @@ export function AppSidebar() {
           icon: FileScan,
           roles: ["admin", "attorney", "external_counsel"],
         },
+        {
+          title: "RON Dashboard",
+          url: "/ron/dashboard",
+          icon: Stamp,
+          roles: ["admin", "attorney", "external_counsel"],
+        },
+        {
+          title: "RON Transactions",
+          url: "/ron/transactions",
+          icon: Stamp,
+          roles: ["admin", "attorney", "external_counsel"],
+        },
+        {
+          title: "Notary Directory",
+          url: "/ron/notaries",
+          icon: Shield,
+          roles: ["admin", "attorney", "external_counsel"],
+        },
       ],
     },
     {
@@ -221,30 +239,6 @@ export function AppSidebar() {
           url: "/issue-heatmap",
           icon: Flame,
           roles: ["admin", "compliance_officer", "attorney", "auditor"],
-        },
-      ],
-    },
-    {
-      title: "Notarization (RON)",
-      defaultOpen: false,
-      items: [
-        {
-          title: "RON Dashboard",
-          url: "/ron/dashboard",
-          icon: Stamp,
-          roles: ["admin", "attorney", "external_counsel"],
-        },
-        {
-          title: "Transactions",
-          url: "/ron/transactions",
-          icon: FileText,
-          roles: ["admin", "attorney", "external_counsel"],
-        },
-        {
-          title: "Notary Directory",
-          url: "/ron/notaries",
-          icon: Shield,
-          roles: ["admin", "attorney", "external_counsel"],
         },
       ],
     },

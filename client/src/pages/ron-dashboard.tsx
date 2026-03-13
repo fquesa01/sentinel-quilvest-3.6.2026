@@ -16,9 +16,11 @@ import {
   Activity,
   Shield,
   AlertCircle,
+  Play,
+  Hash,
 } from "lucide-react";
 import { format } from "date-fns";
-import type { RonTransaction, RonSession } from "@shared/schema";
+import type { RonTransaction, RonSession, RonJournalEntry } from "@shared/schema";
 
 interface DashboardStats {
   activeTransactions: number;
@@ -36,6 +38,8 @@ const statusColors: Record<string, string> = {
   completed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
   cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
   on_hold: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
+  scheduled: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
+  paused: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
 };
 
 const statusLabels: Record<string, string> = {
@@ -46,6 +50,24 @@ const statusLabels: Record<string, string> = {
   completed: "Completed",
   cancelled: "Cancelled",
   on_hold: "On Hold",
+  scheduled: "Scheduled",
+  paused: "Paused",
+};
+
+const journalEventLabels: Record<string, string> = {
+  transaction_created: "Transaction Created",
+  document_uploaded: "Document Uploaded",
+  signer_added: "Signer Added",
+  signer_verified: "Signer Verified",
+  session_scheduled: "Session Scheduled",
+  session_started: "Session Started",
+  session_completed: "Session Completed",
+  session_cancelled: "Session Cancelled",
+  signature_applied: "Signature Applied",
+  seal_applied: "Seal Applied",
+  compliance_check: "Compliance Check",
+  document_notarized: "Document Notarized",
+  notary_assigned: "Notary Assigned",
 };
 
 export default function RonDashboard() {
@@ -59,6 +81,27 @@ export default function RonDashboard() {
 
   const recentTransactions = transactions
     ?.sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+    .slice(0, 5);
+
+  const upcomingSessions: Array<RonSession & { transactionTitle?: string }> = [];
+  if (transactions) {
+    for (const txn of transactions) {
+      if (txn.status !== "completed" && txn.status !== "cancelled") {
+        upcomingSessions.push(
+          ...((txn as RonTransaction & { sessions?: RonSession[] }).sessions || [])
+            .filter((s: RonSession) => s.status === "scheduled" || s.status === "in_progress")
+            .map((s: RonSession) => ({ ...s, transactionTitle: txn.title || "Untitled" }))
+        );
+      }
+    }
+  }
+
+  const sortedUpcoming = upcomingSessions
+    .sort((a, b) => {
+      const aTime = a.scheduledStart ? new Date(a.scheduledStart).getTime() : Infinity;
+      const bTime = b.scheduledStart ? new Date(b.scheduledStart).getTime() : Infinity;
+      return aTime - bTime;
+    })
     .slice(0, 5);
 
   if (statsLoading || txnLoading) {
@@ -226,31 +269,105 @@ export default function RonDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Link href="/ron/transactions/new">
-              <Button variant="outline" className="w-full justify-start" data-testid="button-quick-new-txn">
-                <Plus className="h-4 w-4 mr-2" />
-                New Transaction
-              </Button>
-            </Link>
-            <Link href="/ron/transactions">
-              <Button variant="outline" className="w-full justify-start" data-testid="button-quick-all-txns">
-                <FileText className="h-4 w-4 mr-2" />
-                All Transactions
-              </Button>
-            </Link>
-            <Link href="/ron/notaries">
-              <Button variant="outline" className="w-full justify-start" data-testid="button-quick-notaries">
-                <Users className="h-4 w-4 mr-2" />
-                Notary Directory
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4" /> Upcoming Sessions
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {sortedUpcoming.length > 0 ? (
+                <div className="space-y-3">
+                  {sortedUpcoming.map((session) => (
+                    <div
+                      key={session.id}
+                      className="flex items-center justify-between gap-2 p-2 rounded-md border border-border text-sm"
+                      data-testid={`upcoming-session-${session.id}`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{session.transactionTitle}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {session.scheduledStart
+                            ? format(new Date(session.scheduledStart), "MMM d, h:mm a")
+                            : "TBD"}
+                        </p>
+                      </div>
+                      <Badge className={statusColors[session.status || "scheduled"]} >
+                        {session.status === "in_progress" ? (
+                          <><Play className="h-3 w-3 mr-1" /> Live</>
+                        ) : (
+                          <><Clock className="h-3 w-3 mr-1" /> Scheduled</>
+                        )}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No upcoming sessions</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-4 w-4" /> Recent Activity
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {recentTransactions && recentTransactions.length > 0 ? (
+                <div className="space-y-3">
+                  {recentTransactions.slice(0, 4).map((txn) => (
+                    <Link key={txn.id} href={`/ron/transactions/${txn.id}`}>
+                      <div className="flex items-start gap-2 text-xs p-2 rounded-md hover-elevate">
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{txn.title || "Untitled"}</p>
+                          <p className="text-muted-foreground">
+                            {txn.status === "draft" ? "Created" :
+                             txn.status === "completed" ? "Completed" :
+                             txn.status === "in_progress" ? "In progress" :
+                             statusLabels[txn.status] || txn.status}
+                            {txn.createdAt && ` &middot; ${format(new Date(txn.createdAt), "MMM d")}`}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Link href="/ron/transactions/new">
+                <Button variant="outline" className="w-full justify-start" data-testid="button-quick-new-txn">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Transaction
+                </Button>
+              </Link>
+              <Link href="/ron/transactions">
+                <Button variant="outline" className="w-full justify-start" data-testid="button-quick-all-txns">
+                  <FileText className="h-4 w-4 mr-2" />
+                  All Transactions
+                </Button>
+              </Link>
+              <Link href="/ron/notaries">
+                <Button variant="outline" className="w-full justify-start" data-testid="button-quick-notaries">
+                  <Users className="h-4 w-4 mr-2" />
+                  Notary Directory
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

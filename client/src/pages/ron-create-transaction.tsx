@@ -54,6 +54,10 @@ const signerRoles = [
   { value: "observer", label: "Observer" },
   { value: "attorney_in_fact", label: "Attorney-in-Fact" },
   { value: "authorized_representative", label: "Authorized Representative" },
+  { value: "gp", label: "General Partner (GP)" },
+  { value: "lp", label: "Limited Partner (LP)" },
+  { value: "counsel", label: "Counsel" },
+  { value: "principal", label: "Principal" },
 ];
 
 const docTypes = [

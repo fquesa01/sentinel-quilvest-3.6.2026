@@ -53,7 +53,6 @@ import {
   Send,
   Hash,
   Link2,
-  Eye,
   UserPlus,
   Loader2,
   MousePointer2,
@@ -178,6 +177,7 @@ export default function RonTransactionDetail() {
 
   const [docPrepOpen, setDocPrepOpen] = useState(false);
   const [selectedDocForPrep, setSelectedDocForPrep] = useState<RonDocument | null>(null);
+  const [placedAnnotations, setPlacedAnnotations] = useState<Array<{ type: string; x: number; y: number; w: number; signerId: string; page: number }>>([]);
   const [annotationPlacement, setAnnotationPlacement] = useState({
     type: "signature",
     assignedTo: "",
@@ -896,16 +896,25 @@ export default function RonTransactionDetail() {
                   <SelectValue placeholder="Select notary..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {notaries.map((n) => {
-                    const expired = n.commissionExpiration && new Date(n.commissionExpiration) < new Date();
-                    const inactive = n.status !== "active";
-                    return (
-                      <SelectItem key={n.id} value={n.id}>
-                        {n.firstName} {n.lastName} ({n.commissionState})
-                        {expired ? " [Expired]" : inactive ? ` [${n.status}]` : ""}
-                      </SelectItem>
-                    );
-                  })}
+                  {[...notaries]
+                    .sort((a, b) => {
+                      const aAvail = a.status === "active" && (!a.commissionExpiration || new Date(a.commissionExpiration) > new Date());
+                      const bAvail = b.status === "active" && (!b.commissionExpiration || new Date(b.commissionExpiration) > new Date());
+                      if (aAvail && !bAvail) return -1;
+                      if (!aAvail && bAvail) return 1;
+                      return 0;
+                    })
+                    .map((n) => {
+                      const expired = n.commissionExpiration && new Date(n.commissionExpiration) < new Date();
+                      const inactive = n.status !== "active";
+                      const available = !expired && !inactive;
+                      return (
+                        <SelectItem key={n.id} value={n.id}>
+                          {available ? "\u2713" : "\u2717"} {n.firstName} {n.lastName} ({n.commissionState})
+                          {expired ? " [Expired]" : inactive ? ` [${n.status}]` : ""}
+                        </SelectItem>
+                      );
+                    })}
                 </SelectContent>
               </Select>
               {selectedNotaryForSchedule && !isNotaryAvailable && (
@@ -975,7 +984,7 @@ export default function RonTransactionDetail() {
       </Dialog>
 
       <Dialog open={docPrepOpen} onOpenChange={(open) => { setDocPrepOpen(open); if (!open) setSelectedDocForPrep(null); }}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MousePointer2 className="h-5 w-5" /> Document Preparation
@@ -983,30 +992,83 @@ export default function RonTransactionDetail() {
           </DialogHeader>
           {selectedDocForPrep && (
             <div className="space-y-4 py-2">
-              <div className="flex items-center gap-3">
-                <FileText className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">{selectedDocForPrep.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedDocForPrep.pageCount ?? "?"} pages &middot; {selectedDocForPrep.documentType || "General"}
-                  </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">{selectedDocForPrep.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedDocForPrep.pageCount ?? "?"} pages &middot; {selectedDocForPrep.documentType || "General"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs">Page:</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={selectedDocForPrep.pageCount || 100}
+                    value={annotationPlacement.pageNumber}
+                    onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, pageNumber: parseInt(e.target.value) || 1 })}
+                    className="w-16"
+                    data-testid="input-annotation-page"
+                  />
+                  <span className="text-xs text-muted-foreground">/ {selectedDocForPrep.pageCount ?? "?"}</span>
                 </div>
               </div>
 
               <Separator />
 
-              <div className="border border-border rounded-md p-4 bg-muted/30 min-h-[200px] relative">
-                <p className="text-xs text-muted-foreground mb-3">Document Preview Area</p>
-                <div className="border border-dashed border-primary/40 rounded p-8 text-center text-muted-foreground text-sm">
-                  <Eye className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>Document pages render here</p>
-                  <p className="text-xs mt-1">Click positions below to place annotation fields</p>
-                </div>
-              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <div
+                    className="border-2 border-dashed border-border rounded-md bg-muted/20 relative cursor-crosshair"
+                    style={{ width: "100%", height: 500 }}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const x = Math.round(((e.clientX - rect.left) / rect.width) * 612);
+                      const y = Math.round(((e.clientY - rect.top) / rect.height) * 792);
+                      setAnnotationPlacement({ ...annotationPlacement, xPosition: x, yPosition: y });
+                    }}
+                    data-testid="doc-prep-canvas"
+                  >
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/40 pointer-events-none">
+                      <FileText className="h-16 w-16 mb-2" />
+                      <p className="text-sm font-medium">Page {annotationPlacement.pageNumber}</p>
+                      <p className="text-xs">Click anywhere to set field position</p>
+                    </div>
 
-              <div className="space-y-3">
-                <p className="text-sm font-medium">Place Annotation Field</p>
-                <div className="grid grid-cols-2 gap-3">
+                    {placedAnnotations.filter(a => a.page === annotationPlacement.pageNumber).map((ann, idx) => {
+                      const left = `${(ann.x / 612) * 100}%`;
+                      const top = `${(ann.y / 792) * 100}%`;
+                      const width = `${(ann.w / 612) * 100}%`;
+                      const assignedSigner = signers.find(s => s.id === ann.signerId);
+                      return (
+                        <div
+                          key={idx}
+                          className="absolute border-2 border-primary/70 bg-primary/10 rounded-sm flex items-center justify-center text-[10px] font-medium text-primary pointer-events-none"
+                          style={{ left, top, width, height: 24 }}
+                          title={`${ann.type} - ${assignedSigner ? `${assignedSigner.firstName} ${assignedSigner.lastName}` : "Unassigned"}`}
+                        >
+                          {ann.type === "signature" ? "Sig" : ann.type === "initials" ? "Init" : ann.type === "date" ? "Date" : ann.type === "notary_seal" ? "Seal" : ann.type}
+                        </div>
+                      );
+                    })}
+
+                    <div
+                      className="absolute border-2 border-dashed border-primary bg-primary/20 rounded-sm pointer-events-none"
+                      style={{
+                        left: `${(annotationPlacement.xPosition / 612) * 100}%`,
+                        top: `${(annotationPlacement.yPosition / 792) * 100}%`,
+                        width: `${(annotationPlacement.width / 612) * 100}%`,
+                        height: 24,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="w-56 space-y-3 flex-shrink-0">
+                  <p className="text-sm font-medium">Field Settings</p>
                   <div>
                     <Label className="text-xs">Field Type</Label>
                     <Select value={annotationPlacement.type} onValueChange={(v) => setAnnotationPlacement({ ...annotationPlacement, type: v })}>
@@ -1039,38 +1101,27 @@ export default function RonTransactionDetail() {
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-                <div className="grid grid-cols-4 gap-3">
-                  <div>
-                    <Label className="text-xs">Page</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={selectedDocForPrep.pageCount || 100}
-                      value={annotationPlacement.pageNumber}
-                      onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, pageNumber: parseInt(e.target.value) || 1 })}
-                      data-testid="input-annotation-page"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">X Position</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={annotationPlacement.xPosition}
-                      onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, xPosition: parseInt(e.target.value) || 0 })}
-                      data-testid="input-annotation-x"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Y Position</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={annotationPlacement.yPosition}
-                      onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, yPosition: parseInt(e.target.value) || 0 })}
-                      data-testid="input-annotation-y"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">X</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={annotationPlacement.xPosition}
+                        onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, xPosition: parseInt(e.target.value) || 0 })}
+                        data-testid="input-annotation-x"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Y</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={annotationPlacement.yPosition}
+                        onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, yPosition: parseInt(e.target.value) || 0 })}
+                        data-testid="input-annotation-y"
+                      />
+                    </div>
                   </div>
                   <div>
                     <Label className="text-xs">Width</Label>
@@ -1082,19 +1133,33 @@ export default function RonTransactionDetail() {
                       data-testid="input-annotation-width"
                     />
                   </div>
+                  <Button
+                    className="w-full"
+                    size="sm"
+                    onClick={() => {
+                      addAnnotationMutation.mutate({
+                        documentId: selectedDocForPrep.id,
+                        placement: annotationPlacement,
+                      });
+                      setPlacedAnnotations([...placedAnnotations, {
+                        type: annotationPlacement.type,
+                        x: annotationPlacement.xPosition,
+                        y: annotationPlacement.yPosition,
+                        w: annotationPlacement.width,
+                        signerId: annotationPlacement.assignedTo,
+                        page: annotationPlacement.pageNumber,
+                      }]);
+                    }}
+                    disabled={addAnnotationMutation.isPending}
+                    data-testid="button-place-annotation"
+                  >
+                    {addAnnotationMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    <MousePointer2 className="h-4 w-4 mr-1" /> Place Field
+                  </Button>
+                  {placedAnnotations.length > 0 && (
+                    <p className="text-xs text-muted-foreground">{placedAnnotations.length} field(s) placed</p>
+                  )}
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => addAnnotationMutation.mutate({
-                    documentId: selectedDocForPrep.id,
-                    placement: annotationPlacement,
-                  })}
-                  disabled={addAnnotationMutation.isPending}
-                  data-testid="button-place-annotation"
-                >
-                  {addAnnotationMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  <MousePointer2 className="h-4 w-4 mr-1" /> Place Field
-                </Button>
               </div>
             </div>
           )}
