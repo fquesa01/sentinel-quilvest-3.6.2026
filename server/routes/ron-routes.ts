@@ -433,6 +433,17 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
     let fileSize: number | null = null;
     let mimeType: string | null = null;
 
+    const ALLOWED_DOCUMENT_MIMES = [
+      "application/pdf",
+      "image/png", "image/jpeg", "image/tiff",
+    ];
+
+    if (file && !ALLOWED_DOCUMENT_MIMES.includes(file.mimetype)) {
+      return res.status(400).json({
+        message: `Unsupported file type "${file.mimetype}". Allowed: ${ALLOWED_DOCUMENT_MIMES.join(", ")}`,
+      });
+    }
+
     if (file) {
       const objectStorageService = new ObjectStorageService();
       storageKey = `ron/${req.params.transactionId}/${file.originalname}`;
