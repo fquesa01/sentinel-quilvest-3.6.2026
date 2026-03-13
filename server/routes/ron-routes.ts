@@ -1317,6 +1317,11 @@ router.post("/signers/:id/kba-submit", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
+    const allowedPriorStates = ["liveness_passed", "kba_pending", "kba_failed"];
+    if (!allowedPriorStates.includes(signer.idvStatus)) {
+      return res.status(400).json({ message: `KBA quiz requires liveness check completion first (current status: ${signer.idvStatus})` });
+    }
+
     const { answers } = req.body;
     if (!answers || !Array.isArray(answers)) {
       return res.status(400).json({ message: "answers array is required" });
@@ -1361,6 +1366,11 @@ router.post("/signers/:id/credential-verify", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
+    const allowedPriorStates = ["not_started", "credential_pending", "credential_failed"];
+    if (!allowedPriorStates.includes(signer.idvStatus)) {
+      return res.status(400).json({ message: `Credential verification already completed or skipped (current status: ${signer.idvStatus})` });
+    }
+
     const { credentialType, credentialNumber } = req.body;
 
     await storage.updateRonSigner(req.params.id, {
@@ -1401,6 +1411,11 @@ router.post("/signers/:id/liveness-check", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
+    const allowedPriorStates = ["credential_passed", "liveness_pending", "liveness_failed"];
+    if (!allowedPriorStates.includes(signer.idvStatus)) {
+      return res.status(400).json({ message: `Liveness check requires credential verification first (current status: ${signer.idvStatus})` });
+    }
+
     await storage.updateRonSigner(req.params.id, {
       idvStatus: "liveness_passed",
       livenessCheckPassed: true,
@@ -1429,6 +1444,15 @@ router.post("/signers/:id/ofac-screen", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
+    const allowedPriorStates = ["kba_passed", "ofac_pending"];
+    if (!allowedPriorStates.includes(signer.idvStatus)) {
+      return res.status(400).json({ message: `OFAC screening requires KBA quiz completion first (current status: ${signer.idvStatus})` });
+    }
+
+    if (signer.kbaScore === null || signer.kbaScore === undefined || signer.kbaScore < 4) {
+      return res.status(400).json({ message: `OFAC screening requires KBA score of at least 4/5 (current: ${signer.kbaScore ?? 0})` });
+    }
+
     await storage.updateRonSigner(req.params.id, {
       idvStatus: "ofac_cleared",
     });
@@ -1455,9 +1479,8 @@ router.post("/signers/:id/complete-idv", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const credentialStates = ["credential_passed", "liveness_passed", "kba_passed", "ofac_cleared", "fully_verified"];
-    if (!credentialStates.includes(signer.idvStatus)) {
-      return res.status(400).json({ message: `Cannot complete IDV: credential verification not passed (current status: ${signer.idvStatus})` });
+    if (signer.idvStatus !== "ofac_cleared") {
+      return res.status(400).json({ message: `Cannot complete IDV: all prior steps (credential, liveness, KBA, OFAC) must be completed first (current status: ${signer.idvStatus})` });
     }
 
     if (!signer.livenessCheckPassed) {
