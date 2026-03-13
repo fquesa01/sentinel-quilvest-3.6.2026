@@ -28,7 +28,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, invalidateDealQueries, DEAL_DETAIL_STALE_TIME } from "@/lib/queryClient";
 import {
   ArrowLeft,
   Building2,
@@ -220,41 +220,49 @@ export default function TransactionsDealDetail() {
 
   const { data: deal, isLoading, error, refetch: refetchDeal } = useQuery<DealWithRelations>({
     queryKey: ["/api/deals", id],
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: milestones = [] } = useQuery<DealMilestone[]>({
     queryKey: ["/api/deals", id, "milestones"],
     enabled: !!id,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: participants = [] } = useQuery<DealParticipant[]>({
     queryKey: ["/api/deals", id, "participants"],
     enabled: !!id,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: dealIssues = [] } = useQuery<DealIssue[]>({
     queryKey: ["/api/deals", id, "issues"],
     enabled: !!id,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: meetingNotes = [] } = useQuery<DealMeetingNote[]>({
     queryKey: ["/api/deals", id, "meeting-notes"],
     enabled: !!id,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: termsData } = useQuery<any>({
     queryKey: ["/api/deals", id, "terms"],
     enabled: !!id,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: dataRooms = [] } = useQuery<any[]>({
     queryKey: ["/api/data-rooms"],
     select: (rooms) => rooms.filter((r: any) => r.dealId === id),
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: closings = [], isLoading: closingsLoading } = useQuery<ClosingTransaction[]>({
     queryKey: ["/api/deals", id, "closings"],
     enabled: !!id,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const [isCreateClosingOpen, setIsCreateClosingOpen] = useState(false);
@@ -274,8 +282,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async () => {
-      // Directly refetch the deal data to update UI
-      await refetchDeal();
+      await invalidateDealQueries(id);
       toast({ title: "Deal updated", description: "Changes have been saved." });
       setIsEditOpen(false);
     },
@@ -291,8 +298,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async () => {
-      // Directly refetch the deal data to update UI
-      await refetchDeal();
+      await invalidateDealQueries(id);
       toast({ title: "Added successfully", description: "The item has been added." });
       setAddDialogType(null);
       setNewItemName("");
@@ -325,8 +331,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async () => {
-      // Directly refetch the deal data to update UI
-      await refetchDeal();
+      await invalidateDealQueries(id);
       toast({ title: "Removed", description: "The item has been removed." });
     },
     onError: () => {
@@ -351,7 +356,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async (data: any) => {
-      await refetchDeal();
+      await invalidateDealQueries(id);
       const added = data.totalAdded || 0;
       const found = data.totalFound || 0;
       const desc = added > 0
@@ -372,7 +377,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async (data: any) => {
-      await refetchDeal();
+      await invalidateDealQueries(id);
       const count = data.totalUpdated || 0;
       const fields = (data.fieldsUpdated || []) as string[];
       const fieldLabels: Record<string, string> = {
@@ -397,7 +402,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async (data: any) => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "terms"] });
+      await invalidateDealQueries(id);
       const pct = data.completion?.percentage ?? 0;
       toast({
         title: "Terms Extracted",
@@ -460,7 +465,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "closings"] });
+      await invalidateDealQueries(id);
       toast({ title: "Closing Created", description: "New closing transaction has been created." });
       setIsCreateClosingOpen(false);
       setNewClosingType("");
@@ -477,7 +482,7 @@ export default function TransactionsDealDetail() {
       await apiRequest("DELETE", `/api/closings/${closingId}`);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "closings"] });
+      await invalidateDealQueries(id);
       toast({ title: "Deleted", description: "Closing transaction removed." });
     },
     onError: () => {
@@ -500,7 +505,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async (data: { closingId?: string; confidence?: number; data?: { lineItems?: unknown[] } }) => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "closings"] });
+      await invalidateDealQueries(id);
       toast({
         title: "Closing Extracted",
         description: `Extracted ${data.data?.lineItems?.length || 0} line items with ${data.confidence}% confidence.`,
@@ -542,7 +547,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "issues"] });
+      await invalidateDealQueries(id);
       toast({ title: "Issue Created", description: "The issue has been logged." });
       setIssueDialogOpen(false);
       setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
@@ -559,7 +564,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "issues"] });
+      await invalidateDealQueries(id);
       toast({ title: "Issue Updated", description: "Changes saved." });
       setIssueDialogOpen(false);
       setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
@@ -575,7 +580,7 @@ export default function TransactionsDealDetail() {
       await apiRequest("DELETE", `/api/deals/${id}/issues/${issueId}`);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "issues"] });
+      await invalidateDealQueries(id);
       toast({ title: "Deleted", description: "Issue removed." });
     },
     onError: () => {
@@ -627,7 +632,7 @@ export default function TransactionsDealDetail() {
     },
     onSuccess: async () => {
       toast({ title: "Milestone added", description: "The milestone has been created." });
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "milestones"] });
+      await invalidateDealQueries(id);
       closeMilestoneDialog();
     },
     onError: () => {
@@ -641,7 +646,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async (data: any) => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "milestones"] });
+      await invalidateDealQueries(id);
       const count = data.milestonesAdded || 0;
       toast({
         title: "Milestones Populated",
@@ -662,7 +667,7 @@ export default function TransactionsDealDetail() {
     },
     onSuccess: async () => {
       toast({ title: "Milestone updated", description: "Changes have been saved." });
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "milestones"] });
+      await invalidateDealQueries(id);
       closeMilestoneDialog();
     },
     onError: () => {
@@ -702,9 +707,8 @@ export default function TransactionsDealDetail() {
       }
       toast({ title: "Error", description: "Failed to delete milestone.", variant: "destructive" });
     },
-    onSettled: () => {
-      // Always refetch after error or success to ensure cache is in sync with server
-      queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "milestones"] });
+    onSettled: async () => {
+      await invalidateDealQueries(id);
     },
   });
 
@@ -716,7 +720,7 @@ export default function TransactionsDealDetail() {
     },
     onSuccess: async () => {
       toast({ title: "Meeting note added", description: "The meeting note has been saved." });
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "meeting-notes"] });
+      await invalidateDealQueries(id);
       closeMeetingNoteDialog();
     },
     onError: () => {
@@ -731,7 +735,7 @@ export default function TransactionsDealDetail() {
     },
     onSuccess: async () => {
       toast({ title: "Meeting note updated", description: "Changes have been saved." });
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "meeting-notes"] });
+      await invalidateDealQueries(id);
       closeMeetingNoteDialog();
     },
     onError: () => {
@@ -746,7 +750,7 @@ export default function TransactionsDealDetail() {
     },
     onSuccess: async () => {
       toast({ title: "Meeting note deleted", description: "The meeting note has been removed." });
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "meeting-notes"] });
+      await invalidateDealQueries(id);
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to delete meeting note.", variant: "destructive" });
@@ -760,7 +764,7 @@ export default function TransactionsDealDetail() {
     },
     onSuccess: async () => {
       toast({ title: "Summary generated", description: "AI summary has been added to the meeting note." });
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "meeting-notes"] });
+      await invalidateDealQueries(id);
     },
     onError: (error: any) => {
       toast({ title: "Summarization failed", description: error.message || "Could not generate summary.", variant: "destructive" });
@@ -773,7 +777,7 @@ export default function TransactionsDealDetail() {
       return apiRequest("POST", `/api/deals/${id}/data-rooms`, data);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/data-rooms"] });
+      await invalidateDealQueries(id);
       toast({
         title: "Data room created",
         description: "The virtual data room has been created successfully.",
@@ -794,8 +798,7 @@ export default function TransactionsDealDetail() {
       return res.json();
     },
     onSuccess: async (data) => {
-      await refetchDeal();
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", id, "checklists"] });
+      await invalidateDealQueries(id);
       toast({
         title: "Deal type applied",
         description: data.message || "Deal type has been updated.",
@@ -817,7 +820,7 @@ export default function TransactionsDealDetail() {
     },
     onSuccess: async () => {
       setIsDealTypeDismissed(true);
-      await refetchDeal();
+      await invalidateDealQueries(id);
       toast({ title: "Suggestion dismissed" });
     },
     onError: () => {
@@ -3132,10 +3135,12 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
   const { data: checklists = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/deals", dealId, "checklists"],
     enabled: !!dealId,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: templates = [] } = useQuery<any[]>({
     queryKey: ["/api/deal-templates"],
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const suggestion = dealSettings?.checklistSuggestion as {
@@ -3151,8 +3156,8 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
       const res = await apiRequest("POST", `/api/deals/${dealId}/suggest-checklist`, {});
       return res.json();
     },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId] });
+    onSuccess: async (data: any) => {
+      await invalidateDealQueries(dealId);
       if (data.suggestion) {
         toast({ title: "Suggestion Ready", description: `Recommended: ${data.suggestion.templateName}` });
       } else {
@@ -3169,9 +3174,9 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
       const res = await apiRequest("POST", `/api/deals/${dealId}/dismiss-checklist-suggestion`, {});
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       setIsSuggestionDismissed(true);
-      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId] });
+      await invalidateDealQueries(dealId);
     },
   });
 
@@ -3180,8 +3185,7 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
       return apiRequest("POST", `/api/deals/${dealId}/apply-template/${templateId}`, {});
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "checklists"] });
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId] });
+      await invalidateDealQueries(dealId);
       toast({ title: "Template Applied", description: "The suggested checklist has been created from the template." });
     },
     onError: (error: any) => {
@@ -3196,7 +3200,7 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
       return apiRequest("POST", `/api/deals/${dealId}/checklists`, data);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "checklists"] });
+      await invalidateDealQueries(dealId);
       setIsCreateOpen(false);
       toast({
         title: "Checklist created",
@@ -3217,7 +3221,7 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
       return apiRequest("POST", `/api/deals/${dealId}/apply-template/${templateId}`, {});
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "checklists"] });
+      await invalidateDealQueries(dealId);
       setIsApplyTemplateOpen(false);
       setSelectedTemplateId("");
       toast({
@@ -3549,6 +3553,7 @@ function BackgroundResearchTab({ dealId }: { dealId: string }) {
   const { data: research = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/background-research"],
     select: (data) => data.filter((r: any) => r.dealId === dealId),
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const createResearchMutation = useMutation({
@@ -3726,11 +3731,13 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
   const { data: memos = [], isLoading: memosLoading } = useQuery<any[]>({
     queryKey: ["/api/deals", dealId, "memos"],
     enabled: !!dealId,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const { data: memoReadiness } = useQuery<{ documentCount: number; ready: boolean }>({
     queryKey: ["/api/deals", dealId, "memo-readiness"],
     enabled: !!dealId,
+    staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
   const memoStatus = dealSettings?.memoStatus as string | undefined;
@@ -3746,7 +3753,7 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
     if (latestMemo) {
       try {
         await fetch(`/api/memos/${latestMemo.id}`, { method: "DELETE" });
-        queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "memos"] });
+        invalidateDealQueries(dealId);
       } catch {}
     }
     setTimeout(() => handleAutoGenerate(), 500);
@@ -3784,7 +3791,7 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
 
               if (data.stage === "complete") {
                 toast({ title: "Memo Generated", description: "Investment memo has been created successfully." });
-                queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "memos"] });
+                invalidateDealQueries(dealId);
                 onDealRefetch();
               } else if (data.stage === "error") {
                 toast({ title: "Generation Failed", description: data.message, variant: "destructive" });

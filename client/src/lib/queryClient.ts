@@ -41,6 +41,18 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+export function invalidateDealQueries(dealId: string | undefined) {
+  if (!dealId) return;
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId] }),
+    queryClient.invalidateQueries({ queryKey: ["/api/deals"] }),
+    queryClient.invalidateQueries({ queryKey: ["/api/data-rooms"] }),
+    queryClient.invalidateQueries({ queryKey: ["/api/background-research"] }),
+  ]);
+}
+
+export const DEAL_DETAIL_STALE_TIME = 30_000;
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
