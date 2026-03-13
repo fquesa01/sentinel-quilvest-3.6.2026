@@ -354,6 +354,39 @@ import {
   type InsertDataLakeItem,
   type DataLakeConnector,
   type InsertDataLakeConnector,
+  ronTransactions,
+  ronNotaries,
+  ronSessions,
+  ronSigners,
+  ronDocuments,
+  ronAnnotationPlacements,
+  ronSignatures,
+  ronSeals,
+  ronJournalEntries,
+  ronRecordings,
+  ronComplianceChecks,
+  type RonTransaction,
+  type InsertRonTransaction,
+  type RonNotary,
+  type InsertRonNotary,
+  type RonSession,
+  type InsertRonSession,
+  type RonSigner,
+  type InsertRonSigner,
+  type RonDocument,
+  type InsertRonDocument,
+  type RonAnnotationPlacement,
+  type InsertRonAnnotationPlacement,
+  type RonSignature,
+  type InsertRonSignature,
+  type RonSeal,
+  type InsertRonSeal,
+  type RonJournalEntry,
+  type InsertRonJournalEntry,
+  type RonRecording,
+  type InsertRonRecording,
+  type RonComplianceCheck,
+  type InsertRonComplianceCheck,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -972,6 +1005,72 @@ export interface IStorage {
   getDataLakeConnectors(userId: string): Promise<DataLakeConnector[]>;
   upsertDataLakeConnector(connector: InsertDataLakeConnector): Promise<DataLakeConnector>;
   searchDataLakeItems(userId: string, query: string): Promise<DataLakeItem[]>;
+
+  // RON Transaction operations
+  getRonTransactions(filters?: { status?: string; dealId?: string; createdBy?: string }): Promise<RonTransaction[]>;
+  getRonTransaction(id: string): Promise<RonTransaction | undefined>;
+  createRonTransaction(txn: InsertRonTransaction): Promise<RonTransaction>;
+  updateRonTransaction(id: string, updates: Partial<RonTransaction>): Promise<RonTransaction>;
+  deleteRonTransaction(id: string): Promise<void>;
+
+  // RON Notary operations
+  getRonNotaries(filters?: { state?: string; status?: string }): Promise<RonNotary[]>;
+  getRonNotary(id: string): Promise<RonNotary | undefined>;
+  createRonNotary(notary: InsertRonNotary): Promise<RonNotary>;
+  updateRonNotary(id: string, updates: Partial<RonNotary>): Promise<RonNotary>;
+  deleteRonNotary(id: string): Promise<void>;
+
+  // RON Session operations
+  getRonSessions(transactionId: string): Promise<RonSession[]>;
+  getRonSession(id: string): Promise<RonSession | undefined>;
+  createRonSession(session: InsertRonSession): Promise<RonSession>;
+  updateRonSession(id: string, updates: Partial<RonSession>): Promise<RonSession>;
+  deleteRonSession(id: string): Promise<void>;
+
+  // RON Signer operations
+  getRonSigners(transactionId: string): Promise<RonSigner[]>;
+  getRonSigner(id: string): Promise<RonSigner | undefined>;
+  createRonSigner(signer: InsertRonSigner): Promise<RonSigner>;
+  updateRonSigner(id: string, updates: Partial<RonSigner>): Promise<RonSigner>;
+  deleteRonSigner(id: string): Promise<void>;
+
+  // RON Document operations
+  getRonDocuments(transactionId: string): Promise<RonDocument[]>;
+  getRonDocument(id: string): Promise<RonDocument | undefined>;
+  createRonDocument(doc: InsertRonDocument): Promise<RonDocument>;
+  updateRonDocument(id: string, updates: Partial<RonDocument>): Promise<RonDocument>;
+  deleteRonDocument(id: string): Promise<void>;
+
+  // RON Annotation operations
+  getRonAnnotations(documentId: string): Promise<RonAnnotationPlacement[]>;
+  createRonAnnotation(annotation: InsertRonAnnotationPlacement): Promise<RonAnnotationPlacement>;
+  deleteRonAnnotation(id: string): Promise<void>;
+
+  // RON Signature operations
+  createRonSignature(signature: InsertRonSignature): Promise<RonSignature>;
+  getRonSignaturesByDocument(documentId: string): Promise<RonSignature[]>;
+
+  // RON Seal operations
+  createRonSeal(seal: InsertRonSeal): Promise<RonSeal>;
+  getRonSealsByDocument(documentId: string): Promise<RonSeal[]>;
+
+  // RON Recording operations
+  getRonRecordings(sessionId: string): Promise<RonRecording[]>;
+  createRonRecording(recording: InsertRonRecording): Promise<RonRecording>;
+
+  // RON Compliance Check operations
+  getRonComplianceChecks(transactionId: string): Promise<RonComplianceCheck[]>;
+  getRonComplianceChecksBySigner(signerId: string): Promise<RonComplianceCheck[]>;
+  createRonComplianceCheck(check: InsertRonComplianceCheck): Promise<RonComplianceCheck>;
+  updateRonComplianceCheck(id: string, updates: Partial<RonComplianceCheck>): Promise<RonComplianceCheck>;
+
+  // RON additional query methods
+  getRonAnnotation(id: string): Promise<RonAnnotationPlacement | undefined>;
+  updateRonAnnotation(id: string, updates: Partial<RonAnnotationPlacement>): Promise<RonAnnotationPlacement>;
+  getRonSessionsByNotary(notaryId: string, filters?: { status?: string }): Promise<RonSession[]>;
+  getRonSignersBySession(sessionId: string): Promise<RonSigner[]>;
+  getAllRonSessions(filters?: { status?: string }): Promise<RonSession[]>;
+  incrementRonNotarySessions(notaryId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -6551,6 +6650,239 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(dataLakeItems.userId, userId), ilike(dataLakeItems.name, `%${query}%`)))
       .orderBy(desc(dataLakeItems.indexedAt))
       .limit(50);
+  }
+
+  // RON Transaction operations
+  async getRonTransactions(filters?: { status?: string; dealId?: string; createdBy?: string }): Promise<RonTransaction[]> {
+    const conditions = [];
+    if (filters?.status) conditions.push(eq(ronTransactions.status, filters.status as RonTransaction["status"]));
+    if (filters?.dealId) conditions.push(eq(ronTransactions.dealId, filters.dealId));
+    if (filters?.createdBy) conditions.push(eq(ronTransactions.createdBy, filters.createdBy));
+    if (conditions.length > 0) {
+      return db.select().from(ronTransactions).where(and(...conditions)).orderBy(desc(ronTransactions.createdAt));
+    }
+    return db.select().from(ronTransactions).orderBy(desc(ronTransactions.createdAt));
+  }
+
+  async getRonTransaction(id: string): Promise<RonTransaction | undefined> {
+    const [txn] = await db.select().from(ronTransactions).where(eq(ronTransactions.id, id));
+    return txn;
+  }
+
+  async createRonTransaction(txn: InsertRonTransaction): Promise<RonTransaction> {
+    const [created] = await db.insert(ronTransactions).values(txn).returning();
+    return created;
+  }
+
+  async updateRonTransaction(id: string, updates: Partial<RonTransaction>): Promise<RonTransaction> {
+    const [updated] = await db.update(ronTransactions).set({ ...updates, updatedAt: new Date() }).where(eq(ronTransactions.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRonTransaction(id: string): Promise<void> {
+    await db.delete(ronTransactions).where(eq(ronTransactions.id, id));
+  }
+
+  // RON Notary operations
+  async getRonNotaries(filters?: { state?: string; status?: string }): Promise<RonNotary[]> {
+    const conditions = [];
+    if (filters?.state) conditions.push(eq(ronNotaries.commissionState, filters.state));
+    if (filters?.status) conditions.push(eq(ronNotaries.status, filters.status as RonNotary["status"]));
+    if (conditions.length > 0) {
+      return db.select().from(ronNotaries).where(and(...conditions)).orderBy(asc(ronNotaries.lastName));
+    }
+    return db.select().from(ronNotaries).orderBy(asc(ronNotaries.lastName));
+  }
+
+  async getRonNotary(id: string): Promise<RonNotary | undefined> {
+    const [notary] = await db.select().from(ronNotaries).where(eq(ronNotaries.id, id));
+    return notary;
+  }
+
+  async createRonNotary(notary: InsertRonNotary): Promise<RonNotary> {
+    const [created] = await db.insert(ronNotaries).values(notary).returning();
+    return created;
+  }
+
+  async updateRonNotary(id: string, updates: Partial<RonNotary>): Promise<RonNotary> {
+    const [updated] = await db.update(ronNotaries).set({ ...updates, updatedAt: new Date() }).where(eq(ronNotaries.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRonNotary(id: string): Promise<void> {
+    await db.delete(ronNotaries).where(eq(ronNotaries.id, id));
+  }
+
+  // RON Session operations
+  async getRonSessions(transactionId: string): Promise<RonSession[]> {
+    return db.select().from(ronSessions).where(eq(ronSessions.transactionId, transactionId)).orderBy(desc(ronSessions.scheduledStart));
+  }
+
+  async getRonSession(id: string): Promise<RonSession | undefined> {
+    const [session] = await db.select().from(ronSessions).where(eq(ronSessions.id, id));
+    return session;
+  }
+
+  async createRonSession(session: InsertRonSession): Promise<RonSession> {
+    const [created] = await db.insert(ronSessions).values(session).returning();
+    return created;
+  }
+
+  async updateRonSession(id: string, updates: Partial<RonSession>): Promise<RonSession> {
+    const [updated] = await db.update(ronSessions).set({ ...updates, updatedAt: new Date() }).where(eq(ronSessions.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRonSession(id: string): Promise<void> {
+    await db.delete(ronSessions).where(eq(ronSessions.id, id));
+  }
+
+  // RON Signer operations
+  async getRonSigners(transactionId: string): Promise<RonSigner[]> {
+    return db.select().from(ronSigners).where(eq(ronSigners.transactionId, transactionId)).orderBy(asc(ronSigners.signingOrder));
+  }
+
+  async getRonSigner(id: string): Promise<RonSigner | undefined> {
+    const [signer] = await db.select().from(ronSigners).where(eq(ronSigners.id, id));
+    return signer;
+  }
+
+  async createRonSigner(signer: InsertRonSigner): Promise<RonSigner> {
+    const [created] = await db.insert(ronSigners).values(signer).returning();
+    return created;
+  }
+
+  async updateRonSigner(id: string, updates: Partial<RonSigner>): Promise<RonSigner> {
+    const [updated] = await db.update(ronSigners).set({ ...updates, updatedAt: new Date() }).where(eq(ronSigners.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRonSigner(id: string): Promise<void> {
+    await db.delete(ronSigners).where(eq(ronSigners.id, id));
+  }
+
+  // RON Document operations
+  async getRonDocuments(transactionId: string): Promise<RonDocument[]> {
+    return db.select().from(ronDocuments).where(eq(ronDocuments.transactionId, transactionId)).orderBy(asc(ronDocuments.signingOrder));
+  }
+
+  async getRonDocument(id: string): Promise<RonDocument | undefined> {
+    const [doc] = await db.select().from(ronDocuments).where(eq(ronDocuments.id, id));
+    return doc;
+  }
+
+  async createRonDocument(doc: InsertRonDocument): Promise<RonDocument> {
+    const [created] = await db.insert(ronDocuments).values(doc).returning();
+    return created;
+  }
+
+  async updateRonDocument(id: string, updates: Partial<RonDocument>): Promise<RonDocument> {
+    const [updated] = await db.update(ronDocuments).set({ ...updates, updatedAt: new Date() }).where(eq(ronDocuments.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRonDocument(id: string): Promise<void> {
+    await db.delete(ronDocuments).where(eq(ronDocuments.id, id));
+  }
+
+  // RON Annotation operations
+  async getRonAnnotations(documentId: string): Promise<RonAnnotationPlacement[]> {
+    return db.select().from(ronAnnotationPlacements).where(eq(ronAnnotationPlacements.documentId, documentId)).orderBy(asc(ronAnnotationPlacements.pageNumber), asc(ronAnnotationPlacements.sortOrder));
+  }
+
+  async createRonAnnotation(annotation: InsertRonAnnotationPlacement): Promise<RonAnnotationPlacement> {
+    const [created] = await db.insert(ronAnnotationPlacements).values(annotation).returning();
+    return created;
+  }
+
+  async deleteRonAnnotation(id: string): Promise<void> {
+    await db.delete(ronAnnotationPlacements).where(eq(ronAnnotationPlacements.id, id));
+  }
+
+  // RON Signature operations
+  async createRonSignature(signature: InsertRonSignature): Promise<RonSignature> {
+    const [created] = await db.insert(ronSignatures).values(signature).returning();
+    return created;
+  }
+
+  async getRonSignaturesByDocument(documentId: string): Promise<RonSignature[]> {
+    return db.select().from(ronSignatures).where(eq(ronSignatures.documentId, documentId));
+  }
+
+  // RON Seal operations
+  async createRonSeal(seal: InsertRonSeal): Promise<RonSeal> {
+    const [created] = await db.insert(ronSeals).values(seal).returning();
+    return created;
+  }
+
+  async getRonSealsByDocument(documentId: string): Promise<RonSeal[]> {
+    return db.select().from(ronSeals).where(eq(ronSeals.documentId, documentId));
+  }
+
+  // RON Recording operations
+  async getRonRecordings(sessionId: string): Promise<RonRecording[]> {
+    return db.select().from(ronRecordings).where(eq(ronRecordings.sessionId, sessionId));
+  }
+
+  async createRonRecording(recording: InsertRonRecording): Promise<RonRecording> {
+    const [created] = await db.insert(ronRecordings).values(recording).returning();
+    return created;
+  }
+
+  // RON Compliance Check operations
+  async getRonComplianceChecks(transactionId: string): Promise<RonComplianceCheck[]> {
+    return db.select().from(ronComplianceChecks).where(eq(ronComplianceChecks.transactionId, transactionId));
+  }
+
+  async getRonComplianceChecksBySigner(signerId: string): Promise<RonComplianceCheck[]> {
+    return db.select().from(ronComplianceChecks).where(eq(ronComplianceChecks.signerId, signerId));
+  }
+
+  async createRonComplianceCheck(check: InsertRonComplianceCheck): Promise<RonComplianceCheck> {
+    const [created] = await db.insert(ronComplianceChecks).values(check).returning();
+    return created;
+  }
+
+  async updateRonComplianceCheck(id: string, updates: Partial<RonComplianceCheck>): Promise<RonComplianceCheck> {
+    const [updated] = await db.update(ronComplianceChecks).set(updates).where(eq(ronComplianceChecks.id, id)).returning();
+    return updated;
+  }
+
+  // RON additional query methods
+  async getRonAnnotation(id: string): Promise<RonAnnotationPlacement | undefined> {
+    const [annotation] = await db.select().from(ronAnnotationPlacements).where(eq(ronAnnotationPlacements.id, id));
+    return annotation;
+  }
+
+  async updateRonAnnotation(id: string, updates: Partial<RonAnnotationPlacement>): Promise<RonAnnotationPlacement> {
+    const [updated] = await db.update(ronAnnotationPlacements).set(updates).where(eq(ronAnnotationPlacements.id, id)).returning();
+    return updated;
+  }
+
+  async getRonSessionsByNotary(notaryId: string, filters?: { status?: string }): Promise<RonSession[]> {
+    const conditions = [eq(ronSessions.notaryId, notaryId)];
+    if (filters?.status) conditions.push(eq(ronSessions.status, filters.status as RonSession["status"]));
+    return db.select().from(ronSessions).where(and(...conditions)).orderBy(desc(ronSessions.createdAt));
+  }
+
+  async getRonSignersBySession(sessionId: string): Promise<RonSigner[]> {
+    return db.select().from(ronSigners).where(eq(ronSigners.sessionId, sessionId));
+  }
+
+  async getAllRonSessions(filters?: { status?: string }): Promise<RonSession[]> {
+    if (filters?.status) {
+      return db.select().from(ronSessions).where(eq(ronSessions.status, filters.status as RonSession["status"]));
+    }
+    return db.select().from(ronSessions);
+  }
+
+  async incrementRonNotarySessions(notaryId: string): Promise<void> {
+    await db.update(ronNotaries)
+      .set({
+        totalSessions: sql`COALESCE(${ronNotaries.totalSessions}, 0) + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(ronNotaries.id, notaryId));
   }
 }
 

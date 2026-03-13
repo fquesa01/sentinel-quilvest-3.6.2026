@@ -1,13 +1,10 @@
 import { Router } from "express";
 import multer from "multer";
-import { db } from "../db";
-import { eq, and, desc, asc, sql, inArray, or, ilike } from "drizzle-orm";
-import * as schema from "@shared/schema";
-import { z } from "zod";
 import { isAuthenticated, requireRole } from "../replitAuth";
 import * as journalService from "../services/ron-journal-service";
 import * as complianceService from "../services/ron-compliance-service";
 import { ObjectStorageService } from "../objectStorage";
+import { storage } from "../storage";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
@@ -15,8 +12,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100
 router.use(isAuthenticated);
 
 async function verifyTransactionAccess(transactionId: string, userId: string, userRole: string) {
-  const [txn] = await db.select().from(schema.ronTransactions)
-    .where(eq(schema.ronTransactions.id, transactionId));
+  const txn = await storage.getRonTransaction(transactionId);
   if (!txn) return { txn: null, error: "Transaction not found" };
   if (userRole !== "admin" && txn.createdBy !== userId) {
     return { txn: null, error: "Access denied" };
@@ -31,19 +27,12 @@ async function verifyTransactionAccess(transactionId: string, userId: string, us
 router.get("/transactions", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
     const { status, dealId } = req.query;
-    let query = db.select().from(schema.ronTransactions);
+    const filters: { status?: string; dealId?: string; createdBy?: string } = {};
+    if (req.user.role !== "admin") filters.createdBy = req.user.id;
+    if (status) filters.status = status as string;
+    if (dealId) filters.dealId = dealId as string;
 
-    const conditions = [];
-    if (req.user.role !== "admin") {
-      conditions.push(eq(schema.ronTransactions.createdBy, req.user.id));
-    }
-    if (status) conditions.push(eq(schema.ronTransactions.status, status as any));
-    if (dealId) conditions.push(eq(schema.ronTransactions.dealId, dealId as string));
-
-    const transactions = conditions.length > 0
-      ? await query.where(and(...conditions)).orderBy(desc(schema.ronTransactions.createdAt))
-      : await query.orderBy(desc(schema.ronTransactions.createdAt));
-
+    const transactions = await storage.getRonTransactions(filters);
     res.json(transactions);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -55,12 +44,9 @@ router.get("/transactions/:id", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(req.params.id, req.user.id, req.user.role);
     if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
 
-    const signers = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.transactionId, req.params.id));
-    const documents = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.transactionId, req.params.id));
-    const sessions = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.transactionId, req.params.id));
+    const signers = await storage.getRonSigners(req.params.id);
+    const documents = await storage.getRonDocuments(req.params.id);
+    const sessions = await storage.getRonSessions(req.params.id);
 
     res.json({ ...txn, signers, documents, sessions });
   } catch (error: any) {
@@ -71,10 +57,10 @@ router.get("/transactions/:id", async (req: any, res) => {
 router.post("/transactions", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
     const body = req.body;
-    const [txn] = await db.insert(schema.ronTransactions).values({
+    const txn = await storage.createRonTransaction({
       title: body.title,
       dealId: body.dealId || null,
-      status: body.status || "draft",
+      status: "draft",
       transactionType: body.transactionType,
       jurisdiction: body.jurisdiction,
       signingOrder: body.signingOrder || "parallel",
@@ -84,7 +70,7 @@ router.post("/transactions", requireRole("admin", "attorney", "external_counsel"
       notes: body.notes,
       metadata: body.metadata || {},
       createdBy: req.user.id,
-    }).returning();
+    });
 
     await journalService.createJournalEntry({
       transactionId: txn.id,
@@ -108,14 +94,10 @@ router.patch("/transactions/:id", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(req.params.id, req.user.id, req.user.role);
     if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
 
-    const updates: any = { ...req.body, updatedAt: new Date() };
+    const updates: any = { ...req.body };
     delete updates.id; delete updates.createdAt; delete updates.createdBy;
 
-    const [updated] = await db.update(schema.ronTransactions)
-      .set(updates)
-      .where(eq(schema.ronTransactions.id, req.params.id))
-      .returning();
-
+    const updated = await storage.updateRonTransaction(req.params.id, updates);
     res.json(updated);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -127,7 +109,7 @@ router.delete("/transactions/:id", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(req.params.id, req.user.id, req.user.role);
     if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
 
-    await db.delete(schema.ronTransactions).where(eq(schema.ronTransactions.id, req.params.id));
+    await storage.deleteRonTransaction(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -141,22 +123,14 @@ router.delete("/transactions/:id", async (req: any, res) => {
 router.get("/notaries", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
     const { state, language, status } = req.query;
-    const conditions = [];
-    if (state) conditions.push(eq(schema.ronNotaries.commissionState, state as string));
-    if (status) conditions.push(eq(schema.ronNotaries.status, status as any));
+    const filters: { state?: string; status?: string } = {};
+    if (state) filters.state = state as string;
+    if (status) filters.status = status as string;
 
-    let notaries;
-    if (conditions.length > 0) {
-      notaries = await db.select().from(schema.ronNotaries)
-        .where(and(...conditions))
-        .orderBy(asc(schema.ronNotaries.lastName));
-    } else {
-      notaries = await db.select().from(schema.ronNotaries)
-        .orderBy(asc(schema.ronNotaries.lastName));
-    }
+    let notaries = await storage.getRonNotaries(filters);
 
     if (language) {
-      notaries = notaries.filter((n: any) =>
+      notaries = notaries.filter((n) =>
         n.languages && Array.isArray(n.languages) && n.languages.includes(language as string)
       );
     }
@@ -169,16 +143,13 @@ router.get("/notaries", requireRole("admin", "attorney", "external_counsel"), as
 
 router.get("/notaries/:id", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
-    const [notary] = await db.select().from(schema.ronNotaries)
-      .where(eq(schema.ronNotaries.id, req.params.id));
+    const notary = await storage.getRonNotary(req.params.id);
     if (!notary) return res.status(404).json({ message: "Notary not found" });
 
-    const sessions = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.notaryId, req.params.id))
-      .orderBy(desc(schema.ronSessions.createdAt))
-      .limit(20);
+    const allSessions = await storage.getRonSessionsByNotary(req.params.id);
+    const recentSessions = allSessions.slice(0, 20);
 
-    res.json({ ...notary, recentSessions: sessions });
+    res.json({ ...notary, recentSessions });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -187,7 +158,7 @@ router.get("/notaries/:id", requireRole("admin", "attorney", "external_counsel")
 router.post("/notaries", requireRole("admin"), async (req: any, res) => {
   try {
     const body = req.body;
-    const [notary] = await db.insert(schema.ronNotaries).values({
+    const notary = await storage.createRonNotary({
       userId: body.userId,
       firstName: body.firstName,
       lastName: body.lastName,
@@ -205,7 +176,7 @@ router.post("/notaries", requireRole("admin"), async (req: any, res) => {
       ronTrainingCompleted: body.ronTrainingCompleted || false,
       timezone: body.timezone || "America/New_York",
       metadata: body.metadata || {},
-    }).returning();
+    });
 
     res.status(201).json(notary);
   } catch (error: any) {
@@ -215,17 +186,14 @@ router.post("/notaries", requireRole("admin"), async (req: any, res) => {
 
 router.patch("/notaries/:id", requireRole("admin"), async (req: any, res) => {
   try {
-    const updates: any = { ...req.body, updatedAt: new Date() };
+    const updates: any = { ...req.body };
     delete updates.id; delete updates.createdAt;
 
     if (updates.commissionExpiration) updates.commissionExpiration = new Date(updates.commissionExpiration);
     if (updates.bondExpiration) updates.bondExpiration = new Date(updates.bondExpiration);
     if (updates.eoInsuranceExpiration) updates.eoInsuranceExpiration = new Date(updates.eoInsuranceExpiration);
 
-    const [notary] = await db.update(schema.ronNotaries)
-      .set(updates)
-      .where(eq(schema.ronNotaries.id, req.params.id))
-      .returning();
+    const notary = await storage.updateRonNotary(req.params.id, updates);
     if (!notary) return res.status(404).json({ message: "Notary not found" });
     res.json(notary);
   } catch (error: any) {
@@ -235,14 +203,9 @@ router.patch("/notaries/:id", requireRole("admin"), async (req: any, res) => {
 
 router.delete("/notaries/:id", requireRole("admin"), async (req: any, res) => {
   try {
-    const activeSessions = await db.select().from(schema.ronSessions)
-      .where(and(
-        eq(schema.ronSessions.notaryId, req.params.id),
-        or(
-          eq(schema.ronSessions.status, "scheduled" as any),
-          eq(schema.ronSessions.status, "in_progress" as any),
-        ),
-      ));
+    const scheduledSessions = await storage.getRonSessionsByNotary(req.params.id, { status: "scheduled" });
+    const inProgressSessions = await storage.getRonSessionsByNotary(req.params.id, { status: "in_progress" });
+    const activeSessions = [...scheduledSessions, ...inProgressSessions];
 
     if (activeSessions.length > 0) {
       return res.status(400).json({
@@ -251,10 +214,7 @@ router.delete("/notaries/:id", requireRole("admin"), async (req: any, res) => {
       });
     }
 
-    const [notary] = await db.delete(schema.ronNotaries)
-      .where(eq(schema.ronNotaries.id, req.params.id))
-      .returning();
-    if (!notary) return res.status(404).json({ message: "Notary not found" });
+    await storage.deleteRonNotary(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -270,9 +230,7 @@ router.get("/transactions/:transactionId/signers", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(req.params.transactionId, req.user.id, req.user.role);
     if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
 
-    const signers = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.transactionId, req.params.transactionId))
-      .orderBy(asc(schema.ronSigners.signingOrder));
+    const signers = await storage.getRonSigners(req.params.transactionId);
     res.json(signers);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -281,15 +239,13 @@ router.get("/transactions/:transactionId/signers", async (req: any, res) => {
 
 router.get("/signers/:id", async (req: any, res) => {
   try {
-    const [signer] = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.id, req.params.id));
+    const signer = await storage.getRonSigner(req.params.id);
     if (!signer) return res.status(404).json({ message: "Signer not found" });
 
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const complianceChecks = await db.select().from(schema.ronComplianceChecks)
-      .where(eq(schema.ronComplianceChecks.signerId, req.params.id));
+    const complianceChecks = await storage.getRonComplianceChecksBySigner(req.params.id);
 
     res.json({ ...signer, complianceChecks });
   } catch (error: any) {
@@ -303,7 +259,7 @@ router.post("/transactions/:transactionId/signers", async (req: any, res) => {
     if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
 
     const body = req.body;
-    const [signer] = await db.insert(schema.ronSigners).values({
+    const signer = await storage.createRonSigner({
       transactionId: req.params.transactionId,
       firstName: body.firstName,
       lastName: body.lastName,
@@ -316,7 +272,7 @@ router.post("/transactions/:transactionId/signers", async (req: any, res) => {
       signingDependsOn: body.signingDependsOn || [],
       preferredLanguage: body.preferredLanguage || "en",
       metadata: body.metadata || {},
-    }).returning();
+    });
 
     await journalService.createJournalEntry({
       transactionId: req.params.transactionId,
@@ -337,20 +293,16 @@ router.post("/transactions/:transactionId/signers", async (req: any, res) => {
 
 router.patch("/signers/:id", async (req: any, res) => {
   try {
-    const [signer] = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.id, req.params.id));
+    const signer = await storage.getRonSigner(req.params.id);
     if (!signer) return res.status(404).json({ message: "Signer not found" });
 
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const updates: any = { ...req.body, updatedAt: new Date() };
+    const updates: any = { ...req.body };
     delete updates.id; delete updates.createdAt; delete updates.transactionId;
 
-    const [updated] = await db.update(schema.ronSigners)
-      .set(updates)
-      .where(eq(schema.ronSigners.id, req.params.id))
-      .returning();
+    const updated = await storage.updateRonSigner(req.params.id, updates);
     res.json(updated);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -359,14 +311,13 @@ router.patch("/signers/:id", async (req: any, res) => {
 
 router.delete("/signers/:id", async (req: any, res) => {
   try {
-    const [signer] = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.id, req.params.id));
+    const signer = await storage.getRonSigner(req.params.id);
     if (!signer) return res.status(404).json({ message: "Signer not found" });
 
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    await db.delete(schema.ronSigners).where(eq(schema.ronSigners.id, req.params.id));
+    await storage.deleteRonSigner(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -376,15 +327,14 @@ router.delete("/signers/:id", async (req: any, res) => {
 // Signer IDV status update
 router.post("/signers/:id/idv", async (req: any, res) => {
   try {
-    const [signer] = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.id, req.params.id));
+    const signer = await storage.getRonSigner(req.params.id);
     if (!signer) return res.status(404).json({ message: "Signer not found" });
 
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
     const { idvStatus, kbaScore, credentialType, credentialNumber } = req.body;
-    const updates: any = { updatedAt: new Date() };
+    const updates: any = {};
     if (idvStatus) updates.idvStatus = idvStatus;
     if (kbaScore !== undefined) {
       updates.kbaScore = kbaScore;
@@ -394,10 +344,7 @@ router.post("/signers/:id/idv", async (req: any, res) => {
     if (credentialType) updates.credentialType = credentialType;
     if (credentialNumber) updates.credentialNumber = credentialNumber;
 
-    const [updated] = await db.update(schema.ronSigners)
-      .set(updates)
-      .where(eq(schema.ronSigners.id, req.params.id))
-      .returning();
+    const updated = await storage.updateRonSigner(req.params.id, updates);
 
     if (idvStatus === "fully_verified") {
       await journalService.createJournalEntry({
@@ -427,9 +374,7 @@ router.get("/transactions/:transactionId/documents", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(req.params.transactionId, req.user.id, req.user.role);
     if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
 
-    const documents = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.transactionId, req.params.transactionId))
-      .orderBy(asc(schema.ronDocuments.signingOrder));
+    const documents = await storage.getRonDocuments(req.params.transactionId);
     res.json(documents);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -438,20 +383,15 @@ router.get("/transactions/:transactionId/documents", async (req: any, res) => {
 
 router.get("/documents/:id", async (req: any, res) => {
   try {
-    const [doc] = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.id, req.params.id));
+    const doc = await storage.getRonDocument(req.params.id);
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const annotations = await db.select().from(schema.ronAnnotationPlacements)
-      .where(eq(schema.ronAnnotationPlacements.documentId, req.params.id))
-      .orderBy(asc(schema.ronAnnotationPlacements.pageNumber), asc(schema.ronAnnotationPlacements.sortOrder));
-    const signatures = await db.select().from(schema.ronSignatures)
-      .where(eq(schema.ronSignatures.documentId, req.params.id));
-    const seals = await db.select().from(schema.ronSeals)
-      .where(eq(schema.ronSeals.documentId, req.params.id));
+    const annotations = await storage.getRonAnnotations(req.params.id);
+    const signatures = await storage.getRonSignaturesByDocument(req.params.id);
+    const seals = await storage.getRonSealsByDocument(req.params.id);
 
     res.json({ ...doc, annotations, signatures, seals });
   } catch (error: any) {
@@ -480,7 +420,7 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
     }
 
     const body = req.body;
-    const [doc] = await db.insert(schema.ronDocuments).values({
+    const doc = await storage.createRonDocument({
       transactionId: req.params.transactionId,
       title: body.title || file?.originalname || "Untitled Document",
       status: "uploaded",
@@ -494,7 +434,7 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
       requiresNotarization: body.requiresNotarization !== "false",
       notarizationType: body.notarizationType,
       metadata: body.metadata ? JSON.parse(body.metadata) : {},
-    }).returning();
+    });
 
     await journalService.createJournalEntry({
       transactionId: req.params.transactionId,
@@ -515,20 +455,16 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
 
 router.patch("/documents/:id", async (req: any, res) => {
   try {
-    const [doc] = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.id, req.params.id));
+    const doc = await storage.getRonDocument(req.params.id);
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const updates: any = { ...req.body, updatedAt: new Date() };
+    const updates: any = { ...req.body };
     delete updates.id; delete updates.createdAt; delete updates.transactionId;
 
-    const [updated] = await db.update(schema.ronDocuments)
-      .set(updates)
-      .where(eq(schema.ronDocuments.id, req.params.id))
-      .returning();
+    const updated = await storage.updateRonDocument(req.params.id, updates);
     res.json(updated);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -537,14 +473,13 @@ router.patch("/documents/:id", async (req: any, res) => {
 
 router.delete("/documents/:id", async (req: any, res) => {
   try {
-    const [doc] = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.id, req.params.id));
+    const doc = await storage.getRonDocument(req.params.id);
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    await db.delete(schema.ronDocuments).where(eq(schema.ronDocuments.id, req.params.id));
+    await storage.deleteRonDocument(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -557,16 +492,13 @@ router.delete("/documents/:id", async (req: any, res) => {
 
 router.get("/documents/:documentId/annotations", async (req: any, res) => {
   try {
-    const [doc] = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.id, req.params.documentId));
+    const doc = await storage.getRonDocument(req.params.documentId);
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const annotations = await db.select().from(schema.ronAnnotationPlacements)
-      .where(eq(schema.ronAnnotationPlacements.documentId, req.params.documentId))
-      .orderBy(asc(schema.ronAnnotationPlacements.pageNumber), asc(schema.ronAnnotationPlacements.sortOrder));
+    const annotations = await storage.getRonAnnotations(req.params.documentId);
     res.json(annotations);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -575,8 +507,7 @@ router.get("/documents/:documentId/annotations", async (req: any, res) => {
 
 router.post("/documents/:documentId/annotations", async (req: any, res) => {
   try {
-    const [doc] = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.id, req.params.documentId));
+    const doc = await storage.getRonDocument(req.params.documentId);
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
@@ -587,7 +518,7 @@ router.post("/documents/:documentId/annotations", async (req: any, res) => {
 
     const inserted = [];
     for (const p of placements) {
-      const [annotation] = await db.insert(schema.ronAnnotationPlacements).values({
+      const annotation = await storage.createRonAnnotation({
         documentId: req.params.documentId,
         signerId: p.signerId,
         notaryId: p.notaryId,
@@ -600,14 +531,12 @@ router.post("/documents/:documentId/annotations", async (req: any, res) => {
         required: p.required !== false,
         sortOrder: p.sortOrder || 0,
         metadata: p.metadata || {},
-      }).returning();
+      });
       inserted.push(annotation);
     }
 
     if (doc.status === "uploaded") {
-      await db.update(schema.ronDocuments)
-        .set({ status: "preparing", updatedAt: new Date() })
-        .where(eq(schema.ronDocuments.id, req.params.documentId));
+      await storage.updateRonDocument(req.params.documentId, { status: "preparing" });
     }
 
     res.status(201).json(inserted);
@@ -618,19 +547,16 @@ router.post("/documents/:documentId/annotations", async (req: any, res) => {
 
 router.delete("/annotations/:id", async (req: any, res) => {
   try {
-    const [annotation] = await db.select().from(schema.ronAnnotationPlacements)
-      .where(eq(schema.ronAnnotationPlacements.id, req.params.id));
+    const annotation = await storage.getRonAnnotation(req.params.id);
     if (!annotation) return res.status(404).json({ message: "Annotation not found" });
 
-    const [doc] = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.id, annotation.documentId));
+    const doc = await storage.getRonDocument(annotation.documentId);
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    await db.delete(schema.ronAnnotationPlacements)
-      .where(eq(schema.ronAnnotationPlacements.id, req.params.id));
+    await storage.deleteRonAnnotation(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -646,9 +572,7 @@ router.get("/transactions/:transactionId/sessions", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(req.params.transactionId, req.user.id, req.user.role);
     if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
 
-    const sessions = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.transactionId, req.params.transactionId))
-      .orderBy(desc(schema.ronSessions.scheduledStart));
+    const sessions = await storage.getRonSessions(req.params.transactionId);
     res.json(sessions);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -657,23 +581,18 @@ router.get("/transactions/:transactionId/sessions", async (req: any, res) => {
 
 router.get("/sessions/:id", async (req: any, res) => {
   try {
-    const [session] = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.id, req.params.id));
+    const session = await storage.getRonSession(req.params.id);
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const signers = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.sessionId, req.params.id));
-    const recordings = await db.select().from(schema.ronRecordings)
-      .where(eq(schema.ronRecordings.sessionId, req.params.id));
+    const signers = await storage.getRonSignersBySession(req.params.id);
+    const recordings = await storage.getRonRecordings(req.params.id);
 
     let notary = null;
     if (session.notaryId) {
-      const [n] = await db.select().from(schema.ronNotaries)
-        .where(eq(schema.ronNotaries.id, session.notaryId));
-      notary = n || null;
+      notary = await storage.getRonNotary(session.notaryId) || null;
     }
 
     res.json({ ...session, signers, recordings, notary });
@@ -684,8 +603,7 @@ router.get("/sessions/:id", async (req: any, res) => {
 
 router.delete("/sessions/:id", async (req: any, res) => {
   try {
-    const [session] = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.id, req.params.id));
+    const session = await storage.getRonSession(req.params.id);
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
@@ -695,7 +613,7 @@ router.delete("/sessions/:id", async (req: any, res) => {
       return res.status(400).json({ message: "Cannot delete an in-progress session" });
     }
 
-    await db.delete(schema.ronSessions).where(eq(schema.ronSessions.id, req.params.id));
+    await storage.deleteRonSession(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -708,7 +626,7 @@ router.post("/transactions/:transactionId/sessions", async (req: any, res) => {
     if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
 
     const body = req.body;
-    const [session] = await db.insert(schema.ronSessions).values({
+    const session = await storage.createRonSession({
       transactionId: req.params.transactionId,
       notaryId: body.notaryId,
       status: "scheduled",
@@ -717,7 +635,7 @@ router.post("/transactions/:transactionId/sessions", async (req: any, res) => {
       scheduledEnd: body.scheduledEnd ? new Date(body.scheduledEnd) : null,
       notes: body.notes,
       metadata: body.metadata || {},
-    }).returning();
+    });
 
     await journalService.createJournalEntry({
       transactionId: req.params.transactionId,
@@ -739,14 +657,13 @@ router.post("/transactions/:transactionId/sessions", async (req: any, res) => {
 
 router.patch("/sessions/:id", async (req: any, res) => {
   try {
-    const [session] = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.id, req.params.id));
+    const session = await storage.getRonSession(req.params.id);
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const updates: any = { ...req.body, updatedAt: new Date() };
+    const updates: any = { ...req.body };
     delete updates.id; delete updates.createdAt; delete updates.transactionId;
 
     if (updates.scheduledStart) updates.scheduledStart = new Date(updates.scheduledStart);
@@ -754,10 +671,7 @@ router.patch("/sessions/:id", async (req: any, res) => {
     if (updates.actualStart) updates.actualStart = new Date(updates.actualStart);
     if (updates.actualEnd) updates.actualEnd = new Date(updates.actualEnd);
 
-    const [updated] = await db.update(schema.ronSessions)
-      .set(updates)
-      .where(eq(schema.ronSessions.id, req.params.id))
-      .returning();
+    const updated = await storage.updateRonSession(req.params.id, updates);
 
     if (req.body.status && req.body.status !== session.status) {
       const eventMap: Record<string, string> = {
@@ -791,26 +705,19 @@ router.patch("/sessions/:id", async (req: any, res) => {
 // Start session
 router.post("/sessions/:id/start", async (req: any, res) => {
   try {
-    const [session] = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.id, req.params.id));
+    const session = await storage.getRonSession(req.params.id);
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const [updated] = await db.update(schema.ronSessions)
-      .set({
-        status: "in_progress",
-        actualStart: new Date(),
-        recordingStatus: "recording",
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.ronSessions.id, req.params.id))
-      .returning();
+    const updated = await storage.updateRonSession(req.params.id, {
+      status: "in_progress",
+      actualStart: new Date(),
+      recordingStatus: "recording",
+    });
 
-    await db.update(schema.ronTransactions)
-      .set({ status: "in_progress", updatedAt: new Date() })
-      .where(eq(schema.ronTransactions.id, session.transactionId));
+    await storage.updateRonTransaction(session.transactionId, { status: "in_progress" });
 
     await journalService.createJournalEntry({
       transactionId: session.transactionId,
@@ -832,8 +739,7 @@ router.post("/sessions/:id/start", async (req: any, res) => {
 // Complete session
 router.post("/sessions/:id/complete", async (req: any, res) => {
   try {
-    const [session] = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.id, req.params.id));
+    const session = await storage.getRonSession(req.params.id);
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
@@ -844,27 +750,18 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
       ? Math.round((now.getTime() - session.actualStart.getTime()) / 1000)
       : 0;
 
-    const [updated] = await db.update(schema.ronSessions)
-      .set({
-        status: "completed",
-        actualEnd: now,
-        durationSeconds: duration,
-        recordingStatus: "completed",
-        updatedAt: now,
-      })
-      .where(eq(schema.ronSessions.id, req.params.id))
-      .returning();
+    const updated = await storage.updateRonSession(req.params.id, {
+      status: "completed",
+      actualEnd: now,
+      durationSeconds: duration,
+      recordingStatus: "completed",
+    });
 
-    const activeSessions = await db.select().from(schema.ronSessions)
-      .where(and(
-        eq(schema.ronSessions.transactionId, session.transactionId),
-        eq(schema.ronSessions.status, "in_progress" as any),
-      ));
+    const remainingActiveSessions = await storage.getRonSessions(session.transactionId);
+    const stillActive = remainingActiveSessions.filter(s => s.status === "in_progress" && s.id !== req.params.id);
 
-    if (activeSessions.length === 0) {
-      await db.update(schema.ronTransactions)
-        .set({ status: "completed", completedDate: now, updatedAt: now })
-        .where(eq(schema.ronTransactions.id, session.transactionId));
+    if (stillActive.length === 0) {
+      await storage.updateRonTransaction(session.transactionId, { status: "completed", completedDate: now });
     }
 
     await journalService.createJournalEntry({
@@ -880,12 +777,7 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
     });
 
     if (session.notaryId) {
-      await db.update(schema.ronNotaries)
-        .set({
-          totalSessions: sql`COALESCE(${schema.ronNotaries.totalSessions}, 0) + 1`,
-          updatedAt: now,
-        })
-        .where(eq(schema.ronNotaries.id, session.notaryId));
+      await storage.incrementRonNotarySessions(session.notaryId);
     }
 
     res.json(updated);
@@ -905,21 +797,19 @@ router.post("/signatures", async (req: any, res) => {
       return res.status(400).json({ message: "signerId, documentId, pageNumber, xPosition, and yPosition are required" });
     }
 
-    const [doc] = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.id, body.documentId));
+    const doc = await storage.getRonDocument(body.documentId);
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const [signer] = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.id, body.signerId));
+    const signer = await storage.getRonSigner(body.signerId);
     if (!signer) return res.status(404).json({ message: "Signer not found" });
     if (signer.transactionId !== doc.transactionId) {
       return res.status(400).json({ message: "Signer does not belong to this transaction" });
     }
 
-    const [signature] = await db.insert(schema.ronSignatures).values({
+    const signature = await storage.createRonSignature({
       signerId: body.signerId,
       documentId: body.documentId,
       annotationId: body.annotationId,
@@ -932,12 +822,10 @@ router.post("/signatures", async (req: any, res) => {
       yPosition: body.yPosition.toString(),
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
-    }).returning();
+    });
 
     if (body.annotationId) {
-      await db.update(schema.ronAnnotationPlacements)
-        .set({ completed: true, completedAt: new Date() })
-        .where(eq(schema.ronAnnotationPlacements.id, body.annotationId));
+      await storage.updateRonAnnotation(body.annotationId, { completed: true, completedAt: new Date() });
     }
 
     await journalService.createJournalEntry({
@@ -952,17 +840,12 @@ router.post("/signatures", async (req: any, res) => {
       ipAddress: req.ip,
     });
 
-    const allAnnotations = await db.select().from(schema.ronAnnotationPlacements)
-      .where(eq(schema.ronAnnotationPlacements.documentId, body.documentId));
+    const allAnnotations = await storage.getRonAnnotations(body.documentId);
     const allCompleted = allAnnotations.every(a => a.completed || !a.required);
     if (allCompleted && allAnnotations.length > 0) {
-      await db.update(schema.ronDocuments)
-        .set({ status: "fully_signed", updatedAt: new Date() })
-        .where(eq(schema.ronDocuments.id, body.documentId));
+      await storage.updateRonDocument(body.documentId, { status: "fully_signed" });
     } else {
-      await db.update(schema.ronDocuments)
-        .set({ status: "in_signing", updatedAt: new Date() })
-        .where(eq(schema.ronDocuments.id, body.documentId));
+      await storage.updateRonDocument(body.documentId, { status: "in_signing" });
     }
 
     res.status(201).json(signature);
@@ -978,15 +861,13 @@ router.post("/seals", async (req: any, res) => {
       return res.status(400).json({ message: "notaryId, documentId, pageNumber, xPosition, and yPosition are required" });
     }
 
-    const [doc] = await db.select().from(schema.ronDocuments)
-      .where(eq(schema.ronDocuments.id, body.documentId));
+    const doc = await storage.getRonDocument(body.documentId);
     if (!doc) return res.status(404).json({ message: "Document not found" });
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const [notary] = await db.select().from(schema.ronNotaries)
-      .where(eq(schema.ronNotaries.id, body.notaryId));
+    const notary = await storage.getRonNotary(body.notaryId);
     if (!notary) return res.status(404).json({ message: "Notary not found" });
 
     if (notary.status !== "active") {
@@ -994,14 +875,13 @@ router.post("/seals", async (req: any, res) => {
     }
 
     if (body.sessionId) {
-      const [session] = await db.select().from(schema.ronSessions)
-        .where(eq(schema.ronSessions.id, body.sessionId));
+      const session = await storage.getRonSession(body.sessionId);
       if (!session || session.transactionId !== doc.transactionId) {
         return res.status(400).json({ message: "Session does not belong to this transaction" });
       }
     }
 
-    const [seal] = await db.insert(schema.ronSeals).values({
+    const seal = await storage.createRonSeal({
       notaryId: body.notaryId,
       documentId: body.documentId,
       sessionId: body.sessionId,
@@ -1013,11 +893,9 @@ router.post("/seals", async (req: any, res) => {
       commissionState: notary.commissionState,
       commissionNumber: notary.commissionNumber,
       commissionExpiration: notary.commissionExpiration,
-    }).returning();
+    });
 
-    await db.update(schema.ronDocuments)
-      .set({ status: "notarized", updatedAt: new Date() })
-      .where(eq(schema.ronDocuments.id, body.documentId));
+    await storage.updateRonDocument(body.documentId, { status: "notarized" });
 
     await journalService.createJournalEntry({
       transactionId: doc.transactionId,
@@ -1110,8 +988,7 @@ router.post("/transactions/:transactionId/compliance/check", async (req: any, re
     }
 
     if (signerId) {
-      const [signer] = await db.select().from(schema.ronSigners)
-        .where(eq(schema.ronSigners.id, signerId));
+      const signer = await storage.getRonSigner(signerId);
       if (!signer || signer.transactionId !== req.params.transactionId) {
         return res.status(400).json({ message: "Signer does not belong to this transaction" });
       }
@@ -1143,8 +1020,7 @@ router.post("/transactions/:transactionId/compliance/check", async (req: any, re
 
 router.get("/signers/:signerId/readiness", async (req: any, res) => {
   try {
-    const [signer] = await db.select().from(schema.ronSigners)
-      .where(eq(schema.ronSigners.id, req.params.signerId));
+    const signer = await storage.getRonSigner(req.params.signerId);
     if (!signer) return res.status(404).json({ message: "Signer not found" });
 
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
@@ -1164,15 +1040,13 @@ router.get("/signers/:signerId/readiness", async (req: any, res) => {
 
 router.get("/sessions/:sessionId/recordings", async (req: any, res) => {
   try {
-    const [session] = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.id, req.params.sessionId));
+    const session = await storage.getRonSession(req.params.sessionId);
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    const recordings = await db.select().from(schema.ronRecordings)
-      .where(eq(schema.ronRecordings.sessionId, req.params.sessionId));
+    const recordings = await storage.getRonRecordings(req.params.sessionId);
     res.json(recordings);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -1181,8 +1055,7 @@ router.get("/sessions/:sessionId/recordings", async (req: any, res) => {
 
 router.post("/sessions/:sessionId/recordings", async (req: any, res) => {
   try {
-    const [session] = await db.select().from(schema.ronSessions)
-      .where(eq(schema.ronSessions.id, req.params.sessionId));
+    const session = await storage.getRonSession(req.params.sessionId);
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
@@ -1192,14 +1065,14 @@ router.post("/sessions/:sessionId/recordings", async (req: any, res) => {
     const retentionExp = new Date();
     retentionExp.setFullYear(retentionExp.getFullYear() + retentionYears);
 
-    const [recording] = await db.insert(schema.ronRecordings).values({
+    const recording = await storage.createRonRecording({
       sessionId: req.params.sessionId,
       status: "recording",
       startedAt: new Date(),
       retentionExpiration: retentionExp,
       format: req.body.format || "webm",
       metadata: req.body.metadata || {},
-    }).returning();
+    });
 
     await journalService.createJournalEntry({
       transactionId: session.transactionId,
@@ -1222,13 +1095,10 @@ router.post("/sessions/:sessionId/recordings", async (req: any, res) => {
 
 router.get("/dashboard/stats", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
-    const conditions = req.user.role !== "admin"
-      ? [eq(schema.ronTransactions.createdBy, req.user.id)]
-      : [];
+    const filters: { createdBy?: string } = {};
+    if (req.user.role !== "admin") filters.createdBy = req.user.id;
 
-    const allTxns = conditions.length > 0
-      ? await db.select().from(schema.ronTransactions).where(and(...conditions))
-      : await db.select().from(schema.ronTransactions);
+    const allTxns = await storage.getRonTransactions(filters);
 
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -1238,10 +1108,9 @@ router.get("/dashboard/stats", requireRole("admin", "attorney", "external_counse
       t.status === "completed" && t.completedDate && t.completedDate >= thirtyDaysAgo
     );
 
-    const allSessions = await db.select().from(schema.ronSessions);
+    const allSessions = await storage.getAllRonSessions();
     const pendingSessions = allSessions.filter(s => s.status === "scheduled");
-    const activeNotaries = await db.select().from(schema.ronNotaries)
-      .where(eq(schema.ronNotaries.status, "active" as any));
+    const activeNotaries = await storage.getRonNotaries({ status: "active" });
 
     res.json({
       activeTransactions: active.length,
