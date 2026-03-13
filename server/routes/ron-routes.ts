@@ -761,6 +761,12 @@ router.post("/sessions/:id/start", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
+    if (!["scheduled", "paused"].includes(session.status)) {
+      return res.status(400).json({
+        message: `Cannot start session in "${session.status}" status. Session must be "scheduled" or "paused".`,
+      });
+    }
+
     const updated = await storage.updateRonSession(req.params.id, {
       status: "in_progress",
       actualStart: new Date(),
@@ -794,6 +800,12 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
 
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
+
+    if (!["in_progress", "paused"].includes(session.status)) {
+      return res.status(400).json({
+        message: `Cannot complete session in "${session.status}" status. Session must be "in_progress" or "paused".`,
+      });
+    }
 
     const now = new Date();
     const duration = session.actualStart
@@ -1164,16 +1176,28 @@ router.get("/dashboard/stats", requireRole("admin", "attorney", "external_counse
       t.status === "completed" && t.completedDate && t.completedDate >= thirtyDaysAgo
     );
 
-    const allSessions = await storage.getAllRonSessions();
-    const pendingSessions = allSessions.filter(s => s.status === "scheduled");
-    const activeNotaries = await storage.getRonNotaries({ status: "active" });
+    let pendingSessionCount = 0;
+    let activeNotaryCount = 0;
+
+    if (req.user.role === "admin") {
+      const allSessions = await storage.getAllRonSessions();
+      pendingSessionCount = allSessions.filter(s => s.status === "scheduled").length;
+      const activeNotaries = await storage.getRonNotaries({ status: "active" });
+      activeNotaryCount = activeNotaries.length;
+    } else {
+      const txnIds = new Set(allTxns.map(t => t.id));
+      for (const txnId of txnIds) {
+        const sessions = await storage.getRonSessions(txnId);
+        pendingSessionCount += sessions.filter(s => s.status === "scheduled").length;
+      }
+    }
 
     res.json({
       activeTransactions: active.length,
       completedThisMonth: completedRecently.length,
-      pendingSessions: pendingSessions.length,
+      pendingSessions: pendingSessionCount,
       totalTransactions: allTxns.length,
-      activeNotaries: activeNotaries.length,
+      ...(req.user.role === "admin" ? { activeNotaries: activeNotaryCount } : {}),
     });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
