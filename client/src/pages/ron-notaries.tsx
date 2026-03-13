@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -27,30 +28,64 @@ import {
   Calendar,
   Globe,
   Award,
-  Users,
+  CheckCircle2,
+  Clock,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
-import type { RonNotary } from "@shared/schema";
+import type { RonNotary, RonSession } from "@shared/schema";
 
 const stateOptions = ["FL", "TX", "VA", "CA", "NY", "AZ", "CO", "GA", "IL", "NJ", "OH", "PA"];
+
+const languageOptions = ["English", "Spanish", "French", "Portuguese", "Mandarin", "Korean", "Japanese", "Vietnamese", "Arabic", "Russian", "German"];
 
 export default function RonNotaries() {
   const [searchTerm, setSearchTerm] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
+  const [languageFilter, setLanguageFilter] = useState("all");
+  const [availabilityFilter, setAvailabilityFilter] = useState("all");
   const [selectedNotary, setSelectedNotary] = useState<RonNotary | null>(null);
 
   const { data: notaries, isLoading } = useQuery<RonNotary[]>({
     queryKey: ["/api/ron/notaries"],
   });
 
+  const { data: notaryDetail } = useQuery<RonNotary & { recentSessions?: RonSession[] }>({
+    queryKey: ["/api/ron/notaries", selectedNotary?.id],
+    enabled: !!selectedNotary,
+  });
+
+  const notarySessions = notaryDetail?.recentSessions ?? [];
+
   const filtered = notaries?.filter((n) => {
     const matchesSearch =
       !searchTerm ||
       `${n.firstName} ${n.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (n.commissionNumber || "").toLowerCase().includes(searchTerm.toLowerCase());
+      (n.commissionNumber || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (n.email || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesState = stateFilter === "all" || n.commissionState === stateFilter;
-    return matchesSearch && matchesState;
+
+    const notaryLangs = Array.isArray(n.languages) ? (n.languages as string[]).map(l => l.toLowerCase()) : [];
+    const matchesLanguage = languageFilter === "all" || notaryLangs.includes(languageFilter.toLowerCase());
+
+    const isExpired = n.commissionExpiration && new Date(n.commissionExpiration) < new Date();
+    const isActive = n.status === "active" && !isExpired;
+    const matchesAvailability =
+      availabilityFilter === "all" ||
+      (availabilityFilter === "available" && isActive) ||
+      (availabilityFilter === "unavailable" && !isActive);
+
+    return matchesSearch && matchesState && matchesLanguage && matchesAvailability;
   });
+
+  const hasActiveFilters = stateFilter !== "all" || languageFilter !== "all" || availabilityFilter !== "all";
+
+  const clearFilters = () => {
+    setStateFilter("all");
+    setLanguageFilter("all");
+    setAvailabilityFilter("all");
+    setSearchTerm("");
+  };
 
   if (isLoading) {
     return (
@@ -85,7 +120,7 @@ export default function RonNotaries() {
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search notaries..."
+            placeholder="Search by name, email, commission..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9"
@@ -103,12 +138,39 @@ export default function RonNotaries() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={languageFilter} onValueChange={setLanguageFilter}>
+          <SelectTrigger className="w-[160px]" data-testid="select-language-filter">
+            <SelectValue placeholder="All Languages" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Languages</SelectItem>
+            {languageOptions.map((l) => (
+              <SelectItem key={l} value={l}>{l}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={availabilityFilter} onValueChange={setAvailabilityFilter}>
+          <SelectTrigger className="w-[160px]" data-testid="select-availability-filter">
+            <SelectValue placeholder="All Availability" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Availability</SelectItem>
+            <SelectItem value="available">Available</SelectItem>
+            <SelectItem value="unavailable">Unavailable</SelectItem>
+          </SelectContent>
+        </Select>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-notary-filters">
+            <X className="h-3 w-3 mr-1" /> Clear
+          </Button>
+        )}
       </div>
 
       {filtered && filtered.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((notary) => {
             const isExpired = notary.commissionExpiration && new Date(notary.commissionExpiration) < new Date();
+            const isActive = notary.status === "active" && !isExpired;
             return (
               <Card
                 key={notary.id}
@@ -133,7 +195,7 @@ export default function RonNotaries() {
                       </div>
                     </div>
                     <Badge className={
-                      notary.status === "active" && !isExpired
+                      isActive
                         ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
                         : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
                     }>
@@ -147,7 +209,7 @@ export default function RonNotaries() {
                         Exp: {format(new Date(notary.commissionExpiration), "MMM d, yyyy")}
                       </span>
                     )}
-                    {notary.languages && Array.isArray(notary.languages) && notary.languages.length > 0 && (
+                    {notary.languages && Array.isArray(notary.languages) && (notary.languages as string[]).length > 0 && (
                       <span className="flex items-center gap-1">
                         <Globe className="h-3 w-3" />
                         {(notary.languages as string[]).join(", ")}
@@ -170,7 +232,7 @@ export default function RonNotaries() {
             <Shield className="h-10 w-10 mx-auto mb-3 opacity-50" />
             <p className="font-medium">No notaries found</p>
             <p className="text-sm mt-1">
-              {searchTerm || stateFilter !== "all"
+              {searchTerm || hasActiveFilters
                 ? "Try adjusting your filters"
                 : "No notaries registered in the system"}
             </p>
@@ -179,7 +241,7 @@ export default function RonNotaries() {
       )}
 
       <Dialog open={!!selectedNotary} onOpenChange={() => setSelectedNotary(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Notary Profile</DialogTitle>
           </DialogHeader>
@@ -255,6 +317,35 @@ export default function RonNotaries() {
                     <p className="text-muted-foreground">Total Sessions</p>
                     <p className="font-medium">{selectedNotary.totalSessions}</p>
                   </div>
+                )}
+              </div>
+
+              <Separator />
+
+              <div>
+                <p className="font-medium text-sm mb-3">Session History</p>
+                {notarySessions.length > 0 ? (
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {notarySessions.map((session) => (
+                      <div key={session.id} className="flex items-center justify-between gap-2 p-2 rounded border border-border text-sm">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium">{session.sessionType?.replace(/_/g, " ")} Session</p>
+                          <p className="text-xs text-muted-foreground">
+                            {session.scheduledStart
+                              ? format(new Date(session.scheduledStart), "MMM d, yyyy h:mm a")
+                              : "No date"}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="text-xs flex-shrink-0">
+                          {session.status === "completed" && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                          {session.status === "scheduled" && <Clock className="h-3 w-3 mr-1" />}
+                          {session.status?.replace(/_/g, " ") || "Unknown"}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No session history available</p>
                 )}
               </div>
             </div>

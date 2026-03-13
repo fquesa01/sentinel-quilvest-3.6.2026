@@ -56,6 +56,9 @@ import {
   Eye,
   UserPlus,
   Loader2,
+  MousePointer2,
+  Bell,
+  GripVertical,
 } from "lucide-react";
 import { format } from "date-fns";
 import type {
@@ -85,14 +88,8 @@ const statusColors: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
   verified: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
   failed: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
-};
-
-const idvSteps = ["credential_analysis", "liveness", "kba", "ofac"] as const;
-const idvLabels: Record<string, string> = {
-  credential_analysis: "ID Check",
-  liveness: "Liveness",
-  kba: "KBA Quiz",
-  ofac: "OFAC Screen",
+  not_started: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+  passed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
 };
 
 const signerRoleLabels: Record<string, string> = {
@@ -104,6 +101,7 @@ const signerRoleLabels: Record<string, string> = {
   gp: "GP",
   lp: "LP",
   counsel: "Counsel",
+  principal: "Principal",
 };
 
 const journalEventLabels: Record<string, string> = {
@@ -130,6 +128,29 @@ const journalEventLabels: Record<string, string> = {
   signing_order_changed: "Signing Order Changed",
 };
 
+const annotationTypes = [
+  { value: "signature", label: "Signature" },
+  { value: "initials", label: "Initials" },
+  { value: "date", label: "Date" },
+  { value: "text", label: "Text Field" },
+  { value: "checkbox", label: "Checkbox" },
+  { value: "notary_seal", label: "Notary Seal" },
+];
+
+function getIdvStatusDisplay(signer: RonSigner) {
+  const status = signer.idvStatus || "not_started";
+  switch (status) {
+    case "passed":
+      return { label: "Verified", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300", icon: CheckCircle2 };
+    case "failed":
+      return { label: "Failed", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300", icon: AlertTriangle };
+    case "in_progress":
+      return { label: "In Progress", color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300", icon: Clock };
+    default:
+      return { label: "Pending IDV", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300", icon: AlertTriangle };
+  }
+}
+
 export default function RonTransactionDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -153,6 +174,18 @@ export default function RonTransactionDetail() {
     scheduledEnd: "",
     notaryId: "",
     sessionType: "live",
+  });
+
+  const [docPrepOpen, setDocPrepOpen] = useState(false);
+  const [selectedDocForPrep, setSelectedDocForPrep] = useState<RonDocument | null>(null);
+  const [annotationPlacement, setAnnotationPlacement] = useState({
+    type: "signature",
+    assignedTo: "",
+    pageNumber: 1,
+    xPosition: 50,
+    yPosition: 50,
+    width: 200,
+    height: 50,
   });
 
   const { data: transaction, isLoading } = useQuery<RonTransaction>({
@@ -204,7 +237,7 @@ export default function RonTransactionDetail() {
       setAddSignerOpen(false);
       setSignerForm({ firstName: "", lastName: "", email: "", phone: "", role: "signer", signingOrder: 1 });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const uploadDocMutation = useMutation({
@@ -228,7 +261,7 @@ export default function RonTransactionDetail() {
       setDocFile(null);
       setDocTitle("");
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const scheduleSessionMutation = useMutation({
@@ -245,7 +278,7 @@ export default function RonTransactionDetail() {
       setScheduleOpen(false);
       setScheduleForm({ scheduledStart: "", scheduledEnd: "", notaryId: "", sessionType: "live" });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const startSessionMutation = useMutation({
@@ -254,7 +287,7 @@ export default function RonTransactionDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/ron/transactions", id, "sessions"] });
       toast({ title: "Session started" });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const completeSessionMutation = useMutation({
@@ -264,7 +297,7 @@ export default function RonTransactionDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/ron/transactions", id] });
       toast({ title: "Session completed" });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const deleteSignerMutation = useMutation({
@@ -273,7 +306,21 @@ export default function RonTransactionDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/ron/transactions", id, "signers"] });
       toast({ title: "Signer removed" });
     },
-    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const addAnnotationMutation = useMutation({
+    mutationFn: async (data: { documentId: string; placement: typeof annotationPlacement }) => {
+      return apiRequest("POST", `/api/ron/documents/${data.documentId}/annotations`, {
+        ...data.placement,
+        assignedSignerId: data.placement.assignedTo || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Annotation placed" });
+      setAnnotationPlacement({ ...annotationPlacement, yPosition: annotationPlacement.yPosition + 70 });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   if (isLoading) {
@@ -296,6 +343,13 @@ export default function RonTransactionDetail() {
       </div>
     );
   }
+
+  const selectedNotaryForSchedule = notaries.find(n => n.id === scheduleForm.notaryId);
+  const isNotaryAvailable = selectedNotaryForSchedule
+    ? selectedNotaryForSchedule.status === "active" &&
+      (!selectedNotaryForSchedule.commissionExpiration ||
+        new Date(selectedNotaryForSchedule.commissionExpiration) > new Date())
+    : true;
 
   return (
     <div className="p-6 space-y-6" data-testid="ron-transaction-detail-page">
@@ -376,7 +430,7 @@ export default function RonTransactionDetail() {
               <CardContent>
                 <div className="text-2xl font-bold">{signers.length}</div>
                 <p className="text-xs text-muted-foreground">
-                  {signers.filter(s => s.identityVerified).length} verified
+                  {signers.filter(s => s.idvStatus === "passed").length} verified
                 </p>
               </CardContent>
             </Card>
@@ -426,9 +480,22 @@ export default function RonTransactionDetail() {
                         </p>
                       </div>
                     </div>
-                    <Badge className={statusColors[doc.status || "uploaded"]}>
-                      {doc.status?.replace(/_/g, " ") || "Uploaded"}
-                    </Badge>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedDocForPrep(doc);
+                          setDocPrepOpen(true);
+                        }}
+                        data-testid={`button-prep-doc-${doc.id}`}
+                      >
+                        <MousePointer2 className="h-3 w-3 mr-1" /> Prep
+                      </Button>
+                      <Badge className={statusColors[doc.status || "uploaded"]}>
+                        {doc.status?.replace(/_/g, " ") || "Uploaded"}
+                      </Badge>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -452,61 +519,67 @@ export default function RonTransactionDetail() {
           </div>
           {signers.length > 0 ? (
             <div className="space-y-2">
-              {signers.map((signer) => (
-                <Card key={signer.id}>
-                  <CardContent className="p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <Users className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm">
-                            {signer.firstName} {signer.lastName}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {signerRoleLabels[signer.role || ""] || signer.role} &middot; {signer.email}
-                          </p>
+              {signers.map((signer) => {
+                const idvDisplay = getIdvStatusDisplay(signer);
+                const IdvIcon = idvDisplay.icon;
+                return (
+                  <Card key={signer.id}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Users className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm">
+                              {signer.firstName} {signer.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {signerRoleLabels[signer.role || ""] || signer.role} &middot; {signer.email}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Badge className={idvDisplay.color}>
+                            <IdvIcon className="h-3 w-3 mr-1" /> {idvDisplay.label}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteSignerMutation.mutate(signer.id)}
+                            data-testid={`button-remove-signer-${signer.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {signer.identityVerified ? (
-                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-                            <CheckCircle2 className="h-3 w-3 mr-1" /> Verified
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">
-                            <AlertTriangle className="h-3 w-3 mr-1" /> Pending IDV
+                      <div className="mt-2 flex gap-2 flex-wrap text-xs">
+                        <Badge
+                          variant="outline"
+                          className={`${signer.idvStatus === "passed" ? "border-green-500 text-green-700 dark:text-green-400" : "border-muted-foreground/30"}`}
+                        >
+                          ID Check
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={`${signer.livenessCheckPassed ? "border-green-500 text-green-700 dark:text-green-400" : "border-muted-foreground/30"}`}
+                        >
+                          Liveness
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={`${signer.kbaScore && signer.kbaScore >= 70 ? "border-green-500 text-green-700 dark:text-green-400" : "border-muted-foreground/30"}`}
+                        >
+                          KBA {signer.kbaScore ? `(${signer.kbaScore}%)` : ""}
+                        </Badge>
+                        {signer.signingOrder !== undefined && signer.signingOrder !== null && (
+                          <Badge variant="outline" className="border-muted-foreground/30">
+                            <GripVertical className="h-3 w-3 mr-1" /> Order: {signer.signingOrder}
                           </Badge>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteSignerMutation.mutate(signer.id)}
-                          data-testid={`button-remove-signer-${signer.id}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
                       </div>
-                    </div>
-                    <div className="mt-2 flex gap-1 flex-wrap">
-                      {idvSteps.map((step) => {
-                        const checks = (signer as any).complianceChecks || [];
-                        const check = Array.isArray(checks) ? checks.find((c: any) => c.checkType === step) : null;
-                        const passed = check?.result === "pass";
-                        const pending = !check || check?.result === "pending";
-                        return (
-                          <Badge
-                            key={step}
-                            variant="outline"
-                            className={`text-xs ${passed ? "border-green-500 text-green-700 dark:text-green-400" : pending ? "border-muted-foreground/30" : "border-red-500 text-red-700 dark:text-red-400"}`}
-                          >
-                            {idvLabels[step]}
-                          </Badge>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           ) : (
             <Card>
@@ -793,7 +866,7 @@ export default function RonTransactionDetail() {
       </Dialog>
 
       <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Schedule Session</DialogTitle>
           </DialogHeader>
@@ -823,13 +896,32 @@ export default function RonTransactionDetail() {
                   <SelectValue placeholder="Select notary..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {notaries.map((n) => (
-                    <SelectItem key={n.id} value={n.id}>
-                      {n.firstName} {n.lastName} ({n.commissionState})
-                    </SelectItem>
-                  ))}
+                  {notaries.map((n) => {
+                    const expired = n.commissionExpiration && new Date(n.commissionExpiration) < new Date();
+                    const inactive = n.status !== "active";
+                    return (
+                      <SelectItem key={n.id} value={n.id}>
+                        {n.firstName} {n.lastName} ({n.commissionState})
+                        {expired ? " [Expired]" : inactive ? ` [${n.status}]` : ""}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
+              {selectedNotaryForSchedule && !isNotaryAvailable && (
+                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  This notary's commission is expired or inactive
+                </p>
+              )}
+              {selectedNotaryForSchedule && isNotaryAvailable && (
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  {selectedNotaryForSchedule.commissionState} &middot; Commission active
+                  {selectedNotaryForSchedule.languages && Array.isArray(selectedNotaryForSchedule.languages) && (selectedNotaryForSchedule.languages as string[]).length > 0 &&
+                    ` &middot; ${(selectedNotaryForSchedule.languages as string[]).join(", ")}`}
+                </p>
+              )}
             </div>
             <div>
               <Label>Session Type</Label>
@@ -844,6 +936,29 @@ export default function RonTransactionDetail() {
                 </SelectContent>
               </Select>
             </div>
+
+            {signers.length > 0 && scheduleForm.scheduledStart && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Bell className="h-4 w-4" /> Signer Notification Preview
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-xs space-y-2">
+                  {signers.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between gap-2 p-2 rounded border border-border">
+                      <span>{s.firstName} {s.lastName} ({s.email})</span>
+                      <Badge variant="outline" className="text-xs">
+                        <Send className="h-3 w-3 mr-1" /> Email invite
+                      </Badge>
+                    </div>
+                  ))}
+                  <p className="text-muted-foreground">
+                    Signers will be notified at session creation with the scheduled date: {scheduleForm.scheduledStart ? format(new Date(scheduleForm.scheduledStart), "MMM d, yyyy h:mm a") : ""}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setScheduleOpen(false)}>Cancel</Button>
@@ -856,6 +971,133 @@ export default function RonTransactionDetail() {
               Schedule
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={docPrepOpen} onOpenChange={(open) => { setDocPrepOpen(open); if (!open) setSelectedDocForPrep(null); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MousePointer2 className="h-5 w-5" /> Document Preparation
+            </DialogTitle>
+          </DialogHeader>
+          {selectedDocForPrep && (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">{selectedDocForPrep.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedDocForPrep.pageCount ?? "?"} pages &middot; {selectedDocForPrep.documentType || "General"}
+                  </p>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="border border-border rounded-md p-4 bg-muted/30 min-h-[200px] relative">
+                <p className="text-xs text-muted-foreground mb-3">Document Preview Area</p>
+                <div className="border border-dashed border-primary/40 rounded p-8 text-center text-muted-foreground text-sm">
+                  <Eye className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>Document pages render here</p>
+                  <p className="text-xs mt-1">Click positions below to place annotation fields</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Place Annotation Field</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Field Type</Label>
+                    <Select value={annotationPlacement.type} onValueChange={(v) => setAnnotationPlacement({ ...annotationPlacement, type: v })}>
+                      <SelectTrigger data-testid="select-annotation-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {annotationTypes.map((at) => (
+                          <SelectItem key={at.value} value={at.value}>{at.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Assign to Signer</Label>
+                    <Select
+                      value={annotationPlacement.assignedTo}
+                      onValueChange={(v) => setAnnotationPlacement({ ...annotationPlacement, assignedTo: v === "none" ? "" : v })}
+                    >
+                      <SelectTrigger data-testid="select-annotation-signer">
+                        <SelectValue placeholder="Select signer..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Unassigned</SelectItem>
+                        {signers.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.firstName} {s.lastName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div>
+                    <Label className="text-xs">Page</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={selectedDocForPrep.pageCount || 100}
+                      value={annotationPlacement.pageNumber}
+                      onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, pageNumber: parseInt(e.target.value) || 1 })}
+                      data-testid="input-annotation-page"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">X Position</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={annotationPlacement.xPosition}
+                      onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, xPosition: parseInt(e.target.value) || 0 })}
+                      data-testid="input-annotation-x"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Y Position</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={annotationPlacement.yPosition}
+                      onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, yPosition: parseInt(e.target.value) || 0 })}
+                      data-testid="input-annotation-y"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Width</Label>
+                    <Input
+                      type="number"
+                      min={20}
+                      value={annotationPlacement.width}
+                      onChange={(e) => setAnnotationPlacement({ ...annotationPlacement, width: parseInt(e.target.value) || 100 })}
+                      data-testid="input-annotation-width"
+                    />
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => addAnnotationMutation.mutate({
+                    documentId: selectedDocForPrep.id,
+                    placement: annotationPlacement,
+                  })}
+                  disabled={addAnnotationMutation.isPending}
+                  data-testid="button-place-annotation"
+                >
+                  {addAnnotationMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  <MousePointer2 className="h-4 w-4 mr-1" /> Place Field
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

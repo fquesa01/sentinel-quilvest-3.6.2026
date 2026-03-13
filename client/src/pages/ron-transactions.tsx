@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -20,11 +21,11 @@ import {
   ArrowLeft,
   Calendar,
   MapPin,
-  Users,
   AlertCircle,
+  X,
 } from "lucide-react";
-import { format } from "date-fns";
-import type { RonTransaction } from "@shared/schema";
+import { format, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
+import type { RonTransaction, Deal } from "@shared/schema";
 
 const statusColors: Record<string, string> = {
   draft: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
@@ -60,9 +61,16 @@ const typeLabels: Record<string, string> = {
 export default function RonTransactions() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dealFilter, setDealFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const { data: transactions, isLoading, isError } = useQuery<RonTransaction[]>({
     queryKey: ["/api/ron/transactions"],
+  });
+
+  const { data: deals } = useQuery<Deal[]>({
+    queryKey: ["/api/deals"],
   });
 
   const filtered = transactions?.filter((txn) => {
@@ -71,8 +79,24 @@ export default function RonTransactions() {
       (txn.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (txn.jurisdiction || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || txn.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesDeal =
+      dealFilter === "all" ||
+      (dealFilter === "none" ? !txn.dealId : txn.dealId === dealFilter);
+    const txnDate = txn.createdAt ? new Date(txn.createdAt) : null;
+    const matchesDateFrom = !dateFrom || (txnDate && isAfter(txnDate, startOfDay(new Date(dateFrom))));
+    const matchesDateTo = !dateTo || (txnDate && isBefore(txnDate, endOfDay(new Date(dateTo))));
+    return matchesSearch && matchesStatus && matchesDeal && matchesDateFrom && matchesDateTo;
   });
+
+  const hasActiveFilters = statusFilter !== "all" || dealFilter !== "all" || dateFrom || dateTo;
+
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setDealFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    setSearchTerm("");
+  };
 
   if (isLoading) {
     return (
@@ -153,6 +177,46 @@ export default function RonTransactions() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={dealFilter} onValueChange={setDealFilter}>
+          <SelectTrigger className="w-[200px]" data-testid="select-deal-filter">
+            <SelectValue placeholder="All Deals" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Deals</SelectItem>
+            <SelectItem value="none">No Deal Linked</SelectItem>
+            {deals?.map((deal) => (
+              <SelectItem key={deal.id} value={deal.id}>{deal.title}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-muted-foreground whitespace-nowrap">From:</Label>
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="w-[160px]"
+            data-testid="input-date-from"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-muted-foreground whitespace-nowrap">To:</Label>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="w-[160px]"
+            data-testid="input-date-to"
+          />
+        </div>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
+            <X className="h-3 w-3 mr-1" /> Clear Filters
+          </Button>
+        )}
       </div>
 
       {filtered && filtered.length > 0 ? (
@@ -182,6 +246,11 @@ export default function RonTransactions() {
                               {format(new Date(txn.createdAt), "MMM d, yyyy")}
                             </span>
                           )}
+                          {txn.dealId && deals && (
+                            <Badge variant="outline" className="text-xs">
+                              {deals.find(d => d.id === txn.dealId)?.title || "Linked Deal"}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -200,11 +269,11 @@ export default function RonTransactions() {
             <Stamp className="h-10 w-10 mx-auto mb-3 opacity-50" />
             <p className="font-medium">No transactions found</p>
             <p className="text-sm mt-1">
-              {searchTerm || statusFilter !== "all"
+              {searchTerm || hasActiveFilters
                 ? "Try adjusting your filters"
                 : "Create your first notarization transaction"}
             </p>
-            {!searchTerm && statusFilter === "all" && (
+            {!searchTerm && !hasActiveFilters && (
               <Link href="/ron/transactions/new">
                 <Button variant="outline" size="sm" className="mt-3">
                   <Plus className="h-4 w-4 mr-2" />
