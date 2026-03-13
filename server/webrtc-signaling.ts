@@ -144,31 +144,36 @@ function getParticipantsList(room: Room, excludePeerId?: string): Array<{ peerId
 }
 
 export function setupWebRTCSignaling(server: Server) {
-  const wss = new WebSocketServer({ 
-    server, 
-    path: '/ws/signaling',
-    verifyClient: (info: { origin: string; secure: boolean; req: IncomingMessage }, callback) => {
-      // Extract token from query string
-      const url = new URL(info.req.url || '', `http://${info.req.headers.host}`);
-      const token = url.searchParams.get('token');
-      
-      if (!token) {
-        console.log('[WebRTC Signaling] Connection rejected: No token provided');
-        callback(false, 401, 'Authentication required');
-        return;
-      }
-      
-      const tokenData = validateSignalingToken(token);
-      if (!tokenData) {
-        console.log('[WebRTC Signaling] Connection rejected: Invalid or expired token');
-        callback(false, 401, 'Invalid or expired token');
-        return;
-      }
-      
-      // Store token data on the request for use in connection handler
-      (info.req as any).signalingAuth = tokenData;
-      callback(true);
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (req, socket, head) => {
+    const pathname = new URL(req.url || '', `http://${req.headers.host}`).pathname;
+    if (pathname !== '/ws/signaling') {
+      return;
     }
+
+    const url = new URL(req.url || '', `http://${req.headers.host}`);
+    const token = url.searchParams.get('token');
+
+    if (!token) {
+      console.log('[WebRTC Signaling] Connection rejected: No token provided');
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    const tokenData = validateSignalingToken(token);
+    if (!tokenData) {
+      console.log('[WebRTC Signaling] Connection rejected: Invalid or expired token');
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    (req as any).signalingAuth = tokenData;
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
   });
 
   console.log('[WebRTC Signaling] WebSocket server initialized on /ws/signaling (authenticated)');
