@@ -1082,6 +1082,460 @@ router.post("/seals", async (req: any, res) => {
 });
 
 // ============================================================================
+// SESSION PRE-CHECKLIST & PAUSE
+// ============================================================================
+
+router.get("/sessions/:id/checklist", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.id);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const signers = await storage.getRonSigners(session.transactionId);
+    const documents = await storage.getRonDocuments(session.transactionId);
+    const notary = session.notaryId ? await storage.getRonNotary(session.notaryId) : null;
+
+    const signerChecks = await Promise.all(signers.map(async (signer) => {
+      const compliance = await storage.getRonComplianceChecks(session.transactionId);
+      const signerCompliance = compliance.filter(c => c.signerId === signer.id);
+      const ofacCheck = signerCompliance.find(c => c.checkType === "ofac");
+      const kbaCheck = signerCompliance.find(c => c.checkType === "kba");
+
+      const idvPassed = signer.idvStatus === "fully_verified";
+      const kbaPassed = signer.kbaScore !== null && signer.kbaScore >= 4;
+      const ofacCleared = ofacCheck?.result === "pass";
+      const credentialVerified = ["credential_passed", "liveness_passed", "kba_passed", "ofac_cleared", "fully_verified"].includes(signer.idvStatus);
+
+      return {
+        signerId: signer.id,
+        signerName: `${signer.firstName} ${signer.lastName}`,
+        email: signer.email,
+        idvStatus: signer.idvStatus,
+        credentialVerified,
+        kbaPassed,
+        kbaScore: signer.kbaScore,
+        kbaAttempts: signer.kbaAttempts,
+        ofacCleared: ofacCleared || signer.idvStatus === "ofac_cleared" || signer.idvStatus === "fully_verified",
+        livenessPassed: signer.livenessCheckPassed || false,
+        overallReady: idvPassed,
+      };
+    }));
+
+    const documentsReady = documents.every(d => ["ready", "in_signing", "partially_signed", "fully_signed", "notarized"].includes(d.status));
+    const allDocsPrepared = documents.length > 0 && documents.every(d => d.status !== "uploaded");
+    const allSignersVerified = signerChecks.every(s => s.overallReady);
+    const notaryReady = notary !== null && notary.status === "active";
+    const hasDocuments = documents.length > 0;
+    const hasSigners = signers.length > 0;
+
+    const canStart = allSignersVerified && documentsReady && notaryReady && hasDocuments && hasSigners;
+
+    res.json({
+      sessionId: session.id,
+      sessionStatus: session.status,
+      canStart,
+      checks: {
+        signers: signerChecks,
+        allSignersVerified,
+        documentsReady,
+        allDocsPrepared,
+        notaryReady,
+        notaryName: notary ? `${notary.firstName} ${notary.lastName}` : null,
+        notaryStatus: notary?.status || null,
+        hasDocuments,
+        hasSigners,
+        documentCount: documents.length,
+        signerCount: signers.length,
+      },
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/sessions/:id/pause", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.id);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (session.status !== "in_progress") {
+      return res.status(400).json({ message: `Cannot pause session in "${session.status}" status` });
+    }
+
+    const updated = await storage.updateRonSession(req.params.id, {
+      status: "paused",
+      recordingStatus: "not_started",
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: session.transactionId,
+      sessionId: session.id,
+      notaryId: session.notaryId || undefined,
+      eventType: "session_paused",
+      actorType: "user",
+      actorId: req.user.id,
+      description: "Notarization session paused",
+      ipAddress: req.ip,
+    });
+
+    res.json(updated);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// KBA QUIZ (MOCK)
+// ============================================================================
+
+const MOCK_KBA_QUESTIONS = [
+  {
+    id: 1,
+    question: "Which of the following addresses have you been associated with?",
+    options: ["123 Oak Street, Springfield", "456 Elm Avenue, Portland", "789 Pine Road, Denver", "101 Maple Lane, Austin"],
+    correctAnswer: 0,
+  },
+  {
+    id: 2,
+    question: "Which of the following vehicles have you owned or leased?",
+    options: ["2019 Toyota Camry", "2020 Honda Civic", "2018 Ford F-150", "None of the above"],
+    correctAnswer: 2,
+  },
+  {
+    id: 3,
+    question: "Which county have you resided in?",
+    options: ["Broward County", "Miami-Dade County", "Palm Beach County", "Orange County"],
+    correctAnswer: 1,
+  },
+  {
+    id: 4,
+    question: "What is the approximate monthly payment on your mortgage or rent?",
+    options: ["$800 - $1,200", "$1,200 - $1,800", "$1,800 - $2,500", "$2,500 - $3,500"],
+    correctAnswer: 2,
+  },
+  {
+    id: 5,
+    question: "Which of the following phone numbers have you been associated with?",
+    options: ["(555) 123-4567", "(555) 987-6543", "(555) 246-8135", "None of the above"],
+    correctAnswer: 0,
+  },
+];
+
+router.get("/signers/:id/kba-questions", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const questions = MOCK_KBA_QUESTIONS.map(q => ({
+      id: q.id,
+      question: q.question,
+      options: q.options,
+    }));
+
+    res.json({ signerId: signer.id, questions });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/signers/:id/kba-submit", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { answers } = req.body;
+    if (!answers || !Array.isArray(answers)) {
+      return res.status(400).json({ message: "answers array is required" });
+    }
+
+    let correct = 0;
+    const results = MOCK_KBA_QUESTIONS.map((q, i) => {
+      const isCorrect = answers[i] === q.correctAnswer;
+      if (isCorrect) correct++;
+      return { questionId: q.id, correct: isCorrect };
+    });
+
+    const passed = correct >= 4;
+    const newIdvStatus = passed ? "kba_passed" : "kba_failed";
+
+    await storage.updateRonSigner(req.params.id, {
+      kbaScore: correct,
+      kbaAttempts: (signer.kbaAttempts || 0) + 1,
+      kbaLastAttempt: new Date(),
+      idvStatus: newIdvStatus,
+    });
+
+    await complianceService.runComplianceCheck({
+      transactionId: signer.transactionId,
+      signerId: signer.id,
+      checkType: "kba",
+      performedBy: req.user.id,
+    });
+
+    res.json({ score: correct, total: 5, passed, results, idvStatus: newIdvStatus });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/signers/:id/credential-verify", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { credentialType, credentialNumber } = req.body;
+
+    await storage.updateRonSigner(req.params.id, {
+      idvStatus: "credential_passed",
+      credentialType: credentialType || "drivers_license",
+      credentialNumber: credentialNumber || `SIM-${Date.now()}`,
+    });
+
+    await complianceService.runComplianceCheck({
+      transactionId: signer.transactionId,
+      signerId: signer.id,
+      checkType: "credential_analysis",
+      performedBy: req.user.id,
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: signer.transactionId,
+      eventType: "signer_verified",
+      actorType: "system",
+      actorId: "idv_system",
+      description: `Credential verified for "${signer.firstName} ${signer.lastName}"`,
+      signerId: signer.id,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, idvStatus: "credential_passed" });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/signers/:id/liveness-check", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    await storage.updateRonSigner(req.params.id, {
+      idvStatus: "liveness_passed",
+      livenessCheckPassed: true,
+      biometricMatchScore: "0.95",
+    });
+
+    await complianceService.runComplianceCheck({
+      transactionId: signer.transactionId,
+      signerId: signer.id,
+      checkType: "liveness",
+      performedBy: req.user.id,
+    });
+
+    res.json({ success: true, idvStatus: "liveness_passed", matchScore: 0.95 });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/signers/:id/ofac-screen", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    await storage.updateRonSigner(req.params.id, {
+      idvStatus: "ofac_cleared",
+    });
+
+    await complianceService.runComplianceCheck({
+      transactionId: signer.transactionId,
+      signerId: signer.id,
+      checkType: "ofac",
+      performedBy: req.user.id,
+    });
+
+    res.json({ success: true, idvStatus: "ofac_cleared", result: "pass" });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/signers/:id/complete-idv", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    await storage.updateRonSigner(req.params.id, {
+      idvStatus: "fully_verified",
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: signer.transactionId,
+      eventType: "signer_verified",
+      actorType: "system",
+      actorId: "idv_system",
+      description: `Signer "${signer.firstName} ${signer.lastName}" identity fully verified`,
+      signerId: signer.id,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, idvStatus: "fully_verified" });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// SESSION ENRICHED DETAIL (for closing room)
+// ============================================================================
+
+router.get("/sessions/:id/detail", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.id);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const notary = session.notaryId ? await storage.getRonNotary(session.notaryId) : null;
+    const signers = await storage.getRonSigners(session.transactionId);
+    const documents = await storage.getRonDocuments(session.transactionId);
+    const journal = await journalService.getJournalEntries(session.transactionId);
+
+    const docsWithAnnotations = await Promise.all(documents.map(async (doc) => {
+      const annotations = await storage.getRonAnnotations(doc.id);
+      const signatures = await storage.getRonSignaturesByDocument(doc.id);
+      const seals = await storage.getRonSealsByDocument(doc.id);
+      return { ...doc, annotations, signatures, seals };
+    }));
+
+    res.json({
+      session,
+      transaction: txn,
+      notary,
+      signers,
+      documents: docsWithAnnotations,
+      journal: journal.slice(-20),
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// COMPLIANCE DASHBOARD
+// ============================================================================
+
+router.get("/compliance/dashboard", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  try {
+    const allTransactions = await storage.getRonTransactions(
+      req.user.role !== "admin" ? { createdBy: req.user.id } : {}
+    );
+
+    const allChecks: Array<{
+      check: any;
+      transactionTitle: string;
+      signerName: string | null;
+    }> = [];
+
+    for (const txn of allTransactions) {
+      const checks = await storage.getRonComplianceChecks(txn.id);
+      const signers = await storage.getRonSigners(txn.id);
+      const signerMap = new Map(signers.map(s => [s.id, `${s.firstName} ${s.lastName}`]));
+
+      for (const check of checks) {
+        allChecks.push({
+          check,
+          transactionTitle: txn.title,
+          signerName: check.signerId ? signerMap.get(check.signerId) || null : null,
+        });
+      }
+    }
+
+    const { checkType, result } = req.query;
+    let filtered = allChecks;
+    if (checkType) filtered = filtered.filter(c => c.check.checkType === checkType);
+    if (result) filtered = filtered.filter(c => c.check.result === result);
+
+    filtered.sort((a, b) => new Date(b.check.performedAt).getTime() - new Date(a.check.performedAt).getTime());
+
+    const summary = {
+      total: allChecks.length,
+      pass: allChecks.filter(c => c.check.result === "pass").length,
+      fail: allChecks.filter(c => c.check.result === "fail").length,
+      pending: allChecks.filter(c => c.check.result === "pending").length,
+      reviewRequired: allChecks.filter(c => c.check.result === "review_required").length,
+      byType: {} as Record<string, number>,
+    };
+    for (const c of allChecks) {
+      summary.byType[c.check.checkType] = (summary.byType[c.check.checkType] || 0) + 1;
+    }
+
+    res.json({ checks: filtered, summary });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// SIGNER SIGNATURE SAVE
+// ============================================================================
+
+router.patch("/signers/:id/signature", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { signatureImageUrl, initialsImageUrl } = req.body;
+    const updates: Record<string, unknown> = {};
+    if (signatureImageUrl) updates.signatureImageUrl = signatureImageUrl;
+    if (initialsImageUrl) updates.initialsImageUrl = initialsImageUrl;
+
+    const updated = await storage.updateRonSigner(req.params.id, updates);
+    res.json(updated);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
 // JOURNAL
 // ============================================================================
 

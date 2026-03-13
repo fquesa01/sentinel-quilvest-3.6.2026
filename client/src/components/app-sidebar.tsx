@@ -206,6 +206,12 @@ export function AppSidebar() {
           icon: Shield,
           roles: ["admin", "attorney", "external_counsel"],
         },
+        {
+          title: "Compliance",
+          url: "/ron/compliance",
+          icon: Shield,
+          roles: ["admin", "attorney", "external_counsel"],
+        },
       ],
     },
     {

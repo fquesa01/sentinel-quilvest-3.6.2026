@@ -58,6 +58,8 @@ import {
   MousePointer2,
   Bell,
   GripVertical,
+  MonitorSmartphone,
+  ScanFace,
 } from "lucide-react";
 import { format } from "date-fns";
 import type {
@@ -140,11 +142,23 @@ const annotationTypes = [
 function getIdvStatusDisplay(signer: RonSigner) {
   const status = signer.idvStatus || "not_started";
   switch (status) {
-    case "passed":
+    case "fully_verified":
       return { label: "Verified", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300", icon: CheckCircle2 };
     case "failed":
+    case "credential_failed":
+    case "liveness_failed":
+    case "kba_failed":
+    case "ofac_flagged":
+    case "expired":
       return { label: "Failed", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300", icon: AlertTriangle };
-    case "in_progress":
+    case "credential_pending":
+    case "credential_passed":
+    case "liveness_pending":
+    case "liveness_passed":
+    case "kba_pending":
+    case "kba_passed":
+    case "ofac_pending":
+    case "ofac_cleared":
       return { label: "In Progress", color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300", icon: Clock };
     default:
       return { label: "Pending IDV", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300", icon: AlertTriangle };
@@ -560,7 +574,7 @@ export default function RonTransactionDetail() {
               <CardContent>
                 <div className="text-2xl font-bold">{signers.length}</div>
                 <p className="text-xs text-muted-foreground">
-                  {signers.filter(s => s.idvStatus === "passed").length} verified
+                  {signers.filter(s => s.idvStatus === "fully_verified").length} verified
                 </p>
               </CardContent>
             </Card>
@@ -689,6 +703,16 @@ export default function RonTransactionDetail() {
                           <Badge className={idvDisplay.color}>
                             <IdvIcon className="h-3 w-3 mr-1" /> {idvDisplay.label}
                           </Badge>
+                          <Link href={`/ron/idv/${id}/${signer.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              data-testid={`button-idv-signer-${signer.id}`}
+                              title="Run identity verification"
+                            >
+                              <ScanFace className="h-4 w-4" />
+                            </Button>
+                          </Link>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -713,7 +737,7 @@ export default function RonTransactionDetail() {
                       <div className="mt-2 flex gap-2 flex-wrap text-xs">
                         <Badge
                           variant="outline"
-                          className={`${signer.idvStatus === "passed" ? "border-green-500 text-green-700 dark:text-green-400" : "border-muted-foreground/30"}`}
+                          className={`${signer.idvStatus === "fully_verified" ? "border-green-500 text-green-700 dark:text-green-400" : "border-muted-foreground/30"}`}
                         >
                           ID Check
                         </Badge>
@@ -794,6 +818,11 @@ export default function RonTransactionDetail() {
                         <Badge className={statusColors[session.status || "scheduled"]}>
                           {session.status?.replace(/_/g, " ") || "Scheduled"}
                         </Badge>
+                        <Link href={`/ron/sessions/${session.id}`}>
+                          <Button variant="outline" size="sm" data-testid={`button-join-session-${session.id}`}>
+                            <MonitorSmartphone className="h-3 w-3 mr-1" /> Open Room
+                          </Button>
+                        </Link>
                         {session.status === "scheduled" && (
                           <Button
                             variant="outline"
