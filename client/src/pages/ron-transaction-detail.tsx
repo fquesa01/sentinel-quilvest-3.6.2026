@@ -569,6 +569,24 @@ export default function RonTransactionDetail() {
             </Card>
           </div>
 
+          {transaction.signingOrder && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Signing Order</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Badge variant="outline" data-testid="badge-signing-order">
+                  {transaction.signingOrder === "sequential" ? "Sequential" : "Parallel"}
+                </Badge>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {transaction.signingOrder === "sequential"
+                    ? "Signers complete in a defined order"
+                    : "All signers can sign simultaneously"}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {transaction.notes && (
             <Card>
               <CardHeader className="pb-2">

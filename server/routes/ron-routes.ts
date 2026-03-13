@@ -50,12 +50,12 @@ router.get("/transactions", requireRole("admin", "attorney", "external_counsel")
         const signers = await storage.getRonSigners(txn.id);
         const sessions = await storage.getRonSessions(txn.id);
         const scheduledSession = sessions
-          .filter(s => s.status === "scheduled" && s.scheduledAt)
-          .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime())[0];
+          .filter(s => s.status === "scheduled" && s.scheduledStart)
+          .sort((a, b) => new Date(a.scheduledStart!).getTime() - new Date(b.scheduledStart!).getTime())[0];
         return {
           ...txn,
           signerCount: signers.length,
-          nextSessionDate: scheduledSession?.scheduledAt || null,
+          nextSessionDate: scheduledSession?.scheduledStart || null,
         };
       })
     );

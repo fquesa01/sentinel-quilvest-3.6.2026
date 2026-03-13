@@ -116,8 +116,12 @@ export default function RonCreateTransaction() {
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/ron/transactions", {
-        ...form,
+        title: form.title,
+        transactionType: form.transactionType,
+        jurisdiction: form.jurisdiction,
+        signingOrder: form.signingOrderMode,
         dealId: form.dealId && form.dealId !== "none" ? form.dealId : undefined,
+        notes: form.notes,
       });
       const txn: { id: string } = await res.json();
 
