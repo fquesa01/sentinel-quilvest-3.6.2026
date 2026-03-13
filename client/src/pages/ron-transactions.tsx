@@ -23,9 +23,16 @@ import {
   MapPin,
   AlertCircle,
   X,
+  Users,
+  Clock,
 } from "lucide-react";
 import { format, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import type { RonTransaction, Deal } from "@shared/schema";
+
+type EnrichedTransaction = RonTransaction & {
+  signerCount: number;
+  nextSessionDate: string | null;
+};
 
 const statusColors: Record<string, string> = {
   draft: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
@@ -65,7 +72,7 @@ export default function RonTransactions() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  const { data: transactions, isLoading, isError } = useQuery<RonTransaction[]>({
+  const { data: transactions, isLoading, isError } = useQuery<EnrichedTransaction[]>({
     queryKey: ["/api/ron/transactions"],
   });
 
@@ -240,6 +247,16 @@ export default function RonTransactions() {
                           <span>
                             {typeLabels[txn.transactionType || ""] || txn.transactionType?.replace(/_/g, " ") || "General"}
                           </span>
+                          <span className="flex items-center gap-1" data-testid={`txn-signers-${txn.id}`}>
+                            <Users className="h-3 w-3" />
+                            {txn.signerCount} {txn.signerCount === 1 ? "signer" : "signers"}
+                          </span>
+                          {txn.nextSessionDate && (
+                            <span className="flex items-center gap-1" data-testid={`txn-session-${txn.id}`}>
+                              <Clock className="h-3 w-3" />
+                              {format(new Date(txn.nextSessionDate), "MMM d, yyyy h:mm a")}
+                            </span>
+                          )}
                           {txn.createdAt && (
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />

@@ -45,9 +45,24 @@ router.get("/transactions", requireRole("admin", "attorney", "external_counsel")
     if (dealId) filters.dealId = dealId as string;
 
     const transactions = await storage.getRonTransactions(filters);
-    res.json(transactions);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    const enriched = await Promise.all(
+      transactions.map(async (txn) => {
+        const signers = await storage.getRonSigners(txn.id);
+        const sessions = await storage.getRonSessions(txn.id);
+        const scheduledSession = sessions
+          .filter(s => s.status === "scheduled" && s.scheduledAt)
+          .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime())[0];
+        return {
+          ...txn,
+          signerCount: signers.length,
+          nextSessionDate: scheduledSession?.scheduledAt || null,
+        };
+      })
+    );
+    res.json(enriched);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message });
   }
 });
 
@@ -61,8 +76,9 @@ router.get("/transactions/:id", async (req: any, res) => {
     const sessions = await storage.getRonSessions(req.params.id);
 
     res.json({ ...txn, signers, documents, sessions });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -96,8 +112,9 @@ router.post("/transactions", requireRole("admin", "attorney", "external_counsel"
     });
 
     res.status(201).json(txn);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -111,8 +128,9 @@ router.patch("/transactions/:id", async (req: any, res) => {
 
     const updated = await storage.updateRonTransaction(req.params.id, updates);
     res.json(updated);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -123,8 +141,9 @@ router.delete("/transactions/:id", async (req: any, res) => {
 
     await storage.deleteRonTransaction(req.params.id);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -159,8 +178,9 @@ router.get("/notaries", requireRole("admin", "attorney", "external_counsel"), as
     }
 
     res.json(notaries);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -173,8 +193,9 @@ router.get("/notaries/:id", requireRole("admin", "attorney", "external_counsel")
     const recentSessions = allSessions.slice(0, 20);
 
     res.json({ ...notary, recentSessions });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -202,8 +223,9 @@ router.post("/notaries", requireRole("admin"), async (req: any, res) => {
     });
 
     res.status(201).json(notary);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -219,8 +241,9 @@ router.patch("/notaries/:id", requireRole("admin"), async (req: any, res) => {
     const notary = await storage.updateRonNotary(req.params.id, updates);
     if (!notary) return res.status(404).json({ message: "Notary not found" });
     res.json(notary);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -239,8 +262,9 @@ router.delete("/notaries/:id", requireRole("admin"), async (req: any, res) => {
 
     await storage.deleteRonNotary(req.params.id);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -255,8 +279,9 @@ router.get("/transactions/:transactionId/signers", async (req: any, res) => {
 
     const signers = await storage.getRonSigners(req.params.transactionId);
     res.json(signers);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -271,8 +296,9 @@ router.get("/signers/:id", async (req: any, res) => {
     const complianceChecks = await storage.getRonComplianceChecksBySigner(req.params.id);
 
     res.json({ ...signer, complianceChecks });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -309,8 +335,9 @@ router.post("/transactions/:transactionId/signers", async (req: any, res) => {
     });
 
     res.status(201).json(signer);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -327,8 +354,9 @@ router.patch("/signers/:id", async (req: any, res) => {
 
     const updated = await storage.updateRonSigner(req.params.id, updates);
     res.json(updated);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -342,8 +370,9 @@ router.delete("/signers/:id", async (req: any, res) => {
 
     await storage.deleteRonSigner(req.params.id);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -383,8 +412,9 @@ router.post("/signers/:id/idv", async (req: any, res) => {
     }
 
     res.json(updated);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -399,8 +429,9 @@ router.get("/transactions/:transactionId/documents", async (req: any, res) => {
 
     const documents = await storage.getRonDocuments(req.params.transactionId);
     res.json(documents);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -417,8 +448,9 @@ router.get("/documents/:id", async (req: any, res) => {
     const seals = await storage.getRonSealsByDocument(req.params.id);
 
     res.json({ ...doc, annotations, signatures, seals });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -482,8 +514,9 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
     });
 
     res.status(201).json(doc);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -500,8 +533,9 @@ router.patch("/documents/:id", async (req: any, res) => {
 
     const updated = await storage.updateRonDocument(req.params.id, updates);
     res.json(updated);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -515,8 +549,9 @@ router.delete("/documents/:id", async (req: any, res) => {
 
     await storage.deleteRonDocument(req.params.id);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -534,8 +569,9 @@ router.get("/documents/:documentId/annotations", async (req: any, res) => {
 
     const annotations = await storage.getRonAnnotations(req.params.documentId);
     res.json(annotations);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -574,8 +610,9 @@ router.post("/documents/:documentId/annotations", async (req: any, res) => {
     }
 
     res.status(201).json(inserted);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -592,8 +629,9 @@ router.delete("/annotations/:id", async (req: any, res) => {
 
     await storage.deleteRonAnnotation(req.params.id);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -608,8 +646,9 @@ router.get("/transactions/:transactionId/sessions", async (req: any, res) => {
 
     const sessions = await storage.getRonSessions(req.params.transactionId);
     res.json(sessions);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -630,8 +669,9 @@ router.get("/sessions/:id", async (req: any, res) => {
     }
 
     res.json({ ...session, signers, recordings, notary });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -649,8 +689,9 @@ router.delete("/sessions/:id", async (req: any, res) => {
 
     await storage.deleteRonSession(req.params.id);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -684,8 +725,9 @@ router.post("/transactions/:transactionId/sessions", async (req: any, res) => {
     });
 
     res.status(201).json(session);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -747,8 +789,9 @@ router.patch("/sessions/:id", async (req: any, res) => {
     }
 
     res.json(updated);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -787,8 +830,9 @@ router.post("/sessions/:id/start", async (req: any, res) => {
     });
 
     res.json(updated);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -843,8 +887,9 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
     }
 
     res.json(updated);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -918,8 +963,9 @@ router.post("/signatures", async (req: any, res) => {
     }
 
     res.status(201).json(signature);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -980,8 +1026,9 @@ router.post("/seals", async (req: any, res) => {
     });
 
     res.status(201).json(seal);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -996,8 +1043,9 @@ router.get("/transactions/:transactionId/journal", async (req: any, res) => {
 
     const entries = await journalService.getJournalEntries(req.params.transactionId);
     res.json(entries);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -1008,8 +1056,9 @@ router.get("/transactions/:transactionId/journal/verify", async (req: any, res) 
 
     const result = await journalService.verifyJournalChain(req.params.transactionId);
     res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -1026,8 +1075,9 @@ router.get("/compliance/rules", requireRole("admin", "attorney", "external_couns
       return res.json(rules);
     }
     res.json(complianceService.getAllSupportedStates());
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -1038,8 +1088,9 @@ router.get("/transactions/:transactionId/compliance", async (req: any, res) => {
 
     const checks = await complianceService.getComplianceChecks(req.params.transactionId);
     res.json(checks);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -1081,8 +1132,9 @@ router.post("/transactions/:transactionId/compliance/check", async (req: any, re
     });
 
     res.status(201).json(check);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -1097,8 +1149,9 @@ router.get("/signers/:signerId/readiness", async (req: any, res) => {
     const jurisdiction = txn?.jurisdiction || "FL";
     const readiness = await complianceService.checkSignerReadiness(req.params.signerId, jurisdiction);
     res.json(readiness);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -1116,8 +1169,9 @@ router.get("/sessions/:sessionId/recordings", async (req: any, res) => {
 
     const recordings = await storage.getRonRecordings(req.params.sessionId);
     res.json(recordings);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -1152,8 +1206,9 @@ router.post("/sessions/:sessionId/recordings", async (req: any, res) => {
     });
 
     res.status(201).json(recording);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 
@@ -1199,8 +1254,9 @@ router.get("/dashboard/stats", requireRole("admin", "attorney", "external_counse
       totalTransactions: allTxns.length,
       ...(req.user.role === "admin" ? { activeNotaries: activeNotaryCount } : {}),
     });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
   }
 });
 

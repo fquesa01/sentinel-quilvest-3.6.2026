@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -178,6 +178,8 @@ export default function RonTransactionDetail() {
   const [docPrepOpen, setDocPrepOpen] = useState(false);
   const [selectedDocForPrep, setSelectedDocForPrep] = useState<RonDocument | null>(null);
   const [placedAnnotations, setPlacedAnnotations] = useState<Array<{ type: string; x: number; y: number; w: number; signerId: string; page: number }>>([]);
+  const [draggingAnnotation, setDraggingAnnotation] = useState<{ index: number; offsetX: number; offsetY: number } | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const [annotationPlacement, setAnnotationPlacement] = useState({
     type: "signature",
     assignedTo: "",
@@ -350,6 +352,35 @@ export default function RonTransactionDetail() {
       (!selectedNotaryForSchedule.commissionExpiration ||
         new Date(selectedNotaryForSchedule.commissionExpiration) > new Date())
     : true;
+
+  const handleAnnotationDragStart = useCallback((e: React.MouseEvent, globalIndex: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const ann = placedAnnotations[globalIndex];
+    const annLeftPx = (ann.x / 612) * rect.width;
+    const annTopPx = (ann.y / 792) * rect.height;
+    setDraggingAnnotation({
+      index: globalIndex,
+      offsetX: e.clientX - rect.left - annLeftPx,
+      offsetY: e.clientY - rect.top - annTopPx,
+    });
+  }, [placedAnnotations]);
+
+  const handleAnnotationDragMove = useCallback((e: React.MouseEvent) => {
+    if (!draggingAnnotation || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const newX = Math.max(0, Math.min(612, Math.round(((e.clientX - rect.left - draggingAnnotation.offsetX) / rect.width) * 612)));
+    const newY = Math.max(0, Math.min(792, Math.round(((e.clientY - rect.top - draggingAnnotation.offsetY) / rect.height) * 792)));
+    setPlacedAnnotations(prev => prev.map((ann, i) =>
+      i === draggingAnnotation.index ? { ...ann, x: newX, y: newY } : ann
+    ));
+  }, [draggingAnnotation]);
+
+  const handleAnnotationDragEnd = useCallback(() => {
+    setDraggingAnnotation(null);
+  }, []);
 
   return (
     <div className="p-6 space-y-6" data-testid="ron-transaction-detail-page">
@@ -1022,14 +1053,19 @@ export default function RonTransactionDetail() {
               <div className="flex gap-4">
                 <div className="flex-1">
                   <div
-                    className="border-2 border-dashed border-border rounded-md bg-muted/20 relative cursor-crosshair"
+                    ref={canvasRef}
+                    className="border-2 border-dashed border-border rounded-md bg-muted/20 relative cursor-crosshair select-none"
                     style={{ width: "100%", height: 500 }}
                     onClick={(e) => {
+                      if (draggingAnnotation) return;
                       const rect = e.currentTarget.getBoundingClientRect();
                       const x = Math.round(((e.clientX - rect.left) / rect.width) * 612);
                       const y = Math.round(((e.clientY - rect.top) / rect.height) * 792);
                       setAnnotationPlacement({ ...annotationPlacement, xPosition: x, yPosition: y });
                     }}
+                    onMouseMove={handleAnnotationDragMove}
+                    onMouseUp={handleAnnotationDragEnd}
+                    onMouseLeave={handleAnnotationDragEnd}
                     data-testid="doc-prep-canvas"
                   >
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/40 pointer-events-none">
@@ -1038,18 +1074,27 @@ export default function RonTransactionDetail() {
                       <p className="text-xs">Click anywhere to set field position</p>
                     </div>
 
-                    {placedAnnotations.filter(a => a.page === annotationPlacement.pageNumber).map((ann, idx) => {
+                    {placedAnnotations.map((ann, globalIdx) => {
+                      if (ann.page !== annotationPlacement.pageNumber) return null;
                       const left = `${(ann.x / 612) * 100}%`;
                       const top = `${(ann.y / 792) * 100}%`;
                       const width = `${(ann.w / 612) * 100}%`;
                       const assignedSigner = signers.find(s => s.id === ann.signerId);
+                      const isDragging = draggingAnnotation?.index === globalIdx;
                       return (
                         <div
-                          key={idx}
-                          className="absolute border-2 border-primary/70 bg-primary/10 rounded-sm flex items-center justify-center text-[10px] font-medium text-primary pointer-events-none"
+                          key={globalIdx}
+                          className={`absolute border-2 rounded-sm flex items-center justify-center text-[10px] font-medium cursor-grab ${
+                            isDragging
+                              ? "border-primary bg-primary/30 text-primary z-20 cursor-grabbing"
+                              : "border-primary/70 bg-primary/10 text-primary z-10"
+                          }`}
                           style={{ left, top, width, height: 24 }}
-                          title={`${ann.type} - ${assignedSigner ? `${assignedSigner.firstName} ${assignedSigner.lastName}` : "Unassigned"}`}
+                          title={`${ann.type} - ${assignedSigner ? `${assignedSigner.firstName} ${assignedSigner.lastName}` : "Unassigned"} (drag to reposition)`}
+                          onMouseDown={(e) => handleAnnotationDragStart(e, globalIdx)}
+                          data-testid={`annotation-field-${globalIdx}`}
                         >
+                          <GripVertical className="h-3 w-3 mr-0.5 opacity-50 flex-shrink-0" />
                           {ann.type === "signature" ? "Sig" : ann.type === "initials" ? "Init" : ann.type === "date" ? "Date" : ann.type === "notary_seal" ? "Seal" : ann.type}
                         </div>
                       );

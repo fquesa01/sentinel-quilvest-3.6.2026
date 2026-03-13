@@ -78,9 +78,10 @@ import { useQuery } from "@tanstack/react-query";
 interface MenuItem {
   title: string;
   url: string;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
   roles: string[];
   showBadge?: boolean;
+  groupLabel?: string;
 }
 
 interface MenuSection {
@@ -187,19 +188,20 @@ export function AppSidebar() {
           roles: ["admin", "attorney", "external_counsel"],
         },
         {
-          title: "RON Dashboard",
+          title: "Dashboard",
           url: "/ron/dashboard",
           icon: Stamp,
           roles: ["admin", "attorney", "external_counsel"],
+          groupLabel: "Notarization",
         },
         {
-          title: "RON Transactions",
+          title: "Transactions",
           url: "/ron/transactions",
           icon: Stamp,
           roles: ["admin", "attorney", "external_counsel"],
         },
         {
-          title: "Notary Directory",
+          title: "Notaries",
           url: "/ron/notaries",
           icon: Shield,
           roles: ["admin", "attorney", "external_counsel"],
@@ -316,20 +318,29 @@ export function AppSidebar() {
     );
 
     return (
-      <SidebarMenuItem key={item.title}>
-        {isCollapsed ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {linkContent}
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>
-              {item.title}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          linkContent
+      <div key={item.title}>
+        {item.groupLabel && (
+          <div className="px-3 pt-3 pb-1 group-data-[collapsible=icon]:hidden">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+              {item.groupLabel}
+            </span>
+          </div>
         )}
-      </SidebarMenuItem>
+        <SidebarMenuItem>
+          {isCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {linkContent}
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {item.groupLabel ? `${item.groupLabel}: ${item.title}` : item.title}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            linkContent
+          )}
+        </SidebarMenuItem>
+      </div>
     );
   };
 
