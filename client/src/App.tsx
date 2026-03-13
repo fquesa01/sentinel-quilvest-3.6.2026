@@ -74,6 +74,11 @@ import GuestPortal from "@/pages/guest-portal";
 import GuestLogin from "@/pages/guest-login";
 import GuestDeals from "@/pages/guest-deals";
 import GuestDealView from "@/pages/guest-deal-view";
+import RonDashboard from "@/pages/ron-dashboard";
+import RonTransactions from "@/pages/ron-transactions";
+import RonTransactionDetail from "@/pages/ron-transaction-detail";
+import RonCreateTransaction from "@/pages/ron-create-transaction";
+import RonNotaries from "@/pages/ron-notaries";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
@@ -180,6 +185,11 @@ function AuthenticatedApp() {
               <Route path="/relationship-contacts" component={RelationshipContacts} />
               <Route path="/relationship-drafts" component={RelationshipDrafts} />
               <Route path="/deal-chat" component={DealChat} />
+              <Route path="/ron/dashboard" component={RonDashboard} />
+              <Route path="/ron/transactions/new" component={RonCreateTransaction} />
+              <Route path="/ron/transactions/:id" component={RonTransactionDetail} />
+              <Route path="/ron/transactions" component={RonTransactions} />
+              <Route path="/ron/notaries" component={RonNotaries} />
               <Route component={NotFound} />
             </Switch>
           </main>

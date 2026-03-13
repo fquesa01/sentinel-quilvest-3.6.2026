@@ -127,6 +127,10 @@ Comprehensive data models are used for entities such as Users, Communications, A
 - Frontend components: `memo-annotations.tsx` (SelectionToolbar, AnnotationInput, MemoAnnotationsPanel, useTextSelection hook)
 - Text selection triggers a floating toolbar; annotations display below the section content grouped by section
 
+### Remote Online Notarization (RON) Module
+- **RON Foundation (Schema & Backend):** 11 database tables (`ron_transactions`, `ron_notaries`, `ron_sessions`, `ron_signers`, `ron_documents`, `ron_annotation_placements`, `ron_signatures`, `ron_seals`, `ron_journal_entries`, `ron_recordings`, `ron_compliance_checks`). Full REST API under `/api/ron/*` with role-based access. SHA-256 hash chain journal service for tamper-evident audit trail. Multi-state compliance rules engine. Session lifecycle state machine (scheduled→in_progress/cancelled, in_progress→paused/completed/cancelled).
+- **RON Dashboard & Transaction Management UI:** Frontend pages at `/ron/dashboard`, `/ron/transactions`, `/ron/transactions/new`, `/ron/transactions/:id`, `/ron/notaries`. Dashboard with stats cards and recent transactions. Transaction list with search/filter. Transaction detail with tabs (Overview, Documents, Signers, Sessions, Journal). Multi-step create wizard. Notary directory with profile dialogs. Sidebar section "Notarization (RON)" under Analytics. Session scheduling, signer management, document upload all inline on transaction detail.
+
 ### Section Version History
 - Every manual edit and AI regeneration saves a version record in the `memo_section_edits` table (previousContent, newContent, editType, editedBy, aiPrompt, createdAt)
 - Regeneration route now saves the previous content before calling the AI, then updates with new content using the inserted row ID
