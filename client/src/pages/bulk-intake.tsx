@@ -16,6 +16,7 @@ import {
   Check,
   Loader2,
   FolderOpen,
+  FolderUp,
   X,
   GripVertical,
   RefreshCw,
@@ -24,6 +25,69 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+
+const SUPPORTED_EXTENSIONS = ["pdf", "doc", "docx", "xlsx", "xls", "csv", "png", "jpg", "jpeg", "gif", "webp", "tiff", "bmp", "txt"];
+
+function isSupportedFile(name: string): boolean {
+  const ext = name.toLowerCase().split(".").pop() || "";
+  return SUPPORTED_EXTENSIONS.includes(ext);
+}
+
+function getDisplayName(file: File): string {
+  return file.webkitRelativePath || file.name;
+}
+
+async function traverseFileEntry(entry: FileSystemEntry): Promise<File[]> {
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      (entry as FileSystemFileEntry).file((f) => {
+        if (f.name.startsWith(".")) { resolve([]); return; }
+        const fileWithPath = new File([f], f.name, { type: f.type, lastModified: f.lastModified });
+        Object.defineProperty(fileWithPath, "webkitRelativePath", {
+          value: entry.fullPath.replace(/^\//, ""),
+          writable: false,
+        });
+        resolve([fileWithPath]);
+      }, () => resolve([]));
+    });
+  }
+  if (entry.isDirectory) {
+    const dirReader = (entry as FileSystemDirectoryEntry).createReader();
+    const allFiles: File[] = [];
+    const readBatch = (): Promise<File[]> =>
+      new Promise((resolve) => {
+        dirReader.readEntries(async (entries) => {
+          if (entries.length === 0) { resolve(allFiles); return; }
+          for (const e of entries) {
+            const files = await traverseFileEntry(e);
+            allFiles.push(...files);
+          }
+          resolve(await readBatch());
+        }, () => resolve(allFiles));
+      });
+    return readBatch();
+  }
+  return [];
+}
+
+async function getFilesFromDataTransfer(dataTransfer: DataTransfer): Promise<File[]> {
+  const items = Array.from(dataTransfer.items);
+  const hasEntries = items.some((item) => typeof item.webkitGetAsEntry === "function");
+
+  if (hasEntries) {
+    const allFiles: File[] = [];
+    for (const item of items) {
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) {
+        const files = await traverseFileEntry(entry);
+        allFiles.push(...files);
+      }
+    }
+    return allFiles;
+  }
+
+  return Array.from(dataTransfer.files);
+}
 
 interface BulkIntakeDocument {
   id: string;
@@ -85,6 +149,7 @@ export default function BulkIntake() {
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: session, refetch: refetchSession } = useQuery<SessionData>({
@@ -125,28 +190,27 @@ export default function BulkIntake() {
     },
   });
 
-  const handleFileSelect = useCallback((files: FileList | File[]) => {
-    const fileArray = Array.from(files);
-    const supported = fileArray.filter((f) => {
-      const ext = f.name.toLowerCase().split(".").pop() || "";
-      return ["pdf", "doc", "docx", "xlsx", "xls", "csv", "png", "jpg", "jpeg", "gif", "webp", "tiff", "bmp", "txt"].includes(ext);
-    });
-
+  const addFilesWithFilter = useCallback((fileArray: File[]) => {
+    const supported = fileArray.filter((f) => isSupportedFile(f.name));
     if (supported.length < fileArray.length) {
       toast({
         title: "Some files skipped",
         description: `${fileArray.length - supported.length} unsupported files were excluded.`,
       });
     }
-
     setSelectedFiles((prev) => [...prev, ...supported]);
   }, [toast]);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleFileSelect = useCallback((files: FileList | File[]) => {
+    addFilesWithFilter(Array.from(files));
+  }, [addFilesWithFilter]);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    handleFileSelect(e.dataTransfer.files);
-  }, [handleFileSelect]);
+    const files = await getFilesFromDataTransfer(e.dataTransfer);
+    addFilesWithFilter(files);
+  }, [addFilesWithFilter]);
 
   const removeFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
@@ -171,7 +235,7 @@ export default function BulkIntake() {
       for (let i = 0; i < selectedFiles.length; i += BATCH_SIZE) {
         const batch = selectedFiles.slice(i, i + BATCH_SIZE);
         const formData = new FormData();
-        batch.forEach((f) => formData.append("files", f));
+        batch.forEach((f) => formData.append("files", f, getDisplayName(f)));
 
         const uploadRes = await fetch(`/api/bulk-intake/sessions/${sid}/upload`, {
           method: "POST",
@@ -340,13 +404,20 @@ export default function BulkIntake() {
                 data-testid="dropzone-upload"
               >
                 <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
-                <p className="text-lg font-medium mb-1">Drop files here or click to browse</p>
+                <p className="text-lg font-medium mb-1">Drop files or folders here</p>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Supports PDF, Word, Excel, images, and text files
+                  Supports PDF, Word, Excel, images, and text files. Folders are recursively scanned.
                 </p>
-                <Button variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-browse-files">
-                  Browse Files
-                </Button>
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <Button variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-browse-files">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Browse Files
+                  </Button>
+                  <Button variant="outline" onClick={() => folderInputRef.current?.click()} data-testid="button-browse-folders">
+                    <FolderUp className="h-4 w-4 mr-2" />
+                    Browse Folders
+                  </Button>
+                </div>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -358,6 +429,18 @@ export default function BulkIntake() {
                     e.target.value = "";
                   }}
                   data-testid="input-file-upload"
+                />
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  {...({ webkitdirectory: "", directory: "" } as any)}
+                  onChange={(e) => {
+                    if (e.target.files) handleFileSelect(e.target.files);
+                    e.target.value = "";
+                  }}
+                  data-testid="input-folder-upload"
                 />
               </div>
             </CardContent>
@@ -374,10 +457,10 @@ export default function BulkIntake() {
               <CardContent>
                 <div className="max-h-60 overflow-y-auto space-y-1">
                   {selectedFiles.map((file, i) => (
-                    <div key={`${file.name}-${i}`} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-md hover-elevate" data-testid={`file-item-${i}`}>
+                    <div key={`${getDisplayName(file)}-${i}`} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-md hover-elevate" data-testid={`file-item-${i}`}>
                       <div className="flex items-center gap-2 min-w-0">
                         <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <span className="text-sm truncate">{file.name}</span>
+                        <span className="text-sm truncate">{getDisplayName(file)}</span>
                         <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(file.size)}</span>
                       </div>
                       <Button variant="ghost" size="icon" onClick={() => removeFile(i)} data-testid={`button-remove-file-${i}`}>

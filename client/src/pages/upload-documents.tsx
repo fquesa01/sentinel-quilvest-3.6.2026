@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -7,8 +7,62 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, X, FileText, Check, Loader2, Plus, FolderOpen } from "lucide-react";
+import { ArrowLeft, Upload, X, FileText, Check, Loader2, Plus, FolderOpen, FolderUp, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+function getDisplayName(file: File): string {
+  return file.webkitRelativePath || file.name;
+}
+
+async function traverseFileEntry(entry: FileSystemEntry): Promise<File[]> {
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      (entry as FileSystemFileEntry).file((f) => {
+        if (f.name.startsWith(".")) { resolve([]); return; }
+        const fileWithPath = new File([f], f.name, { type: f.type, lastModified: f.lastModified });
+        Object.defineProperty(fileWithPath, "webkitRelativePath", {
+          value: entry.fullPath.replace(/^\//, ""),
+          writable: false,
+        });
+        resolve([fileWithPath]);
+      }, () => resolve([]));
+    });
+  }
+  if (entry.isDirectory) {
+    const dirReader = (entry as FileSystemDirectoryEntry).createReader();
+    const allFiles: File[] = [];
+    const readBatch = (): Promise<File[]> =>
+      new Promise((resolve) => {
+        dirReader.readEntries(async (entries) => {
+          if (entries.length === 0) { resolve(allFiles); return; }
+          for (const e of entries) {
+            const files = await traverseFileEntry(e);
+            allFiles.push(...files);
+          }
+          resolve(await readBatch());
+        }, () => resolve(allFiles));
+      });
+    return readBatch();
+  }
+  return [];
+}
+
+async function getFilesFromDataTransfer(dataTransfer: DataTransfer): Promise<File[]> {
+  const items = Array.from(dataTransfer.items);
+  const hasEntries = items.some((item) => typeof item.webkitGetAsEntry === "function");
+  if (hasEntries) {
+    const allFiles: File[] = [];
+    for (const item of items) {
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) {
+        const files = await traverseFileEntry(entry);
+        allFiles.push(...files);
+      }
+    }
+    return allFiles;
+  }
+  return Array.from(dataTransfer.files);
+}
 
 type Deal = {
   id: string;
@@ -40,6 +94,7 @@ export default function UploadDocuments() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const [mode, setMode] = useState<"select" | "create">("select");
   const [selectedDealId, setSelectedDealId] = useState<string>("");
@@ -67,7 +122,7 @@ export default function UploadDocuments() {
   const uploadMutation = useMutation({
     mutationFn: async ({ roomId, dealId }: { roomId: string; dealId: string }) => {
       const formData = new FormData();
-      files.forEach((file) => formData.append("files", file));
+      files.forEach((file) => formData.append("files", file, getDisplayName(file)));
       const res = await fetch(`/api/data-rooms/${roomId}/upload`, {
         method: "POST",
         body: formData,
@@ -130,16 +185,17 @@ export default function UploadDocuments() {
     uploadMutation.mutate({ roomId: rooms[0].id, dealId: targetDealId });
   };
 
-  const handleFileDrop = useCallback((e: React.DragEvent) => {
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const droppedFiles = Array.from(e.dataTransfer.files);
+    const droppedFiles = await getFilesFromDataTransfer(e.dataTransfer);
     setFiles((prev) => [...prev, ...droppedFiles]);
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+      e.target.value = "";
     }
   };
 
@@ -222,6 +278,18 @@ export default function UploadDocuments() {
 
       <main className="flex-1 px-6 flex flex-col items-center">
         <div className="w-full max-w-lg space-y-6 pb-12">
+          <div className="flex items-center gap-3 p-3 rounded-md bg-primary/5 border border-primary/10">
+            <Sparkles className="w-4 h-4 text-primary shrink-0" />
+            <p className="text-sm text-foreground flex-1">
+              Have many documents for multiple deals?
+            </p>
+            <Link href="/transactions/bulk-intake">
+              <Button variant="outline" size="sm" data-testid="button-go-bulk-intake">
+                Bulk Upload
+              </Button>
+            </Link>
+          </div>
+
           <section>
             <h2 className="text-base font-semibold text-foreground mb-3" data-testid="text-section-deal">
               Select or Create a Deal
@@ -329,22 +397,31 @@ export default function UploadDocuments() {
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleFileDrop}
-              onClick={() => fileInputRef.current?.click()}
               className={cn(
-                "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors",
+                "border-2 border-dashed rounded-xl p-8 text-center transition-colors",
                 isDragging
                   ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/50"
+                  : "border-border"
               )}
               data-testid="dropzone-files"
             >
               <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
               <p className="text-sm font-medium text-foreground mb-1">
-                Drop files here or click to browse
+                Drop files or folders here
               </p>
-              <p className="text-xs text-muted-foreground">
-                Supports all document types including ZIP files
+              <p className="text-xs text-muted-foreground mb-4">
+                Supports all document types including ZIP files. Folders are recursively scanned.
               </p>
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} data-testid="button-browse-files">
+                  <FileText className="w-4 h-4 mr-1" />
+                  Browse Files
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => folderInputRef.current?.click()} data-testid="button-browse-folders">
+                  <FolderUp className="w-4 h-4 mr-1" />
+                  Browse Folders
+                </Button>
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -352,6 +429,15 @@ export default function UploadDocuments() {
                 onChange={handleFileSelect}
                 className="hidden"
                 data-testid="input-file"
+              />
+              <input
+                ref={folderInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                {...({ webkitdirectory: "", directory: "" } as any)}
+                onChange={handleFileSelect}
+                data-testid="input-folder"
               />
             </div>
 
@@ -365,7 +451,7 @@ export default function UploadDocuments() {
                   >
                     <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground truncate">{file.name}</p>
+                      <p className="text-sm text-foreground truncate">{getDisplayName(file)}</p>
                       <p className="text-xs text-muted-foreground">
                         {(file.size / 1024).toFixed(1)} KB
                       </p>
