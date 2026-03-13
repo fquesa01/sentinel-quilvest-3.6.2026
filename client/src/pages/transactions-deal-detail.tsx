@@ -1126,20 +1126,20 @@ export default function TransactionsDealDetail() {
               </SelectContent>
             </Select>
           </div>
-          <TabsList className="hidden md:inline-flex flex-nowrap overflow-x-auto scrollbar-thin max-w-full gap-1 pb-0.5">
-            <TabsTrigger value="overview" className="flex-shrink-0" data-testid="tab-overview">Overview</TabsTrigger>
-            <TabsTrigger value="terms" className="flex-shrink-0" data-testid="tab-terms">Deal Terms</TabsTrigger>
-            <TabsTrigger value="parties" className="flex-shrink-0" data-testid="tab-parties">Parties</TabsTrigger>
-            <TabsTrigger value="milestones" className="flex-shrink-0" data-testid="tab-milestones">Milestones</TabsTrigger>
-            <TabsTrigger value="meetings" className="flex-shrink-0" data-testid="tab-meetings">Meetings</TabsTrigger>
-            <TabsTrigger value="dataroom" className="flex-shrink-0" data-testid="tab-dataroom">Data Room</TabsTrigger>
-            <TabsTrigger value="documents" className="flex-shrink-0" data-testid="tab-documents">Documents</TabsTrigger>
-            <TabsTrigger value="checklists" className="flex-shrink-0" data-testid="tab-checklists">Checklists</TabsTrigger>
-            <TabsTrigger value="issues" className="flex-shrink-0" data-testid="tab-issues">Issues</TabsTrigger>
-            <TabsTrigger value="research" className="flex-shrink-0" data-testid="tab-research">Research</TabsTrigger>
-            <TabsTrigger value="closing-docs" className="flex-shrink-0" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
-            <TabsTrigger value="closing" className="flex-shrink-0" data-testid="tab-closing">Closing</TabsTrigger>
-            <TabsTrigger value="reports" className="flex-shrink-0" data-testid="tab-reports">Reports</TabsTrigger>
+          <TabsList className="hidden md:inline-flex flex-wrap h-auto gap-1">
+            <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+            <TabsTrigger value="terms" data-testid="tab-terms">Deal Terms</TabsTrigger>
+            <TabsTrigger value="parties" data-testid="tab-parties">Parties</TabsTrigger>
+            <TabsTrigger value="milestones" data-testid="tab-milestones">Milestones</TabsTrigger>
+            <TabsTrigger value="meetings" data-testid="tab-meetings">Meetings</TabsTrigger>
+            <TabsTrigger value="dataroom" data-testid="tab-dataroom">Data Room</TabsTrigger>
+            <TabsTrigger value="documents" data-testid="tab-documents">Documents</TabsTrigger>
+            <TabsTrigger value="checklists" data-testid="tab-checklists">Checklists</TabsTrigger>
+            <TabsTrigger value="issues" data-testid="tab-issues">Issues</TabsTrigger>
+            <TabsTrigger value="research" data-testid="tab-research">Research</TabsTrigger>
+            <TabsTrigger value="closing-docs" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
+            <TabsTrigger value="closing" data-testid="tab-closing">Closing</TabsTrigger>
+            <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-6 space-y-6 stagger-3">
