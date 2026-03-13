@@ -16,11 +16,15 @@ import {
   Activity,
   Shield,
   AlertCircle,
-  Play,
   Hash,
 } from "lucide-react";
 import { format } from "date-fns";
-import type { RonTransaction, RonSession, RonJournalEntry } from "@shared/schema";
+import type { RonTransaction, RonJournalEntry } from "@shared/schema";
+
+type EnrichedTransaction = RonTransaction & {
+  signerCount: number;
+  nextSessionDate: string | null;
+};
 
 interface DashboardStats {
   activeTransactions: number;
@@ -75,7 +79,7 @@ export default function RonDashboard() {
     queryKey: ["/api/ron/dashboard/stats"],
   });
 
-  const { data: transactions, isLoading: txnLoading, isError: txnError } = useQuery<RonTransaction[]>({
+  const { data: transactions, isLoading: txnLoading, isError: txnError } = useQuery<EnrichedTransaction[]>({
     queryKey: ["/api/ron/transactions"],
   });
 
@@ -83,25 +87,9 @@ export default function RonDashboard() {
     ?.sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
     .slice(0, 5);
 
-  const upcomingSessions: Array<RonSession & { transactionTitle?: string }> = [];
-  if (transactions) {
-    for (const txn of transactions) {
-      if (txn.status !== "completed" && txn.status !== "cancelled") {
-        upcomingSessions.push(
-          ...((txn as RonTransaction & { sessions?: RonSession[] }).sessions || [])
-            .filter((s: RonSession) => s.status === "scheduled" || s.status === "in_progress")
-            .map((s: RonSession) => ({ ...s, transactionTitle: txn.title || "Untitled" }))
-        );
-      }
-    }
-  }
-
-  const sortedUpcoming = upcomingSessions
-    .sort((a, b) => {
-      const aTime = a.scheduledStart ? new Date(a.scheduledStart).getTime() : Infinity;
-      const bTime = b.scheduledStart ? new Date(b.scheduledStart).getTime() : Infinity;
-      return aTime - bTime;
-    })
+  const upcomingSessionEntries = (transactions || [])
+    .filter(txn => txn.nextSessionDate && txn.status !== "completed" && txn.status !== "cancelled")
+    .sort((a, b) => new Date(a.nextSessionDate!).getTime() - new Date(b.nextSessionDate!).getTime())
     .slice(0, 5);
 
   if (statsLoading || txnLoading) {
@@ -277,30 +265,25 @@ export default function RonDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {sortedUpcoming.length > 0 ? (
+              {upcomingSessionEntries.length > 0 ? (
                 <div className="space-y-3">
-                  {sortedUpcoming.map((session) => (
-                    <div
-                      key={session.id}
-                      className="flex items-center justify-between gap-2 p-2 rounded-md border border-border text-sm"
-                      data-testid={`upcoming-session-${session.id}`}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium truncate">{session.transactionTitle}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {session.scheduledStart
-                            ? format(new Date(session.scheduledStart), "MMM d, h:mm a")
-                            : "TBD"}
-                        </p>
+                  {upcomingSessionEntries.map((txn) => (
+                    <Link key={txn.id} href={`/ron/transactions/${txn.id}`}>
+                      <div
+                        className="flex items-center justify-between gap-2 p-2 rounded-md border border-border text-sm hover-elevate"
+                        data-testid={`upcoming-session-${txn.id}`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium truncate">{txn.title || "Untitled"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(txn.nextSessionDate!), "MMM d, h:mm a")}
+                          </p>
+                        </div>
+                        <Badge className={statusColors[txn.status]}>
+                          <Clock className="h-3 w-3 mr-1" /> Scheduled
+                        </Badge>
                       </div>
-                      <Badge className={statusColors[session.status || "scheduled"]} >
-                        {session.status === "in_progress" ? (
-                          <><Play className="h-3 w-3 mr-1" /> Live</>
-                        ) : (
-                          <><Clock className="h-3 w-3 mr-1" /> Scheduled</>
-                        )}
-                      </Badge>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               ) : (

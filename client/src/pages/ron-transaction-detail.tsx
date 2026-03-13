@@ -67,6 +67,7 @@ import type {
   RonSession,
   RonJournalEntry,
   RonNotary,
+  RonComplianceCheck,
   Deal,
 } from "@shared/schema";
 
@@ -209,6 +210,11 @@ export default function RonTransactionDetail() {
     enabled: !!id,
   });
 
+  const { data: complianceChecks = [] } = useQuery<RonComplianceCheck[]>({
+    queryKey: ["/api/ron/transactions", id, "compliance"],
+    enabled: !!id,
+  });
+
   const { data: journal = [] } = useQuery<RonJournalEntry[]>({
     queryKey: ["/api/ron/transactions", id, "journal"],
     enabled: !!id && activeTab === "journal",
@@ -314,13 +320,20 @@ export default function RonTransactionDetail() {
   const addAnnotationMutation = useMutation({
     mutationFn: async (data: { documentId: string; placement: typeof annotationPlacement }) => {
       return apiRequest("POST", `/api/ron/documents/${data.documentId}/annotations`, {
-        ...data.placement,
-        assignedSignerId: data.placement.assignedTo || undefined,
+        annotationType: data.placement.type,
+        signerId: data.placement.assignedTo || undefined,
+        pageNumber: data.placement.pageNumber,
+        xPosition: data.placement.xPosition,
+        yPosition: data.placement.yPosition,
+        width: data.placement.width,
+        height: data.placement.height,
+        required: true,
       });
     },
     onSuccess: () => {
       toast({ title: "Annotation placed" });
       setAnnotationPlacement({ ...annotationPlacement, yPosition: annotationPlacement.yPosition + 70 });
+      queryClient.invalidateQueries({ queryKey: ["/api/ron/documents", selectedDocForPrep?.id, "annotations"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -601,6 +614,20 @@ export default function RonTransactionDetail() {
                         >
                           KBA {signer.kbaScore ? `(${signer.kbaScore}%)` : ""}
                         </Badge>
+                        {(() => {
+                          const ofacCheck = complianceChecks.find(c => c.signerId === signer.id && c.checkType === "ofac");
+                          const passed = ofacCheck?.result === "pass";
+                          const failed = ofacCheck?.result === "fail";
+                          return (
+                            <Badge
+                              variant="outline"
+                              className={`${passed ? "border-green-500 text-green-700 dark:text-green-400" : failed ? "border-red-500 text-red-700 dark:text-red-400" : "border-muted-foreground/30"}`}
+                              data-testid={`badge-ofac-${signer.id}`}
+                            >
+                              OFAC {passed ? "Cleared" : failed ? "Flagged" : "Pending"}
+                            </Badge>
+                          );
+                        })()}
                         {signer.signingOrder !== undefined && signer.signingOrder !== null && (
                           <Badge variant="outline" className="border-muted-foreground/30">
                             <GripVertical className="h-3 w-3 mr-1" /> Order: {signer.signingOrder}
