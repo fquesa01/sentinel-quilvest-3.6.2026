@@ -953,6 +953,18 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
       recordingStatus: "completed",
     });
 
+    for (const doc of documents) {
+      const seals = await storage.getRonSealsByDocument(doc.id);
+      const annotations = await storage.getRonAnnotations(doc.id);
+      const allRequired = annotations.filter(a => a.required);
+      const allSigned = allRequired.every(a => a.completed);
+      if (allSigned && seals.length > 0) {
+        await storage.updateRonDocument(doc.id, { status: "notarized" });
+      } else if (allSigned) {
+        await storage.updateRonDocument(doc.id, { status: "fully_signed" });
+      }
+    }
+
     const remainingActiveSessions = await storage.getRonSessions(session.transactionId);
     const stillActive = remainingActiveSessions.filter(s => s.status === "in_progress" && s.id !== req.params.id);
 
@@ -1010,6 +1022,9 @@ router.post("/signatures", async (req: any, res) => {
       const annotation = await storage.getRonAnnotation(body.annotationId);
       if (!annotation || annotation.documentId !== body.documentId) {
         return res.status(400).json({ message: "Annotation does not belong to this document" });
+      }
+      if (annotation.signerId && annotation.signerId !== body.signerId) {
+        return res.status(403).json({ message: "This annotation field is assigned to a different signer" });
       }
     }
 
