@@ -13874,3 +13874,443 @@ export const bulkIntakeDocuments = pgTable("bulk_intake_documents", {
 }));
 
 export type BulkIntakeDocument = typeof bulkIntakeDocuments.$inferSelect;
+
+// ============================================================================
+// RON (Remote Online Notarization) Module
+// ============================================================================
+
+export const ronTransactionStatusEnum = pgEnum("ron_transaction_status", [
+  "draft", "pending_idv", "ready", "in_progress", "completed", "cancelled", "on_hold"
+]);
+
+export const ronSessionStatusEnum = pgEnum("ron_session_status", [
+  "scheduled", "lobby", "in_progress", "paused", "completed", "cancelled", "failed"
+]);
+
+export const ronNotaryStatusEnum = pgEnum("ron_notary_status", [
+  "pending_onboarding", "active", "suspended", "inactive", "expired"
+]);
+
+export const ronSignerRoleEnum = pgEnum("ron_signer_role", [
+  "principal", "gp", "lp", "counsel", "witness", "observer", "power_of_attorney", "corporate_officer", "trustee", "escrow_agent", "title_agent"
+]);
+
+export const ronDocumentStatusEnum = pgEnum("ron_document_status", [
+  "uploaded", "preparing", "ready", "in_signing", "partially_signed", "fully_signed", "notarized", "recorded", "rejected"
+]);
+
+export const ronSigningOrderEnum = pgEnum("ron_signing_order", [
+  "sequential", "parallel", "hybrid"
+]);
+
+export const ronIdvStatusEnum = pgEnum("ron_idv_status", [
+  "not_started", "credential_pending", "credential_passed", "credential_failed",
+  "liveness_pending", "liveness_passed", "liveness_failed",
+  "kba_pending", "kba_passed", "kba_failed",
+  "ofac_pending", "ofac_cleared", "ofac_flagged",
+  "fully_verified", "failed", "expired"
+]);
+
+export const ronComplianceCheckTypeEnum = pgEnum("ron_compliance_check_type", [
+  "ofac", "aml", "pep", "kba", "credential_analysis", "liveness", "biometric_match",
+  "geolocation", "device_check", "corporate_authority"
+]);
+
+export const ronComplianceResultEnum = pgEnum("ron_compliance_result", [
+  "pass", "fail", "review_required", "pending", "error", "not_applicable"
+]);
+
+export const ronJournalEventTypeEnum = pgEnum("ron_journal_event_type", [
+  "transaction_created", "document_uploaded", "signer_added", "signer_verified",
+  "session_scheduled", "session_started", "session_paused", "session_resumed",
+  "signer_joined", "signer_left", "signature_applied", "initial_applied",
+  "seal_applied", "session_completed", "session_cancelled", "document_notarized",
+  "compliance_check", "recording_started", "recording_stopped",
+  "notary_assigned", "signing_order_changed"
+]);
+
+export const ronAnnotationTypeEnum = pgEnum("ron_annotation_type", [
+  "signature", "initial", "date", "seal", "text", "checkbox", "notary_signature", "notary_seal"
+]);
+
+export const ronRecordingStatusEnum = pgEnum("ron_recording_status", [
+  "not_started", "recording", "processing", "completed", "archived", "failed"
+]);
+
+// RON Transactions
+export const ronTransactions = pgTable("ron_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 500 }).notNull(),
+  status: ronTransactionStatusEnum("status").default("draft").notNull(),
+  transactionType: varchar("transaction_type", { length: 100 }),
+  jurisdiction: varchar("jurisdiction", { length: 100 }),
+  signingOrder: ronSigningOrderEnum("signing_order").default("parallel"),
+  signingOrderConfig: jsonb("signing_order_config").default({}),
+  scheduledDate: timestamp("scheduled_date"),
+  completedDate: timestamp("completed_date"),
+  expirationDate: timestamp("expiration_date"),
+  notes: text("notes"),
+  metadata: jsonb("metadata").default({}),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  statusIdx: index("idx_ron_transactions_status").on(table.status),
+  dealIdx: index("idx_ron_transactions_deal").on(table.dealId),
+  createdIdx: index("idx_ron_transactions_created").on(table.createdAt),
+}));
+
+export const insertRonTransactionSchema = createInsertSchema(ronTransactions).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonTransaction = z.infer<typeof insertRonTransactionSchema>;
+export type RonTransaction = typeof ronTransactions.$inferSelect;
+
+// RON Notaries
+export const ronNotaries = pgTable("ron_notaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  firstName: varchar("first_name", { length: 200 }).notNull(),
+  lastName: varchar("last_name", { length: 200 }).notNull(),
+  email: varchar("email", { length: 300 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  status: ronNotaryStatusEnum("status").default("pending_onboarding").notNull(),
+  commissionState: varchar("commission_state", { length: 50 }).notNull(),
+  commissionNumber: varchar("commission_number", { length: 100 }),
+  commissionExpiration: timestamp("commission_expiration"),
+  bondAmount: numeric("bond_amount"),
+  bondExpiration: timestamp("bond_expiration"),
+  eoInsuranceAmount: numeric("eo_insurance_amount"),
+  eoInsuranceExpiration: timestamp("eo_insurance_expiration"),
+  eoInsuranceCertUrl: varchar("eo_insurance_cert_url", { length: 1000 }),
+  languages: text("languages").array().default([]),
+  ronTrainingCompleted: boolean("ron_training_completed").default(false),
+  ronTrainingDate: timestamp("ron_training_date"),
+  ronExamScore: integer("ron_exam_score"),
+  sealImageUrl: varchar("seal_image_url", { length: 1000 }),
+  signatureImageUrl: varchar("signature_image_url", { length: 1000 }),
+  digitalCertificateId: varchar("digital_certificate_id", { length: 500 }),
+  availabilitySchedule: jsonb("availability_schedule").default({}),
+  timezone: varchar("timezone", { length: 100 }).default("America/New_York"),
+  totalSessions: integer("total_sessions").default(0),
+  avgSessionDuration: integer("avg_session_duration"),
+  complianceScore: integer("compliance_score").default(100),
+  backgroundCheckDate: timestamp("background_check_date"),
+  backgroundCheckStatus: varchar("background_check_status", { length: 50 }),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  stateIdx: index("idx_ron_notaries_state").on(table.commissionState),
+  statusIdx: index("idx_ron_notaries_status").on(table.status),
+  emailIdx: index("idx_ron_notaries_email").on(table.email),
+}));
+
+export const insertRonNotarySchema = createInsertSchema(ronNotaries).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonNotary = z.infer<typeof insertRonNotarySchema>;
+export type RonNotary = typeof ronNotaries.$inferSelect;
+
+// RON Sessions
+export const ronSessions = pgTable("ron_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: varchar("transaction_id").references(() => ronTransactions.id, { onDelete: "cascade" }).notNull(),
+  notaryId: varchar("notary_id").references(() => ronNotaries.id),
+  status: ronSessionStatusEnum("status").default("scheduled").notNull(),
+  sessionType: varchar("session_type", { length: 100 }).default("standard"),
+  scheduledStart: timestamp("scheduled_start"),
+  scheduledEnd: timestamp("scheduled_end"),
+  actualStart: timestamp("actual_start"),
+  actualEnd: timestamp("actual_end"),
+  durationSeconds: integer("duration_seconds"),
+  notaryLocationVerified: boolean("notary_location_verified").default(false),
+  notaryLatitude: numeric("notary_latitude"),
+  notaryLongitude: numeric("notary_longitude"),
+  notaryState: varchar("notary_state", { length: 50 }),
+  videoSessionId: varchar("video_session_id", { length: 500 }),
+  videoProvider: varchar("video_provider", { length: 100 }),
+  recordingStatus: ronRecordingStatusEnum("recording_status").default("not_started"),
+  recordingUrl: varchar("recording_url", { length: 1000 }),
+  recordingDuration: integer("recording_duration"),
+  notes: text("notes"),
+  cancellationReason: text("cancellation_reason"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  transactionIdx: index("idx_ron_sessions_transaction").on(table.transactionId),
+  notaryIdx: index("idx_ron_sessions_notary").on(table.notaryId),
+  statusIdx: index("idx_ron_sessions_status").on(table.status),
+  scheduledIdx: index("idx_ron_sessions_scheduled").on(table.scheduledStart),
+}));
+
+export const insertRonSessionSchema = createInsertSchema(ronSessions).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonSession = z.infer<typeof insertRonSessionSchema>;
+export type RonSession = typeof ronSessions.$inferSelect;
+
+// RON Signers
+export const ronSigners = pgTable("ron_signers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: varchar("transaction_id").references(() => ronTransactions.id, { onDelete: "cascade" }).notNull(),
+  sessionId: varchar("session_id").references(() => ronSessions.id, { onDelete: "set null" }),
+  firstName: varchar("first_name", { length: 200 }).notNull(),
+  lastName: varchar("last_name", { length: 200 }).notNull(),
+  email: varchar("email", { length: 300 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  role: ronSignerRoleEnum("role").default("principal").notNull(),
+  signerTitle: varchar("signer_title", { length: 200 }),
+  organization: varchar("organization", { length: 300 }),
+  idvStatus: ronIdvStatusEnum("idv_status").default("not_started").notNull(),
+  kbaScore: integer("kba_score"),
+  kbaAttempts: integer("kba_attempts").default(0),
+  kbaLastAttempt: timestamp("kba_last_attempt"),
+  credentialType: varchar("credential_type", { length: 100 }),
+  credentialNumber: varchar("credential_number", { length: 200 }),
+  credentialExpiration: timestamp("credential_expiration"),
+  credentialImageUrl: varchar("credential_image_url", { length: 1000 }),
+  livenessCheckPassed: boolean("liveness_check_passed").default(false),
+  biometricMatchScore: numeric("biometric_match_score"),
+  signatureImageUrl: varchar("signature_image_url", { length: 1000 }),
+  initialsImageUrl: varchar("initials_image_url", { length: 1000 }),
+  signingOrder: integer("signing_order").default(0),
+  signingDependsOn: text("signing_depends_on").array().default([]),
+  signingCompleted: boolean("signing_completed").default(false),
+  signingCompletedAt: timestamp("signing_completed_at"),
+  joinedSessionAt: timestamp("joined_session_at"),
+  leftSessionAt: timestamp("left_session_at"),
+  preferredLanguage: varchar("preferred_language", { length: 10 }).default("en"),
+  ipAddress: varchar("ip_address", { length: 100 }),
+  userAgent: text("user_agent"),
+  deviceFingerprint: varchar("device_fingerprint", { length: 500 }),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  transactionIdx: index("idx_ron_signers_transaction").on(table.transactionId),
+  sessionIdx: index("idx_ron_signers_session").on(table.sessionId),
+  emailIdx: index("idx_ron_signers_email").on(table.email),
+  idvIdx: index("idx_ron_signers_idv").on(table.idvStatus),
+}));
+
+export const insertRonSignerSchema = createInsertSchema(ronSigners).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonSigner = z.infer<typeof insertRonSignerSchema>;
+export type RonSigner = typeof ronSigners.$inferSelect;
+
+// RON Documents
+export const ronDocuments = pgTable("ron_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: varchar("transaction_id").references(() => ronTransactions.id, { onDelete: "cascade" }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  status: ronDocumentStatusEnum("status").default("uploaded").notNull(),
+  documentType: varchar("document_type", { length: 100 }),
+  originalPdfUrl: varchar("original_pdf_url", { length: 1000 }),
+  signedPdfUrl: varchar("signed_pdf_url", { length: 1000 }),
+  storageKey: varchar("storage_key", { length: 1000 }),
+  pageCount: integer("page_count"),
+  fileSize: integer("file_size"),
+  mimeType: varchar("mime_type", { length: 100 }),
+  signingOrder: integer("signing_order").default(0),
+  requiresNotarization: boolean("requires_notarization").default(true),
+  notarizationType: varchar("notarization_type", { length: 100 }),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  transactionIdx: index("idx_ron_documents_transaction").on(table.transactionId),
+  statusIdx: index("idx_ron_documents_status").on(table.status),
+}));
+
+export const insertRonDocumentSchema = createInsertSchema(ronDocuments).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonDocument = z.infer<typeof insertRonDocumentSchema>;
+export type RonDocument = typeof ronDocuments.$inferSelect;
+
+// RON Annotation Placements (where signatures/initials/seals go on documents)
+export const ronAnnotationPlacements = pgTable("ron_annotation_placements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  documentId: varchar("document_id").references(() => ronDocuments.id, { onDelete: "cascade" }).notNull(),
+  signerId: varchar("signer_id").references(() => ronSigners.id, { onDelete: "set null" }),
+  notaryId: varchar("notary_id").references(() => ronNotaries.id, { onDelete: "set null" }),
+  annotationType: ronAnnotationTypeEnum("annotation_type").notNull(),
+  pageNumber: integer("page_number").notNull(),
+  xPosition: numeric("x_position").notNull(),
+  yPosition: numeric("y_position").notNull(),
+  width: numeric("width").notNull(),
+  height: numeric("height").notNull(),
+  required: boolean("required").default(true),
+  completed: boolean("completed").default(false),
+  completedAt: timestamp("completed_at"),
+  completedValue: text("completed_value"),
+  sortOrder: integer("sort_order").default(0),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  documentIdx: index("idx_ron_annotations_document").on(table.documentId),
+  signerIdx: index("idx_ron_annotations_signer").on(table.signerId),
+}));
+
+export const insertRonAnnotationPlacementSchema = createInsertSchema(ronAnnotationPlacements).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonAnnotationPlacement = z.infer<typeof insertRonAnnotationPlacementSchema>;
+export type RonAnnotationPlacement = typeof ronAnnotationPlacements.$inferSelect;
+
+// RON Signatures
+export const ronSignatures = pgTable("ron_signatures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  signerId: varchar("signer_id").references(() => ronSigners.id, { onDelete: "cascade" }).notNull(),
+  documentId: varchar("document_id").references(() => ronDocuments.id, { onDelete: "cascade" }).notNull(),
+  annotationId: varchar("annotation_id").references(() => ronAnnotationPlacements.id),
+  sessionId: varchar("session_id").references(() => ronSessions.id),
+  signatureType: varchar("signature_type", { length: 50 }).notNull(),
+  signatureImageUrl: varchar("signature_image_url", { length: 1000 }),
+  signatureData: text("signature_data"),
+  pageNumber: integer("page_number").notNull(),
+  xPosition: numeric("x_position").notNull(),
+  yPosition: numeric("y_position").notNull(),
+  ipAddress: varchar("ip_address", { length: 100 }),
+  userAgent: text("user_agent"),
+  certificateId: varchar("certificate_id", { length: 500 }),
+  certificateSerial: varchar("certificate_serial", { length: 500 }),
+  hashAlgorithm: varchar("hash_algorithm", { length: 50 }).default("SHA-256"),
+  documentHash: varchar("document_hash", { length: 512 }),
+  signedAt: timestamp("signed_at").defaultNow().notNull(),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  signerIdx: index("idx_ron_signatures_signer").on(table.signerId),
+  documentIdx: index("idx_ron_signatures_document").on(table.documentId),
+  sessionIdx: index("idx_ron_signatures_session").on(table.sessionId),
+}));
+
+export const insertRonSignatureSchema = createInsertSchema(ronSignatures).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonSignature = z.infer<typeof insertRonSignatureSchema>;
+export type RonSignature = typeof ronSignatures.$inferSelect;
+
+// RON Seals
+export const ronSeals = pgTable("ron_seals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  notaryId: varchar("notary_id").references(() => ronNotaries.id, { onDelete: "cascade" }).notNull(),
+  documentId: varchar("document_id").references(() => ronDocuments.id, { onDelete: "cascade" }).notNull(),
+  sessionId: varchar("session_id").references(() => ronSessions.id),
+  sealImageUrl: varchar("seal_image_url", { length: 1000 }),
+  sealData: text("seal_data"),
+  pageNumber: integer("page_number").notNull(),
+  xPosition: numeric("x_position").notNull(),
+  yPosition: numeric("y_position").notNull(),
+  commissionState: varchar("commission_state", { length: 50 }),
+  commissionNumber: varchar("commission_number", { length: 100 }),
+  commissionExpiration: timestamp("commission_expiration"),
+  certificateId: varchar("certificate_id", { length: 500 }),
+  appliedAt: timestamp("applied_at").defaultNow().notNull(),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  notaryIdx: index("idx_ron_seals_notary").on(table.notaryId),
+  documentIdx: index("idx_ron_seals_document").on(table.documentId),
+}));
+
+export const insertRonSealSchema = createInsertSchema(ronSeals).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonSeal = z.infer<typeof insertRonSealSchema>;
+export type RonSeal = typeof ronSeals.$inferSelect;
+
+// RON Journal Entries (immutable hash chain)
+export const ronJournalEntries = pgTable("ron_journal_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: varchar("transaction_id").references(() => ronTransactions.id, { onDelete: "cascade" }).notNull(),
+  sessionId: varchar("session_id").references(() => ronSessions.id),
+  notaryId: varchar("notary_id").references(() => ronNotaries.id),
+  sequenceNumber: integer("sequence_number").notNull(),
+  eventType: ronJournalEventTypeEnum("event_type").notNull(),
+  actorType: varchar("actor_type", { length: 50 }).notNull(),
+  actorId: varchar("actor_id", { length: 200 }),
+  actorName: varchar("actor_name", { length: 300 }),
+  description: text("description").notNull(),
+  eventData: jsonb("event_data").default({}),
+  documentId: varchar("document_id"),
+  signerId: varchar("signer_id"),
+  previousHash: varchar("previous_hash", { length: 128 }),
+  entryHash: varchar("entry_hash", { length: 128 }).notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  ipAddress: varchar("ip_address", { length: 100 }),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  transactionIdx: index("idx_ron_journal_transaction").on(table.transactionId),
+  sessionIdx: index("idx_ron_journal_session").on(table.sessionId),
+  sequenceIdx: index("idx_ron_journal_sequence").on(table.transactionId, table.sequenceNumber),
+}));
+
+export const insertRonJournalEntrySchema = createInsertSchema(ronJournalEntries).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonJournalEntry = z.infer<typeof insertRonJournalEntrySchema>;
+export type RonJournalEntry = typeof ronJournalEntries.$inferSelect;
+
+// RON Recordings
+export const ronRecordings = pgTable("ron_recordings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => ronSessions.id, { onDelete: "cascade" }).notNull(),
+  status: ronRecordingStatusEnum("status").default("not_started").notNull(),
+  storageUrl: varchar("storage_url", { length: 1000 }),
+  storageKey: varchar("storage_key", { length: 1000 }),
+  archiveUrl: varchar("archive_url", { length: 1000 }),
+  duration: integer("duration"),
+  fileSize: integer("file_size"),
+  format: varchar("format", { length: 50 }),
+  retentionExpiration: timestamp("retention_expiration"),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+  archivedAt: timestamp("archived_at"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  sessionIdx: index("idx_ron_recordings_session").on(table.sessionId),
+  statusIdx: index("idx_ron_recordings_status").on(table.status),
+}));
+
+export const insertRonRecordingSchema = createInsertSchema(ronRecordings).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonRecording = z.infer<typeof insertRonRecordingSchema>;
+export type RonRecording = typeof ronRecordings.$inferSelect;
+
+// RON Compliance Checks
+export const ronComplianceChecks = pgTable("ron_compliance_checks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: varchar("transaction_id").references(() => ronTransactions.id, { onDelete: "cascade" }).notNull(),
+  signerId: varchar("signer_id").references(() => ronSigners.id, { onDelete: "cascade" }),
+  checkType: ronComplianceCheckTypeEnum("check_type").notNull(),
+  result: ronComplianceResultEnum("result").default("pending").notNull(),
+  score: integer("score"),
+  provider: varchar("provider", { length: 200 }),
+  providerReferenceId: varchar("provider_reference_id", { length: 500 }),
+  details: jsonb("details").default({}),
+  rawResponse: jsonb("raw_response").default({}),
+  expiresAt: timestamp("expires_at"),
+  performedBy: varchar("performed_by").references(() => users.id),
+  performedAt: timestamp("performed_at").defaultNow().notNull(),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  transactionIdx: index("idx_ron_compliance_transaction").on(table.transactionId),
+  signerIdx: index("idx_ron_compliance_signer").on(table.signerId),
+  typeIdx: index("idx_ron_compliance_type").on(table.checkType),
+}));
+
+export const insertRonComplianceCheckSchema = createInsertSchema(ronComplianceChecks).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonComplianceCheck = z.infer<typeof insertRonComplianceCheckSchema>;
+export type RonComplianceCheck = typeof ronComplianceChecks.$inferSelect;

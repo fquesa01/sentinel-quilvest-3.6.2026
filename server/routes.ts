@@ -67,6 +67,7 @@ import { registerClosingRoutes } from "./routes/closing-routes";
 import { registerClosingDocumentsRoutes } from "./routes/closing-documents-routes";
 import { registerCondoIssueSheetRoutes } from "./routes/condo-issue-sheet-routes";
 import { registerBulkIntakeRoutes } from "./routes/bulk-intake-routes";
+import { registerRonRoutes } from "./routes/ron-routes";
 
 // Helper to extract email from various formats (e.g., "John Doe <john@example.com>" -> "john@example.com")
 function extractEmail(input: string): string | null {
@@ -322,6 +323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerClosingDocumentsRoutes(app);
   registerCondoIssueSheetRoutes(app, isAuthenticated);
   registerBulkIntakeRoutes(app, isAuthenticated, requireRole);
+  registerRonRoutes(app);
 
   // Investor memo engine routes
   app.use(investorMemoRouter);
