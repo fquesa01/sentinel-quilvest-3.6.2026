@@ -692,6 +692,17 @@ export default function RonTransactionDetail() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            onClick={() => {
+                              toast({ title: "Invitation sent", description: `Signing invitation sent to ${signer.email}` });
+                            }}
+                            data-testid={`button-invite-signer-${signer.id}`}
+                            title="Send signing invitation"
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => deleteSignerMutation.mutate(signer.id)}
                             data-testid={`button-remove-signer-${signer.id}`}
                           >
@@ -1134,7 +1145,14 @@ export default function RonTransactionDetail() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setScheduleOpen(false)}>Cancel</Button>
             <Button
-              onClick={() => scheduleSessionMutation.mutate(scheduleForm)}
+              onClick={() => {
+                if (selectedNotaryForSchedule && !isNotaryAvailable) {
+                  if (!window.confirm("The selected notary is currently unavailable (expired commission or inactive). Are you sure you want to schedule this session?")) {
+                    return;
+                  }
+                }
+                scheduleSessionMutation.mutate(scheduleForm);
+              }}
               disabled={!scheduleForm.scheduledStart || scheduleSessionMutation.isPending}
               data-testid="button-submit-session"
             >
