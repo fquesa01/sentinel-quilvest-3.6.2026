@@ -125,16 +125,24 @@ export default function RonCreateTransaction() {
         await apiRequest("POST", `/api/ron/transactions/${txn.id}/signers`, signer);
       }
 
+      const failedUploads: string[] = [];
       for (const doc of documents) {
         const formData = new FormData();
         formData.append("file", doc.file);
         formData.append("title", doc.title || doc.file.name);
         formData.append("documentType", doc.documentType);
-        await fetch(`/api/ron/transactions/${txn.id}/documents`, {
+        const uploadRes = await fetch(`/api/ron/transactions/${txn.id}/documents`, {
           method: "POST",
           body: formData,
           credentials: "include",
         });
+        if (!uploadRes.ok) {
+          const errBody = await uploadRes.json().catch(() => ({ message: "Upload failed" }));
+          failedUploads.push(`${doc.file.name}: ${errBody.message || "Upload failed"}`);
+        }
+      }
+      if (failedUploads.length > 0) {
+        throw new Error(`Document upload errors: ${failedUploads.join("; ")}`);
       }
 
       return txn;

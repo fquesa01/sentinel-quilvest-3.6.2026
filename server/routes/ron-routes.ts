@@ -520,6 +520,27 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
   }
 });
 
+router.get("/documents/:id/preview", async (req: any, res) => {
+  try {
+    const doc = await storage.getRonDocument(req.params.id);
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+
+    const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (!doc.storageKey) return res.status(404).json({ message: "No file stored for this document" });
+
+    const objectStorageService = new ObjectStorageService();
+    const buffer = await objectStorageService.downloadAsBuffer(doc.storageKey);
+    res.setHeader("Content-Type", doc.mimeType || "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${doc.title}"`);
+    res.send(buffer);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
 router.patch("/documents/:id", async (req: any, res) => {
   try {
     const doc = await storage.getRonDocument(req.params.id);
@@ -610,6 +631,34 @@ router.post("/documents/:documentId/annotations", async (req: any, res) => {
     }
 
     res.status(201).json(inserted);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.patch("/annotations/:id", async (req: any, res) => {
+  try {
+    const annotation = await storage.getRonAnnotation(req.params.id);
+    if (!annotation) return res.status(404).json({ message: "Annotation not found" });
+
+    const doc = await storage.getRonDocument(annotation.documentId);
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+
+    const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { xPosition, yPosition, width, height, pageNumber, signerId } = req.body;
+    const updates: Record<string, unknown> = {};
+    if (xPosition !== undefined) updates.xPosition = xPosition.toString();
+    if (yPosition !== undefined) updates.yPosition = yPosition.toString();
+    if (width !== undefined) updates.width = width.toString();
+    if (height !== undefined) updates.height = height.toString();
+    if (pageNumber !== undefined) updates.pageNumber = pageNumber;
+    if (signerId !== undefined) updates.signerId = signerId;
+
+    const updated = await storage.updateRonAnnotation(req.params.id, updates);
+    res.json(updated);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });

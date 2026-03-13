@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -178,9 +178,12 @@ export default function RonTransactionDetail() {
 
   const [docPrepOpen, setDocPrepOpen] = useState(false);
   const [selectedDocForPrep, setSelectedDocForPrep] = useState<RonDocument | null>(null);
-  const [placedAnnotations, setPlacedAnnotations] = useState<Array<{ type: string; x: number; y: number; w: number; signerId: string; page: number }>>([]);
+  const [placedAnnotations, setPlacedAnnotations] = useState<Array<{ type: string; x: number; y: number; w: number; signerId: string; page: number; id?: string }>>([]);
   const [draggingAnnotation, setDraggingAnnotation] = useState<{ index: number; offsetX: number; offsetY: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [pdfLoaded, setPdfLoaded] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [annotationPlacement, setAnnotationPlacement] = useState({
     type: "signature",
     assignedTo: "",
@@ -233,6 +236,75 @@ export default function RonTransactionDetail() {
   const { data: linkedDeal } = useQuery<Deal>({
     queryKey: ["/api/deals", transaction?.dealId],
     enabled: !!transaction?.dealId,
+  });
+
+  const { data: existingAnnotations = [] } = useQuery<Array<{
+    id: string; annotationType: string; signerId: string | null;
+    pageNumber: number; xPosition: string; yPosition: string;
+    width: string; height: string;
+  }>>({
+    queryKey: ["/api/ron/documents", selectedDocForPrep?.id, "annotations"],
+    enabled: !!selectedDocForPrep?.id && docPrepOpen,
+  });
+
+  useEffect(() => {
+    if (docPrepOpen && selectedDocForPrep && existingAnnotations.length > 0 && placedAnnotations.length === 0) {
+      setPlacedAnnotations(existingAnnotations.map(a => ({
+        type: a.annotationType,
+        x: parseFloat(a.xPosition),
+        y: parseFloat(a.yPosition),
+        w: parseFloat(a.width),
+        signerId: a.signerId || "",
+        page: a.pageNumber,
+        id: a.id,
+      })));
+    }
+  }, [docPrepOpen, selectedDocForPrep, existingAnnotations, placedAnnotations.length]);
+
+  useEffect(() => {
+    if (!docPrepOpen || !selectedDocForPrep?.storageKey || !pdfCanvasRef.current) return;
+    let cancelled = false;
+    setPdfLoaded(false);
+    setPdfError(null);
+
+    (async () => {
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+        const response = await fetch(`/api/ron/documents/${selectedDocForPrep.id}/preview`, { credentials: "include" });
+        if (!response.ok) throw new Error("Failed to load PDF");
+        const arrayBuffer = await response.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pageNum = Math.min(annotationPlacement.pageNumber, pdf.numPages);
+        const page = await pdf.getPage(pageNum);
+        const canvas = pdfCanvasRef.current;
+        if (!canvas || cancelled) return;
+        const containerWidth = canvas.parentElement?.clientWidth || 500;
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = containerWidth / viewport.width;
+        const scaledViewport = page.getViewport({ scale });
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+        if (!cancelled) setPdfLoaded(true);
+      } catch (err) {
+        if (!cancelled) setPdfError(err instanceof Error ? err.message : "PDF load error");
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [docPrepOpen, selectedDocForPrep?.id, selectedDocForPrep?.storageKey, annotationPlacement.pageNumber]);
+
+  const updateAnnotationMutation = useMutation({
+    mutationFn: async (data: { id: string; xPosition: number; yPosition: number }) => {
+      return apiRequest("PATCH", `/api/ron/annotations/${data.id}`, {
+        xPosition: data.xPosition,
+        yPosition: data.yPosition,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Error saving position", description: e.message, variant: "destructive" }),
   });
 
   const addSignerMutation = useMutation({
@@ -392,8 +464,14 @@ export default function RonTransactionDetail() {
   }, [draggingAnnotation]);
 
   const handleAnnotationDragEnd = useCallback(() => {
+    if (draggingAnnotation) {
+      const ann = placedAnnotations[draggingAnnotation.index];
+      if (ann?.id) {
+        updateAnnotationMutation.mutate({ id: ann.id, xPosition: ann.x, yPosition: ann.y });
+      }
+    }
     setDraggingAnnotation(null);
-  }, []);
+  }, [draggingAnnotation, placedAnnotations, updateAnnotationMutation]);
 
   return (
     <div className="p-6 space-y-6" data-testid="ron-transaction-detail-page">
@@ -1081,8 +1159,8 @@ export default function RonTransactionDetail() {
                 <div className="flex-1">
                   <div
                     ref={canvasRef}
-                    className="border-2 border-dashed border-border rounded-md bg-muted/20 relative cursor-crosshair select-none"
-                    style={{ width: "100%", height: 500 }}
+                    className="border rounded-md bg-white dark:bg-gray-900 relative cursor-crosshair select-none overflow-hidden"
+                    style={{ width: "100%", minHeight: 400 }}
                     onClick={(e) => {
                       if (draggingAnnotation) return;
                       const rect = e.currentTarget.getBoundingClientRect();
@@ -1095,11 +1173,33 @@ export default function RonTransactionDetail() {
                     onMouseLeave={handleAnnotationDragEnd}
                     data-testid="doc-prep-canvas"
                   >
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/40 pointer-events-none">
-                      <FileText className="h-16 w-16 mb-2" />
-                      <p className="text-sm font-medium">Page {annotationPlacement.pageNumber}</p>
-                      <p className="text-xs">Click anywhere to set field position</p>
-                    </div>
+                    <canvas
+                      ref={pdfCanvasRef}
+                      className="w-full h-auto"
+                      style={{ display: pdfLoaded ? "block" : "none" }}
+                    />
+                    {!pdfLoaded && (
+                      <div className="flex flex-col items-center justify-center text-muted-foreground/40 py-20">
+                        {pdfError ? (
+                          <>
+                            <AlertTriangle className="h-10 w-10 mb-2" />
+                            <p className="text-sm">PDF preview unavailable</p>
+                            <p className="text-xs mt-1">Click to place fields on the coordinate grid</p>
+                          </>
+                        ) : selectedDocForPrep?.storageKey ? (
+                          <>
+                            <Loader2 className="h-10 w-10 mb-2 animate-spin" />
+                            <p className="text-sm">Loading PDF page {annotationPlacement.pageNumber}...</p>
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="h-16 w-16 mb-2" />
+                            <p className="text-sm font-medium">Page {annotationPlacement.pageNumber}</p>
+                            <p className="text-xs">Click anywhere to set field position</p>
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     {placedAnnotations.map((ann, globalIdx) => {
                       if (ann.page !== annotationPlacement.pageNumber) return null;
