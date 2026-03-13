@@ -472,7 +472,7 @@ export default function RonCreateTransaction() {
               <p className="text-sm text-muted-foreground mb-3">Upload documents for notarization</p>
               <Input
                 type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.tiff,.doc,.docx"
+                accept=".pdf,.png,.jpg,.jpeg,.tiff"
                 multiple
                 onChange={(e) => {
                   const files = e.target.files;

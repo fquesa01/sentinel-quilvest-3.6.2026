@@ -248,7 +248,7 @@ export default function RonTransactionDetail() {
   });
 
   useEffect(() => {
-    if (docPrepOpen && selectedDocForPrep && existingAnnotations.length > 0 && placedAnnotations.length === 0) {
+    if (docPrepOpen && selectedDocForPrep) {
       setPlacedAnnotations(existingAnnotations.map(a => ({
         type: a.annotationType,
         x: parseFloat(a.xPosition),
@@ -259,7 +259,15 @@ export default function RonTransactionDetail() {
         id: a.id,
       })));
     }
-  }, [docPrepOpen, selectedDocForPrep, existingAnnotations, placedAnnotations.length]);
+  }, [docPrepOpen, selectedDocForPrep?.id, existingAnnotations]);
+
+  useEffect(() => {
+    if (!docPrepOpen) {
+      setPlacedAnnotations([]);
+      setPdfLoaded(false);
+      setPdfError(null);
+    }
+  }, [docPrepOpen]);
 
   useEffect(() => {
     if (!docPrepOpen || !selectedDocForPrep?.storageKey || !pdfCanvasRef.current) return;
@@ -1331,14 +1339,6 @@ export default function RonTransactionDetail() {
                         documentId: selectedDocForPrep.id,
                         placement: annotationPlacement,
                       });
-                      setPlacedAnnotations([...placedAnnotations, {
-                        type: annotationPlacement.type,
-                        x: annotationPlacement.xPosition,
-                        y: annotationPlacement.yPosition,
-                        w: annotationPlacement.width,
-                        signerId: annotationPlacement.assignedTo,
-                        page: annotationPlacement.pageNumber,
-                      }]);
                     }}
                     disabled={addAnnotationMutation.isPending}
                     data-testid="button-place-annotation"
