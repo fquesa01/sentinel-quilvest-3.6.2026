@@ -138,7 +138,7 @@ router.delete("/transactions/:id", async (req: any, res) => {
 // NOTARIES
 // ============================================================================
 
-router.get("/notaries", async (req: any, res) => {
+router.get("/notaries", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
     const { state, language, status } = req.query;
     const conditions = [];
@@ -167,7 +167,7 @@ router.get("/notaries", async (req: any, res) => {
   }
 });
 
-router.get("/notaries/:id", async (req: any, res) => {
+router.get("/notaries/:id", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
     const [notary] = await db.select().from(schema.ronNotaries)
       .where(eq(schema.ronNotaries.id, req.params.id));
@@ -233,6 +233,34 @@ router.patch("/notaries/:id", requireRole("admin"), async (req: any, res) => {
   }
 });
 
+router.delete("/notaries/:id", requireRole("admin"), async (req: any, res) => {
+  try {
+    const activeSessions = await db.select().from(schema.ronSessions)
+      .where(and(
+        eq(schema.ronSessions.notaryId, req.params.id),
+        or(
+          eq(schema.ronSessions.status, "scheduled" as any),
+          eq(schema.ronSessions.status, "in_progress" as any),
+        ),
+      ));
+
+    if (activeSessions.length > 0) {
+      return res.status(400).json({
+        message: "Cannot delete notary with active or scheduled sessions",
+        activeSessions: activeSessions.length,
+      });
+    }
+
+    const [notary] = await db.delete(schema.ronNotaries)
+      .where(eq(schema.ronNotaries.id, req.params.id))
+      .returning();
+    if (!notary) return res.status(404).json({ message: "Notary not found" });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // ============================================================================
 // SIGNERS
 // ============================================================================
@@ -246,6 +274,24 @@ router.get("/transactions/:transactionId/signers", async (req: any, res) => {
       .where(eq(schema.ronSigners.transactionId, req.params.transactionId))
       .orderBy(asc(schema.ronSigners.signingOrder));
     res.json(signers);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get("/signers/:id", async (req: any, res) => {
+  try {
+    const [signer] = await db.select().from(schema.ronSigners)
+      .where(eq(schema.ronSigners.id, req.params.id));
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const complianceChecks = await db.select().from(schema.ronComplianceChecks)
+      .where(eq(schema.ronComplianceChecks.signerId, req.params.id));
+
+    res.json({ ...signer, complianceChecks });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -385,6 +431,29 @@ router.get("/transactions/:transactionId/documents", async (req: any, res) => {
       .where(eq(schema.ronDocuments.transactionId, req.params.transactionId))
       .orderBy(asc(schema.ronDocuments.signingOrder));
     res.json(documents);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get("/documents/:id", async (req: any, res) => {
+  try {
+    const [doc] = await db.select().from(schema.ronDocuments)
+      .where(eq(schema.ronDocuments.id, req.params.id));
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+
+    const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const annotations = await db.select().from(schema.ronAnnotationPlacements)
+      .where(eq(schema.ronAnnotationPlacements.documentId, req.params.id))
+      .orderBy(asc(schema.ronAnnotationPlacements.pageNumber), asc(schema.ronAnnotationPlacements.sortOrder));
+    const signatures = await db.select().from(schema.ronSignatures)
+      .where(eq(schema.ronSignatures.documentId, req.params.id));
+    const seals = await db.select().from(schema.ronSeals)
+      .where(eq(schema.ronSeals.documentId, req.params.id));
+
+    res.json({ ...doc, annotations, signatures, seals });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -581,6 +650,53 @@ router.get("/transactions/:transactionId/sessions", async (req: any, res) => {
       .where(eq(schema.ronSessions.transactionId, req.params.transactionId))
       .orderBy(desc(schema.ronSessions.scheduledStart));
     res.json(sessions);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get("/sessions/:id", async (req: any, res) => {
+  try {
+    const [session] = await db.select().from(schema.ronSessions)
+      .where(eq(schema.ronSessions.id, req.params.id));
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const signers = await db.select().from(schema.ronSigners)
+      .where(eq(schema.ronSigners.sessionId, req.params.id));
+    const recordings = await db.select().from(schema.ronRecordings)
+      .where(eq(schema.ronRecordings.sessionId, req.params.id));
+
+    let notary = null;
+    if (session.notaryId) {
+      const [n] = await db.select().from(schema.ronNotaries)
+        .where(eq(schema.ronNotaries.id, session.notaryId));
+      notary = n || null;
+    }
+
+    res.json({ ...session, signers, recordings, notary });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.delete("/sessions/:id", async (req: any, res) => {
+  try {
+    const [session] = await db.select().from(schema.ronSessions)
+      .where(eq(schema.ronSessions.id, req.params.id));
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (session.status === "in_progress") {
+      return res.status(400).json({ message: "Cannot delete an in-progress session" });
+    }
+
+    await db.delete(schema.ronSessions).where(eq(schema.ronSessions.id, req.params.id));
+    res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -954,7 +1070,7 @@ router.get("/transactions/:transactionId/journal/verify", async (req: any, res) 
 // COMPLIANCE
 // ============================================================================
 
-router.get("/compliance/rules", async (req: any, res) => {
+router.get("/compliance/rules", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
   try {
     const { state } = req.query;
     if (state) {
