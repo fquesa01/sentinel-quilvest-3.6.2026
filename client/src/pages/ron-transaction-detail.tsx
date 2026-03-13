@@ -132,7 +132,7 @@ const journalEventLabels: Record<string, string> = {
 
 const annotationTypes = [
   { value: "signature", label: "Signature" },
-  { value: "initials", label: "Initials" },
+  { value: "initial", label: "Initials" },
   { value: "date", label: "Date" },
   { value: "text", label: "Text Field" },
   { value: "checkbox", label: "Checkbox" },
@@ -1295,7 +1295,7 @@ export default function RonTransactionDetail() {
                           data-testid={`annotation-field-${globalIdx}`}
                         >
                           <GripVertical className="h-3 w-3 mr-0.5 opacity-50 flex-shrink-0" />
-                          {ann.type === "signature" ? "Sig" : ann.type === "initials" ? "Init" : ann.type === "date" ? "Date" : ann.type === "notary_seal" ? "Seal" : ann.type}
+                          {ann.type === "signature" ? "Sig" : ann.type === "initial" ? "Init" : ann.type === "date" ? "Date" : ann.type === "notary_seal" ? "Seal" : ann.type}
                         </div>
                       );
                     })}

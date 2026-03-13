@@ -1079,6 +1079,10 @@ router.post("/seals", async (req: any, res) => {
       return res.status(400).json({ message: "Notary is not active" });
     }
 
+    if (notary.userId && notary.userId !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ message: "Only the assigned notary or an admin can apply seals" });
+    }
+
     if (body.sessionId) {
       const session = await storage.getRonSession(body.sessionId);
       if (!session || session.transactionId !== doc.transactionId) {
