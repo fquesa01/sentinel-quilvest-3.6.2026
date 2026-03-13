@@ -859,22 +859,52 @@ router.post("/sessions/:id/start", async (req: any, res) => {
       });
     }
 
-    const updated = await storage.updateRonSession(req.params.id, {
+    if (session.status === "scheduled") {
+      const signers = await storage.getRonSigners(session.transactionId);
+      const documents = await storage.getRonDocuments(session.transactionId);
+      const notary = session.notaryId ? await storage.getRonNotary(session.notaryId) : null;
+
+      if (signers.length === 0) {
+        return res.status(400).json({ message: "Cannot start session: no signers assigned" });
+      }
+      if (documents.length === 0) {
+        return res.status(400).json({ message: "Cannot start session: no documents uploaded" });
+      }
+      const allVerified = signers.every(s => s.idvStatus === "fully_verified");
+      if (!allVerified) {
+        return res.status(400).json({ message: "Cannot start session: not all signers have completed identity verification" });
+      }
+      if (!notary || notary.status !== "active") {
+        return res.status(400).json({ message: "Cannot start session: notary is not assigned or not active" });
+      }
+      const docsReady = documents.every(d => ["ready", "in_signing", "partially_signed", "fully_signed", "notarized"].includes(d.status));
+      if (!docsReady) {
+        return res.status(400).json({ message: "Cannot start session: not all documents are in a ready state" });
+      }
+    }
+
+    const updateData: Record<string, unknown> = {
       status: "in_progress",
-      actualStart: new Date(),
       recordingStatus: "recording",
-    });
+    };
+
+    if (session.status === "scheduled") {
+      updateData.actualStart = new Date();
+    }
+
+    const updated = await storage.updateRonSession(req.params.id, updateData);
 
     await storage.updateRonTransaction(session.transactionId, { status: "in_progress" });
 
+    const eventDesc = session.status === "paused" ? "Notarization session resumed" : "Notarization session started";
     await journalService.createJournalEntry({
       transactionId: session.transactionId,
       sessionId: session.id,
       notaryId: session.notaryId || undefined,
-      eventType: "session_started",
+      eventType: session.status === "paused" ? "session_resumed" : "session_started",
       actorType: "user",
       actorId: req.user.id,
-      description: "Notarization session started",
+      description: eventDesc,
       ipAddress: req.ip,
     });
 
@@ -898,6 +928,17 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
       return res.status(400).json({
         message: `Cannot complete session in "${session.status}" status. Session must be "in_progress" or "paused".`,
       });
+    }
+
+    const documents = await storage.getRonDocuments(session.transactionId);
+    const allAnnotationsSigned = await Promise.all(documents.map(async (doc) => {
+      const annotations = await storage.getRonAnnotations(doc.id);
+      const requiredAnnotations = annotations.filter(a => a.required);
+      return requiredAnnotations.every(a => a.completed);
+    }));
+
+    if (!allAnnotationsSigned.every(Boolean)) {
+      return res.status(400).json({ message: "Cannot complete session: not all required signature fields have been signed" });
     }
 
     const now = new Date();

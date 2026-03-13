@@ -73,7 +73,7 @@ const sessionStatusColors: Record<string, string> = {
   failed: "bg-red-500/20 text-red-400",
 };
 
-const docStatusColors: Record<string, string> = {
+const docStatusColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   uploaded: "secondary",
   preparing: "secondary",
   ready: "default",
@@ -394,7 +394,7 @@ export default function RonSessionPage() {
                       <span className="truncate flex-1">{doc.title}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-1">
-                      <Badge variant={docStatusColors[doc.status] as any} className="text-[10px]">
+                      <Badge variant={docStatusColors[doc.status] || "default"} className="text-[10px]">
                         {doc.status.replace(/_/g, " ")}
                       </Badge>
                       <span className="text-[10px] text-muted-foreground">
@@ -656,7 +656,7 @@ function DocumentViewer({
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <span className="text-sm font-medium flex-1 text-center truncate">{doc.title}</span>
-        <Badge variant={docStatusColors[doc.status] as any} className="text-xs">
+        <Badge variant={docStatusColors[doc.status] || "default"} className="text-xs">
           {doc.status.replace(/_/g, " ")}
         </Badge>
         <span className="text-xs text-muted-foreground">{currentIndex + 1}/{totalDocs}</span>
