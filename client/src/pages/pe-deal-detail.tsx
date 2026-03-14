@@ -148,6 +148,7 @@ const dealStages = [
   { value: "exclusivity", label: "Exclusivity" },
   { value: "definitive_docs", label: "Definitive Docs" },
   { value: "closed", label: "Closed" },
+  { value: "cancelled", label: "Cancelled" },
   { value: "passed", label: "Passed" },
   { value: "lost", label: "Lost" },
 ];

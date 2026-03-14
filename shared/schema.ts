@@ -10206,6 +10206,7 @@ export const peDealStatusEnum = pgEnum("pe_deal_status", [
   "exclusivity",
   "definitive_docs",
   "closed",
+  "cancelled",
   "passed",
   "lost",
 ]);

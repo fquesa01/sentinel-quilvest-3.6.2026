@@ -163,6 +163,7 @@ const dealStages = [
   { value: "exclusivity", label: "Exclusivity", color: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300" },
   { value: "definitive_docs", label: "Definitive Docs", color: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300" },
   { value: "closed", label: "Closed", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" },
+  { value: "cancelled", label: "Cancelled", color: "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300" },
   { value: "passed", label: "Passed", color: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300" },
   { value: "lost", label: "Lost", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300" },
 ];
@@ -339,13 +340,13 @@ export default function PEDealPipeline() {
 
   const pipelineStats = pipelineMode === "intelligent" ? {
     totalDeals: enrichedDeals?.length || 0,
-    activeDeals: enrichedDeals?.filter(d => !["closed", "passed", "lost"].includes(d.effectiveStage)).length || 0,
+    activeDeals: enrichedDeals?.filter(d => !["closed", "cancelled", "passed", "lost"].includes(d.effectiveStage)).length || 0,
     closedDeals: enrichedDeals?.filter(d => d.effectiveStage === "closed").length || 0,
     totalEV: enrichedDeals?.reduce((sum, d) => sum + (parseFloat(d.dealValue || "0") || 0), 0) || 0,
     inDueDiligence: enrichedDeals?.filter(d => d.effectiveStage === "diligence").length || 0,
   } : {
     totalDeals: deals?.length || 0,
-    activeDeals: deals?.filter(d => !["closed", "passed", "lost"].includes(d.status)).length || 0,
+    activeDeals: deals?.filter(d => !["closed", "cancelled", "passed", "lost"].includes(d.status)).length || 0,
     closedDeals: deals?.filter(d => d.status === "closed").length || 0,
     totalEV: deals?.reduce((sum, d) => sum + (parseFloat(d.enterpriseValue || "0") || 0), 0) || 0,
     inDueDiligence: deals?.filter(d => d.status === "diligence").length || 0,
