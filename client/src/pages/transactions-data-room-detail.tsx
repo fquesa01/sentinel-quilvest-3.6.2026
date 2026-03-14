@@ -72,6 +72,15 @@ import {
   Eye,
   PanelLeftClose,
   PanelLeft,
+  LayoutGrid,
+  List,
+  Table2,
+  FileSpreadsheet,
+  FileImage,
+  FileCode,
+  FileArchive,
+  File,
+  ChevronUp,
 } from "lucide-react";
 import type { DataRoom, DataRoomFolder, DataRoomDocument, DataRoomTemplate } from "@shared/schema";
 import { format } from "date-fns";
@@ -237,6 +246,87 @@ function FolderTreeItem({
   );
 }
 
+type ViewMode = "ai" | "detail" | "list" | "icon";
+
+function getFileExtension(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  return ext;
+}
+
+function getFileTypeIcon(fileName: string, size: "sm" | "md" | "lg" = "md") {
+  const ext = getFileExtension(fileName);
+  const sizeClass = size === "sm" ? "h-4 w-4" : size === "md" ? "h-8 w-8" : "h-16 w-16";
+
+  switch (ext) {
+    case "pdf":
+      return <FileText className={`${sizeClass} text-red-500`} />;
+    case "xls":
+    case "xlsx":
+      return <FileSpreadsheet className={`${sizeClass} text-green-600`} />;
+    case "csv":
+      return <FileSpreadsheet className={`${sizeClass} text-teal-500`} />;
+    case "doc":
+    case "docx":
+      return <FileText className={`${sizeClass} text-blue-600`} />;
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "svg":
+    case "webp":
+    case "bmp":
+    case "tiff":
+      return <FileImage className={`${sizeClass} text-purple-500`} />;
+    case "zip":
+    case "rar":
+    case "7z":
+    case "tar":
+    case "gz":
+      return <FileArchive className={`${sizeClass} text-amber-500`} />;
+    case "js":
+    case "ts":
+    case "jsx":
+    case "tsx":
+    case "json":
+    case "html":
+    case "css":
+    case "xml":
+      return <FileCode className={`${sizeClass} text-orange-500`} />;
+    case "txt":
+    case "md":
+    case "rtf":
+      return <FileText className={`${sizeClass} text-gray-500`} />;
+    default:
+      return <File className={`${sizeClass} text-muted-foreground`} />;
+  }
+}
+
+function getFileTypeLabel(fileName: string): string {
+  const ext = getFileExtension(fileName);
+  const labels: Record<string, string> = {
+    pdf: "PDF",
+    xls: "Excel",
+    xlsx: "Excel",
+    csv: "CSV",
+    doc: "Word",
+    docx: "Word",
+    png: "Image",
+    jpg: "Image",
+    jpeg: "Image",
+    gif: "Image",
+    svg: "SVG",
+    webp: "Image",
+    zip: "Archive",
+    rar: "Archive",
+    txt: "Text",
+    md: "Markdown",
+    json: "JSON",
+    html: "HTML",
+    xml: "XML",
+  };
+  return labels[ext] || ext.toUpperCase() || "File";
+}
+
 export default function TransactionsDataRoomDetail() {
   const [, navigate] = useLocation();
   const params = useParams<{ roomId: string }>();
@@ -271,6 +361,18 @@ export default function TransactionsDataRoomDetail() {
   const [deletedDocIds, setDeletedDocIds] = useState<Set<string>>(new Set());
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem("dataroom-view-mode");
+      if (saved && ["ai", "detail", "list", "icon"].includes(saved)) return saved as ViewMode;
+    } catch {}
+    return "ai";
+  });
+
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+    try { localStorage.setItem("dataroom-view-mode", mode); } catch {}
+  };
 
   const handlePreviewDocument = (docId: string) => {
     setPreviewDocId(docId);
@@ -906,6 +1008,66 @@ export default function TransactionsDataRoomDetail() {
               ))}
             </div>
             <div className="flex items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center border rounded-md" data-testid="view-mode-toggle">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`rounded-none rounded-l-md px-2 ${viewMode === "ai" ? "bg-primary/10 text-primary" : ""}`}
+                      onClick={() => handleViewModeChange("ai")}
+                      data-testid="button-view-ai"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>AI View</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`rounded-none px-2 ${viewMode === "detail" ? "bg-primary/10 text-primary" : ""}`}
+                      onClick={() => handleViewModeChange("detail")}
+                      data-testid="button-view-detail"
+                    >
+                      <Table2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Detail View</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`rounded-none px-2 ${viewMode === "list" ? "bg-primary/10 text-primary" : ""}`}
+                      onClick={() => handleViewModeChange("list")}
+                      data-testid="button-view-list"
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>List View</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`rounded-none rounded-r-md px-2 ${viewMode === "icon" ? "bg-primary/10 text-primary" : ""}`}
+                      onClick={() => handleViewModeChange("icon")}
+                      data-testid="button-view-icon"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Large Icon View</TooltipContent>
+                </Tooltip>
+              </div>
+
               {/* Sort Controls */}
               <div className="flex items-center gap-1">
                 <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
@@ -1042,126 +1204,278 @@ export default function TransactionsDataRoomDetail() {
                     Upload Documents
                   </Button>
                 </div>
-              ) : (
+              ) : viewMode === "ai" ? (
                 <div className="space-y-2">
-  {currentDocuments.map((doc) => {
+                  {currentDocuments.map((doc) => {
                     const docWithOcr = doc as any;
                     const documentDate = docWithOcr.documentDate;
                     const dateSource = docWithOcr.documentDateSource;
                     const ocrStatus = docWithOcr.ocrStatus;
                     const aiSummary = docWithOcr.aiSummary;
                     const uploadDate = doc.uploadedAt;
-                    
                     const isHighlighted = highlightedDocId === doc.id;
-                    
                     return (
-                    <Card 
-                      key={doc.id} 
-                      ref={(el) => {
-                        if (el) documentRefs.current.set(doc.id, el);
-                      }}
-                      className={`hover-elevate transition-all duration-300 ${isHighlighted ? 'ring-2 ring-primary ring-offset-2 bg-primary/5' : ''}`}
-                      data-testid={`document-${doc.id}`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="relative">
-                              <FileText className="h-8 w-8 text-blue-500" />
-                              {ocrStatus === "processing" && (
-                                <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-yellow-500 rounded-full animate-pulse" title="OCR processing..." />
-                              )}
-                              {ocrStatus === "completed" && dateSource === "content" && (
-                                <Calendar className="absolute -bottom-1 -right-1 h-3 w-3 text-green-500" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-semibold text-base">{doc.fileName}</p>
-                              <div className="text-sm text-muted-foreground space-y-0.5">
-                                <p>
-                                  {doc.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : ""}
-                                  {doc.fileSize && uploadDate ? " • " : ""}
-                                  {uploadDate && (
-                                    <span>Uploaded: {format(new Date(uploadDate), "MMM d, yyyy")}</span>
-                                  )}
-                                </p>
-                                {documentDate && (
-                                  <p className={dateSource === "content" || dateSource === "filename" || dateSource === "metadata" ? "text-green-600" : "text-muted-foreground"}>
-                                    Document Date: {format(new Date(documentDate), "MMM d, yyyy")}
-                                    {dateSource && (
-                                      <span className="text-muted-foreground ml-1">
-                                        ({dateSource === "content" ? "from content" : 
-                                          dateSource === "filename" ? "from filename" : 
-                                          dateSource === "metadata" ? "from metadata" : 
-                                          "from upload"})
-                                      </span>
-                                    )}
-                                  </p>
-                                )}
+                      <Card 
+                        key={doc.id} 
+                        ref={(el) => { if (el) documentRefs.current.set(doc.id, el); }}
+                        className={`hover-elevate transition-all duration-300 cursor-pointer ${isHighlighted ? 'ring-2 ring-primary ring-offset-2 bg-primary/5' : ''}`}
+                        onClick={() => handlePreviewDocument(doc.id)}
+                        data-testid={`document-${doc.id}`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="relative flex-shrink-0">
+                                <FileText className="h-8 w-8 text-blue-500" />
                                 {ocrStatus === "processing" && (
-                                  <p className="text-yellow-600 italic">Extracting document date...</p>
+                                  <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-yellow-500 rounded-full animate-pulse" title="OCR processing..." />
+                                )}
+                                {ocrStatus === "completed" && dateSource === "content" && (
+                                  <Calendar className="absolute -bottom-1 -right-1 h-3 w-3 text-green-500" />
                                 )}
                               </div>
+                              <div>
+                                <p className="font-semibold text-base">{doc.fileName}</p>
+                                <div className="text-sm text-muted-foreground space-y-0.5">
+                                  <p>
+                                    {doc.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : ""}
+                                    {doc.fileSize && uploadDate ? " • " : ""}
+                                    {uploadDate && (
+                                      <span>Uploaded: {format(new Date(uploadDate), "MMM d, yyyy")}</span>
+                                    )}
+                                  </p>
+                                  {documentDate && (
+                                    <p className={dateSource === "content" || dateSource === "filename" || dateSource === "metadata" ? "text-green-600" : "text-muted-foreground"}>
+                                      Document Date: {format(new Date(documentDate), "MMM d, yyyy")}
+                                      {dateSource && (
+                                        <span className="text-muted-foreground ml-1">
+                                          ({dateSource === "content" ? "from content" : 
+                                            dateSource === "filename" ? "from filename" : 
+                                            dateSource === "metadata" ? "from metadata" : 
+                                            "from upload"})
+                                        </span>
+                                      )}
+                                    </p>
+                                  )}
+                                  {ocrStatus === "processing" && (
+                                    <p className="text-yellow-600 italic">Extracting document date...</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <Button variant="ghost" size="icon" onClick={() => handlePreviewDocument(doc.id)} data-testid={`button-preview-${doc.id}`} title="Preview document">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleDownload(doc.id)} data-testid={`button-download-${doc.id}`}>
+                                <Download className="h-4 w-4" />
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" data-testid={`button-more-${doc.id}`}><MoreVertical className="h-4 w-4" /></Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleDownload(doc.id)}><Download className="h-4 w-4 mr-2" />Download</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-destructive" onClick={() => deleteDocumentMutation.mutate(doc.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
+                          {aiSummary && (
+                            <div className="mt-3" data-testid={`summary-block-${doc.id}`}>
+                              <div className="flex items-center gap-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 mb-2">
+                                <Sparkles className="h-4 w-4" />
+                                <span>AI Summary</span>
+                              </div>
+                              <div className="text-base leading-relaxed text-foreground/80 bg-muted/30 rounded-md p-4 border-l-4 border-purple-400">
+                                {aiSummary}
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : viewMode === "detail" ? (
+                <div className="border rounded-md overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th
+                          className="text-left p-3 font-medium cursor-pointer select-none hover-elevate"
+                          onClick={() => { if (sortBy === "fileName") { setSortOrder(sortOrder === "asc" ? "desc" : "asc"); } else { setSortBy("fileName"); setSortOrder("asc"); } }}
+                          data-testid="detail-header-filename"
+                        >
                           <div className="flex items-center gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handlePreviewDocument(doc.id);
-                              }}
-                              data-testid={`button-preview-${doc.id}`}
-                              title="Preview document"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => handleDownload(doc.id)}
-                              data-testid={`button-download-${doc.id}`}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleDownload(doc.id)}>
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Download
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={() => deleteDocumentMutation.mutate(doc.id)}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            Name
+                            {sortBy === "fileName" && (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
                           </div>
+                        </th>
+                        <th className="text-left p-3 font-medium w-[80px]">Type</th>
+                        <th
+                          className="text-left p-3 font-medium cursor-pointer select-none hover-elevate w-[100px]"
+                          onClick={() => { if (sortBy === "fileSize") { setSortOrder(sortOrder === "asc" ? "desc" : "asc"); } else { setSortBy("fileSize"); setSortOrder("desc"); } }}
+                          data-testid="detail-header-size"
+                        >
+                          <div className="flex items-center gap-1">
+                            Size
+                            {sortBy === "fileSize" && (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+                          </div>
+                        </th>
+                        <th
+                          className="text-left p-3 font-medium cursor-pointer select-none hover-elevate w-[130px]"
+                          onClick={() => { if (sortBy === "documentDate") { setSortOrder(sortOrder === "asc" ? "desc" : "asc"); } else { setSortBy("documentDate"); setSortOrder("desc"); } }}
+                          data-testid="detail-header-docdate"
+                        >
+                          <div className="flex items-center gap-1">
+                            Doc Date
+                            {sortBy === "documentDate" && (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+                          </div>
+                        </th>
+                        <th
+                          className="text-left p-3 font-medium cursor-pointer select-none hover-elevate w-[130px]"
+                          onClick={() => { if (sortBy === "uploadedAt") { setSortOrder(sortOrder === "asc" ? "desc" : "asc"); } else { setSortBy("uploadedAt"); setSortOrder("desc"); } }}
+                          data-testid="detail-header-uploaded"
+                        >
+                          <div className="flex items-center gap-1">
+                            Uploaded
+                            {sortBy === "uploadedAt" && (sortOrder === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+                          </div>
+                        </th>
+                        <th className="text-left p-3 font-medium w-[80px]">Status</th>
+                        <th className="text-right p-3 font-medium w-[120px]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {currentDocuments.map((doc) => {
+                        const docWithOcr = doc as any;
+                        const documentDate = docWithOcr.documentDate;
+                        const ocrStatus = docWithOcr.ocrStatus;
+                        const isHighlighted = highlightedDocId === doc.id;
+                        return (
+                          <tr
+                            key={doc.id}
+                            ref={(el) => { if (el) documentRefs.current.set(doc.id, el as unknown as HTMLDivElement); }}
+                            className={`border-b last:border-b-0 hover-elevate cursor-pointer transition-all duration-300 ${isHighlighted ? 'ring-2 ring-primary ring-offset-2 bg-primary/5' : ''}`}
+                            onClick={() => handlePreviewDocument(doc.id)}
+                            data-testid={`document-${doc.id}`}
+                          >
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                {getFileTypeIcon(doc.fileName, "sm")}
+                                <span className="font-medium truncate max-w-[300px]">{doc.fileName}</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-muted-foreground">{getFileTypeLabel(doc.fileName)}</td>
+                            <td className="p-3 text-muted-foreground">{doc.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : "-"}</td>
+                            <td className="p-3 text-muted-foreground">{documentDate ? format(new Date(documentDate), "MMM d, yyyy") : "-"}</td>
+                            <td className="p-3 text-muted-foreground">{doc.uploadedAt ? format(new Date(doc.uploadedAt), "MMM d, yyyy") : "-"}</td>
+                            <td className="p-3">
+                              {ocrStatus === "processing" ? (
+                                <Badge variant="secondary" className="text-xs">Processing</Badge>
+                              ) : ocrStatus === "completed" ? (
+                                <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Indexed</Badge>
+                              ) : ocrStatus === "failed" ? (
+                                <Badge variant="secondary" className="text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Failed</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">Pending</Badge>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Button variant="ghost" size="icon" onClick={() => handlePreviewDocument(doc.id)} data-testid={`button-preview-${doc.id}`}><Eye className="h-4 w-4" /></Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleDownload(doc.id)} data-testid={`button-download-${doc.id}`}><Download className="h-4 w-4" /></Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" data-testid={`button-more-${doc.id}`}><MoreVertical className="h-4 w-4" /></Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleDownload(doc.id)}><Download className="h-4 w-4 mr-2" />Download</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem className="text-destructive" onClick={() => deleteDocumentMutation.mutate(doc.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : viewMode === "list" ? (
+                <div className="space-y-0.5">
+                  {currentDocuments.map((doc) => {
+                    const docWithOcr = doc as any;
+                    const documentDate = docWithOcr.documentDate;
+                    const isHighlighted = highlightedDocId === doc.id;
+                    return (
+                      <div
+                        key={doc.id}
+                        ref={(el) => { if (el) documentRefs.current.set(doc.id, el); }}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-md hover-elevate cursor-pointer transition-all duration-300 ${isHighlighted ? 'ring-2 ring-primary ring-offset-2 bg-primary/5' : ''}`}
+                        onClick={() => handlePreviewDocument(doc.id)}
+                        data-testid={`document-${doc.id}`}
+                      >
+                        {getFileTypeIcon(doc.fileName, "sm")}
+                        <span className="font-medium text-sm flex-1 truncate">{doc.fileName}</span>
+                        <span className="text-xs text-muted-foreground flex-shrink-0 w-[80px] text-right">
+                          {doc.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : ""}
+                        </span>
+                        <span className="text-xs text-muted-foreground flex-shrink-0 w-[100px] text-right">
+                          {documentDate ? format(new Date(documentDate), "MMM d, yyyy") : doc.uploadedAt ? format(new Date(doc.uploadedAt), "MMM d, yyyy") : ""}
+                        </span>
+                        <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" onClick={() => handlePreviewDocument(doc.id)} data-testid={`button-preview-${doc.id}`}><Eye className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDownload(doc.id)} data-testid={`button-download-${doc.id}`}><Download className="h-4 w-4" /></Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" data-testid={`button-more-${doc.id}`}><MoreVertical className="h-4 w-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleDownload(doc.id)}><Download className="h-4 w-4 mr-2" />Download</DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive" onClick={() => deleteDocumentMutation.mutate(doc.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                        
-                        {aiSummary && (
-                          <div className="mt-3" data-testid={`summary-block-${doc.id}`}>
-                            <div className="flex items-center gap-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 mb-2">
-                              <Sparkles className="h-4 w-4" />
-                              <span>AI Summary</span>
-                            </div>
-                            <div className="text-base leading-relaxed text-foreground/80 bg-muted/30 rounded-md p-4 border-l-4 border-purple-400">
-                              {aiSummary}
-                            </div>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {currentDocuments.map((doc) => {
+                    const isHighlighted = highlightedDocId === doc.id;
+                    return (
+                      <div
+                        key={doc.id}
+                        ref={(el) => { if (el) documentRefs.current.set(doc.id, el); }}
+                        className={`group relative flex flex-col items-center p-4 rounded-md hover-elevate cursor-pointer transition-all duration-300 ${isHighlighted ? 'ring-2 ring-primary ring-offset-2 bg-primary/5' : ''}`}
+                        onClick={() => handlePreviewDocument(doc.id)}
+                        data-testid={`document-${doc.id}`}
+                      >
+                        <div className="absolute top-2 right-2 invisible group-hover:visible" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" data-testid={`button-more-icon-${doc.id}`}><MoreVertical className="h-4 w-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handlePreviewDocument(doc.id)}><Eye className="h-4 w-4 mr-2" />Preview</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDownload(doc.id)}><Download className="h-4 w-4 mr-2" />Download</DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive" onClick={() => deleteDocumentMutation.mutate(doc.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <div className="w-20 h-20 flex items-center justify-center mb-3 bg-muted/30 rounded-md">
+                          {getFileTypeIcon(doc.fileName, "lg")}
+                        </div>
+                        <p className="text-sm font-medium text-center leading-tight line-clamp-2 w-full break-words">{doc.fileName}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{doc.fileSize ? `${(doc.fileSize / 1024).toFixed(1)} KB` : ""}</p>
+                      </div>
                     );
                   })}
                 </div>
