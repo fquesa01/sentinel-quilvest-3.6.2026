@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay, endOfDay, isToday, parseISO, setHours, setMinutes, differenceInMinutes } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -192,25 +192,13 @@ export default function CalendarPage() {
     setEventImage(null);
   };
 
-  const [monthsAbove, setMonthsAbove] = useState(0);
-  const [monthsBelow, setMonthsBelow] = useState(2);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const topSentinelRef = useRef<HTMLDivElement>(null);
-  const bottomSentinelRef = useRef<HTMLDivElement>(null);
-  const isLoadingMoreRef = useRef(false);
-  const anchorMonthRef = useRef(new Date());
-
-  useEffect(() => {
-    anchorMonthRef.current = currentDate;
-    setMonthsAbove(0);
-    setMonthsBelow(2);
-  }, []);
 
   const { startDate, endDate } = useMemo(() => {
     if (isMobile && mobileView === "month") {
-      const anchor = anchorMonthRef.current;
-      const start = startOfWeek(startOfMonth(subMonths(anchor, monthsAbove)));
-      const end = endOfWeek(endOfMonth(addMonths(anchor, monthsBelow)));
+      const today = new Date();
+      const start = startOfWeek(startOfMonth(subMonths(today, 12)));
+      const end = endOfWeek(endOfMonth(addMonths(today, 12)));
       return { startDate: start, endDate: end };
     }
     if (isMobile) {
@@ -227,7 +215,7 @@ export default function CalendarPage() {
     } else {
       return { startDate: startOfDay(currentDate), endDate: endOfDay(currentDate) };
     }
-  }, [currentDate, view, isMobile, mobileView, monthsAbove, monthsBelow]);
+  }, [currentDate, view, isMobile, mobileView]);
 
   const { data: events = [], isLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/calendar/events", startDate.toISOString(), endDate.toISOString()],
@@ -961,74 +949,30 @@ export default function CalendarPage() {
   }, [mobileView]);
 
   const visibleMonths = useMemo(() => {
-    const anchor = anchorMonthRef.current;
+    const today = new Date();
     const months: Date[] = [];
-    for (let i = -monthsAbove; i <= monthsBelow; i++) {
-      months.push(startOfMonth(addMonths(anchor, i)));
+    for (let i = -12; i <= 12; i++) {
+      months.push(startOfMonth(addMonths(today, i)));
     }
     return months;
-  }, [monthsAbove, monthsBelow]);
+  }, []);
 
-  const pendingPrependRef = useRef(false);
-
-  useLayoutEffect(() => {
-    if (!pendingPrependRef.current) return;
+  const scrollToCurrentMonth = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const anchor = container.querySelector<HTMLElement>("[data-scroll-anchor]");
-    if (anchor) {
-      const anchorTop = anchor.offsetTop;
-      container.scrollTop = anchorTop;
-      anchor.removeAttribute("data-scroll-anchor");
+    const todayKey = format(new Date(), "yyyy-MM");
+    const el = container.querySelector<HTMLElement>(`[data-month-key="${todayKey}"]`);
+    if (el) {
+      container.scrollTop = el.offsetTop;
     }
-    pendingPrependRef.current = false;
-    isLoadingMoreRef.current = false;
-  }, [monthsAbove]);
-
-  useEffect(() => {
-    if (monthsBelow > 2) {
-      isLoadingMoreRef.current = false;
-    }
-  }, [monthsBelow]);
+  }, []);
 
   useEffect(() => {
     if (!isMobile || mobileView !== "month") return;
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const topObserver = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !isLoadingMoreRef.current) {
-          isLoadingMoreRef.current = true;
-          const firstVisibleMonth = container.querySelector<HTMLElement>("[data-month-key]");
-          if (firstVisibleMonth) {
-            firstVisibleMonth.setAttribute("data-scroll-anchor", "true");
-          }
-          pendingPrependRef.current = true;
-          setMonthsAbove(prev => prev + 2);
-        }
-      },
-      { root: container, rootMargin: "100px 0px 0px 0px", threshold: 0 }
-    );
-
-    const bottomObserver = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !isLoadingMoreRef.current) {
-          isLoadingMoreRef.current = true;
-          setMonthsBelow(prev => prev + 2);
-        }
-      },
-      { root: container, rootMargin: "0px 0px 200px 0px", threshold: 0 }
-    );
-
-    if (topSentinelRef.current) topObserver.observe(topSentinelRef.current);
-    if (bottomSentinelRef.current) bottomObserver.observe(bottomSentinelRef.current);
-
-    return () => {
-      topObserver.disconnect();
-      bottomObserver.disconnect();
-    };
-  }, [isMobile, mobileView]);
+    requestAnimationFrame(() => {
+      scrollToCurrentMonth();
+    });
+  }, [isMobile, mobileView, scrollToCurrentMonth]);
 
 
   const renderMonthBlock = (monthDate: Date) => {
@@ -1133,9 +1077,7 @@ export default function CalendarPage() {
           className="flex-1 overflow-y-auto overscroll-contain"
           style={{ WebkitOverflowScrolling: "touch" }}
         >
-          <div ref={topSentinelRef} className="h-1" />
           {visibleMonths.map(m => renderMonthBlock(m))}
-          <div ref={bottomSentinelRef} className="h-1" />
         </div>
 
         <div className="sticky bottom-0 flex items-center justify-between px-4 py-3 border-t bg-background z-50">
@@ -1144,14 +1086,8 @@ export default function CalendarPage() {
             onClick={() => {
               const today = new Date();
               setCurrentDate(today);
-              anchorMonthRef.current = today;
-              setMonthsAbove(0);
-              setMonthsBelow(2);
-              requestAnimationFrame(() => {
-                if (scrollContainerRef.current) {
-                  scrollContainerRef.current.scrollTop = 0;
-                }
-              });
+              setMobileView("day");
+              scrollDayViewToCurrentHour();
             }}
             className="font-semibold"
             data-testid="button-mobile-today"
@@ -1203,10 +1139,16 @@ export default function CalendarPage() {
             variant="ghost"
             className="gap-1 px-2 -ml-2 text-primary font-semibold"
             onClick={() => {
-              anchorMonthRef.current = currentDate;
-              setMonthsAbove(0);
-              setMonthsBelow(2);
               setMobileView("month");
+              requestAnimationFrame(() => {
+                const container = scrollContainerRef.current;
+                if (!container) return;
+                const monthKey = format(currentDate, "yyyy-MM");
+                const el = container.querySelector<HTMLElement>(`[data-month-key="${monthKey}"]`);
+                if (el) {
+                  container.scrollTop = el.offsetTop;
+                }
+              });
             }}
             data-testid="button-mobile-back-month"
           >
