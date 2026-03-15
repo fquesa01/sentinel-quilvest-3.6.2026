@@ -1744,8 +1744,8 @@ export default function TransactionsDealDetail() {
                       const googleUrl = generateGoogleCalendarUrl(m);
                       const outlookUrl = generateOutlookCalendarUrl(m);
                       return (
-                        <div key={m.id} className="group relative flex items-start gap-4 p-4 rounded-lg border" data-testid={`milestone-item-${m.id}`}>
-                          <div className={`p-2 rounded-full ${
+                        <div key={m.id} className="group relative flex items-start gap-3 p-4 rounded-lg border overflow-hidden" data-testid={`milestone-item-${m.id}`}>
+                          <div className={`shrink-0 p-2 rounded-full ${
                             m.status === "completed" ? "bg-green-500/20" :
                             m.status === "in_progress" ? "bg-blue-500/20" :
                             m.status === "delayed" ? "bg-red-500/20" : "bg-muted"
@@ -1758,22 +1758,40 @@ export default function TransactionsDealDetail() {
                               <Clock className="h-5 w-5 text-muted-foreground" />
                             )}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <h4 className="font-medium">{m.title}</h4>
-                              <div className="flex items-center gap-2">
-                                {m.milestoneType && (
-                                  <Badge variant="secondary">
-                                    {milestoneTypeLabels[m.milestoneType] || m.milestoneType}
-                                  </Badge>
-                                )}
-                                <Badge variant="outline">
-                                  {milestoneStatusLabels[m.status || "pending"] || m.status?.replace("_", " ") || "Pending"}
-                                </Badge>
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="font-medium break-words min-w-0">{m.title}</h4>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => openEditMilestoneDialog(m)}
+                                  data-testid={`button-edit-milestone-${m.id}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => deleteMilestoneMutation.mutate(m.id)}
+                                  data-testid={`button-delete-milestone-${m.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
                               </div>
                             </div>
+                            <div className="flex items-center gap-2 flex-wrap mt-1">
+                              {m.milestoneType && (
+                                <Badge variant="secondary">
+                                  {milestoneTypeLabels[m.milestoneType] || m.milestoneType}
+                                </Badge>
+                              )}
+                              <Badge variant="outline">
+                                {milestoneStatusLabels[m.status || "pending"] || m.status?.replace("_", " ") || "Pending"}
+                              </Badge>
+                            </div>
                             {m.description && (
-                              <p className="text-sm text-muted-foreground mt-1">{m.description}</p>
+                              <p className="text-sm text-muted-foreground mt-1 break-words">{m.description}</p>
                             )}
                             {m.targetDate && (
                               <p className="text-sm text-muted-foreground mt-2">
@@ -1781,7 +1799,7 @@ export default function TransactionsDealDetail() {
                               </p>
                             )}
                             {m.targetDate && (
-                              <div className="flex items-center gap-2 mt-3">
+                              <div className="flex items-center gap-2 mt-3 flex-wrap">
                                 {googleUrl && (
                                   <a href={googleUrl} target="_blank" rel="noopener noreferrer">
                                     <Button variant="outline" size="sm" data-testid={`button-google-calendar-${m.id}`}>
@@ -1800,24 +1818,6 @@ export default function TransactionsDealDetail() {
                                 )}
                               </div>
                             )}
-                          </div>
-                          <div className="invisible group-hover:visible flex items-center gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => openEditMilestoneDialog(m)}
-                              data-testid={`button-edit-milestone-${m.id}`}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => deleteMilestoneMutation.mutate(m.id)}
-                              data-testid={`button-delete-milestone-${m.id}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
                           </div>
                         </div>
                       );
