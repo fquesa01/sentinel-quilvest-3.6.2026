@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfDay, endOfDay, isToday, parseISO, setHours, setMinutes, differenceInMinutes } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -192,7 +192,27 @@ export default function CalendarPage() {
     setEventImage(null);
   };
 
+  const [monthsAbove, setMonthsAbove] = useState(0);
+  const [monthsBelow, setMonthsBelow] = useState(2);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  const bottomSentinelRef = useRef<HTMLDivElement>(null);
+  const isLoadingMoreRef = useRef(false);
+  const anchorMonthRef = useRef(new Date());
+
+  useEffect(() => {
+    anchorMonthRef.current = currentDate;
+    setMonthsAbove(0);
+    setMonthsBelow(2);
+  }, []);
+
   const { startDate, endDate } = useMemo(() => {
+    if (isMobile && mobileView === "month") {
+      const anchor = anchorMonthRef.current;
+      const start = startOfWeek(startOfMonth(subMonths(anchor, monthsAbove)));
+      const end = endOfWeek(endOfMonth(addMonths(anchor, monthsBelow)));
+      return { startDate: start, endDate: end };
+    }
     if (isMobile) {
       const start = startOfWeek(startOfMonth(currentDate));
       const end = endOfWeek(endOfMonth(currentDate));
@@ -207,7 +227,7 @@ export default function CalendarPage() {
     } else {
       return { startDate: startOfDay(currentDate), endDate: endOfDay(currentDate) };
     }
-  }, [currentDate, view, isMobile]);
+  }, [currentDate, view, isMobile, mobileView, monthsAbove, monthsBelow]);
 
   const { data: events = [], isLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/calendar/events", startDate.toISOString(), endDate.toISOString()],
@@ -940,68 +960,106 @@ export default function CalendarPage() {
     }
   }, [mobileView]);
 
-  const renderMobileMonthView = () => {
-    const monthStart = startOfMonth(currentDate);
-    const monthEnd = endOfMonth(currentDate);
-    const calendarStart = startOfWeek(monthStart);
-    const calendarEnd = endOfWeek(monthEnd);
-    const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+  const visibleMonths = useMemo(() => {
+    const anchor = anchorMonthRef.current;
+    const months: Date[] = [];
+    for (let i = -monthsAbove; i <= monthsBelow; i++) {
+      months.push(startOfMonth(addMonths(anchor, i)));
+    }
+    return months;
+  }, [monthsAbove, monthsBelow]);
+
+  const pendingPrependRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!pendingPrependRef.current) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const anchor = container.querySelector<HTMLElement>("[data-scroll-anchor]");
+    if (anchor) {
+      const anchorTop = anchor.offsetTop;
+      container.scrollTop = anchorTop;
+      anchor.removeAttribute("data-scroll-anchor");
+    }
+    pendingPrependRef.current = false;
+    isLoadingMoreRef.current = false;
+  }, [monthsAbove]);
+
+  useEffect(() => {
+    if (monthsBelow > 2) {
+      isLoadingMoreRef.current = false;
+    }
+  }, [monthsBelow]);
+
+  useEffect(() => {
+    if (!isMobile || mobileView !== "month") return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const topObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isLoadingMoreRef.current) {
+          isLoadingMoreRef.current = true;
+          const firstVisibleMonth = container.querySelector<HTMLElement>("[data-month-key]");
+          if (firstVisibleMonth) {
+            firstVisibleMonth.setAttribute("data-scroll-anchor", "true");
+          }
+          pendingPrependRef.current = true;
+          setMonthsAbove(prev => prev + 2);
+        }
+      },
+      { root: container, rootMargin: "100px 0px 0px 0px", threshold: 0 }
+    );
+
+    const bottomObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isLoadingMoreRef.current) {
+          isLoadingMoreRef.current = true;
+          setMonthsBelow(prev => prev + 2);
+        }
+      },
+      { root: container, rootMargin: "0px 0px 200px 0px", threshold: 0 }
+    );
+
+    if (topSentinelRef.current) topObserver.observe(topSentinelRef.current);
+    if (bottomSentinelRef.current) bottomObserver.observe(bottomSentinelRef.current);
+
+    return () => {
+      topObserver.disconnect();
+      bottomObserver.disconnect();
+    };
+  }, [isMobile, mobileView]);
+
+
+  const renderMonthBlock = (monthDate: Date) => {
+    const mStart = startOfMonth(monthDate);
+    const mEnd = endOfMonth(monthDate);
+    const calStart = startOfWeek(mStart);
+    const calEnd = endOfWeek(mEnd);
+    const days = eachDayOfInterval({ start: calStart, end: calEnd });
     const weeks: Date[][] = [];
     for (let i = 0; i < days.length; i += 7) {
       weeks.push(days.slice(i, i + 7));
     }
+    const monthKey = format(monthDate, "yyyy-MM");
 
     return (
-      <div
-        className="flex-1 flex flex-col"
-        onTouchStart={(e) => { mobileTouchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
-        onTouchEnd={(e) => {
-          if (mobileTouchStart.current !== null) {
-            const dx = e.changedTouches[0].clientX - mobileTouchStart.current.x;
-            const dy = e.changedTouches[0].clientY - mobileTouchStart.current.y;
-            if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-              handleMobileSwipe(dx < 0 ? "left" : "right");
-            }
-            mobileTouchStart.current = null;
-          }
-        }}
-      >
-        <div className="px-4 pt-4 pb-2">
-          <div className="flex items-center gap-3 mb-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setCurrentDate(subMonths(currentDate, 1))}
-              data-testid="button-mobile-prev-month"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-            <h2 className="text-xl font-bold" data-testid="text-mobile-month-year">
-              {format(currentDate, "yyyy")}
-            </h2>
-          </div>
-          <h1 className="text-3xl font-bold mb-3" data-testid="text-mobile-month-name">
-            {format(currentDate, "MMMM")}
-          </h1>
+      <div key={monthKey} data-month-key={monthKey} className="pb-4">
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm px-4 pt-3 pb-2">
+          <h2 className="text-2xl font-bold" data-testid={`text-mobile-month-${monthKey}`}>
+            {format(monthDate, "MMMM yyyy")}
+          </h2>
         </div>
 
-        <div className="grid grid-cols-7 px-2">
-          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-            <div key={i} className="text-center text-xs font-semibold text-muted-foreground py-1">
-              {d}
-            </div>
-          ))}
-        </div>
-
-        <div className="flex-1 px-2 pb-2">
+        <div className="px-2">
           {weeks.map((week, weekIdx) => (
             <div
               key={weekIdx}
-              className="grid grid-cols-7 border-b border-border/30 last:border-b-0"
+              className="grid grid-cols-7"
             >
               {week.map((day, dayIdx) => {
                 const dayEvents = getEventsForDay(day);
-                const isCurrentMonth = isSameMonth(day, currentDate);
+                const isCurrentMonth = isSameMonth(day, monthDate);
                 const isTodayDate = isToday(day);
                 return (
                   <div
@@ -1053,14 +1111,47 @@ export default function CalendarPage() {
             </div>
           ))}
         </div>
+      </div>
+    );
+  };
+
+  const renderMobileMonthView = () => {
+    return (
+      <div className="flex-1 flex flex-col relative">
+        <div className="sticky top-0 z-20 bg-background border-b px-2 py-1">
+          <div className="grid grid-cols-7">
+            {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+              <div key={i} className="text-center text-xs font-semibold text-muted-foreground py-1">
+                {d}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 overflow-y-auto overscroll-contain"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
+          <div ref={topSentinelRef} className="h-1" />
+          {visibleMonths.map(m => renderMonthBlock(m))}
+          <div ref={bottomSentinelRef} className="h-1" />
+        </div>
 
         <div className="sticky bottom-0 flex items-center justify-between px-4 py-3 border-t bg-background z-50">
           <Button
             variant="outline"
             onClick={() => {
-              setCurrentDate(new Date());
-              setMobileView("day");
-              scrollDayViewToCurrentHour();
+              const today = new Date();
+              setCurrentDate(today);
+              anchorMonthRef.current = today;
+              setMonthsAbove(0);
+              setMonthsBelow(2);
+              requestAnimationFrame(() => {
+                if (scrollContainerRef.current) {
+                  scrollContainerRef.current.scrollTop = 0;
+                }
+              });
             }}
             className="font-semibold"
             data-testid="button-mobile-today"
@@ -1111,7 +1202,12 @@ export default function CalendarPage() {
           <Button
             variant="ghost"
             className="gap-1 px-2 -ml-2 text-primary font-semibold"
-            onClick={() => setMobileView("month")}
+            onClick={() => {
+              anchorMonthRef.current = currentDate;
+              setMonthsAbove(0);
+              setMonthsBelow(2);
+              setMobileView("month");
+            }}
             data-testid="button-mobile-back-month"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -1262,7 +1358,7 @@ export default function CalendarPage() {
   };
 
   const renderMobileLayout = () => {
-    if (isLoading) {
+    if (isLoading && mobileView !== "month") {
       return (
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
