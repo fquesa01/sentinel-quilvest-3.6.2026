@@ -3265,12 +3265,12 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between gap-2">
+          <div className="space-y-3">
             <div>
               <CardTitle className="text-lg">Due Diligence Checklists</CardTitle>
               <CardDescription>Track tasks and progress for this deal</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button size="sm" variant="outline" onClick={() => setIsApplyTemplateOpen(true)} data-testid="button-apply-template">
                 <FileStack className="h-4 w-4 mr-2" />
                 Apply Template

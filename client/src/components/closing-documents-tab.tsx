@@ -693,32 +693,34 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
               {ungeneratedTypes.map((et) => (
                 <div
                   key={`pending-${et.documentType}`}
-                  className="flex items-center gap-3 p-3 rounded-md border border-dashed opacity-70"
+                  className="flex items-start gap-3 p-3 rounded-md border border-dashed opacity-70"
                   data-testid={`closing-doc-pending-${et.documentType}`}
                 >
-                  <FileText className="h-5 w-5 text-muted-foreground/50 flex-shrink-0" />
+                  <FileText className="h-5 w-5 text-muted-foreground/50 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate text-muted-foreground">{et.title}</p>
+                    <p className="font-medium text-sm text-muted-foreground break-words">{et.title}</p>
                     <p className="text-xs text-muted-foreground">
                       Awaiting generation
                     </p>
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setUploadForPlaceholder(et.documentType);
+                          setUploadVersionType("draft");
+                          setUploadPlaceholderDialogOpen(true);
+                        }}
+                        data-testid={`button-upload-placeholder-${et.documentType}`}
+                      >
+                        <Upload className="h-3.5 w-3.5 mr-1" />
+                        Upload
+                      </Button>
+                      <Badge variant="secondary" className="flex-shrink-0 text-muted-foreground">
+                        Not Generated
+                      </Badge>
+                    </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setUploadForPlaceholder(et.documentType);
-                      setUploadVersionType("draft");
-                      setUploadPlaceholderDialogOpen(true);
-                    }}
-                    data-testid={`button-upload-placeholder-${et.documentType}`}
-                  >
-                    <Upload className="h-3.5 w-3.5 mr-1" />
-                    Upload
-                  </Button>
-                  <Badge variant="secondary" className="flex-shrink-0 text-muted-foreground">
-                    Not Generated
-                  </Badge>
                 </div>
               ))}
 
