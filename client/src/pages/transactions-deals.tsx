@@ -356,9 +356,6 @@ export default function TransactionsDeals() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">Active Deals</h1>
-            <p className="text-muted-foreground">
-              Manage business transactions and due diligence
-            </p>
           </div>
         </div>
 
