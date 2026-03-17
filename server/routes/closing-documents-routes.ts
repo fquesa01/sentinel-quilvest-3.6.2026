@@ -12,6 +12,7 @@ import {
   importDocxContent,
   getDocumentTypesForDeal,
   DOCUMENT_DISPLAY_NAMES,
+  REQUIRES_NOTARIZATION,
   markdownToHtml,
 } from "../services/closing-document-service";
 import multer from "multer";
@@ -66,6 +67,7 @@ router.get("/api/deals/:dealId/closing-documents/expected-types", isAuthenticate
     const expectedTypes = docTypes.map(dt => ({
       documentType: dt,
       title: DOCUMENT_DISPLAY_NAMES[dt] || dt.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+      requiresNotarization: REQUIRES_NOTARIZATION.has(dt),
     }));
 
     res.json({ expectedTypes, dealType, representationRole: role || null });

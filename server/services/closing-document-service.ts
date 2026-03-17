@@ -61,6 +61,15 @@ export const DOCUMENT_DISPLAY_NAMES: Record<string, string> = {
   officers_certificate: "Officer's Certificate",
 };
 
+export const REQUIRES_NOTARIZATION = new Set([
+  "deed",
+  "mortgage",
+  "title_affidavit",
+  "sellers_affidavit",
+  "promissory_note",
+  "transfer_tax_declaration",
+]);
+
 export function getDocumentTypesForDeal(dealType: string, role?: string): string[] {
   const normalizedType = dealType?.replace(/-/g, "_") || "real_estate";
   const configs = DOCUMENT_TEMPLATES_BY_TYPE[normalizedType] || DOCUMENT_TEMPLATES_BY_TYPE["real_estate"];

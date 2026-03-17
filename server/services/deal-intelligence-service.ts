@@ -54,7 +54,7 @@ export async function processDealDocumentIntelligence(documentId: string): Promi
     await classifyDealType(deal, doc);
     await autoCompleteChecklistItems(deal, doc);
     await triggerMemoGeneration(deal);
-    await autoSuggestChecklist(deal);
+    scheduleSuggestChecklist(deal);
 
     try {
       const { checkAndTriggerCondoAnalysis } = await import("./condo-issue-sheet-service");
@@ -887,12 +887,34 @@ ${combinedContext.slice(0, 18000)}`
   return { milestonesAdded, milestonesList };
 }
 
+const AUTO_SUGGEST_MIN_DOCS = 2;
+const AUTO_SUGGEST_DEBOUNCE_MS = 30_000;
+const AUTO_SUGGEST_RE_TRIGGER_THRESHOLD = 5;
+
+const dealSuggestTimers = new Map<string, NodeJS.Timeout>();
+
+function scheduleSuggestChecklist(deal: typeof deals.$inferSelect): void {
+  const existing = dealSuggestTimers.get(deal.id);
+  if (existing) clearTimeout(existing);
+
+  const timer = setTimeout(() => {
+    dealSuggestTimers.delete(deal.id);
+    autoSuggestChecklist(deal).catch((err: unknown) => {
+      console.error("[DealIntel] Debounced auto-suggest error:", err instanceof Error ? err.message : "Unknown error");
+    });
+  }, AUTO_SUGGEST_DEBOUNCE_MS);
+
+  dealSuggestTimers.set(deal.id, timer);
+  console.log(`[DealIntel] Scheduled checklist suggestion for deal "${deal.title}" in ${AUTO_SUGGEST_DEBOUNCE_MS / 1000}s`);
+}
+
 async function autoSuggestChecklist(deal: typeof deals.$inferSelect): Promise<void> {
   try {
     const [freshDeal] = await db.select().from(deals).where(eq(deals.id, deal.id));
     if (!freshDeal) return;
     const settings = (freshDeal.settings || {}) as Record<string, any>;
-    if (settings.checklistSuggestion || settings.checklistSuggestionDismissed || settings.checklistSuggestionInProgress) {
+
+    if (settings.checklistSuggestionInProgress) {
       return;
     }
 
@@ -918,8 +940,21 @@ async function autoSuggestChecklist(deal: typeof deals.$inferSelect): Promise<vo
         )
       );
 
-    if (allDocs.length < 1) {
+    if (allDocs.length < AUTO_SUGGEST_MIN_DOCS) {
+      console.log(`[DealIntel] Only ${allDocs.length} completed docs for deal "${deal.title}", need ${AUTO_SUGGEST_MIN_DOCS}+`);
       return;
+    }
+
+    const docCountAtLastSuggestion = settings.checklistSuggestionDocCount || 0;
+    if (settings.checklistSuggestion) {
+      return;
+    }
+    if (settings.checklistSuggestionDismissed) {
+      const newDocsSinceDismissal = allDocs.length - docCountAtLastSuggestion;
+      if (newDocsSinceDismissal < AUTO_SUGGEST_RE_TRIGGER_THRESHOLD) {
+        return;
+      }
+      console.log(`[DealIntel] ${newDocsSinceDismissal} new docs since dismissal for deal "${deal.title}", re-triggering suggestion`);
     }
 
     await db.update(deals)
@@ -941,7 +976,9 @@ async function autoSuggestChecklist(deal: typeof deals.$inferSelect): Promise<vo
             ...latestSettings,
             checklistSuggestion: suggestion,
             checklistSuggestionAt: new Date().toISOString(),
+            checklistSuggestionDocCount: allDocs.length,
             checklistSuggestionInProgress: false,
+            checklistSuggestionDismissed: false,
           },
           updatedAt: new Date(),
         })

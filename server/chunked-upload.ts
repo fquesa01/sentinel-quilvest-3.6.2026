@@ -164,7 +164,7 @@ router.post('/init', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), asyn
         return res.status(400).json({ message: 'Missing roomId for data_room upload' });
       }
       const { eq } = await import('drizzle-orm');
-      const room = await db.select().from(schema.peDataRooms).where(eq(schema.peDataRooms.id, roomId)).limit(1);
+      const room = await db.select().from(schema.dataRooms).where(eq(schema.dataRooms.id, roomId)).limit(1);
       if (room.length === 0) {
         return res.status(404).json({ message: 'Data room not found' });
       }

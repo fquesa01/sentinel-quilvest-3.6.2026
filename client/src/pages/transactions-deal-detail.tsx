@@ -3163,10 +3163,25 @@ function ChecklistsTab({ dealId, dealTitle, dealSettings }: { dealId: string; de
   const [checklistType, setChecklistType] = useState("legal");
   const [isSuggestionDismissed, setIsSuggestionDismissed] = useState(false);
 
+  const hasSuggestion = !!dealSettings?.checklistSuggestion;
+  const hasDismissed = !!dealSettings?.checklistSuggestionDismissed;
+
   const { data: checklists = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/deals", dealId, "checklists"],
     enabled: !!dealId,
     staleTime: DEAL_DETAIL_STALE_TIME,
+  });
+
+  const shouldPollForSuggestion = !hasSuggestion && !hasDismissed && checklists.length === 0;
+  useQuery({
+    queryKey: ["/api/deals", dealId, "suggestion-poll"],
+    queryFn: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId] });
+      return null;
+    },
+    enabled: shouldPollForSuggestion,
+    refetchInterval: shouldPollForSuggestion ? 15_000 : false,
+    staleTime: 10_000,
   });
 
   const { data: templates = [] } = useQuery<any[]>({

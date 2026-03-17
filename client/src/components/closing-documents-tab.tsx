@@ -11,8 +11,9 @@ import { RichTextEditor } from "@/components/rich-text-editor";
 import {
   FileText, Download, Upload, Mic, MicOff, Sparkles, History,
   ChevronLeft, Loader2, RotateCcw, Send, Clock, Edit3, Check,
-  AlertCircle, FileUp, Trash2, Eye
+  AlertCircle, FileUp, Trash2, Eye, Stamp
 } from "lucide-react";
+import { Link } from "wouter";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -80,7 +81,7 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
     },
   });
 
-  const { data: expectedData } = useQuery<{ expectedTypes: { documentType: string; title: string }[]; dealType: string; representationRole: string | null }>({
+  const { data: expectedData } = useQuery<{ expectedTypes: { documentType: string; title: string; requiresNotarization?: boolean }[]; dealType: string; representationRole: string | null }>({
     queryKey: ["/api/deals", dealId, "closing-documents", "expected-types"],
     queryFn: async () => {
       const res = await fetch(`/api/deals/${dealId}/closing-documents/expected-types`);
@@ -94,6 +95,7 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
   const ungeneratedTypes = expectedTypes.filter(et => !generatedTypeSet.has(et.documentType));
   const hasAnyDocs = documents.length > 0;
   const allGenerated = ungeneratedTypes.length === 0 && expectedTypes.length > 0;
+  const notarizationTypes = new Set(expectedTypes.filter(et => et.requiresNotarization).map(et => et.documentType));
 
   const selectedDoc = documents.find((d: any) => d.id === selectedDocId);
 
@@ -652,6 +654,18 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
                       v{doc.currentVersion} · Updated {new Date(doc.updatedAt).toLocaleDateString()}
                     </p>
                   </div>
+                  {notarizationTypes.has(doc.documentType) && (
+                    <Link
+                      href="/ron/transactions/create"
+                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                      data-testid={`link-notarize-${doc.id}`}
+                    >
+                      <Badge variant="outline" className="flex-shrink-0 border-amber-500 text-amber-600 dark:text-amber-400 gap-1">
+                        <Stamp className="h-3 w-3" />
+                        Notarize
+                      </Badge>
+                    </Link>
+                  )}
                   <Badge variant={STATUS_COLORS[doc.status] as any} className="flex-shrink-0">
                     {STATUS_LABELS[doc.status] || doc.status}
                   </Badge>

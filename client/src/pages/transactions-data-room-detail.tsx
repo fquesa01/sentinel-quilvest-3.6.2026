@@ -710,6 +710,9 @@ export default function TransactionsDataRoomDetail() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ["/api/data-rooms", roomId] });
+      if (room?.dealId) {
+        await queryClient.invalidateQueries({ queryKey: ["/api/deals", room.dealId] });
+      }
 
       if (succeeded > 0) {
         setIsUploadOpen(false);
@@ -1102,12 +1105,12 @@ export default function TransactionsDataRoomDetail() {
                     Upload
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="max-h-[85vh] flex flex-col overflow-hidden">
                   <DialogHeader>
                     <DialogTitle>Upload Documents</DialogTitle>
                   </DialogHeader>
                   <div 
-                    className="py-8 text-center border-2 border-dashed rounded-lg cursor-pointer hover:border-primary transition-colors"
+                    className="py-8 text-center border-2 border-dashed rounded-lg cursor-pointer hover:border-primary transition-colors flex-shrink-0"
                     onClick={() => document.getElementById("file-input")?.click()}
                     onDragOver={(e) => {
                       e.preventDefault();
