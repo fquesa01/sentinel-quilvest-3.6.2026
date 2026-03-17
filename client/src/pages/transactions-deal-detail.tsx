@@ -4137,15 +4137,12 @@ function DataRoomTab({ dataRooms, deal, createDataRoomMutation }: { dataRooms: a
                   size="sm"
                   className="mt-3"
                   onClick={() => {
-                    const autoName = `${deal.title} - Data Room`;
-                    createDataRoomMutation.mutate({ name: autoName });
+                    setWaitingTooLong(false);
+                    queryClient.invalidateQueries({ queryKey: ["/api/data-rooms"] });
                   }}
-                  disabled={createDataRoomMutation.isPending}
-                  data-testid="button-create-data-room-fallback"
+                  data-testid="button-retry-data-room"
                 >
-                  {createDataRoomMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Data Room
+                  Retry
                 </Button>
               </>
             ) : (
