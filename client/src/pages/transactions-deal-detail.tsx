@@ -1777,28 +1777,66 @@ export default function TransactionsDealDetail() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {milestones.map((m: DealMilestone) => {
+                  <div className="relative">
+                    {[...milestones].sort((a: DealMilestone, b: DealMilestone) => {
+                      if (!a.targetDate && !b.targetDate) return 0;
+                      if (!a.targetDate) return 1;
+                      if (!b.targetDate) return -1;
+                      return new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime();
+                    }).map((m: DealMilestone, idx: number, arr: DealMilestone[]) => {
                       const googleUrl = generateGoogleCalendarUrl(m);
                       const outlookUrl = generateOutlookCalendarUrl(m);
+                      const isLast = idx === arr.length - 1;
+                      const statusColor =
+                        m.status === "completed" ? "bg-green-500" :
+                        m.status === "in_progress" ? "bg-blue-500" :
+                        m.status === "delayed" ? "bg-red-500" : "bg-muted-foreground/40";
+                      const statusBgLight =
+                        m.status === "completed" ? "bg-green-500/20" :
+                        m.status === "in_progress" ? "bg-blue-500/20" :
+                        m.status === "delayed" ? "bg-red-500/20" : "bg-muted";
                       return (
-                        <div key={m.id} className="group relative flex items-start gap-3 p-4 rounded-lg border overflow-hidden" data-testid={`milestone-item-${m.id}`}>
-                          <div className={`shrink-0 p-2 rounded-full ${
-                            m.status === "completed" ? "bg-green-500/20" :
-                            m.status === "in_progress" ? "bg-blue-500/20" :
-                            m.status === "delayed" ? "bg-red-500/20" : "bg-muted"
-                          }`}>
-                            {m.status === "completed" ? (
-                              <CheckCircle2 className="h-5 w-5 text-green-500" />
-                            ) : m.status === "delayed" ? (
-                              <AlertTriangle className="h-5 w-5 text-red-500" />
+                        <div key={m.id} className="relative flex gap-4" data-testid={`milestone-item-${m.id}`}>
+                          <div className="flex flex-col items-center shrink-0 w-20">
+                            {m.targetDate ? (
+                              <div className="text-center">
+                                <div className="text-xs font-medium uppercase text-muted-foreground tracking-wide">
+                                  {format(new Date(m.targetDate), "MMM")}
+                                </div>
+                                <div className="text-2xl font-bold leading-tight">
+                                  {format(new Date(m.targetDate), "d")}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {format(new Date(m.targetDate), "yyyy")}
+                                </div>
+                              </div>
                             ) : (
-                              <Clock className="h-5 w-5 text-muted-foreground" />
+                              <div className="text-center">
+                                <div className="text-xs text-muted-foreground italic">No date</div>
+                                <div className="text-lg font-bold leading-tight text-muted-foreground">—</div>
+                                <div className="text-xs text-muted-foreground italic">set</div>
+                              </div>
                             )}
                           </div>
-                          <div className="flex-1 min-w-0 overflow-hidden">
+                          <div className="flex flex-col items-center shrink-0">
+                            <div className={`z-10 flex items-center justify-center w-8 h-8 rounded-full ${statusBgLight}`}>
+                              {m.status === "completed" ? (
+                                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              ) : m.status === "delayed" ? (
+                                <AlertTriangle className="h-4 w-4 text-red-500" />
+                              ) : m.status === "in_progress" ? (
+                                <Clock className="h-4 w-4 text-blue-500" />
+                              ) : (
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </div>
+                            {!isLast && (
+                              <div className={`w-0.5 flex-1 min-h-[2rem] ${statusColor} opacity-30`} />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 pb-8">
                             <div className="flex items-start justify-between gap-2">
-                              <h4 className="font-medium break-words min-w-0">{m.title}</h4>
+                              <h4 className="font-medium break-words min-w-0 pt-1">{m.title}</h4>
                               <div className="flex items-center gap-1 shrink-0">
                                 <Button
                                   size="icon"
@@ -1832,8 +1870,8 @@ export default function TransactionsDealDetail() {
                               <p className="text-sm text-muted-foreground mt-1 break-words">{m.description}</p>
                             )}
                             {m.targetDate && (
-                              <p className="text-sm text-muted-foreground mt-2">
-                                Target: {format(new Date(m.targetDate), "MMM d, yyyy 'at' h:mm a")}
+                              <p className="text-xs text-muted-foreground mt-2">
+                                {format(new Date(m.targetDate), "h:mm a")}
                               </p>
                             )}
                             {m.targetDate && (
