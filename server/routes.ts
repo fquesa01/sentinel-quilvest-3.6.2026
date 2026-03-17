@@ -13759,12 +13759,24 @@ Guidelines:
       const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, req.params.dealId));
       if (deal) {
         const settings = (deal.settings || {}) as Record<string, any>;
+        const completedDocs = await db.select({ id: schema.dataRoomDocuments.id })
+          .from(schema.dataRoomDocuments)
+          .innerJoin(schema.dataRooms, eq(schema.dataRoomDocuments.dataRoomId, schema.dataRooms.id))
+          .where(
+            and(
+              eq(schema.dataRooms.dealId, req.params.dealId),
+              eq(schema.dataRoomDocuments.ocrStatus, "completed")
+            )
+          );
         await db.update(schema.deals)
           .set({
             settings: {
               ...settings,
               checklistSuggestion: result,
               checklistSuggestionAt: new Date().toISOString(),
+              checklistSuggestionDocCount: completedDocs.length,
+              checklistSuggestionInProgress: false,
+              checklistSuggestionDismissed: false,
             },
             updatedAt: new Date(),
           })
