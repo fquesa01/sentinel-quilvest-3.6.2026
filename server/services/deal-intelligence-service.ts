@@ -17,6 +17,10 @@ const DEAL_TYPE_MAP: Record<string, string> = {
   debt: "debt",
   equity: "investment",
   real_estate: "real_estate",
+  residential_financed: "residential_financed",
+  residential_cash: "residential_cash",
+  refinance: "refinance",
+  new_construction: "new_construction",
 };
 
 const TEMPLATE_SLUG_MAP: Record<string, string> = {
@@ -89,12 +93,16 @@ async function classifyDealType(
         content: `Analyze this document and classify the type of business transaction it relates to. Choose exactly one:
 - "debt" — loan agreements, credit facilities, promissory notes, debt financing, senior secured loans, mezzanine financing, bond offerings
 - "equity" — stock purchase agreements, subscription agreements, equity investments, PE buyouts, growth equity, venture capital, share purchase, cap table
-- "real_estate" — purchase and sale agreements for real property, commercial/residential real estate transactions, lease agreements, title documents, property transfers
+- "real_estate" — commercial real estate purchase/sale agreements, commercial property transactions, lease agreements for commercial property, title documents for commercial property
+- "residential_financed" — residential (1-4 unit) home purchase with mortgage/lender financing, TRID/RESPA documents, Closing Disclosure, Loan Estimate
+- "residential_cash" — all-cash residential purchase with no lender, proof of funds, FinCEN GTO compliance
+- "refinance" — residential refinance transactions, existing mortgage payoff, new mortgage origination, rescission period
+- "new_construction" — new construction residential purchase, builder contracts, certificate of occupancy, construction completion, punch list
 - "unknown" — if the document doesn't clearly indicate any of the above
 
 Return ONLY a JSON object with these fields:
 {
-  "dealType": "debt" | "equity" | "real_estate" | "unknown",
+  "dealType": "debt" | "equity" | "real_estate" | "residential_financed" | "residential_cash" | "refinance" | "new_construction" | "unknown",
   "confidence": 0.0 to 1.0,
   "reason": "brief explanation"
 }
