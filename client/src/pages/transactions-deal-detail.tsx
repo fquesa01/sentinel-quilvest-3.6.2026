@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams, Link } from "wouter";
 import { ClosingDocumentsTab } from "@/components/closing-documents-tab";
@@ -770,6 +770,44 @@ export default function TransactionsDealDetail() {
       toast({ title: "Summarization failed", description: error.message || "Could not generate summary.", variant: "destructive" });
     },
   });
+
+  const hasDataRoomDocs = dataRooms.some((r: any) => (r.documentCount || 0) > 0);
+  const autoExtractedRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!deal || !hasDataRoomDocs || isLoading) return;
+
+    const key = `${id}-${activeTab}`;
+    if (autoExtractedRef.current[key]) return;
+
+    if (activeTab === "terms") {
+      const terms = termsData?.terms || {};
+      const hasTerms = Object.values(terms).some((v: any) => v !== null && v !== "" && v !== undefined);
+      if (!hasTerms && !extractTermsMutation.isPending) {
+        autoExtractedRef.current[key] = true;
+        extractTermsMutation.mutate();
+      }
+    } else if (activeTab === "parties") {
+      const hasParties = (deal.buyerParties?.length || 0) + (deal.sellerParties?.length || 0) > 0;
+      if (!hasParties && !extractPartiesMutation.isPending) {
+        autoExtractedRef.current[key] = true;
+        extractPartiesMutation.mutate();
+      }
+    } else if (activeTab === "milestones") {
+      if (milestones.length === 0 && !autoPopulateMilestonesMutation.isPending) {
+        autoExtractedRef.current[key] = true;
+        autoPopulateMilestonesMutation.mutate();
+      }
+    } else if (activeTab === "overview") {
+      const overviewKey = `${id}-overview-populate`;
+      if (autoExtractedRef.current[overviewKey]) return;
+      const hasOverviewData = deal.dealValue || deal.closingTargetDate || deal.description;
+      if (!hasOverviewData && !populateOverviewMutation.isPending) {
+        autoExtractedRef.current[overviewKey] = true;
+        populateOverviewMutation.mutate();
+      }
+    }
+  }, [activeTab, deal, hasDataRoomDocs, isLoading, termsData, milestones]);
 
   // Data room creation mutation
   const createDataRoomMutation = useMutation({
