@@ -14315,3 +14315,28 @@ export const insertRonComplianceCheckSchema = createInsertSchema(ronComplianceCh
 });
 export type InsertRonComplianceCheck = z.infer<typeof insertRonComplianceCheckSchema>;
 export type RonComplianceCheck = typeof ronComplianceChecks.$inferSelect;
+
+export const firmFormTemplates = pgTable("firm_form_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 500 }).notNull(),
+  description: text("description"),
+  documentType: varchar("document_type", { length: 200 }).notNull(),
+  dealType: varchar("deal_type", { length: 200 }),
+  content: text("content"),
+  fileName: varchar("file_name", { length: 500 }),
+  fileSize: integer("file_size"),
+  mimeType: varchar("mime_type", { length: 200 }),
+  isDefault: boolean("is_default").default(false),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  docTypeIdx: index("idx_firm_form_doc_type").on(table.documentType),
+  dealTypeIdx: index("idx_firm_form_deal_type").on(table.dealType),
+}));
+
+export const insertFirmFormTemplateSchema = createInsertSchema(firmFormTemplates).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertFirmFormTemplate = z.infer<typeof insertFirmFormTemplateSchema>;
+export type FirmFormTemplate = typeof firmFormTemplates.$inferSelect;

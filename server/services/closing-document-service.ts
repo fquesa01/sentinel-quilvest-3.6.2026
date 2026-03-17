@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { db } from "../db";
 import {
-  closingDocuments, closingDocumentVersions, deals, dealTerms,
+  closingDocuments, closingDocumentVersions, deals, dealTerms, firmFormTemplates,
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 
@@ -98,7 +98,50 @@ function markdownToHtml(md: string): string {
   return result.join("\n");
 }
 
-async function findExistingTemplate(docType: string): Promise<string | null> {
+async function findFirmFormTemplate(docType: string, dealType?: string | null): Promise<string | null> {
+  try {
+    let firmTemplates;
+    if (dealType) {
+      firmTemplates = await db.select({
+        content: firmFormTemplates.content,
+        name: firmFormTemplates.name,
+        isDefault: firmFormTemplates.isDefault,
+      })
+        .from(firmFormTemplates)
+        .where(and(
+          eq(firmFormTemplates.documentType, docType),
+          eq(firmFormTemplates.dealType, dealType)
+        ))
+        .orderBy(desc(firmFormTemplates.isDefault), desc(firmFormTemplates.updatedAt))
+        .limit(1);
+    }
+
+    if (!firmTemplates || firmTemplates.length === 0) {
+      firmTemplates = await db.select({
+        content: firmFormTemplates.content,
+        name: firmFormTemplates.name,
+        isDefault: firmFormTemplates.isDefault,
+      })
+        .from(firmFormTemplates)
+        .where(eq(firmFormTemplates.documentType, docType))
+        .orderBy(desc(firmFormTemplates.isDefault), desc(firmFormTemplates.updatedAt))
+        .limit(1);
+    }
+
+    if (firmTemplates.length > 0 && firmTemplates[0].content && firmTemplates[0].content.trim().length > 50) {
+      console.log(`[ClosingDocs] Using firm preferred template "${firmTemplates[0].name}" for ${docType}`);
+      return firmTemplates[0].content;
+    }
+  } catch (err: any) {
+    console.log(`[ClosingDocs] Could not search firm templates: ${err.message}`);
+  }
+  return null;
+}
+
+async function findExistingTemplate(docType: string, dealType?: string | null): Promise<string | null> {
+  const firmTemplate = await findFirmFormTemplate(docType, dealType);
+  if (firmTemplate) return firmTemplate;
+
   try {
     const existing = await db.select({
       content: closingDocuments.content,
@@ -152,7 +195,7 @@ export async function autoGenerateClosingDocuments(
     try {
       const title = DOCUMENT_DISPLAY_NAMES[docType] || docType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 
-      const existingTemplate = await findExistingTemplate(docType);
+      const existingTemplate = await findExistingTemplate(docType, deal.dealType);
       const content = await generateDocumentContent(docType, title, termsContext, deal, existingTemplate);
 
       const [doc] = await db.insert(closingDocuments).values({
@@ -171,7 +214,7 @@ export async function autoGenerateClosingDocuments(
         closingDocumentId: doc.id,
         versionNumber: 1,
         content,
-        changeDescription: existingTemplate ? "Generated from firm template (adapted from prior transaction)" : "Initial AI-generated draft",
+        changeDescription: existingTemplate ? "Generated using firm preferred template" : "Initial AI-generated draft",
         changedBy: userId,
         source: "ai_generated",
       });

@@ -54,6 +54,7 @@ import TransactionsDealTerms from "@/pages/transactions-deal-terms";
 import ClosingDetail from "@/pages/closing-detail";
 import TransactionsDocumentSearch from "@/pages/transactions-document-search";
 import TransactionsTemplates from "@/pages/transactions-templates";
+import FormTemplatesPage from "@/pages/form-templates";
 import TransactionsDiligence from "@/pages/transactions-diligence";
 import BackgroundResearch from "@/pages/background-research";
 import BackgroundResearchDetail from "@/pages/background-research-detail";
@@ -161,6 +162,7 @@ function AuthenticatedApp() {
               <Route path="/transactions/deal-checklists/:id" component={TransactionsDealChecklistDetail} />
               <Route path="/transactions/search" component={TransactionsDocumentSearch} />
               <Route path="/transactions/templates" component={TransactionsTemplates} />
+              <Route path="/transactions/form-templates" component={FormTemplatesPage} />
               <Route path="/transactions/deal-templates/:templateId" component={TransactionsDealTemplateDetail} />
               <Route path="/pe/deals" component={PEDealPipeline} />
               <Route path="/pe/deals/:id" component={PEDealDetail} />

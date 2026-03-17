@@ -65,6 +65,7 @@ import calendarOAuthRouter from "./routes/calendar-oauth";
 import { registerRelationshipIntelligenceRoutes } from "./routes/relationship-intelligence";
 import { registerClosingRoutes } from "./routes/closing-routes";
 import { registerClosingDocumentsRoutes } from "./routes/closing-documents-routes";
+import formTemplatesRouter from "./routes/form-templates-routes";
 import { registerCondoIssueSheetRoutes } from "./routes/condo-issue-sheet-routes";
 import { registerBulkIntakeRoutes } from "./routes/bulk-intake-routes";
 import { registerRonRoutes } from "./routes/ron-routes";
@@ -321,6 +322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerRelationshipIntelligenceRoutes(app);
   registerClosingRoutes(app);
   registerClosingDocumentsRoutes(app);
+  app.use("/api", formTemplatesRouter);
   registerCondoIssueSheetRoutes(app, isAuthenticated);
   registerBulkIntakeRoutes(app, isAuthenticated, requireRole);
   registerRonRoutes(app);

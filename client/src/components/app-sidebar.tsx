@@ -188,6 +188,12 @@ export function AppSidebar() {
           roles: ["admin", "attorney", "external_counsel"],
         },
         {
+          title: "Forms & Templates",
+          url: "/transactions/form-templates",
+          icon: FileStack,
+          roles: ["admin", "attorney", "external_counsel"],
+        },
+        {
           title: "Dashboard",
           url: "/ron/dashboard",
           icon: Stamp,
