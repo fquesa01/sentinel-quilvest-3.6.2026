@@ -2078,52 +2078,7 @@ export default function TransactionsDealDetail() {
           </TabsContent>
 
           <TabsContent value="dataroom" className="mt-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-lg">Data Rooms</CardTitle>
-                  {dataRooms.length > 0 && (
-                    <Button size="sm" onClick={() => {
-                      const autoName = `${deal.title} - Data Room ${dataRooms.length + 1}`;
-                      createDataRoomMutation.mutate({ name: autoName });
-                    }} data-testid="button-create-data-room">
-                      <Plus className="h-4 w-4 mr-2" />
-                      New Data Room
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {dataRooms.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <FolderOpen className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                    <p>Setting up data room...</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {dataRooms.map((room: any) => (
-                      <Link key={room.id} href={`/transactions/data-rooms/${room.id}`}>
-                        <div className="flex items-center justify-between p-4 rounded-lg border hover-elevate cursor-pointer" data-testid={`dataroom-card-${room.id}`}>
-                          <div className="flex items-center gap-3">
-                            <FolderOpen className="h-5 w-5 text-primary" />
-                            <div>
-                              <p className="font-medium">{room.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {room.folderCount || 0} folders • {room.documentCount || 0} documents
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">{room.status}</Badge>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <DataRoomTab dataRooms={dataRooms} deal={deal} createDataRoomMutation={createDataRoomMutation} />
           </TabsContent>
 
           <TabsContent value="documents" className="mt-6">
@@ -4136,5 +4091,79 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function DataRoomTab({ dataRooms, deal, createDataRoomMutation }: { dataRooms: any[]; deal: any; createDataRoomMutation: any }) {
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    if (dataRooms.length === 1) {
+      navigate(`/transactions/data-rooms/${dataRooms[0].id}`);
+    }
+  }, [dataRooms, navigate]);
+
+  if (dataRooms.length === 1) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-center text-muted-foreground">
+          <Loader2 className="h-8 w-8 mx-auto mb-2 animate-spin opacity-50" />
+          <p>Opening data room...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (dataRooms.length === 0) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="text-center py-8 text-muted-foreground">
+            <Loader2 className="h-12 w-12 mx-auto mb-3 opacity-50 animate-spin" />
+            <p>Setting up data room...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-lg">Data Rooms</CardTitle>
+          <Button size="sm" onClick={() => {
+            const autoName = `${deal.title} - Data Room ${dataRooms.length + 1}`;
+            createDataRoomMutation.mutate({ name: autoName });
+          }} data-testid="button-create-data-room">
+            <Plus className="h-4 w-4 mr-2" />
+            New Data Room
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {dataRooms.map((room: any) => (
+            <Link key={room.id} href={`/transactions/data-rooms/${room.id}`}>
+              <div className="flex items-center justify-between p-4 rounded-lg border hover-elevate cursor-pointer" data-testid={`dataroom-card-${room.id}`}>
+                <div className="flex items-center gap-3">
+                  <FolderOpen className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">{room.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {room.folderCount || 0} folders • {room.documentCount || 0} documents
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{room.status}</Badge>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
