@@ -4096,12 +4096,21 @@ function InvestmentMemoSection({ dealId, dealTitle, dealSettings, onDealRefetch 
 
 function DataRoomTab({ dataRooms, deal, createDataRoomMutation }: { dataRooms: any[]; deal: any; createDataRoomMutation: any }) {
   const [, navigate] = useLocation();
+  const [waitingTooLong, setWaitingTooLong] = useState(false);
 
   useEffect(() => {
     if (dataRooms.length === 1) {
       navigate(`/transactions/data-rooms/${dataRooms[0].id}`);
     }
   }, [dataRooms, navigate]);
+
+  useEffect(() => {
+    if (dataRooms.length === 0) {
+      const timeout = setTimeout(() => setWaitingTooLong(true), 10000);
+      return () => clearTimeout(timeout);
+    }
+    setWaitingTooLong(false);
+  }, [dataRooms.length]);
 
   if (dataRooms.length === 1) {
     return (
@@ -4119,8 +4128,32 @@ function DataRoomTab({ dataRooms, deal, createDataRoomMutation }: { dataRooms: a
       <Card>
         <CardContent className="pt-6">
           <div className="text-center py-8 text-muted-foreground">
-            <Loader2 className="h-12 w-12 mx-auto mb-3 opacity-50 animate-spin" />
-            <p>Setting up data room...</p>
+            {waitingTooLong ? (
+              <>
+                <FolderOpen className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>Data room is taking longer than expected to set up.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => {
+                    const autoName = `${deal.title} - Data Room`;
+                    createDataRoomMutation.mutate({ name: autoName });
+                  }}
+                  disabled={createDataRoomMutation.isPending}
+                  data-testid="button-create-data-room-fallback"
+                >
+                  {createDataRoomMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Data Room
+                </Button>
+              </>
+            ) : (
+              <>
+                <Loader2 className="h-12 w-12 mx-auto mb-3 opacity-50 animate-spin" />
+                <p>Setting up data room...</p>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
