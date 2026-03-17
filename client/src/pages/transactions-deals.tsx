@@ -315,7 +315,7 @@ export default function TransactionsDeals() {
 
   const formatCurrency = (value: string | null | undefined, currency: string = "USD") => {
     if (!value) return "-";
-    const num = parseFloat(value);
+    const num = parseFloat(value.replace(/[^0-9.-]/g, ""));
     if (isNaN(num)) return "-";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
