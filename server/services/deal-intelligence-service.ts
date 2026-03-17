@@ -395,8 +395,9 @@ export async function applyDetectedDealType(dealId: string): Promise<{ success: 
         // Auto-sort existing documents into the new checklist items
         try {
           await autoCompleteChecklistItemsForDeal(dealId);
-        } catch (sortError: any) {
-          console.error(`[DealIntel] Auto-sort error:`, sortError.message);
+        } catch (sortError: unknown) {
+          const message = sortError instanceof Error ? sortError.message : "Unknown error";
+          console.error(`[DealIntel] Auto-sort error:`, message);
         }
       }
     }
@@ -959,12 +960,14 @@ async function autoSuggestChecklist(deal: typeof deals.$inferSelect): Promise<vo
     try {
       const [d] = await db.select().from(deals).where(eq(deals.id, deal.id));
       if (d) {
-        const s = (d.settings || {}) as Record<string, any>;
+        const s = (d.settings || {}) as Record<string, unknown>;
         await db.update(deals)
           .set({ settings: { ...s, checklistSuggestionInProgress: false }, updatedAt: new Date() })
           .where(eq(deals.id, deal.id));
       }
-    } catch (_) {}
+    } catch (cleanupErr: unknown) {
+      console.error("[DealIntel] Failed to clear suggestion flag:", cleanupErr instanceof Error ? cleanupErr.message : "Unknown error");
+    }
   }
 }
 

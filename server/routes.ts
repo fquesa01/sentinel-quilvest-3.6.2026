@@ -13898,13 +13898,11 @@ Guidelines:
         usageCount: (templateData.template.usageCount || 0) + 1 
       });
 
-      // Auto-sort existing documents into the new checklist items
-      try {
-        const { autoCompleteChecklistItemsForDeal } = await import("./services/deal-intelligence-service");
-        autoCompleteChecklistItemsForDeal(dealId).catch((err: any) => {
-          console.error("[Routes] Auto-sort after template apply error:", err.message);
-        });
-      } catch (_) {}
+      const { autoCompleteChecklistItemsForDeal } = await import("./services/deal-intelligence-service");
+      autoCompleteChecklistItemsForDeal(dealId).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        console.error("[Routes] Auto-sort after template apply error:", message);
+      });
       
       res.status(201).json({ 
         checklist, 
@@ -29449,12 +29447,14 @@ Guidelines:
             try {
               const existingItem = await storage.getDataLakeItem(parentItem.id);
               if (existingItem) {
-                const updatedMeta = { ...(existingItem.metadata as any || {}), processingStatus: "failed", error: String(parseErr) };
+                const updatedMeta = { ...(existingItem.metadata as Record<string, unknown> || {}), processingStatus: "failed", error: String(parseErr) };
                 await db.update(schema.dataLakeItems)
                   .set({ metadata: updatedMeta })
                   .where(eq(schema.dataLakeItems.id, parentItem.id));
               }
-            } catch (_) {}
+            } catch (metaErr: unknown) {
+              console.error("[DataLake] Failed to update parent item metadata:", metaErr instanceof Error ? metaErr.message : "Unknown error");
+            }
           }
         })();
       }
