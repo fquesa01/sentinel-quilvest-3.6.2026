@@ -117,11 +117,15 @@ function guessDocumentType(filename: string): string {
   return "other";
 }
 
+const REJECTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"];
+
 function isSupportedFile(file: File): boolean {
   const name = file.name.toLowerCase();
   const dotIndex = name.lastIndexOf(".");
   if (dotIndex <= 0) return true;
-  return SUPPORTED_EXTENSIONS.some(ext => name.endsWith(ext));
+  const ext = name.slice(dotIndex);
+  if (REJECTED_EXTENSIONS.includes(ext)) return false;
+  return true;
 }
 
 export default function FormTemplatesPage() {
@@ -290,7 +294,7 @@ export default function FormTemplatesPage() {
     if (entries.length === 0) {
       toast({
         title: "No supported files",
-        description: "No supported document files were found. Accepted: .docx, .doc, .pdf, .html, .txt, .rtf, or files without extensions.",
+        description: "No document files were found. Image, video, and archive files are not supported.",
         variant: "destructive",
       });
       return;
@@ -483,7 +487,6 @@ export default function FormTemplatesPage() {
           ref={multiFileInputRef}
           type="file"
           multiple
-          accept=".docx,.doc,.pdf,.html,.txt,.rtf"
           className="hidden"
           onChange={(e) => {
             handleFilesSelected(e.target.files);
@@ -760,7 +763,6 @@ export default function FormTemplatesPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".docx,.pdf,.html,.txt,.doc,.rtf"
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];

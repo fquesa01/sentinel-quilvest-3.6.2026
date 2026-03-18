@@ -203,7 +203,8 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
 
       const dotIndex = file.originalname.lastIndexOf(".");
       const ext = dotIndex > 0 ? file.originalname.slice(dotIndex).toLowerCase() : "";
-      if (ext && !ALLOWED_EXTENSIONS.includes(ext)) {
+      const REJECTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"];
+      if (REJECTED_EXTENSIONS.includes(ext)) {
         results.push({ index: i, success: false, name, error: `Unsupported file type: ${ext}` });
         continue;
       }
