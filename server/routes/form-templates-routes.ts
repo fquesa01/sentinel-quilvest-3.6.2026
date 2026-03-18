@@ -92,6 +92,8 @@ router.get("/form-templates/:id", isAuthenticated, async (req: any, res) => {
       uploadedBy: firmFormTemplates.uploadedBy,
       createdAt: firmFormTemplates.createdAt,
       updatedAt: firmFormTemplates.updatedAt,
+      notes: firmFormTemplates.notes,
+      hasFileData: sql<boolean>`file_data IS NOT NULL`.as("has_file_data"),
     }).from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
     if (!template) return res.status(404).json({ error: "Template not found" });
     res.json(template);
@@ -118,6 +120,31 @@ router.get("/form-templates/:id/download", isAuthenticated, async (req: any, res
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${safeAsciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     res.setHeader("Content-Length", template.fileData.length);
+    res.send(template.fileData);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/form-templates/:id/view", isAuthenticated, async (req: any, res) => {
+  try {
+    const [template] = await db.select({
+      fileName: firmFormTemplates.fileName,
+      mimeType: firmFormTemplates.mimeType,
+      fileData: firmFormTemplates.fileData,
+    }).from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
+
+    if (!template) return res.status(404).json({ error: "Template not found" });
+    if (!template.fileData) return res.status(404).json({ error: "Original file data not available for this template" });
+
+    const contentType = template.mimeType || "application/octet-stream";
+    const fileName = template.fileName || "template";
+
+    const safeAsciiName = fileName.replace(/[^\x20-\x7E]/g, "_");
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${safeAsciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    res.setHeader("Content-Length", template.fileData.length);
+    res.setHeader("Cache-Control", "private, max-age=300");
     res.send(template.fileData);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
