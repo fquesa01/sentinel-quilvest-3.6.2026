@@ -1179,10 +1179,10 @@ export default function TransactionsDataRoomDetail() {
                     <Button 
                       onClick={handleFileUpload} 
                       disabled={isUploading || uploadFiles.length === 0}
-                      className="max-w-[280px]"
+                      className="overflow-hidden max-w-[280px]"
                       data-testid="button-submit-upload"
                     >
-                      <span className="truncate">
+                      <span className="block w-full overflow-hidden text-ellipsis whitespace-nowrap">
                         {isUploading 
                           ? `Uploading ${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.fileName}` 
                           : `Upload ${uploadFiles.length} file(s)`}
