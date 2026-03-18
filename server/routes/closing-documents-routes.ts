@@ -44,7 +44,7 @@ router.get("/api/deals/:dealId/closing-documents", isAuthenticated, async (req: 
       const versions = await db.select()
         .from(schema.closingDocumentVersions)
         .where(eq(schema.closingDocumentVersions.closingDocumentId, doc.id));
-      return { ...doc, versionCount: versions.length };
+      return { ...doc, versionCount: versions.length, requiresNotarization: REQUIRES_NOTARIZATION.has(doc.documentType) };
     }));
 
     res.json(docsWithVersionCount);

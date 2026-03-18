@@ -654,7 +654,7 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
                       v{doc.currentVersion} · Updated {new Date(doc.updatedAt).toLocaleDateString()}
                     </p>
                   </div>
-                  {notarizationTypes.has(doc.documentType) && (
+                  {(doc.requiresNotarization || notarizationTypes.has(doc.documentType)) && (
                     <Link
                       href={`/ron/transactions/create?dealId=${dealId}`}
                       onClick={(e: React.MouseEvent) => e.stopPropagation()}
