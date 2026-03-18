@@ -26,10 +26,11 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileStack, Upload, Search, Trash2, Star, FileText, Eye,
-  Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle,
+  Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle, Share2,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { FirmFormTemplate } from "@shared/schema";
+import { ShareTemplateDialog } from "@/components/share-template-dialog";
 
 const DOCUMENT_TYPES = [
   { value: "closing_disclosure", label: "Closing Disclosure" },
@@ -126,6 +127,7 @@ export default function FormTemplatesPage() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState<FirmFormTemplate | null>(null);
   const [templateNotes, setTemplateNotes] = useState("");
+  const [shareTemplate, setShareTemplate] = useState<FirmFormTemplate | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploadForm, setUploadForm] = useState({
@@ -592,6 +594,15 @@ export default function FormTemplatesPage() {
                         Preview
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShareTemplate(template)}
+                      data-testid={`button-share-${template.id}`}
+                    >
+                      <Share2 className="h-4 w-4 mr-1" />
+                      Share
+                    </Button>
                     {!template.isDefault && (
                       <Button
                         variant="outline"
@@ -916,6 +927,15 @@ export default function FormTemplatesPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        {shareTemplate && (
+          <ShareTemplateDialog
+            templateId={shareTemplate.id}
+            templateName={shareTemplate.name}
+            open={!!shareTemplate}
+            onOpenChange={(open) => { if (!open) setShareTemplate(null); }}
+          />
+        )}
       </div>
     </div>
   );
