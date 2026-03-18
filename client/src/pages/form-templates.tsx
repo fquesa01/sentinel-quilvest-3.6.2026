@@ -75,8 +75,6 @@ const DEAL_TYPES = [
   { value: "merger", label: "Merger" },
 ];
 
-const SUPPORTED_EXTENSIONS = [".docx", ".doc", ".pdf", ".html", ".txt", ".rtf"];
-
 interface BulkFileEntry {
   id: string;
   file: File;
@@ -363,7 +361,9 @@ export default function FormTemplatesPage() {
           if (data.results) {
             for (const r of data.results) {
               if (!r.success) {
-                allFailedFiles.push({ name: r.name || `File ${r.index + 1}`, error: r.error || "Unknown error" });
+                const originalFile = batch[r.index];
+                const displayName = originalFile ? originalFile.file.name : (r.name || `File ${r.index + 1}`);
+                allFailedFiles.push({ name: displayName, error: r.error || "Unknown error" });
               }
             }
           }

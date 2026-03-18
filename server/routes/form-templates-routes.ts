@@ -120,8 +120,8 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
         }
       } else if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
         const raw = req.file.buffer.toString("utf-8");
-        content = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
-        if (!content) content = "[RTF content - could not extract text]";
+        const stripped = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
+        content = stripped || raw;
       } else {
         content = req.file.buffer.toString("utf-8");
       }
@@ -163,7 +163,6 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
   }
 });
 
-const ALLOWED_EXTENSIONS = [".docx", ".doc", ".pdf", ".html", ".txt", ".rtf"];
 const ALLOWED_DOC_TYPES = new Set([
   "closing_disclosure", "deed", "bill_of_sale", "settlement_statement",
   "title_affidavit", "transfer_tax_declaration", "buyers_closing_certificate",
@@ -236,8 +235,8 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
           }
         } else if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
           const raw = file.buffer.toString("utf-8");
-          content = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
-          if (!content) content = "[RTF content - could not extract text]";
+          const stripped = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
+          content = stripped || raw;
         } else {
           content = file.buffer.toString("utf-8");
         }
