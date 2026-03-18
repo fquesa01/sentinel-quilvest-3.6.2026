@@ -1150,13 +1150,13 @@ export default function TransactionsDataRoomDetail() {
                     )}
                   </div>
                   {uploadFiles.length > 0 && (
-                    <div className="max-h-48 overflow-y-auto space-y-2">
+                    <div className="min-h-0 max-h-48 overflow-y-auto space-y-2">
                       {uploadFiles.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                          <div className="flex items-center gap-2 truncate">
+                        <div key={index} className="flex items-center justify-between gap-2 p-2 bg-muted rounded-md">
+                          <div className="flex items-center gap-2 min-w-0">
                             <FileText className="h-4 w-4 flex-shrink-0" />
                             <span className="text-sm truncate">{file.name}</span>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs text-muted-foreground flex-shrink-0">
                               ({(file.size / 1024).toFixed(1)} KB)
                             </span>
                           </div>
@@ -1172,18 +1172,21 @@ export default function TransactionsDataRoomDetail() {
                       ))}
                     </div>
                   )}
-                  <div className="flex justify-end gap-2">
+                  <div className="flex justify-end gap-2 flex-shrink-0">
                     <Button variant="outline" onClick={() => { setIsUploadOpen(false); setUploadFiles([]); }}>
                       Cancel
                     </Button>
                     <Button 
                       onClick={handleFileUpload} 
                       disabled={isUploading || uploadFiles.length === 0}
+                      className="max-w-[280px]"
                       data-testid="button-submit-upload"
                     >
-                      {isUploading 
-                        ? `Uploading ${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.fileName}` 
-                        : `Upload ${uploadFiles.length} file(s)`}
+                      <span className="truncate">
+                        {isUploading 
+                          ? `Uploading ${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.fileName}` 
+                          : `Upload ${uploadFiles.length} file(s)`}
+                      </span>
                     </Button>
                   </div>
                 </DialogContent>
