@@ -43,7 +43,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, invalidateDealQueries } from "@/lib/queryClient";
 import {
   Plus,
   ArrowLeft,
@@ -711,7 +711,11 @@ export default function TransactionsDataRoomDetail() {
 
       await queryClient.invalidateQueries({ queryKey: ["/api/data-rooms", roomId] });
       if (room?.dealId) {
-        await queryClient.invalidateQueries({ queryKey: ["/api/deals", room.dealId] });
+        await invalidateDealQueries(room.dealId);
+        const dealId = room.dealId;
+        setTimeout(() => invalidateDealQueries(dealId), 10_000);
+        setTimeout(() => invalidateDealQueries(dealId), 30_000);
+        setTimeout(() => invalidateDealQueries(dealId), 60_000);
       }
 
       if (succeeded > 0) {
