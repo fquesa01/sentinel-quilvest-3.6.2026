@@ -11,7 +11,22 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 router.get("/form-templates", isAuthenticated, async (req: any, res) => {
   try {
-    const templates = await db.select().from(firmFormTemplates).orderBy(desc(firmFormTemplates.updatedAt));
+    const templates = await db.select({
+      id: firmFormTemplates.id,
+      name: firmFormTemplates.name,
+      description: firmFormTemplates.description,
+      documentType: firmFormTemplates.documentType,
+      dealType: firmFormTemplates.dealType,
+      content: firmFormTemplates.content,
+      fileName: firmFormTemplates.fileName,
+      fileSize: firmFormTemplates.fileSize,
+      mimeType: firmFormTemplates.mimeType,
+      isDefault: firmFormTemplates.isDefault,
+      uploadedBy: firmFormTemplates.uploadedBy,
+      createdAt: firmFormTemplates.createdAt,
+      updatedAt: firmFormTemplates.updatedAt,
+      hasFileData: sql<boolean>`file_data IS NOT NULL`.as("has_file_data"),
+    }).from(firmFormTemplates).orderBy(desc(firmFormTemplates.updatedAt));
     res.json(templates);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -20,9 +35,47 @@ router.get("/form-templates", isAuthenticated, async (req: any, res) => {
 
 router.get("/form-templates/:id", isAuthenticated, async (req: any, res) => {
   try {
-    const [template] = await db.select().from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
+    const [template] = await db.select({
+      id: firmFormTemplates.id,
+      name: firmFormTemplates.name,
+      description: firmFormTemplates.description,
+      documentType: firmFormTemplates.documentType,
+      dealType: firmFormTemplates.dealType,
+      content: firmFormTemplates.content,
+      fileName: firmFormTemplates.fileName,
+      fileSize: firmFormTemplates.fileSize,
+      mimeType: firmFormTemplates.mimeType,
+      isDefault: firmFormTemplates.isDefault,
+      uploadedBy: firmFormTemplates.uploadedBy,
+      createdAt: firmFormTemplates.createdAt,
+      updatedAt: firmFormTemplates.updatedAt,
+    }).from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
     if (!template) return res.status(404).json({ error: "Template not found" });
     res.json(template);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/form-templates/:id/download", isAuthenticated, async (req: any, res) => {
+  try {
+    const [template] = await db.select({
+      fileName: firmFormTemplates.fileName,
+      mimeType: firmFormTemplates.mimeType,
+      fileData: firmFormTemplates.fileData,
+    }).from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
+
+    if (!template) return res.status(404).json({ error: "Template not found" });
+    if (!template.fileData) return res.status(404).json({ error: "Original file data not available for this template" });
+
+    const contentType = template.mimeType || "application/octet-stream";
+    const fileName = template.fileName || "template";
+
+    const safeAsciiName = fileName.replace(/[^\x20-\x7E]/g, "_");
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${safeAsciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    res.setHeader("Content-Length", template.fileData.length);
+    res.send(template.fileData);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -39,11 +92,13 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
     let fileName = null;
     let fileSize = null;
     let mimeType = null;
+    let fileData: Buffer | null = null;
 
     if (req.file) {
       fileName = req.file.originalname;
       fileSize = req.file.size;
       mimeType = req.file.mimetype;
+      fileData = req.file.buffer;
 
       if (mimeType === "text/html" || mimeType === "text/plain" || fileName.endsWith(".html") || fileName.endsWith(".txt")) {
         content = req.file.buffer.toString("utf-8");
@@ -91,6 +146,7 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
       fileName,
       fileSize,
       mimeType,
+      fileData,
       isDefault: isDefault === "true",
       uploadedBy: req.user?.id || null,
     }).returning();
@@ -152,6 +208,7 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
         const fileName = file.originalname;
         const fileSize = file.size;
         const mimeType = file.mimetype;
+        const fileData = file.buffer;
 
         if (mimeType === "text/html" || mimeType === "text/plain" || fileName.endsWith(".html") || fileName.endsWith(".txt")) {
           content = file.buffer.toString("utf-8");
@@ -184,6 +241,7 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
           fileName,
           fileSize,
           mimeType,
+          fileData,
           isDefault: false,
           uploadedBy: req.user?.id || null,
         }).returning();

@@ -15,9 +15,22 @@ import {
   real,
   date,
   numeric,
+  customType,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+  toDriver(value: Buffer): Buffer {
+    return value;
+  },
+  fromDriver(value: Buffer): Buffer {
+    return value;
+  },
+});
 
 // Enums
 export const userRoleEnum = pgEnum("user_role", [
@@ -14328,6 +14341,7 @@ export const firmFormTemplates = pgTable("firm_form_templates", {
   fileName: varchar("file_name", { length: 500 }),
   fileSize: integer("file_size"),
   mimeType: varchar("mime_type", { length: 200 }),
+  fileData: bytea("file_data"),
   isDefault: boolean("is_default").default(false),
   uploadedBy: varchar("uploaded_by").references(() => users.id),
   notes: text("notes"),
@@ -14339,7 +14353,7 @@ export const firmFormTemplates = pgTable("firm_form_templates", {
 }));
 
 export const insertFirmFormTemplateSchema = createInsertSchema(firmFormTemplates).omit({
-  id: true, createdAt: true, updatedAt: true,
+  id: true, createdAt: true, updatedAt: true, fileData: true,
 });
 export type InsertFirmFormTemplate = z.infer<typeof insertFirmFormTemplateSchema>;
 export type FirmFormTemplate = typeof firmFormTemplates.$inferSelect;

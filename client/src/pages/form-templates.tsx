@@ -25,12 +25,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import {
-  FileStack, Upload, Search, Trash2, Star, FileText, Eye,
-  Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle, Share2,
+  FileStack, Upload, Search, Trash2, Star, FileText, Eye, Download, Share2,
+  Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { FirmFormTemplate } from "@shared/schema";
 import { ShareTemplateDialog } from "@/components/share-template-dialog";
+
+type FirmFormTemplateWithMeta = Omit<FirmFormTemplate, "fileData"> & { hasFileData: boolean };
 
 const DOCUMENT_TYPES = [
   { value: "closing_disclosure", label: "Closing Disclosure" },
@@ -125,7 +127,7 @@ export default function FormTemplatesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [previewTemplate, setPreviewTemplate] = useState<FirmFormTemplate | null>(null);
+  const [previewTemplate, setPreviewTemplate] = useState<FirmFormTemplateWithMeta | null>(null);
   const [templateNotes, setTemplateNotes] = useState("");
   const [shareTemplate, setShareTemplate] = useState<FirmFormTemplate | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +157,7 @@ export default function FormTemplatesPage() {
     }
   }, []);
 
-  const { data: templates = [], isLoading } = useQuery<FirmFormTemplate[]>({
+  const { data: templates = [], isLoading } = useQuery<FirmFormTemplateWithMeta[]>({
     queryKey: ["/api/form-templates"],
   });
 
@@ -603,6 +605,19 @@ export default function FormTemplatesPage() {
                       <Share2 className="h-4 w-4 mr-1" />
                       Share
                     </Button>
+                    {template.hasFileData && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          window.open(`/api/form-templates/${template.id}/download`, "_blank");
+                        }}
+                        data-testid={`button-download-${template.id}`}
+                      >
+                        <Download className="h-4 w-4 mr-1" />
+                        Download
+                      </Button>
+                    )}
                     {!template.isDefault && (
                       <Button
                         variant="outline"
