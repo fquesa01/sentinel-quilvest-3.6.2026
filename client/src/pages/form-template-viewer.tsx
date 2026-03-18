@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useParams, useLocation } from "wouter";
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { FirmFormTemplate } from "@shared/schema";
 import { ShareTemplateDialog } from "@/components/share-template-dialog";
+import DOMPurify from "dompurify";
 
 type TemplateWithMeta = Omit<FirmFormTemplate, "fileData"> & { hasFileData: boolean };
 
@@ -148,6 +149,25 @@ export default function FormTemplateViewerPage() {
   const canRenderNativePdf = isPdfFile(template) && template.hasFileData;
   const hasExtractedContent = !!template.content;
 
+  const sanitizedContent = useMemo(() => {
+    if (!template.content) return "";
+    return DOMPurify.sanitize(template.content, {
+      ALLOWED_TAGS: [
+        "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr",
+        "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
+        "strong", "b", "em", "i", "u", "s", "del", "ins", "sub", "sup",
+        "blockquote", "pre", "code", "a", "span", "div", "section", "article",
+        "dl", "dt", "dd", "abbr", "cite", "q", "small", "mark", "figure", "figcaption",
+        "caption", "col", "colgroup",
+      ],
+      ALLOWED_ATTR: [
+        "href", "title", "class", "id", "colspan", "rowspan", "scope",
+        "style", "align", "valign", "width", "height", "target", "rel",
+      ],
+      ALLOW_DATA_ATTR: false,
+    });
+  }, [template.content]);
+
   return (
     <div className="h-full flex flex-col" data-testid="template-viewer">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border gap-4 flex-wrap sticky top-0 z-50 bg-background">
@@ -234,7 +254,7 @@ export default function FormTemplateViewerPage() {
                   prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2 prose-th:bg-muted
                   prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2
                   prose-li:text-foreground/90"
-                dangerouslySetInnerHTML={{ __html: template.content }}
+                dangerouslySetInnerHTML={{ __html: sanitizedContent }}
                 data-testid="content-document-viewer"
               />
             </div>
