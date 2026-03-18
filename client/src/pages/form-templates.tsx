@@ -190,6 +190,20 @@ export default function FormTemplatesPage() {
     },
   });
 
+  const removeDefaultMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/form-templates/${id}/remove-default`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] });
+      toast({ title: "Default removed", description: "This template is no longer the default for its document type." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("DELETE", `/api/form-templates/${id}`);
@@ -511,10 +525,18 @@ export default function FormTemplatesPage() {
                       )}
                     </div>
                     {template.isDefault && (
-                      <Badge variant="default" className="shrink-0">
-                        <Star className="h-3 w-3 mr-1" />
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => removeDefaultMutation.mutate(template.id)}
+                        disabled={removeDefaultMutation.isPending}
+                        data-testid={`button-remove-default-${template.id}`}
+                      >
+                        <Star className="h-3 w-3 mr-1 fill-current" />
                         Default
-                      </Badge>
+                        <X className="h-3 w-3 ml-1" />
+                      </Button>
                     )}
                   </div>
                 </CardHeader>

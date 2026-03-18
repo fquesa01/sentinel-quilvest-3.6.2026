@@ -261,4 +261,21 @@ router.post("/form-templates/:id/set-default", isAuthenticated, async (req: any,
   }
 });
 
+router.post("/form-templates/:id/remove-default", isAuthenticated, async (req: any, res) => {
+  try {
+    const [template] = await db.select().from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
+    if (!template) return res.status(404).json({ error: "Template not found" });
+    if (!template.isDefault) return res.status(400).json({ error: "Template is not currently set as default" });
+
+    const [updated] = await db.update(firmFormTemplates)
+      .set({ isDefault: false, updatedAt: new Date() })
+      .where(eq(firmFormTemplates.id, req.params.id))
+      .returning();
+
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
