@@ -264,9 +264,10 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
     const failed = results.filter(r => !r.success).length;
     console.log(`[FormTemplates] Bulk upload: ${succeeded} succeeded, ${failed} failed, by user ${req.user?.id}`);
     res.json({ results, succeeded, failed, total: files.length });
-  } catch (err: any) {
-    console.error("[FormTemplates] Bulk upload error:", err.message);
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    console.error("[FormTemplates] Bulk upload error:", err);
+    res.status(500).json({ error: errMsg });
   }
 });
 
