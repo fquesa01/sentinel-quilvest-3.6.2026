@@ -118,6 +118,10 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
         } catch {
           content = "[PDF content - could not extract text]";
         }
+      } else if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
+        const raw = req.file.buffer.toString("utf-8");
+        content = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
+        if (!content) content = "[RTF content - could not extract text]";
       } else {
         content = req.file.buffer.toString("utf-8");
       }
@@ -159,7 +163,7 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
   }
 });
 
-const ALLOWED_EXTENSIONS = [".docx", ".doc", ".pdf", ".html", ".txt"];
+const ALLOWED_EXTENSIONS = [".docx", ".doc", ".pdf", ".html", ".txt", ".rtf"];
 const ALLOWED_DOC_TYPES = new Set([
   "closing_disclosure", "deed", "bill_of_sale", "settlement_statement",
   "title_affidavit", "transfer_tax_declaration", "buyers_closing_certificate",
@@ -197,8 +201,9 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
       const rawDocType = documentTypes[i] || "other";
       const documentType = ALLOWED_DOC_TYPES.has(rawDocType) ? rawDocType : "other";
 
-      const ext = "." + file.originalname.split(".").pop()?.toLowerCase();
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      const dotIndex = file.originalname.lastIndexOf(".");
+      const ext = dotIndex > 0 ? file.originalname.slice(dotIndex).toLowerCase() : "";
+      if (ext && !ALLOWED_EXTENSIONS.includes(ext)) {
         results.push({ index: i, success: false, name, error: `Unsupported file type: ${ext}` });
         continue;
       }
@@ -228,6 +233,10 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
           } catch {
             content = "[PDF content - could not extract text]";
           }
+        } else if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
+          const raw = file.buffer.toString("utf-8");
+          content = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
+          if (!content) content = "[RTF content - could not extract text]";
         } else {
           content = file.buffer.toString("utf-8");
         }

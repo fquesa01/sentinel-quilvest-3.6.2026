@@ -26,7 +26,7 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileStack, Upload, Search, Trash2, Star, FileText, Eye, Download, Share2,
-  Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle,
+  Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle, XCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { FirmFormTemplate } from "@shared/schema";
@@ -75,7 +75,7 @@ const DEAL_TYPES = [
   { value: "merger", label: "Merger" },
 ];
 
-const SUPPORTED_EXTENSIONS = [".docx", ".doc", ".pdf", ".html", ".txt"];
+const SUPPORTED_EXTENSIONS = [".docx", ".doc", ".pdf", ".html", ".txt", ".rtf"];
 
 interface BulkFileEntry {
   id: string;
@@ -119,6 +119,8 @@ function guessDocumentType(filename: string): string {
 
 function isSupportedFile(file: File): boolean {
   const name = file.name.toLowerCase();
+  const dotIndex = name.lastIndexOf(".");
+  if (dotIndex <= 0) return true;
   return SUPPORTED_EXTENSIONS.some(ext => name.endsWith(ext));
 }
 
@@ -145,7 +147,7 @@ export default function FormTemplatesPage() {
   const [bulkFiles, setBulkFiles] = useState<BulkFileEntry[]>([]);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
-  const [bulkResult, setBulkResult] = useState<{ succeeded: number; failed: number; total: number } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ succeeded: number; failed: number; total: number; failedFiles: { name: string; error: string }[] } | null>(null);
 
   const multiFileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -288,7 +290,7 @@ export default function FormTemplatesPage() {
     if (entries.length === 0) {
       toast({
         title: "No supported files",
-        description: "No .docx, .doc, .pdf, .html, or .txt files were found.",
+        description: "No supported document files were found. Accepted: .docx, .doc, .pdf, .html, .txt, .rtf, or files without extensions.",
         variant: "destructive",
       });
       return;
@@ -320,6 +322,7 @@ export default function FormTemplatesPage() {
     let totalSucceeded = 0;
     let totalFailed = 0;
     let processed = 0;
+    const allFailedFiles: { name: string; error: string }[] = [];
 
     for (let batchStart = 0; batchStart < bulkFiles.length; batchStart += BATCH_SIZE) {
       const batch = bulkFiles.slice(batchStart, batchStart + BATCH_SIZE);
@@ -346,13 +349,26 @@ export default function FormTemplatesPage() {
 
         if (!res.ok) {
           totalFailed += batch.length;
+          for (const entry of batch) {
+            allFailedFiles.push({ name: entry.file.name, error: "Server error" });
+          }
         } else {
           const data = await res.json();
           totalSucceeded += data.succeeded || 0;
           totalFailed += data.failed || 0;
+          if (data.results) {
+            for (const r of data.results) {
+              if (!r.success) {
+                allFailedFiles.push({ name: r.name || `File ${r.index + 1}`, error: r.error || "Unknown error" });
+              }
+            }
+          }
         }
       } catch {
         totalFailed += batch.length;
+        for (const entry of batch) {
+          allFailedFiles.push({ name: entry.file.name, error: "Network error" });
+        }
       }
 
       processed += batch.length;
@@ -360,7 +376,7 @@ export default function FormTemplatesPage() {
     }
 
     setBulkUploading(false);
-    setBulkResult({ succeeded: totalSucceeded, failed: totalFailed, total });
+    setBulkResult({ succeeded: totalSucceeded, failed: totalFailed, total, failedFiles: allFailedFiles });
     queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] });
   };
 
@@ -467,7 +483,7 @@ export default function FormTemplatesPage() {
           ref={multiFileInputRef}
           type="file"
           multiple
-          accept=".docx,.doc,.pdf,.html,.txt"
+          accept=".docx,.doc,.pdf,.html,.txt,.rtf"
           className="hidden"
           onChange={(e) => {
             handleFilesSelected(e.target.files);
@@ -736,7 +752,7 @@ export default function FormTemplatesPage() {
                     <>
                       <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
                       <p className="text-sm text-muted-foreground">
-                        Click to upload a .docx, .pdf, .html, or .txt file
+                        Click to upload a document file (.docx, .doc, .pdf, .rtf, .html, .txt)
                       </p>
                     </>
                   )}
@@ -744,7 +760,7 @@ export default function FormTemplatesPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".docx,.pdf,.html,.txt,.doc"
+                  accept=".docx,.pdf,.html,.txt,.doc,.rtf"
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -807,15 +823,26 @@ export default function FormTemplatesPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3 w-full">
                       <div className="flex items-center gap-2">
-                        <AlertCircle className="h-6 w-6 text-amber-500" />
+                        <AlertCircle className="h-6 w-6 text-amber-500 flex-shrink-0" />
                         <p className="font-semibold" data-testid="text-bulk-partial">Upload completed with some issues</p>
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {bulkResult.succeeded} of {bulkResult.total} files uploaded successfully.
                         {bulkResult.failed} failed.
                       </p>
+                      {bulkResult.failedFiles.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Failed files:</p>
+                          {bulkResult.failedFiles.map((f, idx) => (
+                            <div key={idx} className="text-xs flex items-start gap-2" data-testid={`text-failed-file-${idx}`}>
+                              <XCircle className="h-3 w-3 text-destructive flex-shrink-0 mt-0.5" />
+                              <span className="break-all"><span className="font-medium">{f.name}</span> — {f.error}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
