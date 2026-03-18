@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, isNull } from "drizzle-orm";
 import { firmFormTemplates } from "@shared/schema";
 import { isAuthenticated } from "../replitAuth";
 import multer from "multer";
@@ -70,9 +70,15 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
     }
 
     if (isDefault === "true") {
+      const scopeConditions = [eq(firmFormTemplates.documentType, documentType)];
+      if (dealType) {
+        scopeConditions.push(eq(firmFormTemplates.dealType, dealType));
+      } else {
+        scopeConditions.push(isNull(firmFormTemplates.dealType));
+      }
       await db.update(firmFormTemplates)
         .set({ isDefault: false })
-        .where(eq(firmFormTemplates.documentType, documentType));
+        .where(and(...scopeConditions));
     }
 
     const [template] = await db.insert(firmFormTemplates).values({
@@ -210,9 +216,17 @@ router.patch("/form-templates/:id", isAuthenticated, async (req: any, res) => {
       if (isDefault) {
         const [existing] = await db.select().from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
         if (existing) {
+          const effectiveDocType = documentType !== undefined ? documentType : existing.documentType;
+          const effectiveDealType = dealType !== undefined ? dealType : existing.dealType;
+          const scopeConditions = [eq(firmFormTemplates.documentType, effectiveDocType)];
+          if (effectiveDealType) {
+            scopeConditions.push(eq(firmFormTemplates.dealType, effectiveDealType));
+          } else {
+            scopeConditions.push(isNull(firmFormTemplates.dealType));
+          }
           await db.update(firmFormTemplates)
             .set({ isDefault: false })
-            .where(eq(firmFormTemplates.documentType, existing.documentType));
+            .where(and(...scopeConditions));
         }
       }
     }
@@ -246,9 +260,15 @@ router.post("/form-templates/:id/set-default", isAuthenticated, async (req: any,
     const [template] = await db.select().from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
     if (!template) return res.status(404).json({ error: "Template not found" });
 
+    const scopeConditions = [eq(firmFormTemplates.documentType, template.documentType)];
+    if (template.dealType) {
+      scopeConditions.push(eq(firmFormTemplates.dealType, template.dealType));
+    } else {
+      scopeConditions.push(isNull(firmFormTemplates.dealType));
+    }
     await db.update(firmFormTemplates)
       .set({ isDefault: false })
-      .where(eq(firmFormTemplates.documentType, template.documentType));
+      .where(and(...scopeConditions));
 
     const [updated] = await db.update(firmFormTemplates)
       .set({ isDefault: true, updatedAt: new Date() })

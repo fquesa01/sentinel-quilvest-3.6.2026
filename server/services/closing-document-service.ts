@@ -3,7 +3,7 @@ import { db } from "../db";
 import {
   closingDocuments, closingDocumentVersions, deals, dealTerms, firmFormTemplates,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, isNull } from "drizzle-orm";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || "" });
 
@@ -132,7 +132,10 @@ async function findFirmFormTemplate(docType: string, dealType?: string | null): 
         isDefault: firmFormTemplates.isDefault,
       })
         .from(firmFormTemplates)
-        .where(eq(firmFormTemplates.documentType, docType))
+        .where(and(
+          eq(firmFormTemplates.documentType, docType),
+          isNull(firmFormTemplates.dealType)
+        ))
         .orderBy(desc(firmFormTemplates.isDefault), desc(firmFormTemplates.updatedAt))
         .limit(1);
     }

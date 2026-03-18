@@ -177,13 +177,16 @@ export default function FormTemplatesPage() {
   });
 
   const setDefaultMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("POST", `/api/form-templates/${id}/set-default`);
-      return res.json();
+    mutationFn: async (template: { id: string; documentType: string; dealType?: string | null }) => {
+      const res = await apiRequest("POST", `/api/form-templates/${template.id}/set-default`);
+      return { result: await res.json(), documentType: template.documentType, dealType: template.dealType };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] });
-      toast({ title: "Default updated", description: "This template will now be used when generating closing documents." });
+      const scope = data.dealType
+        ? `${data.documentType} / ${data.dealType}`
+        : data.documentType;
+      toast({ title: "Default updated", description: `This template is now the default for ${scope} documents.` });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -534,7 +537,7 @@ export default function FormTemplatesPage() {
                         data-testid={`button-remove-default-${template.id}`}
                       >
                         <Star className="h-3 w-3 mr-1 fill-current" />
-                        Default
+                        Default{template.dealType ? ` (${template.dealType})` : ""}
                         <X className="h-3 w-3 ml-1" />
                       </Button>
                     )}
@@ -575,7 +578,7 @@ export default function FormTemplatesPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setDefaultMutation.mutate(template.id)}
+                        onClick={() => setDefaultMutation.mutate({ id: template.id, documentType: template.documentType, dealType: template.dealType })}
                         disabled={setDefaultMutation.isPending}
                         data-testid={`button-set-default-${template.id}`}
                       >
