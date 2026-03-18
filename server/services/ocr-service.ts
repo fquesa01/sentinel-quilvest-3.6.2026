@@ -526,41 +526,49 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
       })
       .where(eq(dataRoomDocuments.id, documentId));
 
-    // Trigger deal intelligence processing asynchronously (fire-and-forget)
+    // Trigger deal intelligence processing and auto-populate independently (fire-and-forget)
     try {
       const { processDealDocumentIntelligence, populateDealOverview } = await import("./deal-intelligence-service");
-      processDealDocumentIntelligence(documentId).then(async () => {
-        try {
-          const docRow = await db.select().from(dataRoomDocuments).where(eq(dataRoomDocuments.id, documentId));
-          if (docRow[0]) {
-            const { dataRooms: dataRoomsTable } = await import("@shared/schema");
-            const [room] = await db.select().from(dataRoomsTable).where(eq(dataRoomsTable.id, docRow[0].dataRoomId));
-            if (room?.dealId) {
-              const { deals: dealsTable } = await import("@shared/schema");
-              const [deal] = await db.select().from(dealsTable).where(eq(dealsTable.id, room.dealId));
-              if (deal && (!deal.description || !deal.dealStructure || !deal.subType || !deal.dealValue)) {
-                console.log(`[DealIntel] Auto-populating deal overview for "${deal.title}"`);
-                await populateDealOverview(deal.id);
-              }
 
-              try {
-                const { DealTermsService } = await import("./deal-terms-service");
-                const dealTermsService = new DealTermsService();
-                console.log(`[DealIntel] Auto-extracting deal terms for "${deal.title}"`);
-                await dealTermsService.extractFromAllDocuments(deal.id);
-              } catch (termsErr: any) {
-                console.error(`[DealIntel] Auto-extract deal terms failed:`, termsErr.message);
-              }
-            }
-          }
-        } catch (popErr: any) {
-          console.error(`[DealIntel] Auto-populate overview failed:`, popErr.message);
-        }
-      }).catch(err => {
-        console.error(`[DealIntel] Background processing failed for ${documentId}:`, err.message);
+      const resolveDocDeal = async () => {
+        const docRow = await db.select().from(dataRoomDocuments).where(eq(dataRoomDocuments.id, documentId));
+        if (!docRow[0]) return null;
+        const { dataRooms: dataRoomsTable, deals: dealsTable } = await import("@shared/schema");
+        const [room] = await db.select().from(dataRoomsTable).where(eq(dataRoomsTable.id, docRow[0].dataRoomId));
+        if (!room?.dealId) return null;
+        const [deal] = await db.select().from(dealsTable).where(eq(dealsTable.id, room.dealId));
+        return deal || null;
+      };
+
+      processDealDocumentIntelligence(documentId).catch(err => {
+        console.error(`[DealIntel] Background intelligence processing failed for ${documentId}:`, err instanceof Error ? err.message : "Unknown error");
       });
-    } catch (importErr: any) {
-      console.error(`[DealIntel] Failed to import deal intelligence service:`, importErr.message);
+
+      (async () => {
+        try {
+          const deal = await resolveDocDeal();
+          if (!deal) return;
+
+          try {
+            const { DealTermsService } = await import("./deal-terms-service");
+            const dealTermsService = new DealTermsService();
+            console.log(`[DealIntel] Auto-extracting deal terms for "${deal.title}"`);
+            await dealTermsService.extractFromAllDocuments(deal.id);
+          } catch (termsErr: unknown) {
+            console.error(`[DealIntel] Auto-extract deal terms failed:`, termsErr instanceof Error ? termsErr.message : "Unknown error");
+          }
+
+          if (!deal.description || !deal.dealStructure || !deal.subType || !deal.dealValue ||
+              !deal.closingTargetDate || !deal.loiDate || !deal.signingTargetDate || !deal.exclusivityExpiration) {
+            console.log(`[DealIntel] Auto-populating deal overview for "${deal.title}"`);
+            await populateDealOverview(deal.id);
+          }
+        } catch (popErr: unknown) {
+          console.error(`[DealIntel] Auto-populate overview failed:`, popErr instanceof Error ? popErr.message : "Unknown error");
+        }
+      })();
+    } catch (importErr: unknown) {
+      console.error(`[DealIntel] Failed to import deal intelligence service:`, importErr instanceof Error ? importErr.message : "Unknown error");
     }
 
     return {

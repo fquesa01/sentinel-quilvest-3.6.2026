@@ -598,6 +598,9 @@ export async function populateDealOverview(dealId: string): Promise<{
   const memo = memos[0] || null;
 
   const needsAI = !deal.description || !deal.dealStructure || !deal.subType ||
+    (!deal.dealValue && !updateData.dealValue) ||
+    (!deal.closingTargetDate && !updateData.closingTargetDate) ||
+    (!deal.loiDate && !updateData.loiDate) ||
     (!deal.signingTargetDate && !updateData.signingTargetDate) ||
     (!deal.exclusivityExpiration && !updateData.exclusivityExpiration);
 

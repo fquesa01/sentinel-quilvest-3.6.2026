@@ -448,10 +448,15 @@ export async function searchDealDocuments(
     const fallbackAnswer = await fallbackDocumentSearch(dealId, query, docs);
     if (fallbackAnswer) {
       answer = fallbackAnswer;
-    } else if (!answer) {
-      answer = docs.length > 0
-        ? "I found documents in the data room but could not generate a specific answer. The documents may still be processing. Please try again shortly."
-        : "No documents have been uploaded to this deal's data room yet. Please upload documents first.";
+    } else if (!answer || answer.trim().length < 10) {
+      const metadataAnswer = await metadataOnlySearch(dealId, query, docs);
+      if (metadataAnswer) {
+        answer = metadataAnswer;
+      } else {
+        answer = docs.length > 0
+          ? "I found documents in the data room but could not generate a specific answer. The documents may still be processing — please try again in a few minutes after OCR completes."
+          : "No documents have been uploaded to this deal's data room yet. Please upload documents to the data room first, then search.";
+      }
     }
   }
 
@@ -491,6 +496,49 @@ Provide a detailed, professional answer based on what you can find in these docu
     return result.text || null;
   } catch (err: any) {
     console.error(`[DocSearch] Fallback search failed:`, err.message);
+    return null;
+  }
+}
+
+async function metadataOnlySearch(dealId: string, query: string, docs: any[]): Promise<string | null> {
+  if (docs.length === 0) return null;
+
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
+
+    const docList = docs.map(d => {
+      const parts = [
+        `- "${d.fileName || "Unknown"}"`,
+        d.fileType ? `(${d.fileType})` : "",
+        d.documentCategory ? `[Category: ${d.documentCategory}]` : "",
+        d.ocrStatus ? `[Status: ${d.ocrStatus}]` : "",
+        d.aiSummary ? `Summary: ${(d.aiSummary as string).slice(0, 300)}` : "",
+      ].filter(Boolean);
+      return parts.join(" ");
+    }).join("\n");
+
+    const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, dealId));
+    const dealInfo = deal ? `Deal: "${deal.title}" (Type: ${deal.dealType || "unknown"})` : "";
+
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `You are a legal document analyst. The user is asking about documents in a transaction data room. The full text of documents has not been extracted yet, but here is the metadata and summaries available.
+
+${dealInfo}
+
+Documents in this data room:
+${docList}
+
+User's question: ${query}
+
+Based on the available metadata and summaries, provide the best answer you can. If the document text hasn't been fully processed yet, mention which documents likely contain the answer and suggest the user try again after processing completes.`,
+    });
+
+    const text = result.text || null;
+    return text && text.trim().length > 10 ? text : null;
+  } catch (err: unknown) {
+    console.error(`[DocSearch] Metadata search failed:`, err instanceof Error ? err.message : "Unknown error");
     return null;
   }
 }
