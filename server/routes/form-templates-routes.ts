@@ -22,7 +22,7 @@ async function extractContent(buffer: Buffer, fileName: string, mimeType: string
         const result = await mammoth.default.convertToHtml({ buffer });
         return result.value;
       } catch (err: unknown) {
-        console.error(`[FormTemplates] DOCX parse error for "${fileName}":`, err instanceof Error ? err.message : err);
+        console.error(`[FormTemplates] DOCX parse error for "${fileName}":`, err);
         return buffer.toString("utf-8");
       }
     }
@@ -35,7 +35,7 @@ async function extractContent(buffer: Buffer, fileName: string, mimeType: string
         ]);
         return parsed.text.split("\n").map((l: string) => `<p>${l}</p>`).join("\n");
       } catch (err: unknown) {
-        console.error(`[FormTemplates] PDF parse error for "${fileName}":`, err instanceof Error ? err.message : err);
+        console.error(`[FormTemplates] PDF parse error for "${fileName}":`, err);
         const rawText = buffer.toString("utf-8").trim();
         return rawText.length > 0 && !rawText.startsWith("%PDF") ? rawText : "[PDF content - could not extract text]";
       }
@@ -47,7 +47,7 @@ async function extractContent(buffer: Buffer, fileName: string, mimeType: string
     }
     return buffer.toString("utf-8");
   } catch (err: unknown) {
-    console.error(`[FormTemplates] Content extraction error for "${fileName}":`, err instanceof Error ? err.message : err);
+    console.error(`[FormTemplates] Content extraction error for "${fileName}":`, err);
     return buffer.toString("utf-8");
   }
 }
