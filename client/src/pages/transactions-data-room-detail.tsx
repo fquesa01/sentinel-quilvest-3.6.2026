@@ -340,6 +340,12 @@ export default function TransactionsDataRoomDetail() {
   
   const [highlightedDocId, setHighlightedDocId] = useState<string | null>(null);
   const documentRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const refreshTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    return () => {
+      refreshTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isFolderPanelCollapsed, setIsFolderPanelCollapsed] = useState(false);
@@ -713,9 +719,12 @@ export default function TransactionsDataRoomDetail() {
       if (room?.dealId) {
         await invalidateDealQueries(room.dealId);
         const dealId = room.dealId;
-        setTimeout(() => invalidateDealQueries(dealId), 10_000);
-        setTimeout(() => invalidateDealQueries(dealId), 30_000);
-        setTimeout(() => invalidateDealQueries(dealId), 60_000);
+        refreshTimersRef.current.forEach(clearTimeout);
+        refreshTimersRef.current = [
+          setTimeout(() => invalidateDealQueries(dealId), 10_000),
+          setTimeout(() => invalidateDealQueries(dealId), 30_000),
+          setTimeout(() => invalidateDealQueries(dealId), 60_000),
+        ];
       }
 
       if (succeeded > 0) {
