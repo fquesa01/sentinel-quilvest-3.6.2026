@@ -9,6 +9,47 @@ import { emailService } from "../services/email-service";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 const REJECTED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"]);
+const FILE_DATA_MAX_SIZE = 5 * 1024 * 1024;
+
+async function extractContent(buffer: Buffer, fileName: string, mimeType: string): Promise<string> {
+  try {
+    if (mimeType === "text/html" || mimeType === "text/plain" || fileName.endsWith(".html") || fileName.endsWith(".txt")) {
+      return buffer.toString("utf-8");
+    }
+    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
+      try {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.default.convertToHtml({ buffer });
+        return result.value;
+      } catch (err: unknown) {
+        console.error(`[FormTemplates] DOCX parse error for "${fileName}":`, err instanceof Error ? err.message : err);
+        return buffer.toString("utf-8");
+      }
+    }
+    if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
+      try {
+        const pdfParse = (await import("pdf-parse")).default;
+        const parsed = await Promise.race([
+          pdfParse(buffer),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("PDF parse timeout")), 10000)),
+        ]);
+        return parsed.text.split("\n").map((l: string) => `<p>${l}</p>`).join("\n");
+      } catch (err: unknown) {
+        console.error(`[FormTemplates] PDF parse error for "${fileName}":`, err instanceof Error ? err.message : err);
+        return "[PDF content - could not extract text]";
+      }
+    }
+    if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
+      const raw = buffer.toString("utf-8");
+      const stripped = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
+      return stripped || raw;
+    }
+    return buffer.toString("utf-8");
+  } catch (err: unknown) {
+    console.error(`[FormTemplates] Content extraction error for "${fileName}":`, err instanceof Error ? err.message : err);
+    return buffer.toString("utf-8");
+  }
+}
 
 router.get("/form-templates", isAuthenticated, async (req: any, res) => {
   try {
@@ -104,33 +145,8 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
       }
       fileSize = req.file.size;
       mimeType = req.file.mimetype;
-      fileData = req.file.buffer;
-
-      if (mimeType === "text/html" || mimeType === "text/plain" || fileName.endsWith(".html") || fileName.endsWith(".txt")) {
-        content = req.file.buffer.toString("utf-8");
-      } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
-        try {
-          const mammoth = await import("mammoth");
-          const result = await mammoth.default.convertToHtml({ buffer: req.file.buffer });
-          content = result.value;
-        } catch {
-          content = req.file.buffer.toString("utf-8");
-        }
-      } else if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
-        try {
-          const pdfParse = (await import("pdf-parse")).default;
-          const parsed = await pdfParse(req.file.buffer);
-          content = parsed.text.split("\n").map((l: string) => `<p>${l}</p>`).join("\n");
-        } catch {
-          content = "[PDF content - could not extract text]";
-        }
-      } else if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
-        const raw = req.file.buffer.toString("utf-8");
-        const stripped = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
-        content = stripped || raw;
-      } else {
-        content = req.file.buffer.toString("utf-8");
-      }
+      fileData = req.file.size <= FILE_DATA_MAX_SIZE ? req.file.buffer : null;
+      content = await extractContent(req.file.buffer, fileName, mimeType);
     } else if (req.body.content) {
       content = req.body.content;
     }
@@ -214,37 +230,11 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
       }
 
       try {
-        let content = "";
         const fileName = file.originalname;
         const fileSize = file.size;
         const mimeType = file.mimetype;
-        const fileData = file.buffer;
-
-        if (mimeType === "text/html" || mimeType === "text/plain" || fileName.endsWith(".html") || fileName.endsWith(".txt")) {
-          content = file.buffer.toString("utf-8");
-        } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
-          try {
-            const mammoth = await import("mammoth");
-            const result = await mammoth.default.convertToHtml({ buffer: file.buffer });
-            content = result.value;
-          } catch {
-            content = file.buffer.toString("utf-8");
-          }
-        } else if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
-          try {
-            const pdfParse = (await import("pdf-parse")).default;
-            const parsed = await pdfParse(file.buffer);
-            content = parsed.text.split("\n").map((l: string) => `<p>${l}</p>`).join("\n");
-          } catch {
-            content = "[PDF content - could not extract text]";
-          }
-        } else if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
-          const raw = file.buffer.toString("utf-8");
-          const stripped = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
-          content = stripped || raw;
-        } else {
-          content = file.buffer.toString("utf-8");
-        }
+        const fileData = file.size <= FILE_DATA_MAX_SIZE ? file.buffer : null;
+        const content = await extractContent(file.buffer, fileName, mimeType);
 
         const [template] = await db.insert(firmFormTemplates).values({
           name,
@@ -261,8 +251,10 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
         }).returning();
 
         results.push({ index: i, success: true, name, template });
-      } catch (err: any) {
-        results.push({ index: i, success: false, name, error: err.message });
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[FormTemplates] Bulk upload error for file "${file.originalname}" (${file.size} bytes):`, errMsg);
+        results.push({ index: i, success: false, name, error: errMsg });
       }
     }
 

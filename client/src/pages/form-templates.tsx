@@ -350,9 +350,16 @@ export default function FormTemplatesPage() {
         });
 
         if (!res.ok) {
+          let serverMsg = "Server error";
+          try {
+            const errBody = await res.json();
+            serverMsg = errBody.error || errBody.message || `Server error (${res.status})`;
+          } catch {
+            serverMsg = `Server error (${res.status})`;
+          }
           totalFailed += batch.length;
           for (const entry of batch) {
-            allFailedFiles.push({ name: entry.file.name, error: "Server error" });
+            allFailedFiles.push({ name: entry.file.name, error: serverMsg });
           }
         } else {
           const data = await res.json();
