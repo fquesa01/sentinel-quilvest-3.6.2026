@@ -8933,6 +8933,7 @@ export const generatedDocuments = pgTable("generated_documents", {
   reviewedAt: timestamp("reviewed_at"),
   reviewNotes: text("review_notes"),
   
+  notes: text("notes"),
   generatedBy: varchar("generated_by").references(() => users.id),
   generatedAt: timestamp("generated_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -13772,6 +13773,7 @@ export const closingDocuments = pgTable("closing_documents", {
   representationRole: varchar("representation_role", { length: 50 }),
   generatedFromTerms: boolean("generated_from_terms").default(false),
   currentVersion: integer("current_version").notNull().default(1),
+  notes: text("notes"),
   createdBy: varchar("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -14328,6 +14330,7 @@ export const firmFormTemplates = pgTable("firm_form_templates", {
   mimeType: varchar("mime_type", { length: 200 }),
   isDefault: boolean("is_default").default(false),
   uploadedBy: varchar("uploaded_by").references(() => users.id),
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({

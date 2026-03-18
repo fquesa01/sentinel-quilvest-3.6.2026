@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import {
@@ -68,6 +69,8 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
   const [uploadVersionType, setUploadVersionType] = useState<"draft" | "final">("draft");
   const [uploadForPlaceholder, setUploadForPlaceholder] = useState<string | null>(null);
   const [uploadPlaceholderDialogOpen, setUploadPlaceholderDialogOpen] = useState(false);
+  const [docNotes, setDocNotes] = useState("");
+  const [docNotesInitialized, setDocNotesInitialized] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const placeholderFileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -262,6 +265,30 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
     },
   });
 
+  const saveDocNotesMutation = useMutation({
+    mutationFn: async ({ notes }: { notes: string }) => {
+      const res = await apiRequest("PATCH", `/api/deals/${dealId}/closing-documents/${selectedDocId}`, { notes });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents", selectedDocId] });
+      toast({ title: "Notes saved", description: "Your notes have been saved." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error saving notes", description: err.message, variant: "destructive" });
+    },
+  });
+
+  useEffect(() => {
+    if (currentDoc && selectedDocId && currentDoc.id === selectedDocId) {
+      if (!docNotesInitialized) {
+        setDocNotes(currentDoc.notes || "");
+        setDocNotesInitialized(true);
+      }
+    }
+  }, [currentDoc, selectedDocId, docNotesInitialized]);
+
   const handleDownload = useCallback(async () => {
     try {
       const res = await fetch(`/api/deals/${dealId}/closing-documents/${selectedDocId}/download`, { credentials: "include" });
@@ -341,7 +368,7 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="ghost" size="sm" onClick={() => { setSelectedDocId(null); setIsEditing(false); setShowVersions(false); }} data-testid="button-back-to-list">
+          <Button variant="ghost" size="sm" onClick={() => { setSelectedDocId(null); setIsEditing(false); setShowVersions(false); setDocNotesInitialized(false); }} data-testid="button-back-to-list">
             <ChevronLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
@@ -549,6 +576,28 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
             </div>
           )}
         </div>
+
+        <div className="space-y-2 pt-2 border-t">
+          <Label className="text-sm font-medium">Notes</Label>
+          <Textarea
+            placeholder="Add notes about this document (context, revision reminders, usage instructions...)"
+            value={docNotes}
+            onChange={(e) => setDocNotes(e.target.value)}
+            rows={3}
+            data-testid="textarea-closing-doc-notes"
+          />
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => saveDocNotesMutation.mutate({ notes: docNotes })}
+              disabled={saveDocNotesMutation.isPending || docNotes === (currentDoc.notes || "")}
+              data-testid="button-save-closing-doc-notes"
+            >
+              {saveDocNotesMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Check className="h-4 w-4 mr-1" />}
+              Save Notes
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -644,7 +693,7 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
                 <div
                   key={doc.id}
                   className="flex items-center gap-3 p-3 rounded-md border hover-elevate cursor-pointer"
-                  onClick={() => { setSelectedDocId(doc.id); setShowVersions(false); setIsEditing(false); }}
+                  onClick={() => { setSelectedDocId(doc.id); setShowVersions(false); setIsEditing(false); setDocNotesInitialized(false); }}
                   data-testid={`closing-doc-${doc.id}`}
                 >
                   <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />

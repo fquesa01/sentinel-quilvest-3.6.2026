@@ -167,7 +167,7 @@ router.get("/api/deals/:dealId/closing-documents/:docId", isAuthenticated, async
 router.patch("/api/deals/:dealId/closing-documents/:docId", isAuthenticated, async (req: any, res) => {
   try {
     const { docId, dealId } = req.params;
-    const { content, status } = req.body;
+    const { content, status, notes } = req.body;
     const userId = req.user?.claims?.sub;
 
     const doc = await getDocForDeal(docId, dealId);
@@ -175,6 +175,13 @@ router.patch("/api/deals/:dealId/closing-documents/:docId", isAuthenticated, asy
 
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` });
+    }
+
+    if (notes !== undefined) {
+      const sanitizedNotes = typeof notes === "string" ? notes : null;
+      await db.update(schema.closingDocuments)
+        .set({ notes: sanitizedNotes, updatedAt: new Date() })
+        .where(and(eq(schema.closingDocuments.id, docId), eq(schema.closingDocuments.dealId, dealId)));
     }
 
     if (content !== undefined) {
@@ -193,6 +200,12 @@ router.patch("/api/deals/:dealId/closing-documents/:docId", isAuthenticated, asy
         .set({ status, updatedAt: new Date() })
         .where(and(eq(schema.closingDocuments.id, docId), eq(schema.closingDocuments.dealId, dealId)))
         .returning();
+      return res.json(updated);
+    }
+
+    if (notes !== undefined) {
+      const [updated] = await db.select().from(schema.closingDocuments)
+        .where(and(eq(schema.closingDocuments.id, docId), eq(schema.closingDocuments.dealId, dealId)));
       return res.json(updated);
     }
 

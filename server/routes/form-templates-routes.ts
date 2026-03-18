@@ -205,12 +205,13 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
 
 router.patch("/form-templates/:id", isAuthenticated, async (req: any, res) => {
   try {
-    const { name, description, documentType, dealType, isDefault } = req.body;
+    const { name, description, documentType, dealType, isDefault, notes } = req.body;
     const updates: any = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (documentType !== undefined) updates.documentType = documentType;
     if (dealType !== undefined) updates.dealType = dealType;
+    if (notes !== undefined) updates.notes = typeof notes === "string" ? notes : null;
     if (isDefault !== undefined) {
       updates.isDefault = isDefault;
       if (isDefault) {

@@ -125,6 +125,7 @@ export default function FormTemplatesPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState<FirmFormTemplate | null>(null);
+  const [templateNotes, setTemplateNotes] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploadForm, setUploadForm] = useState({
@@ -204,6 +205,23 @@ export default function FormTemplatesPage() {
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const saveNotesMutation = useMutation({
+    mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
+      const res = await apiRequest("PATCH", `/api/form-templates/${id}`, { notes });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] });
+      if (previewTemplate) {
+        setPreviewTemplate({ ...previewTemplate, notes: data.notes });
+      }
+      toast({ title: "Notes saved", description: "Your notes have been saved." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error saving notes", description: err.message, variant: "destructive" });
     },
   });
 
@@ -567,7 +585,7 @@ export default function FormTemplatesPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setPreviewTemplate(template)}
+                        onClick={() => { setPreviewTemplate(template); setTemplateNotes(template.notes || ""); }}
                         data-testid={`button-preview-${template.id}`}
                       >
                         <Eye className="h-4 w-4 mr-1" />
@@ -859,7 +877,10 @@ export default function FormTemplatesPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={!!previewTemplate} onOpenChange={(open) => { if (!open) setPreviewTemplate(null); }}>
+        <Dialog open={!!previewTemplate} onOpenChange={(open) => {
+          if (!open) setPreviewTemplate(null);
+          else if (previewTemplate) setTemplateNotes(previewTemplate.notes || "");
+        }}>
           <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{previewTemplate?.name}</DialogTitle>
@@ -869,6 +890,29 @@ export default function FormTemplatesPage() {
                 className="prose prose-sm dark:prose-invert max-w-none border rounded-md p-4"
                 dangerouslySetInnerHTML={{ __html: previewTemplate.content }}
               />
+            )}
+            {previewTemplate && (
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-sm font-medium">Notes</Label>
+                <Textarea
+                  placeholder="Add notes about this template (usage instructions, revision reminders, context...)"
+                  value={templateNotes}
+                  onChange={(e) => setTemplateNotes(e.target.value)}
+                  rows={3}
+                  data-testid="textarea-template-notes"
+                />
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    onClick={() => saveNotesMutation.mutate({ id: previewTemplate.id, notes: templateNotes })}
+                    disabled={saveNotesMutation.isPending || templateNotes === (previewTemplate.notes || "")}
+                    data-testid="button-save-template-notes"
+                  >
+                    {saveNotesMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Check className="h-4 w-4 mr-1" />}
+                    Save Notes
+                  </Button>
+                </div>
+              </div>
             )}
           </DialogContent>
         </Dialog>
