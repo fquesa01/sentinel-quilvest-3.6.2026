@@ -182,7 +182,7 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
     res.json(template);
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : "Unknown error";
-    console.error(`[FormTemplates] Upload error for "${req.file?.originalname || 'unknown'}" (${req.file?.size || 0} bytes):`, errMsg);
+    console.error(`[FormTemplates] Upload error for "${req.file?.originalname || 'unknown'}" (${req.file?.size || 0} bytes):`, err);
     res.status(500).json({ error: errMsg });
   }
 });
@@ -255,7 +255,7 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
         results.push({ index: i, success: true, name, template });
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : "Unknown error";
-        console.error(`[FormTemplates] Bulk upload error for file "${file.originalname}" (${file.size} bytes):`, errMsg);
+        console.error(`[FormTemplates] Bulk upload error for file "${file.originalname}" (${file.size} bytes):`, err);
         results.push({ index: i, success: false, name, error: errMsg });
       }
     }
