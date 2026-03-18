@@ -5,6 +5,7 @@ import { processPendingOCROnStartup } from "./services/ocr-service";
 import { processPendingGeminiIndexing } from "./services/transaction-search-service";
 import { seedEquityDDTemplate, seedDebtDDTemplate, seedRealEstateTemplate } from "./scripts/seed-deal-templates";
 import { seedAllREClosingTemplates } from "./scripts/seed-re-closing-templates";
+import { pool } from "./db";
 
 const app = express();
 
@@ -55,6 +56,16 @@ app.get("/api/health", (_req, res) => {
 });
 
 (async () => {
+  try {
+    await pool.query(`ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS file_data bytea`);
+    await pool.query(`ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS notes text`);
+    await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS notes text`);
+    await pool.query(`ALTER TABLE generated_documents ADD COLUMN IF NOT EXISTS notes text`);
+    console.log("[Startup] Database columns verified");
+  } catch (err) {
+    console.error("[Startup] Migration check error:", err);
+  }
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
