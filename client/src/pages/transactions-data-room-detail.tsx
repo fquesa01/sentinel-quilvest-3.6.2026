@@ -1106,72 +1106,74 @@ export default function TransactionsDataRoomDetail() {
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-h-[85vh] flex flex-col overflow-hidden">
-                  <DialogHeader>
+                  <DialogHeader className="flex-shrink-0">
                     <DialogTitle>Upload Documents</DialogTitle>
                   </DialogHeader>
-                  <div 
-                    className="py-8 text-center border-2 border-dashed rounded-lg cursor-pointer hover:border-primary transition-colors flex-shrink-0"
-                    onClick={() => document.getElementById("file-input")?.click()}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.classList.add("border-primary");
-                    }}
-                    onDragLeave={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.classList.remove("border-primary");
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.classList.remove("border-primary");
-                      const droppedFiles = Array.from(e.dataTransfer.files);
-                      setUploadFiles((prev) => [...prev, ...droppedFiles]);
-                    }}
-                  >
-                    <input
-                      id="file-input"
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => {
-                        const selectedFiles = Array.from(e.target.files || []);
-                        setUploadFiles((prev) => [...prev, ...selectedFiles]);
-                        e.target.value = "";
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
+                    <div 
+                      className="py-8 text-center border-2 border-dashed rounded-lg cursor-pointer hover:border-primary transition-colors"
+                      onClick={() => document.getElementById("file-input")?.click()}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.add("border-primary");
                       }}
-                      data-testid="input-file-upload"
-                    />
-                    <FileUp className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">
-                      Drag and drop files here or click to browse
-                    </p>
-                    {selectedFolder && (
-                      <p className="text-sm text-primary mt-2">
-                        Uploading to: {selectedFolder.name}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove("border-primary");
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove("border-primary");
+                        const droppedFiles = Array.from(e.dataTransfer.files);
+                        setUploadFiles((prev) => [...prev, ...droppedFiles]);
+                      }}
+                    >
+                      <input
+                        id="file-input"
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const selectedFiles = Array.from(e.target.files || []);
+                          setUploadFiles((prev) => [...prev, ...selectedFiles]);
+                          e.target.value = "";
+                        }}
+                        data-testid="input-file-upload"
+                      />
+                      <FileUp className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">
+                        Drag and drop files here or click to browse
                       </p>
+                      {selectedFolder && (
+                        <p className="text-sm text-primary mt-2">
+                          Uploading to: {selectedFolder.name}
+                        </p>
+                      )}
+                    </div>
+                    {uploadFiles.length > 0 && (
+                      <div className="max-h-48 overflow-y-auto space-y-2">
+                        {uploadFiles.map((file, index) => (
+                          <div key={index} className="flex items-center justify-between gap-2 p-2 bg-muted rounded-md">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="h-4 w-4 flex-shrink-0" />
+                              <span className="text-sm truncate">{file.name}</span>
+                              <span className="text-xs text-muted-foreground flex-shrink-0">
+                                ({(file.size / 1024).toFixed(1)} KB)
+                              </span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 flex-shrink-0"
+                              onClick={() => setUploadFiles(uploadFiles.filter((_, i) => i !== index))}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  {uploadFiles.length > 0 && (
-                    <div className="min-h-0 max-h-48 overflow-y-auto space-y-2">
-                      {uploadFiles.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between gap-2 p-2 bg-muted rounded-md">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FileText className="h-4 w-4 flex-shrink-0" />
-                            <span className="text-sm truncate">{file.name}</span>
-                            <span className="text-xs text-muted-foreground flex-shrink-0">
-                              ({(file.size / 1024).toFixed(1)} KB)
-                            </span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 flex-shrink-0"
-                            onClick={() => setUploadFiles(uploadFiles.filter((_, i) => i !== index))}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                   <div className="flex justify-end gap-2 flex-shrink-0">
                     <Button variant="outline" onClick={() => { setIsUploadOpen(false); setUploadFiles([]); }}>
                       Cancel
