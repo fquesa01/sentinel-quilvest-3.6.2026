@@ -431,11 +431,16 @@ export default function UploadDocuments() {
                 data-testid="input-file"
               />
               <input
-                ref={folderInputRef}
+                ref={(el) => {
+                  (folderInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                  if (el) {
+                    el.setAttribute("webkitdirectory", "");
+                    el.setAttribute("directory", "");
+                  }
+                }}
                 type="file"
                 multiple
                 className="hidden"
-                {...({ webkitdirectory: "", directory: "" } as any)}
                 onChange={handleFileSelect}
                 data-testid="input-folder"
               />

@@ -449,11 +449,16 @@ export default function BulkIntake() {
                   data-testid="input-file-upload"
                 />
                 <input
-                  ref={folderInputRef}
+                  ref={(el) => {
+                    (folderInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+                    if (el) {
+                      el.setAttribute("webkitdirectory", "");
+                      el.setAttribute("directory", "");
+                    }
+                  }}
                   type="file"
                   multiple
                   className="hidden"
-                  {...({ webkitdirectory: "", directory: "" } as any)}
                   onChange={(e) => {
                     if (e.target.files) handleFileSelect(e.target.files);
                     e.target.value = "";
