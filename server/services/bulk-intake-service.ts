@@ -352,7 +352,7 @@ Respond ONLY with valid JSON (no markdown, no code fences):
         await db
           .update(bulkIntakeDocuments)
           .set({ assignedCluster: cluster.clusterId })
-          .where(eq(bulkIntakeDocuments.id, docId));
+          .where(and(eq(bulkIntakeDocuments.id, docId), eq(bulkIntakeDocuments.sessionId, sessionId)));
       }
     }
 
