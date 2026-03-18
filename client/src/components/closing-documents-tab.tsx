@@ -656,7 +656,7 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
                   </div>
                   {notarizationTypes.has(doc.documentType) && (
                     <Link
-                      href="/ron/transactions/create"
+                      href={`/ron/transactions/create?dealId=${dealId}`}
                       onClick={(e: React.MouseEvent) => e.stopPropagation()}
                       data-testid={`link-notarize-${doc.id}`}
                     >
@@ -733,6 +733,12 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
                       <Badge variant="secondary" className="flex-shrink-0 text-muted-foreground">
                         Not Generated
                       </Badge>
+                      {et.requiresNotarization && (
+                        <Badge variant="outline" className="flex-shrink-0 border-amber-500 text-amber-600 dark:text-amber-400 gap-1">
+                          <Stamp className="h-3 w-3" />
+                          Requires Notarization
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>

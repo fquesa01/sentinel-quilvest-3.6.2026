@@ -93,10 +93,13 @@ export default function RonCreateTransaction() {
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(0);
 
+  const urlParams = new URLSearchParams(window.location.search);
+  const prefillDealId = urlParams.get("dealId") || "";
+
   const [form, setForm] = useState({
     title: "",
     transactionType: "general_notarization",
-    dealId: "",
+    dealId: prefillDealId,
     jurisdiction: "FL",
     notes: "",
     signingOrderMode: "parallel" as "parallel" | "sequential",
