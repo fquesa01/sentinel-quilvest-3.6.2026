@@ -307,6 +307,24 @@ export default function BulkIntake() {
     setEditingTitle(null);
   };
 
+  const handleCreateGroup = () => {
+    if (!editableClusters) return;
+    const newId = `cluster_new_${Date.now()}`;
+    const newCluster: ClusterGroup = {
+      clusterId: newId,
+      suggestedTitle: `New Deal Group ${editableClusters.clusters.length + 1}`,
+      suggestedDealType: "Other",
+      reasoning: "Manually created group",
+      documentIds: [],
+    };
+    setEditableClusters({
+      ...editableClusters,
+      clusters: [...editableClusters.clusters, newCluster],
+    });
+    setExpandedClusters((prev) => new Set([...prev, newId]));
+    setEditingTitle(newId);
+  };
+
   const saveClustering = useMutation({
     mutationFn: async () => {
       if (!sessionId || !editableClusters) return;
@@ -544,15 +562,26 @@ export default function BulkIntake() {
                     Drag documents between groups or remove groups as needed. Click a deal title to rename it.
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => saveClustering.mutate()}
-                  disabled={saveClustering.isPending}
-                  data-testid="button-save-clusters"
-                >
-                  {saveClustering.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Changes"}
-                </Button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCreateGroup}
+                    data-testid="button-create-group"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 mr-1" />
+                    New Group
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => saveClustering.mutate()}
+                    disabled={saveClustering.isPending}
+                    data-testid="button-save-clusters"
+                  >
+                    {saveClustering.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Changes"}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

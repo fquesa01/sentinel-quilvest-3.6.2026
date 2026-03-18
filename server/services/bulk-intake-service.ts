@@ -533,6 +533,39 @@ export async function confirmAndCreateDeals(sessionId: string, userId: string) {
       console.log(
         `[BulkIntake] Created deal "${cluster.suggestedTitle}" with ${clusterDocs.length} documents`
       );
+
+      (async () => {
+        try {
+          const { processDealDocumentIntelligence, populateDealOverview } = await import("./deal-intelligence-service");
+          const { DealTermsService } = await import("./deal-terms-service");
+
+          const createdDocs = await db
+            .select()
+            .from(dataRoomDocuments)
+            .where(eq(dataRoomDocuments.dataRoomId, newDataRoom.id));
+
+          for (const doc of createdDocs) {
+            if (doc.extractedText && doc.extractedText.length > 50) {
+              processDealDocumentIntelligence(doc.id).catch((err) => {
+                console.error(`[BulkIntake] Intelligence processing failed for ${doc.fileName}:`, err instanceof Error ? err.message : "Unknown error");
+              });
+            }
+          }
+
+          try {
+            const dealTermsService = new DealTermsService();
+            console.log(`[BulkIntake] Auto-extracting deal terms for "${cluster.suggestedTitle}"`);
+            await dealTermsService.extractFromAllDocuments(newDeal.id);
+          } catch (termsErr: unknown) {
+            console.error(`[BulkIntake] Deal terms extraction failed for "${cluster.suggestedTitle}":`, termsErr instanceof Error ? termsErr.message : "Unknown error");
+          }
+
+          console.log(`[BulkIntake] Auto-populating deal overview for "${cluster.suggestedTitle}"`);
+          await populateDealOverview(newDeal.id);
+        } catch (pipelineErr: unknown) {
+          console.error(`[BulkIntake] Pipeline failed for deal "${cluster.suggestedTitle}":`, pipelineErr instanceof Error ? pipelineErr.message : "Unknown error");
+        }
+      })();
     }
 
     await db
