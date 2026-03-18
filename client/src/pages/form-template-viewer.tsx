@@ -169,6 +169,8 @@ export default function FormTemplateViewerPage() {
   const hasExtractedContent = !!template.content;
   const isPdf = isPdfMime(template.mimeType, template.fileName);
   const isWord = isWordMime(template.mimeType, template.fileName);
+  const fn = template.fileName?.toLowerCase() ?? "";
+  const isPlainText = template.mimeType === "text/plain" || fn.endsWith(".txt") || fn.endsWith(".rtf");
 
   return (
     <div className="h-full flex flex-col" data-testid="template-viewer">
@@ -248,17 +250,26 @@ export default function FormTemplateViewerPage() {
                   <span>Showing converted document content. Download the original file for full formatting.</span>
                 </div>
               )}
-              <article
-                className="prose prose-lg dark:prose-invert max-w-none
-                  prose-headings:font-semibold prose-headings:text-foreground
-                  prose-p:leading-relaxed prose-p:text-foreground/90
-                  prose-table:border prose-table:border-border
-                  prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2 prose-th:bg-muted
-                  prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2
-                  prose-li:text-foreground/90"
-                dangerouslySetInnerHTML={{ __html: sanitizedContent }}
-                data-testid="content-document-viewer"
-              />
+              {isPlainText ? (
+                <pre
+                  className="whitespace-pre-wrap break-words font-sans text-base leading-relaxed text-foreground/90"
+                  data-testid="content-document-viewer"
+                >
+                  {template.content}
+                </pre>
+              ) : (
+                <article
+                  className="prose prose-lg dark:prose-invert max-w-none
+                    prose-headings:font-semibold prose-headings:text-foreground
+                    prose-p:leading-relaxed prose-p:text-foreground/90
+                    prose-table:border prose-table:border-border
+                    prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2 prose-th:bg-muted
+                    prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2
+                    prose-li:text-foreground/90"
+                  dangerouslySetInnerHTML={{ __html: sanitizedContent }}
+                  data-testid="content-document-viewer"
+                />
+              )}
             </div>
           </div>
         ) : (
