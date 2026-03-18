@@ -1164,11 +1164,12 @@ export default function TransactionsDealDetail() {
                 <SelectItem value="research">Research</SelectItem>
                 <SelectItem value="closing-docs">Closing Docs</SelectItem>
                 <SelectItem value="closing">Closing</SelectItem>
+                <SelectItem value="condo-summary">Condo Summary</SelectItem>
                 <SelectItem value="reports">Reports</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <TabsList className="hidden md:inline-flex flex-wrap h-auto gap-1">
+          <TabsList className="hidden md:flex flex-wrap h-auto gap-1">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
             <TabsTrigger value="terms" data-testid="tab-terms">Deal Terms</TabsTrigger>
             <TabsTrigger value="parties" data-testid="tab-parties">Parties</TabsTrigger>
