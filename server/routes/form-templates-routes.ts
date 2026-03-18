@@ -8,6 +8,7 @@ import { emailService } from "../services/email-service";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const REJECTED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"]);
 
 router.get("/form-templates", isAuthenticated, async (req: any, res) => {
   try {
@@ -96,6 +97,11 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
 
     if (req.file) {
       fileName = req.file.originalname;
+      const dotIdx = fileName.lastIndexOf(".");
+      const ext = dotIdx > 0 ? fileName.slice(dotIdx).toLowerCase() : "";
+      if (REJECTED_EXTENSIONS.has(ext)) {
+        return res.status(400).json({ error: `Unsupported file type: ${ext}. Image, video, and archive files are not supported.` });
+      }
       fileSize = req.file.size;
       mimeType = req.file.mimetype;
       fileData = req.file.buffer;
@@ -202,8 +208,7 @@ router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), 
 
       const dotIndex = file.originalname.lastIndexOf(".");
       const ext = dotIndex > 0 ? file.originalname.slice(dotIndex).toLowerCase() : "";
-      const REJECTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"];
-      if (REJECTED_EXTENSIONS.includes(ext)) {
+      if (REJECTED_EXTENSIONS.has(ext)) {
         results.push({ index: i, success: false, name, error: `Unsupported file type: ${ext}` });
         continue;
       }
