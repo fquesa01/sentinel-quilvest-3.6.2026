@@ -95,8 +95,7 @@ router.post("/api/deals/:dealId/closing-documents/upload-new", isAuthenticated, 
     const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, dealId));
     if (!deal) return res.status(404).json({ error: "Deal not found" });
 
-    const expectedTypes = getDocumentTypesForDeal(deal.dealType || "", deal.representationRole || null);
-    const validTypes = expectedTypes.map(et => et.documentType);
+    const validTypes = getDocumentTypesForDeal(deal.dealType || "", deal.representationRole || null);
     if (!validTypes.includes(documentType)) {
       return res.status(400).json({ error: "Invalid document type for this deal" });
     }
