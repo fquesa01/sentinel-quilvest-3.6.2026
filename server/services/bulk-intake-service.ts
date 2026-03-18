@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   bulkIntakeSessions,
   bulkIntakeDocuments,
@@ -378,20 +378,29 @@ Respond ONLY with valid JSON (no markdown, no code fences):
 }
 
 export async function updateClustering(sessionId: string, clusters: ClusteringResult) {
+  const sessionDocs = await db
+    .select({ id: bulkIntakeDocuments.id })
+    .from(bulkIntakeDocuments)
+    .where(eq(bulkIntakeDocuments.sessionId, sessionId));
+  const validDocIds = new Set(sessionDocs.map((d) => d.id));
+
   for (const cluster of clusters.clusters) {
+    cluster.documentIds = cluster.documentIds.filter((id) => validDocIds.has(id));
     for (const docId of cluster.documentIds) {
       await db
         .update(bulkIntakeDocuments)
         .set({ assignedCluster: cluster.clusterId })
-        .where(eq(bulkIntakeDocuments.id, docId));
+        .where(and(eq(bulkIntakeDocuments.id, docId), eq(bulkIntakeDocuments.sessionId, sessionId)));
     }
   }
 
-  for (const docId of clusters.unclustered || []) {
+  const clusteredIds = new Set(clusters.clusters.flatMap((c) => c.documentIds));
+  clusters.unclustered = (clusters.unclustered || []).filter((id) => validDocIds.has(id));
+  for (const docId of clusters.unclustered) {
     await db
       .update(bulkIntakeDocuments)
       .set({ assignedCluster: null })
-      .where(eq(bulkIntakeDocuments.id, docId));
+      .where(and(eq(bulkIntakeDocuments.id, docId), eq(bulkIntakeDocuments.sessionId, sessionId)));
   }
 
   await db
@@ -481,15 +490,17 @@ export async function confirmAndCreateDeals(sessionId: string, userId: string) {
         })
         .returning();
 
-      const clusterDocs = await db
-        .select()
-        .from(bulkIntakeDocuments)
-        .where(
-          and(
-            eq(bulkIntakeDocuments.sessionId, sessionId),
-            eq(bulkIntakeDocuments.assignedCluster, cluster.clusterId)
-          )
-        );
+      const clusterDocs = cluster.documentIds.length > 0
+        ? await db
+            .select()
+            .from(bulkIntakeDocuments)
+            .where(
+              and(
+                eq(bulkIntakeDocuments.sessionId, sessionId),
+                inArray(bulkIntakeDocuments.id, cluster.documentIds)
+              )
+            )
+        : [];
 
       for (const doc of clusterDocs) {
         let newStoragePath = doc.storageKey;
