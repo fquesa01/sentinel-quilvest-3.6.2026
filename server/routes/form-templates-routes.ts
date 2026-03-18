@@ -36,7 +36,8 @@ async function extractContent(buffer: Buffer, fileName: string, mimeType: string
         return parsed.text.split("\n").map((l: string) => `<p>${l}</p>`).join("\n");
       } catch (err: unknown) {
         console.error(`[FormTemplates] PDF parse error for "${fileName}":`, err instanceof Error ? err.message : err);
-        return "[PDF content - could not extract text]";
+        const rawText = buffer.toString("utf-8").trim();
+        return rawText.length > 0 && !rawText.startsWith("%PDF") ? rawText : "[PDF content - could not extract text]";
       }
     }
     if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
@@ -179,9 +180,10 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
 
     console.log(`[FormTemplates] Uploaded template "${name}" (${documentType}) by user ${req.user?.id}`);
     res.json(template);
-  } catch (err: any) {
-    console.error("[FormTemplates] Upload error:", err.message);
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[FormTemplates] Upload error for "${req.file?.originalname || 'unknown'}" (${req.file?.size || 0} bytes):`, errMsg);
+    res.status(500).json({ error: errMsg });
   }
 });
 
