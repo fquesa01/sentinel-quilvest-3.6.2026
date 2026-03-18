@@ -96,6 +96,107 @@ router.post("/form-templates", isAuthenticated, upload.single("file"), async (re
   }
 });
 
+const ALLOWED_EXTENSIONS = [".docx", ".doc", ".pdf", ".html", ".txt"];
+const ALLOWED_DOC_TYPES = new Set([
+  "closing_disclosure", "deed", "bill_of_sale", "settlement_statement",
+  "title_affidavit", "transfer_tax_declaration", "buyers_closing_certificate",
+  "sellers_closing_certificate", "sellers_affidavit", "promissory_note",
+  "mortgage", "security_agreement", "ucc_financing_statement", "loan_agreement",
+  "guaranty_agreement", "borrowers_certificate", "lenders_closing_certificate",
+  "purchase_agreement", "assignment_agreement", "operating_agreement",
+  "escrow_agreement", "power_of_attorney", "affidavit_of_title", "other",
+]);
+
+router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), async (req: any, res) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files provided" });
+    }
+
+    let names: string[];
+    let documentTypes: string[];
+    try {
+      names = JSON.parse(req.body.names || "[]");
+      documentTypes = JSON.parse(req.body.documentTypes || "[]");
+      if (!Array.isArray(names) || !Array.isArray(documentTypes)) {
+        return res.status(400).json({ error: "names and documentTypes must be JSON arrays" });
+      }
+    } catch {
+      return res.status(400).json({ error: "Invalid JSON in names or documentTypes" });
+    }
+
+    const results: { index: number; success: boolean; name: string; error?: string; template?: any }[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const name = (names[i] || file.originalname.replace(/\.[^.]+$/, "")).slice(0, 500);
+      const rawDocType = documentTypes[i] || "other";
+      const documentType = ALLOWED_DOC_TYPES.has(rawDocType) ? rawDocType : "other";
+
+      const ext = "." + file.originalname.split(".").pop()?.toLowerCase();
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        results.push({ index: i, success: false, name, error: `Unsupported file type: ${ext}` });
+        continue;
+      }
+
+      try {
+        let content = "";
+        const fileName = file.originalname;
+        const fileSize = file.size;
+        const mimeType = file.mimetype;
+
+        if (mimeType === "text/html" || mimeType === "text/plain" || fileName.endsWith(".html") || fileName.endsWith(".txt")) {
+          content = file.buffer.toString("utf-8");
+        } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
+          try {
+            const mammoth = await import("mammoth");
+            const result = await mammoth.default.convertToHtml({ buffer: file.buffer });
+            content = result.value;
+          } catch {
+            content = file.buffer.toString("utf-8");
+          }
+        } else if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
+          try {
+            const pdfParse = (await import("pdf-parse")).default;
+            const parsed = await pdfParse(file.buffer);
+            content = parsed.text.split("\n").map((l: string) => `<p>${l}</p>`).join("\n");
+          } catch {
+            content = "[PDF content - could not extract text]";
+          }
+        } else {
+          content = file.buffer.toString("utf-8");
+        }
+
+        const [template] = await db.insert(firmFormTemplates).values({
+          name,
+          description: null,
+          documentType,
+          dealType: null,
+          content,
+          fileName,
+          fileSize,
+          mimeType,
+          isDefault: false,
+          uploadedBy: req.user?.id || null,
+        }).returning();
+
+        results.push({ index: i, success: true, name, template });
+      } catch (err: any) {
+        results.push({ index: i, success: false, name, error: err.message });
+      }
+    }
+
+    const succeeded = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+    console.log(`[FormTemplates] Bulk upload: ${succeeded} succeeded, ${failed} failed, by user ${req.user?.id}`);
+    res.json({ results, succeeded, failed, total: files.length });
+  } catch (err: any) {
+    console.error("[FormTemplates] Bulk upload error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch("/form-templates/:id", isAuthenticated, async (req: any, res) => {
   try {
     const { name, description, documentType, dealType, isDefault } = req.body;

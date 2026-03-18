@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,11 +18,15 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileStack, Upload, Search, Trash2, Star, FileText, Eye,
-  Loader2, ArrowLeft, Plus,
+  Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { FirmFormTemplate } from "@shared/schema";
@@ -68,6 +72,53 @@ const DEAL_TYPES = [
   { value: "merger", label: "Merger" },
 ];
 
+const SUPPORTED_EXTENSIONS = [".docx", ".doc", ".pdf", ".html", ".txt"];
+
+interface BulkFileEntry {
+  id: string;
+  file: File;
+  name: string;
+  documentType: string;
+}
+
+function guessDocumentType(filename: string): string {
+  const lower = filename.toLowerCase();
+  const keywords: [string[], string][] = [
+    [["closing disclosure", "closing_disclosure", "cd_"], "closing_disclosure"],
+    [["deed"], "deed"],
+    [["bill of sale", "bill_of_sale", "bos"], "bill_of_sale"],
+    [["settlement", "hud"], "settlement_statement"],
+    [["title affidavit", "title_affidavit"], "title_affidavit"],
+    [["transfer tax", "transfer_tax"], "transfer_tax_declaration"],
+    [["buyer", "buyers", "buyer's"], "buyers_closing_certificate"],
+    [["seller", "sellers", "seller's"], "sellers_closing_certificate"],
+    [["promissory", "note"], "promissory_note"],
+    [["mortgage"], "mortgage"],
+    [["security agreement", "security_agreement"], "security_agreement"],
+    [["ucc", "financing statement"], "ucc_financing_statement"],
+    [["loan agreement", "loan_agreement"], "loan_agreement"],
+    [["guaranty"], "guaranty_agreement"],
+    [["borrower"], "borrowers_certificate"],
+    [["lender"], "lenders_closing_certificate"],
+    [["purchase agreement", "purchase_agreement", "psa"], "purchase_agreement"],
+    [["assignment"], "assignment_agreement"],
+    [["operating agreement", "operating_agreement"], "operating_agreement"],
+    [["escrow"], "escrow_agreement"],
+    [["power of attorney", "power_of_attorney", "poa"], "power_of_attorney"],
+    [["affidavit of title", "affidavit_of_title"], "affidavit_of_title"],
+  ];
+
+  for (const [keys, type] of keywords) {
+    if (keys.some(k => lower.includes(k))) return type;
+  }
+  return "other";
+}
+
+function isSupportedFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return SUPPORTED_EXTENSIONS.some(ext => name.endsWith(ext));
+}
+
 export default function FormTemplatesPage() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -84,6 +135,22 @@ export default function FormTemplatesPage() {
     isDefault: false,
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkFiles, setBulkFiles] = useState<BulkFileEntry[]>([]);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
+  const [bulkResult, setBulkResult] = useState<{ succeeded: number; failed: number; total: number } | null>(null);
+
+  const multiFileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (folderInputRef.current) {
+      folderInputRef.current.setAttribute("webkitdirectory", "");
+      folderInputRef.current.setAttribute("directory", "");
+    }
+  }, []);
 
   const { data: templates = [], isLoading } = useQuery<FirmFormTemplate[]>({
     queryKey: ["/api/form-templates"],
@@ -163,6 +230,109 @@ export default function FormTemplatesPage() {
     uploadMutation.mutate(formData);
   };
 
+  const handleFilesSelected = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    const entries: BulkFileEntry[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!isSupportedFile(file)) continue;
+      const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ").replace(/\s+/g, " ").trim();
+      entries.push({
+        id: `${Date.now()}-${i}`,
+        file,
+        name: baseName,
+        documentType: guessDocumentType(file.name),
+      });
+    }
+
+    if (entries.length === 0) {
+      toast({
+        title: "No supported files",
+        description: "No .docx, .doc, .pdf, .html, or .txt files were found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBulkFiles(entries);
+    setBulkResult(null);
+    setBulkProgress({ current: 0, total: 0 });
+    setIsBulkOpen(true);
+  }, [toast]);
+
+  const removeBulkFile = (id: string) => {
+    setBulkFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const updateBulkFile = (id: string, field: "name" | "documentType", value: string) => {
+    setBulkFiles(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f));
+  };
+
+  const handleBulkUpload = async () => {
+    if (bulkFiles.length === 0) return;
+
+    setBulkUploading(true);
+    setBulkResult(null);
+    const total = bulkFiles.length;
+    setBulkProgress({ current: 0, total });
+
+    const BATCH_SIZE = 10;
+    let totalSucceeded = 0;
+    let totalFailed = 0;
+    let processed = 0;
+
+    for (let batchStart = 0; batchStart < bulkFiles.length; batchStart += BATCH_SIZE) {
+      const batch = bulkFiles.slice(batchStart, batchStart + BATCH_SIZE);
+      const formData = new FormData();
+
+      const names: string[] = [];
+      const documentTypes: string[] = [];
+
+      for (const entry of batch) {
+        formData.append("files", entry.file);
+        names.push(entry.name);
+        documentTypes.push(entry.documentType);
+      }
+
+      formData.append("names", JSON.stringify(names));
+      formData.append("documentTypes", JSON.stringify(documentTypes));
+
+      try {
+        const res = await fetch("/api/form-templates/bulk", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+
+        if (!res.ok) {
+          totalFailed += batch.length;
+        } else {
+          const data = await res.json();
+          totalSucceeded += data.succeeded || 0;
+          totalFailed += data.failed || 0;
+        }
+      } catch {
+        totalFailed += batch.length;
+      }
+
+      processed += batch.length;
+      setBulkProgress({ current: processed, total });
+    }
+
+    setBulkUploading(false);
+    setBulkResult({ succeeded: totalSucceeded, failed: totalFailed, total });
+    queryClient.invalidateQueries({ queryKey: ["/api/form-templates"] });
+  };
+
+  const closeBulkDialog = () => {
+    if (bulkUploading) return;
+    setIsBulkOpen(false);
+    setBulkFiles([]);
+    setBulkResult(null);
+    setBulkProgress({ current: 0, total: 0 });
+  };
+
   const filteredTemplates = templates.filter((t) => {
     const matchesSearch = !searchQuery ||
       t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -218,11 +388,64 @@ export default function FormTemplatesPage() {
               </p>
             </div>
           </div>
-          <Button onClick={() => setIsUploadOpen(true)} data-testid="button-upload-template">
-            <Plus className="h-4 w-4 mr-2" />
-            Upload Template
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button data-testid="button-upload-template">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Upload Template
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => setIsUploadOpen(true)}
+                  data-testid="menu-item-single-upload"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Single Upload
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => multiFileInputRef.current?.click()}
+                  data-testid="menu-item-upload-files"
+                >
+                  <Files className="h-4 w-4 mr-2" />
+                  Upload Files
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => folderInputRef.current?.click()}
+                  data-testid="menu-item-upload-folder"
+                >
+                  <FolderOpen className="h-4 w-4 mr-2" />
+                  Upload Folder
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+
+        <input
+          ref={multiFileInputRef}
+          type="file"
+          multiple
+          accept=".docx,.doc,.pdf,.html,.txt"
+          className="hidden"
+          onChange={(e) => {
+            handleFilesSelected(e.target.files);
+            e.target.value = "";
+          }}
+          data-testid="input-multi-file-upload"
+        />
+        <input
+          ref={folderInputRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            handleFilesSelected(e.target.files);
+            e.target.value = "";
+          }}
+          data-testid="input-folder-upload"
+        />
 
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[200px] max-w-md">
@@ -262,10 +485,16 @@ export default function FormTemplatesPage() {
                 }
               </p>
               {templates.length === 0 && (
-                <Button onClick={() => setIsUploadOpen(true)} data-testid="button-upload-first-template">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload Your First Template
-                </Button>
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <Button onClick={() => setIsUploadOpen(true)} data-testid="button-upload-first-template">
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Your First Template
+                  </Button>
+                  <Button variant="outline" onClick={() => multiFileInputRef.current?.click()} data-testid="button-bulk-upload-first">
+                    <Files className="h-4 w-4 mr-2" />
+                    Bulk Upload
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -485,6 +714,123 @@ export default function FormTemplatesPage() {
                 {uploadMutation.isPending ? "Uploading..." : "Upload Template"}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isBulkOpen} onOpenChange={(open) => { if (!open) closeBulkDialog(); }}>
+          <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>
+                {bulkResult ? "Upload Complete" : `Bulk Upload - ${bulkFiles.length} file${bulkFiles.length !== 1 ? "s" : ""}`}
+              </DialogTitle>
+            </DialogHeader>
+
+            {bulkResult ? (
+              <div className="space-y-4 py-4">
+                <div className="flex items-center justify-center gap-3">
+                  {bulkResult.failed === 0 ? (
+                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                      <Check className="h-8 w-8" />
+                      <div>
+                        <p className="text-lg font-semibold" data-testid="text-bulk-success">
+                          All {bulkResult.succeeded} templates uploaded successfully
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-6 w-6 text-amber-500" />
+                        <p className="font-semibold" data-testid="text-bulk-partial">Upload completed with some issues</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {bulkResult.succeeded} of {bulkResult.total} files uploaded successfully.
+                        {bulkResult.failed} failed.
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button onClick={closeBulkDialog} data-testid="button-bulk-done">Done</Button>
+                </DialogFooter>
+              </div>
+            ) : bulkUploading ? (
+              <div className="space-y-4 py-8">
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <p className="font-medium" data-testid="text-bulk-progress">
+                    Uploading {bulkProgress.current} of {bulkProgress.total}...
+                  </p>
+                </div>
+                <Progress
+                  value={bulkProgress.total > 0 ? (bulkProgress.current / bulkProgress.total) * 100 : 0}
+                  className="h-2"
+                  data-testid="progress-bulk-upload"
+                />
+                <p className="text-xs text-center text-muted-foreground">
+                  Please don't close this dialog while uploading
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 overflow-auto min-h-0 space-y-2 pr-1">
+                  {bulkFiles.map((entry, index) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center gap-2 p-3 border rounded-md"
+                      data-testid={`bulk-file-row-${index}`}
+                    >
+                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <Input
+                          value={entry.name}
+                          onChange={(e) => updateBulkFile(entry.id, "name", e.target.value)}
+                          className="h-8 text-sm"
+                          data-testid={`input-bulk-name-${index}`}
+                        />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Select
+                            value={entry.documentType}
+                            onValueChange={(v) => updateBulkFile(entry.id, "documentType", v)}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-[180px]" data-testid={`select-bulk-type-${index}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {DOCUMENT_TYPES.map(dt => (
+                                <SelectItem key={dt.value} value={dt.value}>{dt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <span className="text-xs text-muted-foreground truncate" title={entry.file.name}>
+                            {entry.file.name} ({formatFileSize(entry.file.size)})
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeBulkFile(entry.id)}
+                        data-testid={`button-remove-bulk-${index}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter className="gap-2">
+                  <Button variant="outline" onClick={closeBulkDialog}>Cancel</Button>
+                  <Button
+                    onClick={handleBulkUpload}
+                    disabled={bulkFiles.length === 0}
+                    data-testid="button-bulk-upload-all"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload All ({bulkFiles.length})
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
           </DialogContent>
         </Dialog>
 
