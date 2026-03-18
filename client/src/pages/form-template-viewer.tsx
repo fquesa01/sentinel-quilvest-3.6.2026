@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useParams, useLocation } from "wouter";
@@ -52,18 +52,18 @@ function formatFileSize(bytes: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function isPdfFile(template: TemplateWithMeta): boolean {
+function isPdfMime(mimeType: string | null, fileName: string | null): boolean {
   return (
-    template.mimeType === "application/pdf" ||
-    (template.fileName?.toLowerCase().endsWith(".pdf") ?? false)
+    mimeType === "application/pdf" ||
+    (fileName?.toLowerCase().endsWith(".pdf") ?? false)
   );
 }
 
-function isWordFile(template: TemplateWithMeta): boolean {
-  const fn = template.fileName?.toLowerCase() ?? "";
+function isWordMime(mimeType: string | null, fileName: string | null): boolean {
+  const fn = fileName?.toLowerCase() ?? "";
   return (
-    template.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    template.mimeType === "application/msword" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mimeType === "application/msword" ||
     fn.endsWith(".docx") ||
     fn.endsWith(".doc")
   );
@@ -75,17 +75,17 @@ export default function FormTemplateViewerPage() {
   const { toast } = useToast();
   const [shareOpen, setShareOpen] = useState(false);
   const [templateNotes, setTemplateNotes] = useState("");
-  const [notesInitialized, setNotesInitialized] = useState(false);
 
   const { data: template, isLoading, error } = useQuery<TemplateWithMeta>({
     queryKey: ["/api/form-templates", params.id],
     enabled: !!params.id,
   });
 
-  if (template && !notesInitialized) {
-    setTemplateNotes(template.notes || "");
-    setNotesInitialized(true);
-  }
+  useEffect(() => {
+    if (template) {
+      setTemplateNotes(template.notes || "");
+    }
+  }, [template?.id]);
 
   const saveNotesMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
@@ -101,6 +101,25 @@ export default function FormTemplateViewerPage() {
       toast({ title: "Error saving notes", description: err.message, variant: "destructive" });
     },
   });
+
+  const sanitizedContent = useMemo(() => {
+    if (!template?.content) return "";
+    return DOMPurify.sanitize(template.content, {
+      ALLOWED_TAGS: [
+        "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr",
+        "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
+        "strong", "b", "em", "i", "u", "s", "del", "ins", "sub", "sup",
+        "blockquote", "pre", "code", "a", "span", "div", "section", "article",
+        "dl", "dt", "dd", "abbr", "cite", "q", "small", "mark", "figure", "figcaption",
+        "caption", "col", "colgroup",
+      ],
+      ALLOWED_ATTR: [
+        "href", "title", "class", "id", "colspan", "rowspan", "scope",
+        "style", "align", "valign", "width", "height", "target", "rel",
+      ],
+      ALLOW_DATA_ATTR: false,
+    });
+  }, [template?.content]);
 
   if (isLoading) {
     return (
@@ -146,27 +165,10 @@ export default function FormTemplateViewerPage() {
   const docTypeLabel = DOCUMENT_TYPES[template.documentType] ||
     template.documentType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 
-  const canRenderNativePdf = isPdfFile(template) && template.hasFileData;
+  const canRenderNativePdf = isPdfMime(template.mimeType, template.fileName) && template.hasFileData;
   const hasExtractedContent = !!template.content;
-
-  const sanitizedContent = useMemo(() => {
-    if (!template.content) return "";
-    return DOMPurify.sanitize(template.content, {
-      ALLOWED_TAGS: [
-        "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr",
-        "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
-        "strong", "b", "em", "i", "u", "s", "del", "ins", "sub", "sup",
-        "blockquote", "pre", "code", "a", "span", "div", "section", "article",
-        "dl", "dt", "dd", "abbr", "cite", "q", "small", "mark", "figure", "figcaption",
-        "caption", "col", "colgroup",
-      ],
-      ALLOWED_ATTR: [
-        "href", "title", "class", "id", "colspan", "rowspan", "scope",
-        "style", "align", "valign", "width", "height", "target", "rel",
-      ],
-      ALLOW_DATA_ATTR: false,
-    });
-  }, [template.content]);
+  const isPdf = isPdfMime(template.mimeType, template.fileName);
+  const isWord = isWordMime(template.mimeType, template.fileName);
 
   return (
     <div className="h-full flex flex-col" data-testid="template-viewer">
@@ -231,7 +233,7 @@ export default function FormTemplateViewerPage() {
         ) : hasExtractedContent ? (
           <div className="flex-1 overflow-auto">
             <div className="max-w-4xl mx-auto px-6 py-8 md:px-12 md:py-12">
-              {isPdfFile(template) && !template.hasFileData && (
+              {isPdf && !template.hasFileData && (
                 <div className="flex items-center gap-2 mb-6 p-3 rounded-md bg-muted text-sm text-muted-foreground">
                   <Eye className="h-4 w-4 shrink-0" />
                   <span>
@@ -240,7 +242,7 @@ export default function FormTemplateViewerPage() {
                   </span>
                 </div>
               )}
-              {isWordFile(template) && (
+              {isWord && (
                 <div className="flex items-center gap-2 mb-6 p-3 rounded-md bg-muted text-sm text-muted-foreground">
                   <Eye className="h-4 w-4 shrink-0" />
                   <span>Showing converted document content. Download the original file for full formatting.</span>
