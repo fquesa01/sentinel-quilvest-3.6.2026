@@ -17,10 +17,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, FileText, Download, Sparkles, BarChart3, Briefcase, Clock, User, Trash2, History, FileDown, Brain, Globe, TrendingUp, Building2, CheckCircle2, AlertTriangle, Scale, DollarSign, Users, Shield, FileCheck, Search } from "lucide-react";
+import { Loader2, FileText, Download, Sparkles, BarChart3, Briefcase, Clock, User, Trash2, History, FileDown, Brain, Globe, TrendingUp, Building2, CheckCircle2, AlertTriangle, Scale, DollarSign, Users, Shield, FileCheck } from "lucide-react";
 import { DueDiligenceWizard } from "@/components/due-diligence";
-import { DDBooleanSearch } from "@/components/dd-boolean-search";
 
 interface PEDeal {
   id: string;
@@ -309,40 +307,7 @@ export default function PEDealIntelligence() {
             <h1 className="text-3xl font-bold" data-testid="text-page-title">Deal Intelligence</h1>
           </div>
 
-          <Tabs defaultValue="report" className="w-full">
-            <TabsList className="grid w-full grid-cols-2" data-testid="tabs-deal-intelligence">
-              <TabsTrigger value="report" data-testid="tab-report">
-                <Sparkles className="mr-2 h-4 w-4" />
-                AI Report Generator
-              </TabsTrigger>
-              <TabsTrigger value="boolean-search" data-testid="tab-boolean-search">
-                <Search className="mr-2 h-4 w-4" />
-                DD Boolean Search
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="boolean-search" className="mt-6">
-              {selectedDealId && selectedSourceType ? (
-                <DDBooleanSearch
-                  dealId={selectedDealId}
-                  dealName={targetCompanyName || getSelectedDisplayName()}
-                  sourceType={selectedSourceType}
-                />
-              ) : (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                    <Search className="h-12 w-12 text-muted-foreground/30 mb-4" />
-                    <h3 className="font-semibold text-lg mb-2">Select a Deal to Begin</h3>
-                    <p className="text-muted-foreground max-w-md">
-                      Choose a deal, transaction, or data room from the dropdown above to run 
-                      boolean search queries across all document sources.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
-
-            <TabsContent value="report" className="mt-6 space-y-6">
+          <div className="w-full mt-6 space-y-6">
           <Card data-testid="card-generator">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -806,8 +771,7 @@ export default function PEDealIntelligence() {
               </div>
             </CardContent>
           </Card>
-            </TabsContent>
-          </Tabs>
+          </div>
         </div>
       </div>
     </div>

@@ -60,7 +60,6 @@ import recordedStatementsRouter from "./routes/recorded-statements";
 import dueDiligenceRouter from "./routes-due-diligence";
 import { parseFile } from "./ingestion/emailParsers";
 import type { SupportedFormat } from "./ingestion/fileDetector";
-import ddBooleanSearchRoutes from "./routes/dd-boolean-search-routes";
 import calendarOAuthRouter from "./routes/calendar-oauth";
 import { registerRelationshipIntelligenceRoutes } from "./routes/relationship-intelligence";
 import { registerClosingRoutes } from "./routes/closing-routes";
@@ -300,7 +299,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/chunked-upload', chunkedUploadRouter.default);
   app.use('/api/recorded-statements', recordedStatementsRouter);
   app.use('/api/due-diligence', dueDiligenceRouter);
-  app.use('/api/dd-boolean-search', ddBooleanSearchRoutes);
   app.use(calendarOAuthRouter);
 
   // Register video meeting routes
