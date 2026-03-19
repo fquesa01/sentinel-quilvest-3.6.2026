@@ -28955,9 +28955,9 @@ Guidelines:
       const tokens = await emailIntegrationService.exchangeGoogleCode(code as string);
       
       // Get user info
-      const userResponse = await fetch(
-        `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${tokens.access_token}`
-      );
+      const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
       const userInfo = await userResponse.json();
       
       await emailIntegrationService.saveEmailAccount(
@@ -28974,6 +28974,114 @@ Guidelines:
     }
   });
   
+  app.get("/api/email/integration-status", isAuthenticated, async (_req: any, res) => {
+    const { getConnectorStatus } = await import("./services/replit-connectors");
+
+    const [gmailConnector, outlookConnector] = await Promise.all([
+      getConnectorStatus("google-mail"),
+      getConnectorStatus("outlook"),
+    ]);
+
+    res.json({
+      google: {
+        configured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+        connectorAvailable: gmailConnector.available,
+        connectorConnected: gmailConnector.connected,
+      },
+      microsoft: {
+        configured: !!(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET),
+        connectorAvailable: outlookConnector.available,
+        connectorConnected: outlookConnector.connected,
+      },
+    });
+  });
+
+  app.post("/api/email/connector/connect", isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { provider } = req.body;
+    if (!provider || !["google", "microsoft"].includes(provider)) {
+      return res.status(400).json({ error: "Invalid provider" });
+    }
+
+    const { getConnectorTokenForUser } = await import("./services/replit-connectors");
+    const connectorName = provider === "google" ? "google-mail" as const : "outlook" as const;
+    const userEmail = req.user?.email || "";
+
+    try {
+      const token = await getConnectorTokenForUser(connectorName, userEmail);
+      if (!token || !token.accessToken) {
+        return res.status(404).json({
+          error: "Connector not connected",
+          message: "Please connect your account via the Replit Connectors panel first",
+        });
+      }
+
+      let userInfo: { email: string; name?: string };
+
+      if (provider === "google") {
+        const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+          headers: { Authorization: `Bearer ${token.accessToken}` },
+        });
+        if (!userResponse.ok) {
+          return res.status(502).json({ error: "Failed to get Google user info" });
+        }
+        userInfo = await userResponse.json();
+      } else {
+        const userResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
+          headers: { Authorization: `Bearer ${token.accessToken}` },
+        });
+        if (!userResponse.ok) {
+          return res.status(502).json({ error: "Failed to get Microsoft user info" });
+        }
+        const msUser = await userResponse.json();
+        userInfo = {
+          email: msUser.mail || msUser.userPrincipalName,
+          name: msUser.displayName,
+        };
+      }
+
+      const existing = await db.query.emailAccounts.findFirst({
+        where: and(
+          eq(schema.emailAccounts.userId, userId),
+          eq(schema.emailAccounts.email, userInfo.email)
+        ),
+      });
+
+      const accountData = {
+        userId,
+        provider,
+        email: userInfo.email,
+        displayName: userInfo.name || null,
+        accessToken: "connector_managed",
+        refreshToken: null,
+        tokenExpiresAt: null,
+        tokenSource: "replit_connector" as const,
+        syncEnabled: true,
+        updatedAt: new Date(),
+      };
+
+      if (existing) {
+        await db.update(schema.emailAccounts)
+          .set(accountData)
+          .where(eq(schema.emailAccounts.id, existing.id));
+      } else {
+        await db.insert(schema.emailAccounts).values({
+          ...accountData,
+          createdAt: new Date(),
+        });
+      }
+
+      res.json({ success: true, email: userInfo.email, provider });
+    } catch (error: any) {
+      console.error("Email connector connect error:", error);
+      res.status(500).json({ error: "Failed to connect email via connector", message: error.message });
+    }
+  });
+
   // List connected email accounts
   app.get("/api/email/accounts", isAuthenticated, async (req: any, res) => {
     try {

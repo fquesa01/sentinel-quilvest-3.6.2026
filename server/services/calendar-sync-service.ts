@@ -26,21 +26,45 @@ interface CalendarEventData {
   conferenceData?: { conferenceUrl?: string; conferenceSolution?: string };
 }
 
-// Refresh Google access token if expired
+async function refreshTokenViaConnector(account: any): Promise<string | null> {
+  try {
+    const { getConnectorTokenForUser } = await import("./replit-connectors");
+    const connectorName = account.provider === "google" ? "google-calendar" as const : "outlook" as const;
+    const accountEmail = account.providerEmail || "";
+    const token = await getConnectorTokenForUser(connectorName, accountEmail);
+    if (token?.accessToken) {
+      await db.update(connectedCalendarAccounts)
+        .set({
+          updatedAt: new Date(),
+        })
+        .where(eq(connectedCalendarAccounts.id, account.id));
+      return token.accessToken;
+    }
+  } catch (error) {
+    console.error(`Connector token refresh failed for ${account.provider}:`, error);
+  }
+  return null;
+}
+
 async function refreshGoogleToken(account: any): Promise<string | null> {
+  if (account.tokenSource === "replit_connector") {
+    const token = await refreshTokenViaConnector(account);
+    if (token) return token;
+  }
+
   if (!account.refreshToken || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    if (account.tokenSource === "replit_connector") {
+      return null;
+    }
     return null;
   }
 
-  // Decrypt the stored access token to check if valid
   const decryptedAccessToken = decryptToken(account.accessToken);
   
-  // Check if token is still valid
   if (account.tokenExpiresAt && new Date(account.tokenExpiresAt) > new Date()) {
     return decryptedAccessToken;
   }
 
-  // Decrypt refresh token for use
   const decryptedRefreshToken = decryptToken(account.refreshToken);
   if (!decryptedRefreshToken) {
     await updateAccountSyncError(account.id, "Token decryption failed");
@@ -67,7 +91,6 @@ async function refreshGoogleToken(account: any): Promise<string | null> {
 
     const tokens = await response.json();
     
-    // Encrypt new access token before storage
     const encryptedAccessToken = encryptToken(tokens.access_token);
     
     await db.update(connectedCalendarAccounts)
@@ -85,21 +108,22 @@ async function refreshGoogleToken(account: any): Promise<string | null> {
   }
 }
 
-// Refresh Microsoft access token if expired
 async function refreshMicrosoftToken(account: any): Promise<string | null> {
+  if (account.tokenSource === "replit_connector") {
+    const token = await refreshTokenViaConnector(account);
+    if (token) return token;
+  }
+
   if (!account.refreshToken || !MICROSOFT_CLIENT_ID || !MICROSOFT_CLIENT_SECRET) {
     return null;
   }
 
-  // Decrypt the stored access token to check if valid
   const decryptedAccessToken = decryptToken(account.accessToken);
   
-  // Check if token is still valid
   if (account.tokenExpiresAt && new Date(account.tokenExpiresAt) > new Date()) {
     return decryptedAccessToken;
   }
 
-  // Decrypt refresh token for use
   const decryptedRefreshToken = decryptToken(account.refreshToken);
   if (!decryptedRefreshToken) {
     await updateAccountSyncError(account.id, "Token decryption failed");
@@ -127,7 +151,6 @@ async function refreshMicrosoftToken(account: any): Promise<string | null> {
 
     const tokens = await response.json();
     
-    // Encrypt new tokens before storage
     const encryptedAccessToken = encryptToken(tokens.access_token);
     const encryptedRefreshToken = tokens.refresh_token ? encryptToken(tokens.refresh_token) : account.refreshToken;
     

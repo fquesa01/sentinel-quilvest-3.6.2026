@@ -599,15 +599,117 @@ router.post("/api/calendar/sync", isAuthenticated, async (req: any, res: Respons
   }
 });
 
+router.post("/api/calendar/connector/connect", isAuthenticated, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id;
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const { provider } = req.body;
+  if (!provider || !["google", "microsoft"].includes(provider)) {
+    return res.status(400).json({ error: "Invalid provider. Must be 'google' or 'microsoft'" });
+  }
+
+  const { getConnectorTokenForUser } = await import("../services/replit-connectors");
+  const connectorName = provider === "google" ? "google-calendar" as const : "outlook" as const;
+  const userEmail = (req as any).user?.email || "";
+
+  try {
+    const token = await getConnectorTokenForUser(connectorName, userEmail);
+    if (!token || !token.accessToken) {
+      return res.status(404).json({
+        error: "Connector not connected",
+        message: "Please connect your account via the Replit Connectors panel first",
+      });
+    }
+
+    let userInfo: { id: string; email: string; name?: string };
+
+    if (provider === "google") {
+      const userInfoResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${token.accessToken}` },
+      });
+      if (!userInfoResponse.ok) {
+        return res.status(502).json({ error: "Failed to get Google user info" });
+      }
+      userInfo = await userInfoResponse.json();
+    } else {
+      const userInfoResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
+        headers: { Authorization: `Bearer ${token.accessToken}` },
+      });
+      if (!userInfoResponse.ok) {
+        return res.status(502).json({ error: "Failed to get Microsoft user info" });
+      }
+      const msUser = await userInfoResponse.json();
+      userInfo = {
+        id: msUser.id,
+        email: msUser.mail || msUser.userPrincipalName,
+        name: msUser.displayName,
+      };
+    }
+
+    const existing = await db.select()
+      .from(connectedCalendarAccounts)
+      .where(and(
+        eq(connectedCalendarAccounts.userId, userId),
+        eq(connectedCalendarAccounts.provider, provider),
+        eq(connectedCalendarAccounts.providerAccountId, userInfo.id)
+      ));
+
+    if (existing.length > 0) {
+      await db.update(connectedCalendarAccounts)
+        .set({
+          accessToken: "connector_managed",
+          refreshToken: null,
+          tokenExpiresAt: null,
+          syncStatus: "active",
+          syncError: null,
+          updatedAt: new Date(),
+          tokenSource: "replit_connector",
+        })
+        .where(eq(connectedCalendarAccounts.id, existing[0].id));
+    } else {
+      await db.insert(connectedCalendarAccounts).values({
+        userId,
+        provider,
+        providerAccountId: userInfo.id,
+        providerEmail: userInfo.email,
+        accessToken: "connector_managed",
+        refreshToken: null,
+        tokenExpiresAt: null,
+        syncStatus: "active",
+        syncDirection: "bidirectional",
+        tokenSource: "replit_connector",
+      });
+    }
+
+    res.json({ success: true, email: userInfo.email, provider });
+  } catch (error: any) {
+    console.error("Connector calendar connect error:", error);
+    res.status(500).json({ error: "Failed to connect calendar via connector", message: error.message });
+  }
+});
+
 router.get("/api/calendar/integration-status", isAuthenticated, async (req: Request, res: Response) => {
+  const { getConnectorStatus } = await import("../services/replit-connectors");
+
+  const [googleCalConnector, outlookConnector] = await Promise.all([
+    getConnectorStatus("google-calendar"),
+    getConnectorStatus("outlook"),
+  ]);
+
   res.json({
     google: {
       configured: !!GOOGLE_CLIENT_ID && !!GOOGLE_CLIENT_SECRET,
       clientId: GOOGLE_CLIENT_ID ? "configured" : null,
+      connectorAvailable: googleCalConnector.available,
+      connectorConnected: googleCalConnector.connected,
     },
     microsoft: {
       configured: !!MICROSOFT_CLIENT_ID && !!MICROSOFT_CLIENT_SECRET,
       clientId: MICROSOFT_CLIENT_ID ? "configured" : null,
+      connectorAvailable: outlookConnector.available,
+      connectorConnected: outlookConnector.connected,
     },
   });
 });

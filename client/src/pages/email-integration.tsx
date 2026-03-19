@@ -105,6 +105,13 @@ export default function EmailIntegrationPage() {
     queryKey: ["/api/email/accounts"],
   });
 
+  const { data: emailIntegrationStatus } = useQuery<{
+    google: { configured: boolean; connectorAvailable?: boolean; connectorConnected?: boolean };
+    microsoft: { configured: boolean; connectorAvailable?: boolean; connectorConnected?: boolean };
+  }>({
+    queryKey: ["/api/email/integration-status"],
+  });
+
   const { data: cases = [] } = useQuery<Case[]>({
     queryKey: ["/api/cases"],
   });
@@ -250,10 +257,31 @@ export default function EmailIntegrationPage() {
                     <Button
                       variant="outline"
                       className="w-full justify-start gap-3 h-14"
-                      onClick={() => {
-                        setIsConnectOpen(false);
-                        const returnUrl = encodeURIComponent("/email-integration");
-                        window.location.href = `/api/email/oauth/microsoft?returnUrl=${returnUrl}`;
+                      onClick={async () => {
+                        if (emailIntegrationStatus?.microsoft.connectorConnected) {
+                          try {
+                            const response = await apiRequest("POST", "/api/email/connector/connect", { provider: "microsoft" });
+                            const data = await response.json();
+                            toast({ title: "Microsoft account connected", description: `Connected as ${data.email}` });
+                            queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
+                            setIsConnectOpen(false);
+                            return;
+                          } catch (error: any) {
+                            toast({ title: "Connection failed", description: error.message, variant: "destructive" });
+                            return;
+                          }
+                        }
+                        if (emailIntegrationStatus?.microsoft.connectorAvailable && !emailIntegrationStatus?.microsoft.configured) {
+                          toast({ title: "Connector not yet authorized", description: "Please connect your Microsoft account via the Replit Connectors panel first, then try again.", variant: "destructive" });
+                          return;
+                        }
+                        if (emailIntegrationStatus?.microsoft.configured) {
+                          setIsConnectOpen(false);
+                          const returnUrl = encodeURIComponent("/email-integration");
+                          window.location.href = `/api/email/oauth/microsoft?returnUrl=${returnUrl}`;
+                          return;
+                        }
+                        toast({ title: "Not configured", description: "Microsoft email is not configured. Please set up the integration first.", variant: "destructive" });
                       }}
                       data-testid="button-oauth-microsoft"
                     >
@@ -265,23 +293,56 @@ export default function EmailIntegrationPage() {
                       </svg>
                       <div className="text-left">
                         <div className="font-medium">Microsoft 365</div>
-                        <div className="text-xs text-muted-foreground">Outlook, Exchange Online</div>
+                        <div className="text-xs text-muted-foreground">
+                          {emailIntegrationStatus?.microsoft.connectorConnected
+                            ? "Connect via Replit (one-click)"
+                            : emailIntegrationStatus?.microsoft.connectorAvailable
+                              ? "Connector available - authorize to connect"
+                              : "Outlook, Exchange Online"}
+                        </div>
                       </div>
                     </Button>
                     <Button
                       variant="outline"
                       className="w-full justify-start gap-3 h-14"
-                      onClick={() => {
-                        setIsConnectOpen(false);
-                        const returnUrl = encodeURIComponent("/email-integration");
-                        window.location.href = `/api/email/oauth/google?returnUrl=${returnUrl}`;
+                      onClick={async () => {
+                        if (emailIntegrationStatus?.google.connectorConnected) {
+                          try {
+                            const response = await apiRequest("POST", "/api/email/connector/connect", { provider: "google" });
+                            const data = await response.json();
+                            toast({ title: "Google account connected", description: `Connected as ${data.email}` });
+                            queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
+                            setIsConnectOpen(false);
+                            return;
+                          } catch (error: any) {
+                            toast({ title: "Connection failed", description: error.message, variant: "destructive" });
+                            return;
+                          }
+                        }
+                        if (emailIntegrationStatus?.google.connectorAvailable && !emailIntegrationStatus?.google.configured) {
+                          toast({ title: "Connector not yet authorized", description: "Please connect your Google account via the Replit Connectors panel first, then try again.", variant: "destructive" });
+                          return;
+                        }
+                        if (emailIntegrationStatus?.google.configured) {
+                          setIsConnectOpen(false);
+                          const returnUrl = encodeURIComponent("/email-integration");
+                          window.location.href = `/api/email/oauth/google?returnUrl=${returnUrl}`;
+                          return;
+                        }
+                        toast({ title: "Not configured", description: "Google email is not configured. Please set up the integration first.", variant: "destructive" });
                       }}
                       data-testid="button-oauth-google"
                     >
                       <SiGmail className="h-6 w-6 text-[#ea4335]" />
                       <div className="text-left">
                         <div className="font-medium">Google</div>
-                        <div className="text-xs text-muted-foreground">Gmail, Google Workspace</div>
+                        <div className="text-xs text-muted-foreground">
+                          {emailIntegrationStatus?.google.connectorConnected
+                            ? "Connect via Replit (one-click)"
+                            : emailIntegrationStatus?.google.connectorAvailable
+                              ? "Connector available - authorize to connect"
+                              : "Gmail, Google Workspace"}
+                        </div>
                       </div>
                     </Button>
                   </div>

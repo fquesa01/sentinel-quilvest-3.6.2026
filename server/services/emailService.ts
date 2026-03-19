@@ -223,6 +223,26 @@ export async function getValidAccessToken(accountId: string): Promise<string> {
   const isExpired = account.tokenExpiresAt &&
     account.tokenExpiresAt < new Date(Date.now() + 5 * 60 * 1000);
 
+  if (account.tokenSource === "replit_connector") {
+    try {
+      const { getConnectorTokenForUser } = await import("./replit-connectors");
+      const connectorName = account.provider === "microsoft" ? "outlook" as const : "google-mail" as const;
+      const accountEmail = account.email || "";
+      const token = await getConnectorTokenForUser(connectorName, accountEmail);
+      if (token?.accessToken) {
+        await db.update(emailAccounts)
+          .set({
+            updatedAt: new Date(),
+          })
+          .where(eq(emailAccounts.id, accountId));
+        return token.accessToken;
+      }
+    } catch (error) {
+      console.error("Connector token refresh failed for email:", error);
+    }
+    throw new Error("Failed to retrieve token from Replit connector. Please reconnect your email account.");
+  }
+
   if (isExpired && account.refreshToken) {
     const decryptedRefresh = decrypt(account.refreshToken);
 

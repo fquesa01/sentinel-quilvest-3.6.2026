@@ -9701,6 +9701,7 @@ export const emailAccounts = pgTable("email_accounts", {
   
   // Settings
   syncFolders: jsonb("sync_folders").$type<string[]>().default(["inbox", "sent"]),
+  tokenSource: varchar("token_source", { length: 30 }).default("oauth"),
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -12498,6 +12499,7 @@ export const connectedCalendarAccounts = pgTable("connected_calendar_accounts", 
   lastSyncedAt: timestamp("last_synced_at"),
   syncDirection: varchar("sync_direction", { length: 20 }).notNull().default("bidirectional"),
   selectedCalendars: jsonb("selected_calendars").$type<string[]>().default([]),
+  tokenSource: varchar("token_source", { length: 30 }).default("oauth"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
