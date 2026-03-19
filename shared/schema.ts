@@ -7083,44 +7083,6 @@ export const dataRoomAuditLog = pgTable("data_room_audit_log", {
   createdAtIdx: index("idx_data_room_audit_created").on(table.createdAt),
 }));
 
-// Q&A for data rooms (common in M&A)
-export const dataRoomQuestions = pgTable("data_room_questions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  dataRoomId: varchar("data_room_id").references(() => dataRooms.id, { onDelete: "cascade" }).notNull(),
-  
-  // Related to specific folder/file (optional)
-  folderId: varchar("folder_id").references(() => dataRoomFolders.id, { onDelete: "set null" }),
-  documentId: varchar("document_id").references(() => dataRoomDocuments.id, { onDelete: "set null" }),
-  
-  // Question details
-  questionNumber: varchar("question_number", { length: 20 }),
-  subject: varchar("subject", { length: 255 }).notNull(),
-  question: text("question").notNull(),
-  
-  // Asker
-  askedByUserId: varchar("asked_by_user_id").references(() => users.id),
-  askedByGuestId: varchar("asked_by_guest_id").references(() => dataRoomGuests.id),
-  askedAt: timestamp("asked_at").defaultNow(),
-  
-  // Assignment & Status
-  assignedTo: varchar("assigned_to").references(() => users.id),
-  status: varchar("status", { length: 50 }).default("open"), // open, in_progress, answered, closed
-  priority: varchar("priority", { length: 20 }).default("medium"), // low, medium, high, urgent
-  dueDate: timestamp("due_date"),
-  
-  // Response
-  answer: text("answer"),
-  answeredByUserId: varchar("answered_by_user_id").references(() => users.id),
-  answeredAt: timestamp("answered_at"),
-  
-  // Visibility
-  isPrivate: boolean("is_private").default(false),
-  
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => ({
-  roomIdx: index("idx_data_room_questions_room").on(table.dataRoomId),
-  statusIdx: index("idx_data_room_questions_status").on(table.status),
-}));
 
 // Due Diligence Checklists Table
 export const ddChecklists = pgTable("dd_checklists", {
@@ -7378,15 +7340,6 @@ export const insertDataRoomAuditLogSchema = createInsertSchema(dataRoomAuditLog)
 });
 export type InsertDataRoomAuditLog = z.infer<typeof insertDataRoomAuditLogSchema>;
 
-// Data Room Question Types
-export type DataRoomQuestion = typeof dataRoomQuestions.$inferSelect;
-export const insertDataRoomQuestionSchema = createInsertSchema(dataRoomQuestions).omit({
-  id: true,
-  createdAt: true,
-  askedAt: true,
-  answeredAt: true,
-});
-export type InsertDataRoomQuestion = z.infer<typeof insertDataRoomQuestionSchema>;
 
 // DD Checklist Types
 export type DDChecklist = typeof ddChecklists.$inferSelect;

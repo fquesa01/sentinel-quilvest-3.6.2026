@@ -62,7 +62,6 @@ import {
   Users,
   History,
   Shield,
-  MessageSquare,
   ArrowUpDown,
   Calendar,
   SortAsc,
@@ -86,7 +85,6 @@ import { format } from "date-fns";
 import { AccessManagementPanel } from "@/components/data-room/access-management-panel";
 import { ActivityLogPanel } from "@/components/data-room/activity-log-panel";
 import { FolderPermissionsDialog } from "@/components/data-room/folder-permissions-dialog";
-import { QAPanel } from "@/components/data-room/qa-panel";
 
 interface DataRoomWithContent extends DataRoom {
   folders: DataRoomFolder[];
@@ -359,7 +357,6 @@ export default function TransactionsDataRoomDetail() {
   const [isActivityPanelOpen, setIsActivityPanelOpen] = useState(false);
   const [isFolderPermissionsOpen, setIsFolderPermissionsOpen] = useState(false);
   const [folderForPermissions, setFolderForPermissions] = useState<DataRoomFolder | null>(null);
-  const [isQAPanelOpen, setIsQAPanelOpen] = useState(false);
   const [sortBy, setSortBy] = useState<"documentDate" | "fileName" | "uploadedAt" | "fileSize">("documentDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [deletedDocIds, setDeletedDocIds] = useState<Set<string>>(new Set());
@@ -801,15 +798,6 @@ export default function TransactionsDataRoomDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsQAPanelOpen(true)}
-            data-testid="button-qa"
-          >
-            <MessageSquare className="h-4 w-4 mr-2" />
-            Q&A
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1497,12 +1485,6 @@ export default function TransactionsDataRoomDetail() {
               }}
             />
           )}
-          <QAPanel
-            dataRoomId={roomId}
-            isOpen={isQAPanelOpen}
-            onClose={() => setIsQAPanelOpen(false)}
-            folderId={selectedFolderId}
-          />
         </>
       )}
 
