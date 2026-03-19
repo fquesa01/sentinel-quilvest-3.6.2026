@@ -540,11 +540,13 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
         return deal || null;
       };
 
-      processDealDocumentIntelligence(documentId).catch(err => {
-        console.error(`[DealIntel] Background intelligence processing failed for ${documentId}:`, err instanceof Error ? err.message : "Unknown error");
-      });
-
       (async () => {
+        try {
+          await processDealDocumentIntelligence(documentId);
+        } catch (err: unknown) {
+          console.error(`[DealIntel] Background intelligence processing failed for ${documentId}:`, err instanceof Error ? err.message : "Unknown error");
+        }
+
         try {
           const deal = await resolveDocDeal();
           if (!deal) return;
@@ -556,6 +558,14 @@ export async function performOCR(documentId: string): Promise<OCRResult> {
             await dealTermsService.extractFromAllDocuments(deal.id);
           } catch (termsErr: unknown) {
             console.error(`[DealIntel] Auto-extract deal terms failed:`, termsErr instanceof Error ? termsErr.message : "Unknown error");
+          }
+
+          try {
+            const { autoGenerateClosingStatement, autoUpdateClosingStatement } = await import("./closing-auto-generation-service");
+            await autoGenerateClosingStatement(deal.id);
+            await autoUpdateClosingStatement(deal.id);
+          } catch (closingErr: unknown) {
+            console.error(`[DealIntel] Auto-generate closing failed:`, closingErr instanceof Error ? closingErr.message : "Unknown error");
           }
 
           if (!deal.description || !deal.dealStructure || !deal.subType || !deal.dealValue ||
