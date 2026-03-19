@@ -836,7 +836,7 @@ export default function TransactionsDealChecklistDetail() {
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <File className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                         <button
-                          className="text-sm truncate text-left underline decoration-muted-foreground/40 hover:decoration-foreground cursor-pointer"
+                          className="text-sm truncate min-w-0 text-left underline decoration-muted-foreground/40 hover:decoration-foreground cursor-pointer"
                           onClick={() => {
                             if (link.documentId) {
                               window.open(`/api/data-room-documents/${link.documentId}/preview`, "_blank");
