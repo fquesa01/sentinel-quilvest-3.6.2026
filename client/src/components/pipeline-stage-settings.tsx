@@ -88,13 +88,25 @@ export function PipelineStageSettings({ open, onOpenChange }: PipelineStageSetti
     enabled: open,
   });
 
+  const [initialized, setInitialized] = useState(false);
+
   useEffect(() => {
-    if (fetchedStages) {
+    if (!open) {
+      setInitialized(false);
+      setEditingIndex(null);
+      setEditLabel("");
+      return;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (open && fetchedStages && !initialized) {
       setStages([...fetchedStages]);
       setHasChanges(false);
       setPendingReassignments([]);
+      setInitialized(true);
     }
-  }, [fetchedStages]);
+  }, [open, fetchedStages, initialized]);
 
   const saveMutation = useMutation({
     mutationFn: async (updatedStages: PipelineStage[]) => {
@@ -107,6 +119,8 @@ export function PipelineStageSettings({ open, onOpenChange }: PipelineStageSetti
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pe/pipeline-stages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pe/deals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pe/deals/pipeline-progress"] });
       toast({ title: "Pipeline stages updated" });
       setHasChanges(false);
     },
