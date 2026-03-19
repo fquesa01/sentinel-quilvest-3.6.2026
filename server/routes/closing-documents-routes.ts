@@ -297,23 +297,6 @@ router.get("/api/deals/:dealId/closing-documents/:docId/download", isAuthenticat
   }
 });
 
-router.get("/api/deals/:dealId/closing-documents/:docId/download-pdf", isAuthenticated, async (req: any, res) => {
-  try {
-    const { docId, dealId } = req.params;
-    const doc = await getDocForDeal(docId, dealId);
-    if (!doc) return res.status(404).json({ error: "Document not found" });
-
-    const buffer = await exportDocumentToPdf(docId);
-    const filename = `${doc.title.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "_")}.pdf`;
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.send(buffer);
-  } catch (error: any) {
-    console.error("Error downloading PDF document:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 router.post("/api/deals/:dealId/closing-documents/:docId/upload", isAuthenticated, upload.single("file"), async (req: any, res) => {
   try {
     const { docId, dealId } = req.params;
