@@ -1580,7 +1580,7 @@ export default function TransactionsDataRoomDetail() {
             </DialogTitle>
           </DialogHeader>
           
-          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+          <div className="flex-1 overflow-auto flex flex-col gap-4">
             {/* Metadata Bar */}
             {previewMetadata && (
               <div className="flex flex-wrap gap-4 text-sm text-muted-foreground border-b pb-3">
@@ -1603,7 +1603,7 @@ export default function TransactionsDataRoomDetail() {
 
             {/* AI Summary */}
             {previewMetadata?.aiSummary && (
-              <div className="flex-shrink-0">
+              <div>
                 <div className="flex items-center gap-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 mb-2">
                   <Sparkles className="h-4 w-4" />
                   <span>AI Summary</span>
@@ -1615,9 +1615,9 @@ export default function TransactionsDataRoomDetail() {
             )}
 
             {/* Preview Content */}
-            <div className="flex-1 overflow-auto border rounded-md bg-muted/20">
+            <div className="min-h-[500px] border rounded-md bg-muted/20">
               {previewError ? (
-                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center">
                   <FileText className="h-16 w-16 text-destructive mb-4" />
                   <h3 className="text-lg font-medium mb-2">Unable to Load Preview</h3>
                   <p className="text-muted-foreground mb-4">
@@ -1630,7 +1630,7 @@ export default function TransactionsDataRoomDetail() {
                   </Button>
                 </div>
               ) : isPreviewLoading || !previewMetadata ? (
-                <div className="flex items-center justify-center h-full">
+                <div className="flex items-center justify-center min-h-[500px]">
                   <div className="text-center">
                     <FileText className="h-12 w-12 mx-auto text-muted-foreground animate-pulse" />
                     <p className="mt-2 text-muted-foreground">Loading preview...</p>
@@ -1638,19 +1638,17 @@ export default function TransactionsDataRoomDetail() {
                 </div>
               ) : previewMetadata.previewType === 'pdf' ? (
                 previewMetadata.extractedText ? (
-                  <ScrollArea className="h-full">
-                    <div className="p-4">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3 pb-2 border-b">
-                        <FileText className="h-4 w-4" />
-                        <span>Document text content</span>
-                      </div>
-                      <pre className="text-sm whitespace-pre-wrap font-mono leading-relaxed">
-                        {previewMetadata.extractedText}
-                      </pre>
+                  <div className="p-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3 pb-2 border-b">
+                      <FileText className="h-4 w-4" />
+                      <span>Document text content</span>
                     </div>
-                  </ScrollArea>
+                    <pre className="text-sm whitespace-pre-wrap font-mono leading-relaxed">
+                      {previewMetadata.extractedText}
+                    </pre>
+                  </div>
                 ) : previewMetadata.ocrStatus === 'pending' || previewMetadata.ocrStatus === 'processing' ? (
-                  <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                  <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center">
                     <FileText className="h-16 w-16 text-muted-foreground mb-4 animate-pulse" />
                     <h3 className="text-lg font-medium mb-2">Processing Document</h3>
                     <p className="text-muted-foreground mb-4">
@@ -1665,10 +1663,10 @@ export default function TransactionsDataRoomDetail() {
                   <object
                     data={previewMetadata.previewUrl}
                     type="application/pdf"
-                    className="w-full h-full min-h-[400px]"
+                    className="w-full min-h-[500px]"
                     title={previewMetadata.fileName}
                   >
-                    <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                    <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center">
                       <FileText className="h-16 w-16 text-muted-foreground mb-4" />
                       <h3 className="text-lg font-medium mb-2">PDF Preview Unavailable</h3>
                       <p className="text-muted-foreground mb-4">
@@ -1682,33 +1680,29 @@ export default function TransactionsDataRoomDetail() {
                   </object>
                 )
               ) : previewMetadata.previewType === 'image' ? (
-                <div className="flex items-center justify-center h-full p-4">
+                <div className="flex items-center justify-center min-h-[400px] p-4">
                   <img
                     src={previewMetadata.previewUrl}
                     alt={previewMetadata.fileName}
-                    className="max-w-full max-h-full object-contain"
+                    className="max-w-full object-contain"
                   />
                 </div>
               ) : previewMetadata.previewType === 'text' ? (
-                <ScrollArea className="h-full">
-                  <pre className="p-4 text-sm whitespace-pre-wrap font-mono">
-                    {previewMetadata.extractedText || "No text content available."}
-                  </pre>
-                </ScrollArea>
+                <pre className="p-4 text-sm whitespace-pre-wrap font-mono">
+                  {previewMetadata.extractedText || "No text content available."}
+                </pre>
               ) : previewMetadata.extractedText ? (
-                <ScrollArea className="h-full">
-                  <div className="p-4">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3 pb-2 border-b">
-                      <FileText className="h-4 w-4" />
-                      <span>Extracted text from document</span>
-                    </div>
-                    <pre className="text-sm whitespace-pre-wrap font-mono leading-relaxed">
-                      {previewMetadata.extractedText}
-                    </pre>
+                <div className="p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3 pb-2 border-b">
+                    <FileText className="h-4 w-4" />
+                    <span>Extracted text from document</span>
                   </div>
-                </ScrollArea>
+                  <pre className="text-sm whitespace-pre-wrap font-mono leading-relaxed">
+                    {previewMetadata.extractedText}
+                  </pre>
+                </div>
               ) : previewMetadata.ocrStatus === 'pending' || previewMetadata.ocrStatus === 'processing' ? (
-                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center">
                   <FileText className="h-16 w-16 text-muted-foreground mb-4 animate-pulse" />
                   <h3 className="text-lg font-medium mb-2">Processing Document</h3>
                   <p className="text-muted-foreground mb-4">
@@ -1720,7 +1714,7 @@ export default function TransactionsDataRoomDetail() {
                   </Button>
                 </div>
               ) : previewMetadata.ocrStatus === 'failed' ? (
-                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center">
                   <FileText className="h-16 w-16 text-red-400 mb-4" />
                   <h3 className="text-lg font-medium mb-2">Text Extraction Failed</h3>
                   <p className="text-muted-foreground mb-4">
@@ -1732,7 +1726,7 @@ export default function TransactionsDataRoomDetail() {
                   </Button>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                <div className="flex flex-col items-center justify-center min-h-[500px] p-8 text-center">
                   <FileText className="h-16 w-16 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-2">Preview Not Available</h3>
                   <p className="text-muted-foreground mb-4">
