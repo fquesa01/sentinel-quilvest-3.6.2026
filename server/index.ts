@@ -68,6 +68,7 @@ app.get("/api/health", (_req, res) => {
     await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signature_image text`);
     await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signed_at timestamp`);
     await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signed_by varchar(500)`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id varchar UNIQUE`);
 
     console.log("[Startup] Database columns verified");
   } catch (err) {

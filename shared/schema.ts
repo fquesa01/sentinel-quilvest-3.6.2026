@@ -429,6 +429,7 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   microsoftId: varchar("microsoft_id").unique(),
+  googleId: varchar("google_id").unique(),
   role: userRoleEnum("role").default("compliance_officer").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

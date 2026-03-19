@@ -1,8 +1,14 @@
 import { Button } from "@/components/ui/button";
 import { Helmet } from "react-helmet";
+import { SiGoogle } from "react-icons/si";
+import { useQuery } from "@tanstack/react-query";
 import earthImage from "@assets/stock_images/earth_from_space_at__22b72e59.jpg";
 
 export default function Login() {
+  const { data: providers } = useQuery<{ google: boolean; replit: boolean; microsoft: boolean }>({
+    queryKey: ["/api/auth/providers"],
+  });
+
   return (
     <>
       <Helmet>
@@ -46,17 +52,41 @@ export default function Login() {
               </p>
             </div>
 
-            {/* Sign In Button */}
-            <div className="space-y-4">
-              <Button
-                data-testid="button-login"
-                onClick={() => {
-                  window.location.href = "/api/login";
-                }}
-                className="w-full bg-[#5ba897] hover:bg-[#4a9486] text-white font-medium tracking-wide"
-              >
-                Sign In with Replit
-              </Button>
+            {/* Sign In Buttons */}
+            <div className="space-y-3">
+              {providers?.google && (
+                <Button
+                  data-testid="button-login-google"
+                  onClick={() => {
+                    window.location.href = "/api/auth/google";
+                  }}
+                  className="w-full bg-white text-gray-800 font-medium tracking-wide border border-gray-300"
+                >
+                  <SiGoogle className="mr-2 h-4 w-4" />
+                  Sign in with Google
+                </Button>
+              )}
+
+              {providers?.google && providers?.replit && (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-gray-600" />
+                  <span className="text-[11px] text-gray-500 uppercase tracking-wider">or</span>
+                  <div className="flex-1 h-px bg-gray-600" />
+                </div>
+              )}
+
+              {providers?.replit && (
+                <Button
+                  data-testid="button-login-replit"
+                  onClick={() => {
+                    window.location.href = "/api/login";
+                  }}
+                  variant="outline"
+                  className="w-full border-gray-600 text-gray-300 font-medium tracking-wide"
+                >
+                  Sign In with Replit
+                </Button>
+              )}
             </div>
 
             {/* Back link */}

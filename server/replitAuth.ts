@@ -3,6 +3,7 @@ import { Strategy, type VerifyFunction } from "openid-client/passport";
 
 import passport from "passport";
 import { Strategy as MicrosoftStrategy } from "passport-microsoft";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
@@ -248,6 +249,105 @@ export async function setupAuth(app: Express) {
 
     console.log("[Auth] Microsoft OAuth configured");
   }
+
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    const googleCallbackPath = "/api/auth/google/callback";
+    passport.use(new GoogleStrategy({
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: googleCallbackPath,
+        scope: ["profile", "email"],
+      },
+      async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+        try {
+          let user = await storage.getUserByGoogleId(profile.id);
+
+          if (!user) {
+            const email = profile.emails?.[0]?.value;
+            const existingUser = await storage.getUserByEmail(email);
+
+            if (existingUser) {
+              const linkUpdates: any = {
+                googleId: profile.id,
+                profileImageUrl: existingUser.profileImageUrl || profile.photos?.[0]?.value || null,
+              };
+              const testingAdminEmails = [
+                "frank.quesada@gmail.com",
+                "binhaks@binhaklaw.com",
+                "zoinertejada@gmail.com",
+                "charliewhorton@gmail.com",
+                "rjb@borgheselaw.com",
+              ];
+              if (testingAdminEmails.includes(email) && existingUser.role !== "admin") {
+                linkUpdates.role = "admin";
+              }
+              user = await storage.updateUser(existingUser.id, linkUpdates);
+            } else {
+              const testingAdminEmails = [
+                "frank.quesada@gmail.com",
+                "binhaks@binhaklaw.com",
+                "zoinertejada@gmail.com",
+                "charliewhorton@gmail.com",
+                "rjb@borgheselaw.com",
+              ];
+              const role = testingAdminEmails.includes(email) ? "admin" : "compliance_officer";
+
+              const userData = {
+                email,
+                firstName: profile.name?.givenName,
+                lastName: profile.name?.familyName,
+                googleId: profile.id,
+                profileImageUrl: profile.photos?.[0]?.value || null,
+                role,
+              };
+              user = await storage.createUser(userData);
+            }
+          }
+
+          const sessionTtlSeconds = 7 * 24 * 60 * 60;
+          const userWithTokens = {
+            ...user,
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            claims: { sub: user.id, email: user.email },
+            expires_at: Math.floor(Date.now() / 1000) + sessionTtlSeconds,
+            auth_provider: "google",
+          };
+
+          done(null, userWithTokens);
+        } catch (error) {
+          console.error("[Google Auth] Error:", error);
+          done(error as Error);
+        }
+      }
+    ));
+
+    app.get("/api/auth/google",
+      passport.authenticate("google", {
+        scope: ["profile", "email"],
+        state: true,
+      } as any)
+    );
+
+    app.get("/api/auth/google/callback",
+      passport.authenticate("google", {
+        failureRedirect: "/login",
+      }),
+      (req, res) => {
+        res.redirect("/");
+      }
+    );
+
+    console.log("[Auth] Google OAuth configured");
+  }
+
+  app.get("/api/auth/providers", (_req, res) => {
+    res.json({
+      google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+      replit: !!process.env.REPL_ID,
+      microsoft: !!(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET),
+    });
+  });
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
@@ -290,6 +390,10 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     }
     
     return next();
+  }
+
+  if (user.auth_provider === "google" || user.auth_provider === "microsoft") {
+    return res.status(401).json({ message: "Session expired, please log in again" });
   }
 
   const refreshToken = user.refresh_token;
