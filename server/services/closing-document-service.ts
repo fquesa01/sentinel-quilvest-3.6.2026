@@ -487,7 +487,7 @@ export async function exportDocumentToDocx(docId: string): Promise<Buffer> {
   const [doc] = await db.select().from(closingDocuments).where(eq(closingDocuments.id, docId));
   if (!doc) throw new Error("Document not found");
 
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, LevelFormat, convertInchesToTwip, TabStopPosition, TabStopType, BorderStyle, NumberFormat } = await import("docx");
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, LevelFormat, convertInchesToTwip, TabStopPosition, TabStopType, BorderStyle, NumberFormat, Footer, PageNumber } = await import("docx");
 
   const content = doc.content || "";
   const isHtml = content.trim().startsWith("<");
@@ -760,12 +760,201 @@ export async function exportDocumentToDocx(docId: string): Promise<Buffer> {
           margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
         },
       },
+      footers: {
+        default: new Footer({
+          children: [
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 0, after: 0 },
+              children: [
+                new TextRun({
+                  children: [
+                    doc.title || "Closing Document",
+                    "  |  Page ",
+                    PageNumber.CURRENT,
+                    " of ",
+                    PageNumber.TOTAL_PAGES,
+                  ],
+                  font: FONT,
+                  size: 16,
+                  color: "999999",
+                }),
+              ],
+            }),
+          ],
+        }),
+      },
       children: paragraphs,
     }],
   });
 
   const buffer = await Packer.toBuffer(document);
   return buffer as Buffer;
+}
+
+export async function exportDocumentToPdf(docId: string): Promise<Buffer> {
+  const [doc] = await db.select().from(closingDocuments).where(eq(closingDocuments.id, docId));
+  if (!doc) throw new Error("Document not found");
+
+  const PDFDocument = (await import("pdfkit")).default;
+
+  const content = doc.content || "";
+  const docTitle = doc.title || "Closing Document";
+  const isHtml = content.trim().startsWith("<");
+
+  const pdfDoc = new PDFDocument({
+    size: "LETTER",
+    margins: { top: 72, bottom: 72, left: 72, right: 72 },
+    bufferPages: true,
+  });
+
+  const chunks: Buffer[] = [];
+  pdfDoc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+  const BODY_SIZE = 12;
+  const H1_SIZE = 16;
+  const H2_SIZE = 14;
+  const H3_SIZE = 13;
+
+  function checkPageBreak(needed: number = 60) {
+    if (pdfDoc.y > pdfDoc.page.height - pdfDoc.page.margins.bottom - needed) {
+      pdfDoc.addPage();
+    }
+  }
+
+  function renderPlainText(text: string) {
+    const decoded = decodeHtmlEntities(stripAllTags(text));
+    if (decoded.trim()) {
+      pdfDoc.font("Times-Roman").fontSize(BODY_SIZE).text(decoded, { align: "justify" });
+      pdfDoc.moveDown(0.3);
+    }
+  }
+
+  if (isHtml) {
+    const parts = content.split(/(?=<h[1-3][^>]*>)|(?=<p[^>]*>)|(?=<hr[^>]*\/?>)|(?=<ul[^>]*>)|(?=<ol[^>]*>)/gi);
+
+    let listCounter = 0;
+
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+
+      checkPageBreak();
+
+      const h1Match = trimmed.match(/^<h1([^>]*)>([\s\S]*?)<\/h1>/i);
+      const h2Match = trimmed.match(/^<h2([^>]*)>([\s\S]*?)<\/h2>/i);
+      const h3Match = trimmed.match(/^<h3([^>]*)>([\s\S]*?)<\/h3>/i);
+      const pMatch = trimmed.match(/^<p([^>]*)>([\s\S]*?)<\/p>/i);
+      const hrMatch = trimmed.match(/^<hr[^>]*\/?>/i);
+      const ulMatch = trimmed.match(/^<ul([^>]*)>([\s\S]*?)<\/ul>/i);
+      const olMatch = trimmed.match(/^<ol([^>]*)>([\s\S]*?)<\/ol>/i);
+
+      if (h1Match) {
+        const text = stripAllTags(h1Match[2]);
+        pdfDoc.moveDown(0.8);
+        pdfDoc.font("Times-Bold").fontSize(H1_SIZE).text(text, { align: "center" });
+        pdfDoc.moveDown(0.5);
+      } else if (h2Match) {
+        const text = stripAllTags(h2Match[2]);
+        pdfDoc.moveDown(0.6);
+        pdfDoc.font("Times-Bold").fontSize(H2_SIZE).text(text);
+        pdfDoc.moveDown(0.3);
+      } else if (h3Match) {
+        const text = stripAllTags(h3Match[2]);
+        pdfDoc.moveDown(0.4);
+        pdfDoc.font("Times-Bold").fontSize(H3_SIZE).text(text);
+        pdfDoc.moveDown(0.2);
+      } else if (hrMatch) {
+        pdfDoc.moveDown(0.5);
+        const lineY = pdfDoc.y;
+        pdfDoc.moveTo(72, lineY).lineTo(pdfDoc.page.width - 72, lineY).strokeColor("#999999").lineWidth(0.5).stroke();
+        pdfDoc.moveDown(0.5);
+        pdfDoc.strokeColor("#000000");
+      } else if (ulMatch) {
+        const items = ulMatch[2].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+        for (const item of items) {
+          checkPageBreak(30);
+          const itemText = stripAllTags(item.replace(/<\/?li[^>]*>/gi, ""));
+          pdfDoc.font("Times-Roman").fontSize(BODY_SIZE).text(`\u2022  ${itemText}`, 90, undefined, { indent: 0, align: "left" });
+          pdfDoc.moveDown(0.15);
+        }
+        pdfDoc.moveDown(0.3);
+      } else if (olMatch) {
+        const items = olMatch[2].match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+        listCounter = 0;
+        for (const item of items) {
+          checkPageBreak(30);
+          listCounter++;
+          const itemText = stripAllTags(item.replace(/<\/?li[^>]*>/gi, ""));
+          pdfDoc.font("Times-Roman").fontSize(BODY_SIZE).text(`${listCounter}.  ${itemText}`, 90, undefined, { indent: 0, align: "left" });
+          pdfDoc.moveDown(0.15);
+        }
+        pdfDoc.moveDown(0.3);
+      } else if (pMatch) {
+        const pContent = stripAllTags(pMatch[2]).trim();
+        if (!pContent) {
+          pdfDoc.moveDown(0.3);
+        } else {
+          pdfDoc.font("Times-Roman").fontSize(BODY_SIZE).text(pContent, { align: "justify" });
+          pdfDoc.moveDown(0.3);
+        }
+      }
+    }
+  } else {
+    const lines = content.split("\n");
+    for (const line of lines) {
+      checkPageBreak();
+      if (line.startsWith("### ")) {
+        pdfDoc.moveDown(0.4);
+        pdfDoc.font("Times-Bold").fontSize(H3_SIZE).text(line.replace("### ", ""));
+        pdfDoc.moveDown(0.2);
+      } else if (line.startsWith("## ")) {
+        pdfDoc.moveDown(0.6);
+        pdfDoc.font("Times-Bold").fontSize(H2_SIZE).text(line.replace("## ", ""));
+        pdfDoc.moveDown(0.3);
+      } else if (line.startsWith("# ")) {
+        pdfDoc.moveDown(0.8);
+        pdfDoc.font("Times-Bold").fontSize(H1_SIZE).text(line.replace("# ", ""), { align: "center" });
+        pdfDoc.moveDown(0.5);
+      } else if (line.startsWith("---")) {
+        pdfDoc.moveDown(0.5);
+        const lineY = pdfDoc.y;
+        pdfDoc.moveTo(72, lineY).lineTo(pdfDoc.page.width - 72, lineY).strokeColor("#999999").lineWidth(0.5).stroke();
+        pdfDoc.moveDown(0.5);
+        pdfDoc.strokeColor("#000000");
+      } else if (line.trim() === "") {
+        pdfDoc.moveDown(0.3);
+      } else {
+        renderPlainText(line);
+      }
+    }
+  }
+
+  const pageRange = pdfDoc.bufferedPageRange();
+  if (pageRange && typeof pageRange.count === "number" && pageRange.count > 0) {
+    const totalPages = pageRange.count;
+    const startPage = pageRange.start || 0;
+    for (let i = startPage; i < startPage + totalPages; i++) {
+      pdfDoc.switchToPage(i);
+      const footerY = pdfDoc.page.height - 30;
+      pdfDoc.save();
+      pdfDoc.fontSize(7).font("Helvetica").fillColor("#999999");
+      pdfDoc.text(
+        `${docTitle}  |  Page ${i - startPage + 1} of ${totalPages}`,
+        50, footerY,
+        { align: "center", width: pdfDoc.page.width - 100 }
+      );
+      pdfDoc.restore();
+      pdfDoc.fillColor("#000000");
+    }
+  }
+
+  pdfDoc.end();
+
+  return new Promise<Buffer>((resolve, reject) => {
+    pdfDoc.on("end", () => resolve(Buffer.concat(chunks)));
+    pdfDoc.on("error", reject);
+  });
 }
 
 function decodeHtmlEntities(s: string): string {
