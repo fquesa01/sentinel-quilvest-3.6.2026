@@ -124,30 +124,6 @@ export function AppSidebar() {
   // Menu sections - Clients pinned first, then Litigation
   const menuSections: MenuSection[] = [
     {
-      title: "Relationship Intelligence",
-      defaultOpen: true,
-      items: [
-        {
-          title: "Intelligence Feed",
-          url: "/relationship-intelligence",
-          icon: Radar,
-          roles: ["admin", "attorney", "compliance_officer"],
-        },
-        {
-          title: "Contacts",
-          url: "/relationship-contacts",
-          icon: Contact,
-          roles: ["admin", "attorney", "compliance_officer"],
-        },
-        {
-          title: "Drafts",
-          url: "/relationship-drafts",
-          icon: FileEdit,
-          roles: ["admin", "attorney", "compliance_officer"],
-        },
-      ],
-    },
-    {
       title: "Transactions",
       defaultOpen: true,
       items: [
@@ -234,6 +210,30 @@ export function AppSidebar() {
           title: "Document Review",
           url: "/document-review",
           icon: Eye,
+          roles: ["admin", "attorney", "compliance_officer"],
+        },
+      ],
+    },
+    {
+      title: "Relationship Intelligence",
+      defaultOpen: true,
+      items: [
+        {
+          title: "Intelligence Feed",
+          url: "/relationship-intelligence",
+          icon: Radar,
+          roles: ["admin", "attorney", "compliance_officer"],
+        },
+        {
+          title: "Contacts",
+          url: "/relationship-contacts",
+          icon: Contact,
+          roles: ["admin", "attorney", "compliance_officer"],
+        },
+        {
+          title: "Drafts",
+          url: "/relationship-drafts",
+          icon: FileEdit,
           roles: ["admin", "attorney", "compliance_officer"],
         },
       ],
