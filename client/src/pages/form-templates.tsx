@@ -181,6 +181,9 @@ export default function FormTemplatesPage() {
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
   const [bulkResult, setBulkResult] = useState<{ succeeded: number; failed: number; total: number; failedFiles: { name: string; error: string }[] } | null>(null);
 
+  const [isDragActive, setIsDragActive] = useState(false);
+  const dragCounterRef = useRef(0);
+
   const multiFileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -189,6 +192,19 @@ export default function FormTemplatesPage() {
       folderInputRef.current.setAttribute("webkitdirectory", "");
       folderInputRef.current.setAttribute("directory", "");
     }
+  }, []);
+
+  useEffect(() => {
+    const resetDrag = () => {
+      dragCounterRef.current = 0;
+      setIsDragActive(false);
+    };
+    window.addEventListener("dragend", resetDrag);
+    window.addEventListener("drop", resetDrag);
+    return () => {
+      window.removeEventListener("dragend", resetDrag);
+      window.removeEventListener("drop", resetDrag);
+    };
   }, []);
 
   const { data: templates = [], isLoading } = useQuery<FirmFormTemplateWithMeta[]>({
@@ -342,6 +358,41 @@ export default function FormTemplatesPage() {
     setIsBulkOpen(true);
   }, [toast]);
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragActive(true);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragActive(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFilesSelected(files);
+    }
+  }, [handleFilesSelected]);
+
   const removeBulkFile = (id: string) => {
     setBulkFiles(prev => prev.filter(f => f.id !== id));
   };
@@ -476,7 +527,23 @@ export default function FormTemplatesPage() {
   }
 
   return (
-    <div className="h-full overflow-auto">
+    <div
+      className="h-full overflow-auto relative"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      data-testid="dropzone-page"
+    >
+      {isDragActive && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" data-testid="dropzone-overlay">
+          <div className="flex flex-col items-center gap-3 p-10 border-2 border-dashed border-primary rounded-md bg-primary/5">
+            <Upload className="h-12 w-12 text-primary" />
+            <p className="text-lg font-semibold">Drop files here to upload</p>
+            <p className="text-sm text-muted-foreground">Supported document files will be added to the bulk upload</p>
+          </div>
+        </div>
+      )}
       <div className="p-6 space-y-6 max-w-7xl mx-auto">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
@@ -586,20 +653,25 @@ export default function FormTemplatesPage() {
               </h3>
               <p className="text-muted-foreground mb-4 max-w-md mx-auto">
                 {templates.length === 0
-                  ? "Upload your preferred legal forms and templates. When closing documents are generated for a deal, they'll follow the same format and structure."
+                  ? "Upload your preferred legal forms and templates. Drag and drop files here, or use the buttons below. When closing documents are generated for a deal, they'll follow the same format and structure."
                   : "Try adjusting your search or filter criteria."
                 }
               </p>
               {templates.length === 0 && (
-                <div className="flex items-center justify-center gap-2 flex-wrap">
-                  <Button onClick={() => setIsUploadOpen(true)} data-testid="button-upload-first-template">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Your First Template
-                  </Button>
-                  <Button variant="outline" onClick={() => multiFileInputRef.current?.click()} data-testid="button-bulk-upload-first">
-                    <Files className="h-4 w-4 mr-2" />
-                    Bulk Upload
-                  </Button>
+                <div className="flex flex-col items-center gap-3">
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
+                    <Button onClick={() => setIsUploadOpen(true)} data-testid="button-upload-first-template">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Your First Template
+                    </Button>
+                    <Button variant="outline" onClick={() => multiFileInputRef.current?.click()} data-testid="button-bulk-upload-first">
+                      <Files className="h-4 w-4 mr-2" />
+                      Bulk Upload
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground" data-testid="text-drag-drop-hint">
+                    or drag and drop files anywhere on this page
+                  </p>
                 </div>
               )}
             </CardContent>
