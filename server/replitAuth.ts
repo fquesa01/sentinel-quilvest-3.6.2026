@@ -322,12 +322,12 @@ export async function setupAuth(app: Express) {
       }
     ));
 
-    app.get("/api/auth/google",
+    app.get("/api/auth/google", (req, res, next) => {
       passport.authenticate("google", {
         scope: ["profile", "email"],
-        state: true,
-      } as any)
-    );
+        state: Math.random().toString(36).substring(2),
+      })(req, res, next);
+    });
 
     app.get("/api/auth/google/callback",
       passport.authenticate("google", {

@@ -9,6 +9,11 @@ export default function Login() {
     queryKey: ["/api/auth/providers"],
   });
 
+  const hasGoogle = providers?.google;
+  const hasReplit = providers?.replit;
+  const hasMicrosoft = providers?.microsoft;
+  const hasMultipleProviders = [hasGoogle, hasReplit, hasMicrosoft].filter(Boolean).length > 1;
+
   return (
     <>
       <Helmet>
@@ -54,7 +59,7 @@ export default function Login() {
 
             {/* Sign In Buttons */}
             <div className="space-y-3">
-              {providers?.google && (
+              {hasGoogle && (
                 <Button
                   data-testid="button-login-google"
                   onClick={() => {
@@ -67,7 +72,7 @@ export default function Login() {
                 </Button>
               )}
 
-              {providers?.google && providers?.replit && (
+              {hasGoogle && hasMultipleProviders && (
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-px bg-gray-600" />
                   <span className="text-[11px] text-gray-500 uppercase tracking-wider">or</span>
@@ -75,7 +80,20 @@ export default function Login() {
                 </div>
               )}
 
-              {providers?.replit && (
+              {hasMicrosoft && (
+                <Button
+                  data-testid="button-login-microsoft"
+                  onClick={() => {
+                    window.location.href = "/api/auth/microsoft";
+                  }}
+                  variant="outline"
+                  className="w-full border-gray-600 text-gray-300 font-medium tracking-wide"
+                >
+                  Sign In with Microsoft
+                </Button>
+              )}
+
+              {hasReplit && (
                 <Button
                   data-testid="button-login-replit"
                   onClick={() => {
@@ -85,6 +103,18 @@ export default function Login() {
                   className="w-full border-gray-600 text-gray-300 font-medium tracking-wide"
                 >
                   Sign In with Replit
+                </Button>
+              )}
+
+              {!hasGoogle && !hasReplit && !hasMicrosoft && providers && (
+                <Button
+                  data-testid="button-login-fallback"
+                  onClick={() => {
+                    window.location.href = "/api/login";
+                  }}
+                  className="w-full bg-[#5ba897] text-white font-medium tracking-wide"
+                >
+                  Sign In
                 </Button>
               )}
             </div>
