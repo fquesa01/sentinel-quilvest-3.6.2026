@@ -251,7 +251,7 @@ export function AppSidebar() {
           title: "Admin Dashboard",
           url: "/admin",
           icon: Settings,
-          roles: ["super_admin", "entity_admin"],
+          roles: ["super_admin"],
         },
         {
           title: "User Management",

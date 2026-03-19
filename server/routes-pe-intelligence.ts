@@ -309,7 +309,7 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
   });
 
   // Delete PE deal intelligence report
-  app.delete("/api/pe-deal-intelligence/reports/:sourceType/:dealId/:reportId", isAuthenticated, requireRole("super_admin"), async (req: any, res: any) => {
+  app.delete("/api/pe-deal-intelligence/reports/:sourceType/:dealId/:reportId", isAuthenticated, async (req: any, res: any) => {
     try {
       const { sourceType, dealId, reportId } = req.params;
 

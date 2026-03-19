@@ -674,7 +674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/organizations/:id/members", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.get("/api/organizations/:id/members", isAuthenticated, requireRole("super_admin", "entity_admin"), async (req, res) => {
     try {
       const members = await storage.getOrganizationMembers(req.params.id);
       res.json(members.map(m => ({ ...m, user: m.user ? sanitizeUser(m.user) : undefined })));
@@ -683,7 +683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/organizations/:id/members", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
+  app.post("/api/organizations/:id/members", isAuthenticated, requireRole("super_admin", "entity_admin"), async (req: any, res) => {
     try {
       const { userId } = req.body;
       if (!userId) return res.status(400).json({ message: "userId is required" });
@@ -694,7 +694,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/organizations/:orgId/members/:userId", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
+  app.delete("/api/organizations/:orgId/members/:userId", isAuthenticated, requireRole("super_admin", "entity_admin"), async (req: any, res) => {
     try {
       await storage.removeOrganizationMember(req.params.orgId, req.params.userId);
       res.json({ success: true });
