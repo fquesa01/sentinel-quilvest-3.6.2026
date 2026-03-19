@@ -624,6 +624,68 @@ export default function TransactionsDealDetail() {
     advisors: "Advisor",
   };
 
+  type CategorizedAdvisor = { advisor: any; originalIndex: number };
+  type ThirdPartyGroup = {
+    primary: CategorizedAdvisor;
+    subordinates: CategorizedAdvisor[];
+  };
+
+  const categorizeAdvisors = (advisors: any[]) => {
+    const buyerAdvisors: CategorizedAdvisor[] = [];
+    const sellerAdvisors: CategorizedAdvisor[] = [];
+    const generalAdvisors: CategorizedAdvisor[] = [];
+
+    advisors.forEach((advisor, index) => {
+      const role = (typeof advisor === "string" ? "" : advisor.role || "").toLowerCase();
+      if (role.includes("buyer")) {
+        buyerAdvisors.push({ advisor, originalIndex: index });
+      } else if (role.includes("seller")) {
+        sellerAdvisors.push({ advisor, originalIndex: index });
+      } else {
+        generalAdvisors.push({ advisor, originalIndex: index });
+      }
+    });
+
+    const thirdPartyGroups: ThirdPartyGroup[] = [];
+    const ungroupedAdvisors: CategorizedAdvisor[] = [];
+    const claimedIndices = new Set<number>();
+
+    const normalizeApostrophes = (text: string) => text.replace(/[\u2018\u2019\u2032\u0060]/g, "'");
+
+    const primaryAdvisors = generalAdvisors.filter(({ advisor }) => {
+      const role = normalizeApostrophes((typeof advisor === "string" ? "" : advisor.role || "").toLowerCase());
+      return role && !role.includes("'s ");
+    });
+
+    primaryAdvisors.forEach((primary) => {
+      const primaryRole = normalizeApostrophes((typeof primary.advisor === "string" ? "" : primary.advisor.role || "").toLowerCase());
+      if (!primaryRole) return;
+
+      const subordinates = generalAdvisors.filter(({ advisor, originalIndex }) => {
+        if (originalIndex === primary.originalIndex) return false;
+        const subRole = normalizeApostrophes((typeof advisor === "string" ? "" : advisor.role || "").toLowerCase());
+        return subRole.includes(primaryRole + "'s ");
+      });
+
+      if (subordinates.length > 0) {
+        claimedIndices.add(primary.originalIndex);
+        subordinates.forEach(s => claimedIndices.add(s.originalIndex));
+        thirdPartyGroups.push({ primary, subordinates });
+      }
+    });
+
+    generalAdvisors.forEach((item) => {
+      if (!claimedIndices.has(item.originalIndex)) {
+        ungroupedAdvisors.push(item);
+      }
+    });
+
+    return { buyerAdvisors, sellerAdvisors, thirdPartyGroups, ungroupedAdvisors };
+  };
+
+  const advisorsList = Array.isArray(deal?.advisors) ? deal.advisors as any[] : [];
+  const { buyerAdvisors, sellerAdvisors, thirdPartyGroups, ungroupedAdvisors } = categorizeAdvisors(advisorsList);
+
   // Milestone mutations
   const addMilestoneMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -1564,9 +1626,9 @@ export default function TransactionsDealDetail() {
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  {Array.isArray(deal.buyerParties) && deal.buyerParties.length > 0 ? (
+                  {(Array.isArray(deal.buyerParties) && deal.buyerParties.length > 0) || buyerAdvisors.length > 0 ? (
                     <div className="space-y-2">
-                      {deal.buyerParties.map((party: any, i: number) => (
+                      {Array.isArray(deal.buyerParties) && deal.buyerParties.map((party: any, i: number) => (
                         <div key={i} className="relative flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/50 group">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -1583,6 +1645,32 @@ export default function TransactionsDealDetail() {
                           </Button>
                         </div>
                       ))}
+                      {buyerAdvisors.length > 0 && (
+                        <div className="space-y-1 mt-2 ml-4">
+                          {buyerAdvisors.map(({ advisor, originalIndex }) => (
+                            <div key={`advisor-${originalIndex}`} className="relative flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/30 group">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                                  <span className="truncate text-sm">{typeof advisor === "string" ? advisor : advisor.name || "Unknown"}</span>
+                                  {advisor.role && (
+                                    <Badge variant="secondary" className="text-xs shrink-0">{advisor.role}</Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6 shrink-0 invisible group-hover:visible"
+                                onClick={() => handleRemoveItem("advisors", originalIndex)}
+                                data-testid={`button-delete-buyer-advisor-${originalIndex}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="text-muted-foreground">No buyer parties added</p>
@@ -1603,9 +1691,9 @@ export default function TransactionsDealDetail() {
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  {Array.isArray(deal.sellerParties) && deal.sellerParties.length > 0 ? (
+                  {(Array.isArray(deal.sellerParties) && deal.sellerParties.length > 0) || sellerAdvisors.length > 0 ? (
                     <div className="space-y-2">
-                      {deal.sellerParties.map((party: any, i: number) => (
+                      {Array.isArray(deal.sellerParties) && deal.sellerParties.map((party: any, i: number) => (
                         <div key={i} className="relative flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/50 group">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -1622,6 +1710,32 @@ export default function TransactionsDealDetail() {
                           </Button>
                         </div>
                       ))}
+                      {sellerAdvisors.length > 0 && (
+                        <div className="space-y-1 mt-2 ml-4">
+                          {sellerAdvisors.map(({ advisor, originalIndex }) => (
+                            <div key={`advisor-${originalIndex}`} className="relative flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/30 group">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                                  <span className="truncate text-sm">{typeof advisor === "string" ? advisor : advisor.name || "Unknown"}</span>
+                                  {advisor.role && (
+                                    <Badge variant="secondary" className="text-xs shrink-0">{advisor.role}</Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6 shrink-0 invisible group-hover:visible"
+                                onClick={() => handleRemoveItem("advisors", originalIndex)}
+                                data-testid={`button-delete-seller-advisor-${originalIndex}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="text-muted-foreground">No seller parties added</p>
@@ -1681,10 +1795,58 @@ export default function TransactionsDealDetail() {
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  {Array.isArray(deal.advisors) && deal.advisors.length > 0 ? (
+                  {thirdPartyGroups.length > 0 || ungroupedAdvisors.length > 0 ? (
                     <div className="space-y-2">
-                      {deal.advisors.map((advisor: any, i: number) => (
-                        <div key={i} className="relative flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/50 group">
+                      {thirdPartyGroups.map((group, gi) => (
+                        <div key={`group-${gi}`} className="space-y-1">
+                          <div className="relative flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/50 group">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                              <div className="min-w-0">
+                                <span className="truncate">{typeof group.primary.advisor === "string" ? group.primary.advisor : group.primary.advisor.name || "Unknown"}</span>
+                                {group.primary.advisor.role && (
+                                  <span className="text-muted-foreground text-sm ml-2">({group.primary.advisor.role})</span>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 shrink-0 invisible group-hover:visible"
+                              onClick={() => handleRemoveItem("advisors", group.primary.originalIndex)}
+                              data-testid={`button-delete-advisor-${group.primary.originalIndex}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div className="space-y-1 ml-4">
+                            {group.subordinates.map(({ advisor, originalIndex }) => (
+                              <div key={`sub-${originalIndex}`} className="relative flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/30 group">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                                    <span className="truncate text-sm">{typeof advisor === "string" ? advisor : advisor.name || "Unknown"}</span>
+                                    {advisor.role && (
+                                      <Badge variant="secondary" className="text-xs shrink-0">{advisor.role}</Badge>
+                                    )}
+                                  </div>
+                                </div>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 shrink-0 invisible group-hover:visible"
+                                  onClick={() => handleRemoveItem("advisors", originalIndex)}
+                                  data-testid={`button-delete-advisor-${originalIndex}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {ungroupedAdvisors.map(({ advisor, originalIndex }) => (
+                        <div key={originalIndex} className="relative flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/50 group">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <Users className="h-4 w-4 text-muted-foreground shrink-0" />
                             <div className="min-w-0">
@@ -1698,8 +1860,8 @@ export default function TransactionsDealDetail() {
                             size="icon"
                             variant="ghost"
                             className="h-6 w-6 shrink-0 invisible group-hover:visible"
-                            onClick={() => handleRemoveItem("advisors", i)}
-                            data-testid={`button-delete-advisor-${i}`}
+                            onClick={() => handleRemoveItem("advisors", originalIndex)}
+                            data-testid={`button-delete-advisor-${originalIndex}`}
                           >
                             <X className="h-3 w-3" />
                           </Button>
@@ -1707,7 +1869,7 @@ export default function TransactionsDealDetail() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-muted-foreground">No advisors added</p>
+                    <p className="text-muted-foreground">No general advisors</p>
                   )}
                 </CardContent>
               </Card>
