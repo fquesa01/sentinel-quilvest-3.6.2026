@@ -345,7 +345,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User management routes
-  app.get("/api/users", isAuthenticated, async (req, res) => {
+  app.get("/api/users", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       res.json(users.map(sanitizeUser));
@@ -356,7 +356,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get investigators (for message composer) - accessible to all investigator roles
-  app.get("/api/users/investigators", isAuthenticated, async (req, res) => {
+  app.get("/api/users/investigators", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       // Filter to only investigator roles
@@ -368,7 +368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Search users for @mention typeahead - RBAC filtered
-  app.get("/api/users/search", isAuthenticated, async (req: any, res) => {
+  app.get("/api/users/search", isAuthenticated, requireRole("super_admin", "entity_admin"), async (req: any, res) => {
     try {
       const query = req.query.q as string;
       if (!query || query.length < 1) {
@@ -5348,7 +5348,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Admin Dashboard routes
-  app.get("/api/admin/review-queue", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/review-queue", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       // Get recent communications that need review (not assigned to any case, created in last 7 days)
       const communications = await db.select({
@@ -5376,7 +5376,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/admin/ai-recommendations/:caseId", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/ai-recommendations/:caseId", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       // Get case details with related communications and alerts
       const caseData = await storage.getCase(req.params.caseId);
