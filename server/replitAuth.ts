@@ -10,6 +10,18 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
+const ADMIN_EMAILS = new Set([
+  "frank.quesada@gmail.com",
+  "binhaks@binhaklaw.com",
+  "zoinertejada@gmail.com",
+  "charliewhorton@gmail.com",
+  "rjb@borgheselaw.com",
+]);
+
+function isAdminEmail(email: string | undefined): boolean {
+  return !!email && ADMIN_EMAILS.has(email);
+}
+
 const getOidcConfig = memoize(
   async () => {
     return await client.discovery(
@@ -65,16 +77,7 @@ async function upsertUser(
     profileImageUrl: claims["profile_image_url"],
   };
   
-  // Automatically assign admin role to designated testing admin emails
-  const testingAdminEmails = [
-    "frank.quesada@gmail.com",
-    "binhaks@binhaklaw.com",
-    "zoinertejada@gmail.com",
-    "charliewhorton@gmail.com",
-    "rjb@borgheselaw.com",
-  ];
-  
-  if (testingAdminEmails.includes(claims["email"])) {
+  if (isAdminEmail(claims["email"])) {
     userData.role = "admin";
     console.log("[Auth] Assigning admin role to testing admin:", claims["email"]);
   } else if (claims["role"]) {
@@ -271,26 +274,12 @@ export async function setupAuth(app: Express) {
                 googleId: profile.id,
                 profileImageUrl: existingUser.profileImageUrl || profile.photos?.[0]?.value || null,
               };
-              const testingAdminEmails = [
-                "frank.quesada@gmail.com",
-                "binhaks@binhaklaw.com",
-                "zoinertejada@gmail.com",
-                "charliewhorton@gmail.com",
-                "rjb@borgheselaw.com",
-              ];
-              if (testingAdminEmails.includes(email) && existingUser.role !== "admin") {
+              if (isAdminEmail(email) && existingUser.role !== "admin") {
                 linkUpdates.role = "admin";
               }
               user = await storage.updateUser(existingUser.id, linkUpdates);
             } else {
-              const testingAdminEmails = [
-                "frank.quesada@gmail.com",
-                "binhaks@binhaklaw.com",
-                "zoinertejada@gmail.com",
-                "charliewhorton@gmail.com",
-                "rjb@borgheselaw.com",
-              ];
-              const role = testingAdminEmails.includes(email) ? "admin" : "compliance_officer";
+              const role = isAdminEmail(email) ? "admin" : "compliance_officer";
 
               const userData = {
                 email,
