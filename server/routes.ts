@@ -12863,6 +12863,84 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
+  // Deal Title Events CRUD
+  app.get("/api/deals/:dealId/title-events", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+    try {
+      const events = await db
+        .select()
+        .from(schema.dealTitleEvents)
+        .where(eq(schema.dealTitleEvents.dealId, req.params.dealId))
+        .orderBy(schema.dealTitleEvents.eventDate);
+      res.json(events);
+    } catch (error: any) {
+      console.error("Error fetching deal title events:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title-events", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const validated = schema.insertDealTitleEventSchema.parse({
+        ...req.body,
+        dealId: req.params.dealId,
+      });
+      const [newEvent] = await db
+        .insert(schema.dealTitleEvents)
+        .values(validated)
+        .returning();
+      res.status(201).json(newEvent);
+    } catch (error: any) {
+      console.error("Error creating deal title event:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/deals/:dealId/title-events/:eventId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+    try {
+      const validated = schema.insertDealTitleEventSchema.partial().parse(req.body);
+      const { dealId: _ignoredDealId, ...updateFields } = validated;
+      const [updated] = await db
+        .update(schema.dealTitleEvents)
+        .set({ ...updateFields, updatedAt: new Date() })
+        .where(and(eq(schema.dealTitleEvents.id, req.params.eventId), eq(schema.dealTitleEvents.dealId, req.params.dealId)))
+        .returning();
+      if (!updated) {
+        return res.status(404).json({ message: "Title event not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating deal title event:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/deals/:dealId/title-events/:eventId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+    try {
+      const [deleted] = await db
+        .delete(schema.dealTitleEvents)
+        .where(and(eq(schema.dealTitleEvents.id, req.params.eventId), eq(schema.dealTitleEvents.dealId, req.params.dealId)))
+        .returning();
+      if (!deleted) {
+        return res.status(404).json({ message: "Title event not found" });
+      }
+      res.json({ message: "Title event deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting deal title event:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title-events/extract", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+    try {
+      const { extractTitleHistory } = await import("./services/title-history-service");
+      const result = await extractTitleHistory(req.params.dealId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error extracting title history:", error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   // Deal Meeting Notes CRUD
   app.get("/api/deals/:dealId/meeting-notes", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
     try {

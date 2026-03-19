@@ -6634,6 +6634,58 @@ export const insertDealIssueSchema = createInsertSchema(dealIssues).omit({
 });
 export type InsertDealIssue = z.infer<typeof insertDealIssueSchema>;
 
+// Deal Title Event Type Enum
+export const dealTitleEventTypeEnum = pgEnum("deal_title_event_type", [
+  "deed_transfer",
+  "mortgage",
+  "lien_filed",
+  "lien_released",
+  "easement",
+  "title_commitment",
+  "satisfaction",
+  "lis_pendens",
+  "judgment",
+  "tax_lien",
+  "hoa_lien",
+  "assignment",
+  "subordination",
+  "other",
+]);
+
+// Deal Title Events Table
+export const dealTitleEvents = pgTable("deal_title_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  eventDate: timestamp("event_date"),
+  eventType: dealTitleEventTypeEnum("event_type").default("other"),
+  grantor: varchar("grantor", { length: 500 }),
+  grantee: varchar("grantee", { length: 500 }),
+  description: text("description"),
+  recordingInfo: varchar("recording_info", { length: 500 }),
+  sourceDocumentId: varchar("source_document_id").references(() => dataRoomDocuments.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  dealIdx: index("idx_deal_title_events_deal").on(table.dealId),
+}));
+
+export const dealTitleEventsRelations = relations(dealTitleEvents, ({ one }) => ({
+  deal: one(deals, {
+    fields: [dealTitleEvents.dealId],
+    references: [deals.id],
+  }),
+}));
+
+export type DealTitleEvent = typeof dealTitleEvents.$inferSelect;
+export const insertDealTitleEventSchema = createInsertSchema(dealTitleEvents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  eventDate: z.coerce.date().optional().nullable(),
+});
+export type InsertDealTitleEvent = z.infer<typeof insertDealTitleEventSchema>;
+
 // Deal Meeting Notes Source Enum
 export const dealMeetingNoteSourceEnum = pgEnum("deal_meeting_note_source", [
   "ambient_intelligence",

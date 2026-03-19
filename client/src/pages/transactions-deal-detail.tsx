@@ -72,7 +72,8 @@ import {
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { ShareDealDialog } from "@/components/share-deal-dialog";
-import type { Deal, DealMilestone, DealParticipant, DealIssue, DealMeetingNote, ClosingTransaction } from "@shared/schema";
+import type { Deal, DealMilestone, DealParticipant, DealIssue, DealMeetingNote, DealTitleEvent, ClosingTransaction } from "@shared/schema";
+import { History, FileSearch2, ArrowRightLeft } from "lucide-react";
 import { format } from "date-fns";
 
 type DealWithRelations = Deal & {
@@ -218,6 +219,17 @@ export default function TransactionsDealDetail() {
     status: "pending" as string,
   });
 
+  const [titleEventDialogOpen, setTitleEventDialogOpen] = useState(false);
+  const [editingTitleEvent, setEditingTitleEvent] = useState<DealTitleEvent | null>(null);
+  const [titleEventForm, setTitleEventForm] = useState({
+    eventDate: "",
+    eventType: "other" as string,
+    grantor: "",
+    grantee: "",
+    description: "",
+    recordingInfo: "",
+  });
+
   const { data: deal, isLoading, error, refetch: refetchDeal } = useQuery<DealWithRelations>({
     queryKey: ["/api/deals", id],
     staleTime: DEAL_DETAIL_STALE_TIME,
@@ -225,6 +237,12 @@ export default function TransactionsDealDetail() {
 
   const { data: milestones = [] } = useQuery<DealMilestone[]>({
     queryKey: ["/api/deals", id, "milestones"],
+    enabled: !!id,
+    staleTime: DEAL_DETAIL_STALE_TIME,
+  });
+
+  const { data: titleEvents = [] } = useQuery<DealTitleEvent[]>({
+    queryKey: ["/api/deals", id, "title-events"],
     enabled: !!id,
     staleTime: DEAL_DETAIL_STALE_TIME,
   });
@@ -774,6 +792,70 @@ export default function TransactionsDealDetail() {
     },
   });
 
+  const addTitleEventMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", `/api/deals/${id}/title-events`, data);
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Title event added", description: "The title event has been created." });
+      await invalidateDealQueries(id);
+      closeTitleEventDialog();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add title event.", variant: "destructive" });
+    },
+  });
+
+  const updateTitleEventMutation = useMutation({
+    mutationFn: async ({ eventId, data }: { eventId: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/deals/${id}/title-events/${eventId}`, data);
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Title event updated", description: "Changes have been saved." });
+      await invalidateDealQueries(id);
+      closeTitleEventDialog();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update title event.", variant: "destructive" });
+    },
+  });
+
+  const deleteTitleEventMutation = useMutation({
+    mutationFn: async (eventId: string) => {
+      const res = await apiRequest("DELETE", `/api/deals/${id}/title-events/${eventId}`);
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "Title event deleted", description: "The title event has been removed." });
+      await invalidateDealQueries(id);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete title event.", variant: "destructive" });
+    },
+  });
+
+  const extractTitleHistoryMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/deals/${id}/title-events/extract`);
+      return res.json();
+    },
+    onSuccess: async (data: any) => {
+      await invalidateDealQueries(id);
+      const count = data.eventsAdded || 0;
+      toast({
+        title: "Title History Extracted",
+        description: count > 0
+          ? `Added ${count} title event${count > 1 ? "s" : ""} from documents.`
+          : "No new title events found in documents.",
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Extraction Failed", description: error.message || "Could not extract title history.", variant: "destructive" });
+    },
+  });
+
   // Meeting note mutations
   const addMeetingNoteMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -980,6 +1062,96 @@ export default function TransactionsDealDetail() {
       updateMilestoneMutation.mutate({ milestoneId: editingMilestone.id, data });
     } else {
       addMilestoneMutation.mutate(data);
+    }
+  };
+
+  const titleEventTypeLabels: Record<string, string> = {
+    deed_transfer: "Deed Transfer",
+    mortgage: "Mortgage",
+    lien_filed: "Lien Filed",
+    lien_released: "Lien Released",
+    easement: "Easement",
+    title_commitment: "Title Commitment",
+    satisfaction: "Satisfaction",
+    lis_pendens: "Lis Pendens",
+    judgment: "Judgment",
+    tax_lien: "Tax Lien",
+    hoa_lien: "HOA Lien",
+    assignment: "Assignment",
+    subordination: "Subordination",
+    other: "Other",
+  };
+
+  const titleEventTypeColors: Record<string, { dot: string; bg: string; icon: string }> = {
+    deed_transfer: { dot: "bg-blue-500", bg: "bg-blue-500/20", icon: "text-blue-500" },
+    mortgage: { dot: "bg-purple-500", bg: "bg-purple-500/20", icon: "text-purple-500" },
+    lien_filed: { dot: "bg-red-500", bg: "bg-red-500/20", icon: "text-red-500" },
+    lien_released: { dot: "bg-green-500", bg: "bg-green-500/20", icon: "text-green-500" },
+    easement: { dot: "bg-amber-500", bg: "bg-amber-500/20", icon: "text-amber-500" },
+    title_commitment: { dot: "bg-cyan-500", bg: "bg-cyan-500/20", icon: "text-cyan-500" },
+    satisfaction: { dot: "bg-green-500", bg: "bg-green-500/20", icon: "text-green-500" },
+    lis_pendens: { dot: "bg-red-500", bg: "bg-red-500/20", icon: "text-red-500" },
+    judgment: { dot: "bg-red-500", bg: "bg-red-500/20", icon: "text-red-500" },
+    tax_lien: { dot: "bg-orange-500", bg: "bg-orange-500/20", icon: "text-orange-500" },
+    hoa_lien: { dot: "bg-orange-500", bg: "bg-orange-500/20", icon: "text-orange-500" },
+    assignment: { dot: "bg-indigo-500", bg: "bg-indigo-500/20", icon: "text-indigo-500" },
+    subordination: { dot: "bg-indigo-500", bg: "bg-indigo-500/20", icon: "text-indigo-500" },
+    other: { dot: "bg-muted-foreground", bg: "bg-muted", icon: "text-muted-foreground" },
+  };
+
+  const openAddTitleEventDialog = () => {
+    setEditingTitleEvent(null);
+    setTitleEventForm({
+      eventDate: "",
+      eventType: "other",
+      grantor: "",
+      grantee: "",
+      description: "",
+      recordingInfo: "",
+    });
+    setTitleEventDialogOpen(true);
+  };
+
+  const openEditTitleEventDialog = (event: DealTitleEvent) => {
+    setEditingTitleEvent(event);
+    setTitleEventForm({
+      eventDate: event.eventDate ? format(new Date(event.eventDate), "yyyy-MM-dd") : "",
+      eventType: event.eventType || "other",
+      grantor: event.grantor || "",
+      grantee: event.grantee || "",
+      description: event.description || "",
+      recordingInfo: event.recordingInfo || "",
+    });
+    setTitleEventDialogOpen(true);
+  };
+
+  const closeTitleEventDialog = () => {
+    setTitleEventDialogOpen(false);
+    setEditingTitleEvent(null);
+    setTitleEventForm({
+      eventDate: "",
+      eventType: "other",
+      grantor: "",
+      grantee: "",
+      description: "",
+      recordingInfo: "",
+    });
+  };
+
+  const handleSaveTitleEvent = () => {
+    const data = {
+      eventDate: titleEventForm.eventDate ? new Date(titleEventForm.eventDate).toISOString() : null,
+      eventType: titleEventForm.eventType,
+      grantor: titleEventForm.grantor.trim() || null,
+      grantee: titleEventForm.grantee.trim() || null,
+      description: titleEventForm.description.trim() || null,
+      recordingInfo: titleEventForm.recordingInfo.trim() || null,
+    };
+
+    if (editingTitleEvent) {
+      updateTitleEventMutation.mutate({ eventId: editingTitleEvent.id, data });
+    } else {
+      addTitleEventMutation.mutate(data);
     }
   };
 
@@ -1224,6 +1396,7 @@ export default function TransactionsDealDetail() {
                 <SelectItem value="checklists">Checklists</SelectItem>
                 <SelectItem value="issues">Issues</SelectItem>
                 <SelectItem value="research">Research</SelectItem>
+                <SelectItem value="title-history">Title History</SelectItem>
                 <SelectItem value="closing-docs">Closing Docs</SelectItem>
                 <SelectItem value="closing">Closing</SelectItem>
                 <SelectItem value="condo-summary">Condo Summary</SelectItem>
@@ -1242,6 +1415,7 @@ export default function TransactionsDealDetail() {
             <TabsTrigger value="checklists" data-testid="tab-checklists">Checklists</TabsTrigger>
             <TabsTrigger value="issues" data-testid="tab-issues">Issues</TabsTrigger>
             <TabsTrigger value="research" data-testid="tab-research">Research</TabsTrigger>
+            <TabsTrigger value="title-history" data-testid="tab-title-history">Title History</TabsTrigger>
             <TabsTrigger value="closing-docs" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
             <TabsTrigger value="closing" data-testid="tab-closing">Closing</TabsTrigger>
             <TabsTrigger value="condo-summary" data-testid="tab-condo-summary">Condo Summary</TabsTrigger>
@@ -2488,6 +2662,149 @@ export default function TransactionsDealDetail() {
             <BackgroundResearchTab dealId={id!} />
           </TabsContent>
 
+          <TabsContent value="title-history" className="mt-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <CardTitle className="text-lg">Title History</CardTitle>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => extractTitleHistoryMutation.mutate()}
+                      disabled={extractTitleHistoryMutation.isPending}
+                      data-testid="button-extract-title-history"
+                    >
+                      {extractTitleHistoryMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <FileSearch2 className="h-4 w-4 mr-2" />
+                      )}
+                      {extractTitleHistoryMutation.isPending ? "Extracting..." : "Extract from Documents"}
+                    </Button>
+                    <Button size="sm" onClick={openAddTitleEventDialog} data-testid="button-add-title-event">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Event
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {titleEvents.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <History className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No title history events for this deal</p>
+                    <p className="text-sm mt-1">Upload title documents and click "Extract from Documents", or add events manually.</p>
+                    <Button variant="outline" size="sm" className="mt-3" onClick={openAddTitleEventDialog} data-testid="button-add-first-title-event">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add First Event
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    {[...titleEvents].sort((a: DealTitleEvent, b: DealTitleEvent) => {
+                      if (!a.eventDate && !b.eventDate) return 0;
+                      if (!a.eventDate) return 1;
+                      if (!b.eventDate) return -1;
+                      return new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime();
+                    }).map((evt: DealTitleEvent, idx: number, arr: DealTitleEvent[]) => {
+                      const isLast = idx === arr.length - 1;
+                      const colors = titleEventTypeColors[evt.eventType || "other"] || titleEventTypeColors.other;
+                      return (
+                        <div key={evt.id} className="relative flex gap-4" data-testid={`title-event-item-${evt.id}`}>
+                          <div className="flex flex-col items-center shrink-0 w-20">
+                            {evt.eventDate ? (
+                              <div className="text-center">
+                                <div className="text-xs font-medium uppercase text-muted-foreground tracking-wide">
+                                  {format(new Date(evt.eventDate), "MMM")}
+                                </div>
+                                <div className="text-2xl font-bold leading-tight">
+                                  {format(new Date(evt.eventDate), "d")}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {format(new Date(evt.eventDate), "yyyy")}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center">
+                                <div className="text-xs text-muted-foreground italic">No date</div>
+                                <div className="text-lg font-bold leading-tight text-muted-foreground">&mdash;</div>
+                                <div className="text-xs text-muted-foreground italic">set</div>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-center shrink-0">
+                            <div className={`z-10 flex items-center justify-center w-8 h-8 rounded-full ${colors.bg}`}>
+                              <ArrowRightLeft className={`h-4 w-4 ${colors.icon}`} />
+                            </div>
+                            {!isLast && (
+                              <div className={`w-0.5 flex-1 min-h-[2rem] ${colors.dot} opacity-30`} />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 pb-8">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="font-medium break-words min-w-0 pt-1">
+                                {titleEventTypeLabels[evt.eventType || "other"] || evt.eventType}
+                              </h4>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => openEditTitleEventDialog(evt)}
+                                  data-testid={`button-edit-title-event-${evt.id}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => deleteTitleEventMutation.mutate(evt.id)}
+                                  data-testid={`button-delete-title-event-${evt.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap mt-1">
+                              <Badge variant="secondary">
+                                {titleEventTypeLabels[evt.eventType || "other"] || evt.eventType}
+                              </Badge>
+                            </div>
+                            {(evt.grantor || evt.grantee) && (
+                              <div className="flex items-center gap-2 flex-wrap mt-2 text-sm">
+                                {evt.grantor && (
+                                  <span className="text-muted-foreground">
+                                    <span className="font-medium text-foreground">From:</span> {evt.grantor}
+                                  </span>
+                                )}
+                                {evt.grantor && evt.grantee && (
+                                  <ArrowRightLeft className="h-3 w-3 text-muted-foreground" />
+                                )}
+                                {evt.grantee && (
+                                  <span className="text-muted-foreground">
+                                    <span className="font-medium text-foreground">To:</span> {evt.grantee}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {evt.description && (
+                              <p className="text-sm text-muted-foreground mt-1 break-words">{evt.description}</p>
+                            )}
+                            {evt.recordingInfo && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Recording: {evt.recordingInfo}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="closing-docs" className="mt-6">
             <ClosingDocumentsTab dealId={id!} />
           </TabsContent>
@@ -3062,6 +3379,107 @@ export default function TransactionsDealDetail() {
                 data-testid="button-save-milestone"
               >
                 {(addMilestoneMutation.isPending || updateMilestoneMutation.isPending) ? "Saving..." : (editingMilestone ? "Save Changes" : "Add Milestone")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Title Event Dialog */}
+        <Dialog open={titleEventDialogOpen} onOpenChange={(open) => { if (!open) closeTitleEventDialog(); }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{editingTitleEvent ? "Edit Title Event" : "Add Title Event"}</DialogTitle>
+              <DialogDescription>
+                {editingTitleEvent ? "Update the title event details below." : "Add a new title history event for this deal."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Event Type</Label>
+                <Select
+                  value={titleEventForm.eventType}
+                  onValueChange={(v) => setTitleEventForm({ ...titleEventForm, eventType: v })}
+                >
+                  <SelectTrigger data-testid="select-title-event-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="deed_transfer">Deed Transfer</SelectItem>
+                    <SelectItem value="mortgage">Mortgage</SelectItem>
+                    <SelectItem value="lien_filed">Lien Filed</SelectItem>
+                    <SelectItem value="lien_released">Lien Released</SelectItem>
+                    <SelectItem value="easement">Easement</SelectItem>
+                    <SelectItem value="title_commitment">Title Commitment</SelectItem>
+                    <SelectItem value="satisfaction">Satisfaction</SelectItem>
+                    <SelectItem value="lis_pendens">Lis Pendens</SelectItem>
+                    <SelectItem value="judgment">Judgment</SelectItem>
+                    <SelectItem value="tax_lien">Tax Lien</SelectItem>
+                    <SelectItem value="hoa_lien">HOA Lien</SelectItem>
+                    <SelectItem value="assignment">Assignment</SelectItem>
+                    <SelectItem value="subordination">Subordination</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Event Date</Label>
+                <Input
+                  type="date"
+                  value={titleEventForm.eventDate}
+                  onChange={(e) => setTitleEventForm({ ...titleEventForm, eventDate: e.target.value })}
+                  data-testid="input-title-event-date"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Grantor (From)</Label>
+                  <Input
+                    value={titleEventForm.grantor}
+                    onChange={(e) => setTitleEventForm({ ...titleEventForm, grantor: e.target.value })}
+                    placeholder="e.g., John Smith"
+                    data-testid="input-title-event-grantor"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Grantee (To)</Label>
+                  <Input
+                    value={titleEventForm.grantee}
+                    onChange={(e) => setTitleEventForm({ ...titleEventForm, grantee: e.target.value })}
+                    placeholder="e.g., Jane Doe"
+                    data-testid="input-title-event-grantee"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea
+                  value={titleEventForm.description}
+                  onChange={(e) => setTitleEventForm({ ...titleEventForm, description: e.target.value })}
+                  placeholder="Details about this title event"
+                  rows={3}
+                  data-testid="input-title-event-description"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Recording Info</Label>
+                <Input
+                  value={titleEventForm.recordingInfo}
+                  onChange={(e) => setTitleEventForm({ ...titleEventForm, recordingInfo: e.target.value })}
+                  placeholder="e.g., Book 123, Page 456 or Instrument #789"
+                  data-testid="input-title-event-recording-info"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeTitleEventDialog}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveTitleEvent}
+                disabled={addTitleEventMutation.isPending || updateTitleEventMutation.isPending}
+                data-testid="button-save-title-event"
+              >
+                {(addTitleEventMutation.isPending || updateTitleEventMutation.isPending) ? "Saving..." : (editingTitleEvent ? "Save Changes" : "Add Event")}
               </Button>
             </DialogFooter>
           </DialogContent>
