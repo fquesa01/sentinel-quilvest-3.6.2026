@@ -9,6 +9,8 @@ import {
   updateDocumentContent,
   getDocumentVersions,
   exportDocumentToDocx,
+  exportDocumentToPdf,
+  signDocument,
   importDocxContent,
   getDocumentTypesForDeal,
   DOCUMENT_DISPLAY_NAMES,
@@ -326,6 +328,63 @@ router.post("/api/deals/:dealId/closing-documents/:docId/upload", isAuthenticate
     res.json(refreshed || updated);
   } catch (error: any) {
     console.error("Error uploading document:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/api/deals/:dealId/closing-documents/:docId/download-pdf", isAuthenticated, async (req: any, res) => {
+  try {
+    const { docId, dealId } = req.params;
+    const doc = await getDocForDeal(docId, dealId);
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    const buffer = await exportDocumentToPdf(docId);
+    const filename = `${doc.title.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "_")}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("Error generating PDF:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/api/deals/:dealId/closing-documents/:docId/sign", isAuthenticated, async (req: any, res) => {
+  try {
+    const { docId, dealId } = req.params;
+    const { signatureImage, signerName } = req.body;
+    const userId = req.user?.claims?.sub;
+
+    const doc = await getDocForDeal(docId, dealId);
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    if (!signatureImage || typeof signatureImage !== "string") {
+      return res.status(400).json({ error: "Signature image is required" });
+    }
+    if (!signatureImage.startsWith("data:image/png;base64,") && !signatureImage.startsWith("data:image/jpeg;base64,")) {
+      return res.status(400).json({ error: "Signature must be a PNG or JPEG data URL" });
+    }
+    const maxSignatureBytes = 500 * 1024;
+    const base64Data = signatureImage.split(",")[1] || "";
+    const actualBytes = Math.ceil(base64Data.length * 3 / 4);
+    if (actualBytes > maxSignatureBytes) {
+      return res.status(400).json({ error: "Signature image is too large (max 500KB)" });
+    }
+    if (!signerName || typeof signerName !== "string" || signerName.trim().length === 0) {
+      return res.status(400).json({ error: "Signer name is required" });
+    }
+    if (signerName.length > 200) {
+      return res.status(400).json({ error: "Signer name is too long (max 200 characters)" });
+    }
+
+    if (!["draft", "review", "approved"].includes(doc.status)) {
+      return res.status(400).json({ error: "Document must be in draft, review, or approved status to sign" });
+    }
+
+    const updated = await signDocument(docId, signatureImage, signerName.trim(), userId);
+    res.json(updated);
+  } catch (error: any) {
+    console.error("Error signing document:", error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -65,6 +65,10 @@ app.get("/api/health", (_req, res) => {
     await pool.query(`ALTER TABLE pe_deals ADD COLUMN IF NOT EXISTS custom_stage varchar(100)`);
     await pool.query(`ALTER TABLE connected_calendar_accounts ADD COLUMN IF NOT EXISTS token_source varchar(30) DEFAULT 'oauth'`);
     await pool.query(`ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS token_source varchar(30) DEFAULT 'oauth'`);
+    await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signature_image text`);
+    await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signed_at timestamp`);
+    await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signed_by varchar(500)`);
+
     console.log("[Startup] Database columns verified");
   } catch (err) {
     console.error("[Startup] Migration check error:", err);

@@ -12,8 +12,9 @@ import { RichTextEditor } from "@/components/rich-text-editor";
 import {
   FileText, Download, Upload, Mic, MicOff, Sparkles, History,
   ChevronLeft, Loader2, RotateCcw, Send, Clock, Edit3, Check,
-  AlertCircle, FileUp, Trash2, Eye, Stamp
+  AlertCircle, FileUp, Trash2, Eye, Stamp, PenTool, FileDown
 } from "lucide-react";
+import { ClosingSignatureDialog } from "@/components/closing-signature-dialog";
 import { Link } from "wouter";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -71,6 +72,7 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
   const [uploadPlaceholderDialogOpen, setUploadPlaceholderDialogOpen] = useState(false);
   const [docNotes, setDocNotes] = useState("");
   const [docNotesInitialized, setDocNotesInitialized] = useState(false);
+  const [signDialogOpen, setSignDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const placeholderFileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -280,6 +282,23 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
     },
   });
 
+  const signMutation = useMutation({
+    mutationFn: async ({ signatureImage, signerName }: { signatureImage: string; signerName: string }) => {
+      const res = await apiRequest("POST", `/api/deals/${dealId}/closing-documents/${selectedDocId}/sign`, { signatureImage, signerName });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents", selectedDocId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "closing-documents", selectedDocId, "versions"] });
+      setSignDialogOpen(false);
+      toast({ title: "Document Signed", description: "The document has been signed and marked as executed." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Signing Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   useEffect(() => {
     if (currentDoc && selectedDocId && currentDoc.id === selectedDocId) {
       if (!docNotesInitialized) {
@@ -298,6 +317,22 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
       const a = document.createElement("a");
       a.href = url;
       a.download = `${currentDoc?.title || "document"}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  }, [dealId, selectedDocId, currentDoc]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/deals/${dealId}/closing-documents/${selectedDocId}/download-pdf`, { credentials: "include" });
+      if (!res.ok) throw new Error("PDF generation failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentDoc?.title || "document"}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
@@ -417,6 +452,23 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
             <Download className="h-4 w-4 mr-1" />
             Word
           </Button>
+
+          <Button variant="outline" size="sm" onClick={handleDownloadPdf} data-testid="button-download-pdf">
+            <FileDown className="h-4 w-4 mr-1" />
+            PDF
+          </Button>
+
+          {["draft", "review", "approved"].includes(currentDoc.status) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSignDialogOpen(true)}
+              data-testid="button-sign-doc"
+            >
+              <PenTool className="h-4 w-4 mr-1" />
+              Sign
+            </Button>
+          )}
 
           <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
             <DialogTrigger asChild>
@@ -577,6 +629,28 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
           )}
         </div>
 
+        {currentDoc.signatureImage && currentDoc.signedAt && (
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <PenTool className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Signed by {currentDoc.signedBy || "Unknown"}</span>
+                <span className="text-xs text-muted-foreground">
+                  on {new Date(currentDoc.signedAt).toLocaleDateString()} at {new Date(currentDoc.signedAt).toLocaleTimeString()}
+                </span>
+              </div>
+              <div className="border rounded-md p-2 bg-white dark:bg-white inline-block">
+                <img
+                  src={currentDoc.signatureImage}
+                  alt="Signature"
+                  className="max-h-16"
+                  data-testid="img-document-signature"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="space-y-2 pt-2 border-t">
           <Label className="text-sm font-medium">Notes</Label>
           <Textarea
@@ -598,6 +672,14 @@ export function ClosingDocumentsTab({ dealId }: ClosingDocumentsTabProps) {
             </Button>
           </div>
         </div>
+
+        <ClosingSignatureDialog
+          open={signDialogOpen}
+          onOpenChange={setSignDialogOpen}
+          onSign={(signatureImage, signerName) => signMutation.mutate({ signatureImage, signerName })}
+          isPending={signMutation.isPending}
+          documentTitle={currentDoc.title}
+        />
       </div>
     );
   }

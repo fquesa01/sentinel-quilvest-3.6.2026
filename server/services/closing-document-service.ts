@@ -789,3 +789,354 @@ export async function importDocxContent(fileBuffer: Buffer): Promise<string> {
 }
 
 export { markdownToHtml };
+
+export async function exportDocumentToPdf(docId: string, includeSignature = true): Promise<Buffer> {
+  const [doc] = await db.select().from(closingDocuments).where(eq(closingDocuments.id, docId));
+  if (!doc) throw new Error("Document not found");
+
+  const PDFDocument = (await import("pdfkit")).default;
+  const { format } = await import("date-fns");
+
+  const pdfDoc = new PDFDocument({
+    size: "LETTER",
+    margins: { top: 60, bottom: 60, left: 60, right: 60 },
+    bufferPages: true,
+    info: {
+      Title: doc.title,
+      Author: "Sentinel Counsel LLP",
+      Subject: doc.title,
+    },
+  });
+
+  const chunks: Buffer[] = [];
+  pdfDoc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+  const FONT = "Times-Roman";
+  const FONT_BOLD = "Times-Bold";
+  const FONT_ITALIC = "Times-Italic";
+  const BODY_SIZE = 11;
+  const H1_SIZE = 16;
+  const H2_SIZE = 14;
+  const H3_SIZE = 12;
+  const pageWidth = pdfDoc.page.width - 120;
+
+  pdfDoc.fontSize(H1_SIZE).font(FONT_BOLD).text(doc.title.toUpperCase(), { align: "center" });
+  pdfDoc.moveDown(0.5);
+  pdfDoc.fontSize(8).font(FONT).fillColor("#666666").text(`Document Type: ${DOCUMENT_DISPLAY_NAMES[doc.documentType] || doc.documentType}`, { align: "center" });
+  pdfDoc.fillColor("#000000");
+  pdfDoc.moveDown(0.3);
+  pdfDoc.moveTo(60, pdfDoc.y).lineTo(pdfDoc.page.width - 60, pdfDoc.y).strokeColor("#cccccc").lineWidth(0.5).stroke();
+  pdfDoc.moveDown(1);
+
+  const content = doc.content || "";
+
+  interface TextSegment {
+    text: string;
+    bold: boolean;
+    italic: boolean;
+  }
+
+  function decodeEntities(text: string): string {
+    return text
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+      .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
+  }
+
+  function extractInlineSegments(html: string): TextSegment[] {
+    const segments: TextSegment[] = [];
+    let bold = false;
+    let italic = false;
+    const tokenRegex = /<(\/?)(\w+)[^>]*>|([^<]+)/g;
+    let m;
+    while ((m = tokenRegex.exec(html)) !== null) {
+      if (m[3]) {
+        const decoded = decodeEntities(m[3]);
+        if (decoded.trim() || decoded.includes(" ")) {
+          segments.push({ text: decoded, bold, italic });
+        }
+      } else {
+        const isClose = m[1] === "/";
+        const t = m[2].toLowerCase();
+        if (t === "strong" || t === "b") bold = !isClose;
+        if (t === "em" || t === "i") italic = !isClose;
+        if (t === "br" && !isClose) segments.push({ text: "\n", bold: false, italic: false });
+      }
+    }
+    return segments;
+  }
+
+  function renderSegments(segments: TextSegment[], opts: { width: number; lineGap?: number; indent?: number }) {
+    if (segments.length === 0) return;
+    const last = segments.length - 1;
+    for (let i = 0; i <= last; i++) {
+      const seg = segments[i];
+      if (seg.text === "\n") {
+        pdfDoc.text("", { width: opts.width, continued: false });
+        continue;
+      }
+      let font = FONT;
+      if (seg.bold && seg.italic) font = FONT_BOLD;
+      else if (seg.bold) font = FONT_BOLD;
+      else if (seg.italic) font = FONT_ITALIC;
+      pdfDoc.font(font);
+      const isLast = i === last;
+      const textOpts: any = { width: opts.width, continued: !isLast, lineGap: opts.lineGap || 2 };
+      if (i === 0 && opts.indent) textOpts.indent = opts.indent;
+      pdfDoc.text(seg.text, textOpts);
+    }
+  }
+
+  function extractBlockInnerHtml(html: string, tag: string): string {
+    const openRegex = new RegExp(`<${tag}[^>]*>`, "i");
+    const closeTag = `</${tag}>`;
+    const openMatch = openRegex.exec(html);
+    if (!openMatch) return html;
+    const afterOpen = html.substring(openMatch.index + openMatch[0].length);
+    const closeIdx = afterOpen.toLowerCase().indexOf(closeTag.toLowerCase());
+    if (closeIdx === -1) return afterOpen;
+    return afterOpen.substring(0, closeIdx);
+  }
+
+  function renderHtmlBlockToPdf(html: string) {
+    const blockRegex = /<(h[1-3]|p|ul|ol|li|hr|br|div|blockquote|table|tr|td|th|thead|tbody)([^>]*)>([\s\S]*?)<\/\1>|<(hr|br)\s*\/?>|([^<]+)/gi;
+    let blockMatch;
+    let olCounter = 0;
+
+    while ((blockMatch = blockRegex.exec(html)) !== null) {
+      if (pdfDoc.y > pdfDoc.page.height - 80) pdfDoc.addPage();
+
+      if (blockMatch[5]) {
+        const raw = decodeEntities(blockMatch[5]).trim();
+        if (raw) {
+          pdfDoc.fontSize(BODY_SIZE).font(FONT).text(raw, { width: pageWidth, lineGap: 2 });
+        }
+        continue;
+      }
+
+      if (blockMatch[4]) {
+        const selfTag = blockMatch[4].toLowerCase();
+        if (selfTag === "hr") {
+          pdfDoc.moveDown(0.3);
+          pdfDoc.moveTo(60, pdfDoc.y).lineTo(pdfDoc.page.width - 60, pdfDoc.y).strokeColor("#cccccc").lineWidth(0.5).stroke();
+          pdfDoc.moveDown(0.3);
+        } else if (selfTag === "br") {
+          pdfDoc.moveDown(0.2);
+        }
+        continue;
+      }
+
+      const blockTag = blockMatch[1].toLowerCase();
+      const innerContent = blockMatch[3] || "";
+
+      switch (blockTag) {
+        case "h1":
+          pdfDoc.moveDown(0.5);
+          pdfDoc.fontSize(H1_SIZE).font(FONT_BOLD);
+          renderSegments(extractInlineSegments(innerContent), { width: pageWidth });
+          pdfDoc.fontSize(BODY_SIZE).font(FONT);
+          pdfDoc.moveDown(0.4);
+          break;
+        case "h2":
+          pdfDoc.moveDown(0.5);
+          pdfDoc.fontSize(H2_SIZE).font(FONT_BOLD);
+          renderSegments(extractInlineSegments(innerContent), { width: pageWidth });
+          pdfDoc.fontSize(BODY_SIZE).font(FONT);
+          pdfDoc.moveDown(0.3);
+          break;
+        case "h3":
+          pdfDoc.moveDown(0.3);
+          pdfDoc.fontSize(H3_SIZE).font(FONT_BOLD);
+          renderSegments(extractInlineSegments(innerContent), { width: pageWidth });
+          pdfDoc.fontSize(BODY_SIZE).font(FONT);
+          pdfDoc.moveDown(0.2);
+          break;
+        case "p":
+        case "div":
+        case "blockquote":
+          pdfDoc.fontSize(BODY_SIZE).font(FONT);
+          renderSegments(extractInlineSegments(innerContent), { width: pageWidth, lineGap: 2 });
+          pdfDoc.moveDown(0.3);
+          break;
+        case "ul": {
+          const liMatches = innerContent.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+          for (const liHtml of liMatches) {
+            if (pdfDoc.y > pdfDoc.page.height - 80) pdfDoc.addPage();
+            const liInner = extractBlockInnerHtml(liHtml, "li");
+            pdfDoc.fontSize(BODY_SIZE).font(FONT);
+            const segments = extractInlineSegments(liInner);
+            segments.unshift({ text: "\u2022  ", bold: false, italic: false });
+            renderSegments(segments, { width: pageWidth - 20, indent: 20 });
+            pdfDoc.moveDown(0.1);
+          }
+          pdfDoc.moveDown(0.2);
+          break;
+        }
+        case "ol": {
+          olCounter = 0;
+          const liMatches = innerContent.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+          for (const liHtml of liMatches) {
+            if (pdfDoc.y > pdfDoc.page.height - 80) pdfDoc.addPage();
+            olCounter++;
+            const liInner = extractBlockInnerHtml(liHtml, "li");
+            pdfDoc.fontSize(BODY_SIZE).font(FONT);
+            const segments = extractInlineSegments(liInner);
+            segments.unshift({ text: `${olCounter}. `, bold: false, italic: false });
+            renderSegments(segments, { width: pageWidth - 20, indent: 20 });
+            pdfDoc.moveDown(0.1);
+          }
+          pdfDoc.moveDown(0.2);
+          break;
+        }
+        case "li": {
+          pdfDoc.fontSize(BODY_SIZE).font(FONT);
+          const segments = extractInlineSegments(innerContent);
+          segments.unshift({ text: "\u2022  ", bold: false, italic: false });
+          renderSegments(segments, { width: pageWidth - 20, indent: 20 });
+          pdfDoc.moveDown(0.1);
+          break;
+        }
+        case "table":
+        case "tr":
+        case "td":
+        case "th":
+        case "thead":
+        case "tbody": {
+          const tableText = decodeEntities(innerContent.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+          if (tableText) {
+            pdfDoc.fontSize(BODY_SIZE).font(FONT).text(tableText, { width: pageWidth, lineGap: 2 });
+            pdfDoc.moveDown(0.2);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (content.trim().startsWith("<")) {
+    renderHtmlBlockToPdf(content);
+  } else {
+    const textContent = stripHtmlToText(content);
+    const lines = textContent.split("\n");
+    for (const line of lines) {
+      if (!line.trim()) { pdfDoc.moveDown(0.3); continue; }
+      if (pdfDoc.y > pdfDoc.page.height - 80) { pdfDoc.addPage(); }
+      const trimmed = line.trim();
+      if (trimmed.startsWith("ARTICLE ") || trimmed.startsWith("Article ") || /^[IVX]+\./.test(trimmed)) {
+        pdfDoc.moveDown(0.5);
+        pdfDoc.fontSize(H2_SIZE).font(FONT_BOLD).text(trimmed, { width: pageWidth });
+        pdfDoc.moveDown(0.3);
+      } else if (/^Section \d/.test(trimmed) || /^\d+\.\d+/.test(trimmed)) {
+        pdfDoc.moveDown(0.3);
+        pdfDoc.fontSize(H3_SIZE).font(FONT_BOLD).text(trimmed, { width: pageWidth });
+        pdfDoc.moveDown(0.2);
+      } else if (trimmed === "---") {
+        pdfDoc.moveDown(0.3);
+        pdfDoc.moveTo(60, pdfDoc.y).lineTo(pdfDoc.page.width - 60, pdfDoc.y).strokeColor("#cccccc").lineWidth(0.5).stroke();
+        pdfDoc.moveDown(0.3);
+      } else {
+        pdfDoc.fontSize(BODY_SIZE).font(FONT).text(trimmed, { width: pageWidth, lineGap: 2 });
+      }
+    }
+  }
+
+  if (includeSignature && doc.signatureImage && doc.signedAt) {
+    if (pdfDoc.y > pdfDoc.page.height - 200) {
+      pdfDoc.addPage();
+    }
+    pdfDoc.moveDown(2);
+    pdfDoc.moveTo(60, pdfDoc.y).lineTo(pdfDoc.page.width - 60, pdfDoc.y).strokeColor("#cccccc").lineWidth(0.5).stroke();
+    pdfDoc.moveDown(1);
+    pdfDoc.fontSize(H3_SIZE).font(FONT_BOLD).text("SIGNATURE", { width: pageWidth });
+    pdfDoc.moveDown(0.5);
+
+    try {
+      const sigData = doc.signatureImage.replace(/^data:image\/\w+;base64,/, "");
+      const sigBuffer = Buffer.from(sigData, "base64");
+      pdfDoc.image(sigBuffer, 60, pdfDoc.y, { width: 200, height: 75 });
+      pdfDoc.y += 80;
+    } catch (e) {
+      pdfDoc.fontSize(BODY_SIZE).font(FONT_ITALIC).text("[Signature on file]", { width: pageWidth });
+    }
+
+    pdfDoc.moveTo(60, pdfDoc.y).lineTo(260, pdfDoc.y).strokeColor("#000000").lineWidth(0.5).stroke();
+    pdfDoc.moveDown(0.3);
+    if (doc.signedBy) {
+      pdfDoc.fontSize(BODY_SIZE).font(FONT).text(doc.signedBy, { width: pageWidth });
+    }
+    pdfDoc.fontSize(9).font(FONT).fillColor("#666666").text(`Signed electronically on ${format(new Date(doc.signedAt), "MMMM d, yyyy 'at' h:mm a")}`, { width: pageWidth });
+    pdfDoc.fillColor("#000000");
+  } else if (!doc.signatureImage) {
+    if (pdfDoc.y > pdfDoc.page.height - 200) {
+      pdfDoc.addPage();
+    }
+    pdfDoc.moveDown(3);
+    pdfDoc.fontSize(H3_SIZE).font(FONT_BOLD).text("SIGNATURE", { width: pageWidth });
+    pdfDoc.moveDown(2);
+    pdfDoc.moveTo(60, pdfDoc.y).lineTo(260, pdfDoc.y).strokeColor("#000000").lineWidth(0.5).stroke();
+    pdfDoc.moveDown(0.3);
+    pdfDoc.fontSize(BODY_SIZE).font(FONT).text("Name: ___________________________________", { width: pageWidth });
+    pdfDoc.moveDown(0.5);
+    pdfDoc.text("Date: ___________________________________", { width: pageWidth });
+  }
+
+  pdfDoc.moveDown(2);
+  pdfDoc.fontSize(7).font(FONT).fillColor("#999999").text(`Generated by Sentinel Counsel LLP on ${format(new Date(), "MM/dd/yyyy")}`, { align: "center", width: pageWidth });
+  pdfDoc.fillColor("#000000");
+
+  const pageRange = pdfDoc.bufferedPageRange();
+  const totalPages = pageRange.count;
+  for (let i = pageRange.start; i < pageRange.start + totalPages; i++) {
+    pdfDoc.switchToPage(i);
+    pdfDoc.fontSize(7).font(FONT).fillColor("#999999")
+      .text(`Page ${i - pageRange.start + 1} of ${totalPages}`, 60, pdfDoc.page.height - 40, { align: "center", width: pageWidth });
+  }
+  pdfDoc.fillColor("#000000");
+
+  pdfDoc.end();
+
+  return new Promise((resolve, reject) => {
+    pdfDoc.on("end", () => resolve(Buffer.concat(chunks)));
+    pdfDoc.on("error", reject);
+  });
+}
+
+export async function signDocument(
+  docId: string,
+  signatureImage: string,
+  signerName: string,
+  userId?: string
+): Promise<any> {
+  const [doc] = await db.select().from(closingDocuments).where(eq(closingDocuments.id, docId));
+  if (!doc) throw new Error("Document not found");
+
+  if (doc.status === "executed" && doc.signatureImage) {
+    throw new Error("Document has already been signed");
+  }
+
+  const now = new Date();
+  const newVersion = doc.currentVersion + 1;
+
+  await db.insert(closingDocumentVersions).values({
+    closingDocumentId: docId,
+    versionNumber: newVersion,
+    content: doc.content,
+    changeDescription: `Document signed by ${signerName}`,
+    changedBy: userId,
+    source: "manual_edit",
+  });
+
+  const [updated] = await db.update(closingDocuments)
+    .set({
+      signatureImage,
+      signedAt: now,
+      signedBy: signerName,
+      status: "executed",
+      currentVersion: newVersion,
+      updatedAt: now,
+    })
+    .where(eq(closingDocuments.id, docId))
+    .returning();
+
+  return updated;
+}
