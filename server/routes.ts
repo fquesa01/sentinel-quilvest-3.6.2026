@@ -356,7 +356,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get investigators (for message composer) - accessible to all investigator roles
-  app.get("/api/users/investigators", isAuthenticated, requireRole("super_admin"), async (req, res) => {
+  app.get("/api/users/investigators", isAuthenticated, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       // Filter to only investigator roles
