@@ -180,9 +180,9 @@ export default function TransactionsDealDetail() {
   const [newItemName, setNewItemName] = useState("");
   const [newItemRole, setNewItemRole] = useState("");
   
-  // Issue dialog states
-  const [issueDialogOpen, setIssueDialogOpen] = useState(false);
+  const [showInlineIssueForm, setShowInlineIssueForm] = useState(false);
   const [editingIssue, setEditingIssue] = useState<DealIssue | null>(null);
+  const [editingIssueId, setEditingIssueId] = useState<string | null>(null);
   const [issueForm, setIssueForm] = useState({
     title: "",
     description: "",
@@ -567,7 +567,7 @@ export default function TransactionsDealDetail() {
     onSuccess: async () => {
       await invalidateDealQueries(id);
       toast({ title: "Issue Created", description: "The issue has been logged." });
-      setIssueDialogOpen(false);
+      setShowInlineIssueForm(false);
       setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
       setEditingIssue(null);
     },
@@ -584,7 +584,7 @@ export default function TransactionsDealDetail() {
     onSuccess: async () => {
       await invalidateDealQueries(id);
       toast({ title: "Issue Updated", description: "Changes saved." });
-      setIssueDialogOpen(false);
+      setEditingIssueId(null);
       setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
       setEditingIssue(null);
     },
@@ -616,7 +616,14 @@ export default function TransactionsDealDetail() {
   };
 
   const openEditIssue = (issue: DealIssue) => {
+    if (editingIssueId === issue.id) {
+      setEditingIssueId(null);
+      setEditingIssue(null);
+      setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
+      return;
+    }
     setEditingIssue(issue);
+    setEditingIssueId(issue.id);
     setIssueForm({
       title: issue.title,
       description: issue.description || "",
@@ -625,13 +632,21 @@ export default function TransactionsDealDetail() {
       status: issue.status || "open",
       resolution: issue.resolution || "",
     });
-    setIssueDialogOpen(true);
+    setShowInlineIssueForm(false);
   };
 
   const openNewIssue = () => {
     setEditingIssue(null);
+    setEditingIssueId(null);
     setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
-    setIssueDialogOpen(true);
+    setShowInlineIssueForm(true);
+  };
+
+  const cancelInlineIssueForm = () => {
+    setShowInlineIssueForm(false);
+    setEditingIssueId(null);
+    setEditingIssue(null);
+    setIssueForm({ title: "", description: "", severity: "medium", category: "other", status: "open", resolution: "" });
   };
 
   // Dialog title labels
@@ -2479,6 +2494,84 @@ export default function TransactionsDealDetail() {
                 </div>
               </CardHeader>
               <CardContent>
+                {showInlineIssueForm && (
+                  <div className="mb-4 p-4 rounded-lg border bg-muted/20 space-y-4" data-testid="inline-issue-create-form">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-medium">New Issue</h4>
+                      <Button size="icon" variant="ghost" onClick={cancelInlineIssueForm} data-testid="button-cancel-issue">
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div>
+                      <Label>Title</Label>
+                      <Input
+                        value={issueForm.title}
+                        onChange={(e) => setIssueForm(f => ({ ...f, title: e.target.value }))}
+                        placeholder="Brief description of the issue"
+                        data-testid="input-issue-title"
+                      />
+                    </div>
+                    <div>
+                      <Label>Description</Label>
+                      <Textarea
+                        value={issueForm.description}
+                        onChange={(e) => setIssueForm(f => ({ ...f, description: e.target.value }))}
+                        placeholder="Detailed description..."
+                        data-testid="input-issue-description"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Severity</Label>
+                        <Select value={issueForm.severity} onValueChange={(v) => setIssueForm(f => ({ ...f, severity: v }))}>
+                          <SelectTrigger data-testid="select-issue-severity">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="critical">Critical</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>Category</Label>
+                        <Select value={issueForm.category} onValueChange={(v) => setIssueForm(f => ({ ...f, category: v }))}>
+                          <SelectTrigger data-testid="select-issue-category">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="legal">Legal</SelectItem>
+                            <SelectItem value="financial">Financial</SelectItem>
+                            <SelectItem value="regulatory">Regulatory</SelectItem>
+                            <SelectItem value="operational">Operational</SelectItem>
+                            <SelectItem value="environmental">Environmental</SelectItem>
+                            <SelectItem value="tax">Tax</SelectItem>
+                            <SelectItem value="ip">IP</SelectItem>
+                            <SelectItem value="hr">HR</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={cancelInlineIssueForm} data-testid="button-cancel-issue-text">
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveIssue}
+                        disabled={!issueForm.title.trim() || createIssueMutation.isPending}
+                        data-testid="button-save-issue"
+                      >
+                        {createIssueMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        Create Issue
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {dealIssues.length > 0 ? (
                   <div className="space-y-3">
                     {dealIssues.map((issue) => {
@@ -2499,48 +2592,154 @@ export default function TransactionsDealDetail() {
                         operational: "Operational", environmental: "Environmental",
                         tax: "Tax", ip: "IP", hr: "HR", other: "Other",
                       };
+                      const isEditing = editingIssueId === issue.id;
                       return (
-                        <div
-                          key={issue.id}
-                          className="flex items-start justify-between gap-3 p-3 rounded-lg bg-muted/30 group hover-elevate cursor-pointer"
-                          onClick={() => openEditIssue(issue)}
-                          data-testid={`issue-row-${issue.id}`}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium truncate" data-testid={`text-issue-title-${issue.id}`}>{issue.title}</span>
-                              <Badge variant="secondary" className={`text-xs ${severityColors[issue.severity || "medium"]}`} data-testid={`badge-severity-${issue.id}`}>
-                                {(issue.severity || "medium").charAt(0).toUpperCase() + (issue.severity || "medium").slice(1)}
-                              </Badge>
-                              <Badge variant="secondary" className={`text-xs ${statusColors[issue.status || "open"]}`} data-testid={`badge-status-${issue.id}`}>
-                                {(issue.status || "open").replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
-                              </Badge>
-                            </div>
-                            {issue.description && (
-                              <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{issue.description}</p>
-                            )}
-                            <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                              <span>{categoryLabels[issue.category || "other"]}</span>
-                              {issue.createdAt && (
-                                <span>{format(new Date(issue.createdAt), "MMM d, yyyy")}</span>
+                        <div key={issue.id} data-testid={`issue-row-${issue.id}`}>
+                          <div
+                            className={`flex items-start justify-between gap-3 p-3 rounded-lg bg-muted/30 group hover-elevate cursor-pointer ${isEditing ? "rounded-b-none" : ""}`}
+                            onClick={() => openEditIssue(issue)}
+                          >
+                            <div className="flex items-center gap-2">
+                              {isEditing ? (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                               )}
                             </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium truncate" data-testid={`text-issue-title-${issue.id}`}>{issue.title}</span>
+                                <Badge variant="secondary" className={`text-xs ${severityColors[issue.severity || "medium"]}`} data-testid={`badge-severity-${issue.id}`}>
+                                  {(issue.severity || "medium").charAt(0).toUpperCase() + (issue.severity || "medium").slice(1)}
+                                </Badge>
+                                <Badge variant="secondary" className={`text-xs ${statusColors[issue.status || "open"]}`} data-testid={`badge-status-${issue.id}`}>
+                                  {(issue.status || "open").replace("_", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                                </Badge>
+                              </div>
+                              {!isEditing && issue.description && (
+                                <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{issue.description}</p>
+                              )}
+                              {!isEditing && (
+                                <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                                  <span>{categoryLabels[issue.category || "other"]}</span>
+                                  {issue.createdAt && (
+                                    <span>{format(new Date(issue.createdAt), "MMM d, yyyy")}</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="shrink-0 invisible group-hover:visible"
+                              onClick={(e) => { e.stopPropagation(); deleteIssueMutation.mutate(issue.id); }}
+                              data-testid={`button-delete-issue-${issue.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="shrink-0 invisible group-hover:visible"
-                            onClick={(e) => { e.stopPropagation(); deleteIssueMutation.mutate(issue.id); }}
-                            data-testid={`button-delete-issue-${issue.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {isEditing && (
+                            <div className="p-4 rounded-b-lg border border-t-0 bg-muted/10 space-y-4" data-testid={`inline-issue-edit-form-${issue.id}`}>
+                              <div>
+                                <Label>Title</Label>
+                                <Input
+                                  value={issueForm.title}
+                                  onChange={(e) => setIssueForm(f => ({ ...f, title: e.target.value }))}
+                                  placeholder="Brief description of the issue"
+                                  data-testid="input-issue-title"
+                                />
+                              </div>
+                              <div>
+                                <Label>Description</Label>
+                                <Textarea
+                                  value={issueForm.description}
+                                  onChange={(e) => setIssueForm(f => ({ ...f, description: e.target.value }))}
+                                  placeholder="Detailed description..."
+                                  data-testid="input-issue-description"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <Label>Severity</Label>
+                                  <Select value={issueForm.severity} onValueChange={(v) => setIssueForm(f => ({ ...f, severity: v }))}>
+                                    <SelectTrigger data-testid="select-issue-severity">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="low">Low</SelectItem>
+                                      <SelectItem value="medium">Medium</SelectItem>
+                                      <SelectItem value="high">High</SelectItem>
+                                      <SelectItem value="critical">Critical</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <Label>Category</Label>
+                                  <Select value={issueForm.category} onValueChange={(v) => setIssueForm(f => ({ ...f, category: v }))}>
+                                    <SelectTrigger data-testid="select-issue-category">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="legal">Legal</SelectItem>
+                                      <SelectItem value="financial">Financial</SelectItem>
+                                      <SelectItem value="regulatory">Regulatory</SelectItem>
+                                      <SelectItem value="operational">Operational</SelectItem>
+                                      <SelectItem value="environmental">Environmental</SelectItem>
+                                      <SelectItem value="tax">Tax</SelectItem>
+                                      <SelectItem value="ip">IP</SelectItem>
+                                      <SelectItem value="hr">HR</SelectItem>
+                                      <SelectItem value="other">Other</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              <div>
+                                <Label>Status</Label>
+                                <Select value={issueForm.status} onValueChange={(v) => setIssueForm(f => ({ ...f, status: v }))}>
+                                  <SelectTrigger data-testid="select-issue-status">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="open">Open</SelectItem>
+                                    <SelectItem value="in_progress">In Progress</SelectItem>
+                                    <SelectItem value="resolved">Resolved</SelectItem>
+                                    <SelectItem value="closed">Closed</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              {(issueForm.status === "resolved" || issueForm.status === "closed") && (
+                                <div>
+                                  <Label>Resolution</Label>
+                                  <Textarea
+                                    value={issueForm.resolution}
+                                    onChange={(e) => setIssueForm(f => ({ ...f, resolution: e.target.value }))}
+                                    placeholder="How was this issue resolved?"
+                                    data-testid="input-issue-resolution"
+                                  />
+                                </div>
+                              )}
+                              <div className="flex items-center justify-end gap-2">
+                                <Button variant="outline" size="sm" onClick={cancelInlineIssueForm} data-testid="button-cancel-issue">
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={handleSaveIssue}
+                                  disabled={!issueForm.title.trim() || updateIssueMutation.isPending}
+                                  data-testid="button-save-issue"
+                                >
+                                  {updateIssueMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                  Save Changes
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
+                  <div className={`text-center py-8 text-muted-foreground ${showInlineIssueForm ? "hidden" : ""}`}>
                     <AlertTriangle className="h-12 w-12 mx-auto mb-3 opacity-50" />
                     <p>No issues logged for this deal</p>
                     <p className="text-sm mt-1">Track due diligence findings and concerns here</p>
@@ -2548,114 +2747,6 @@ export default function TransactionsDealDetail() {
                 )}
               </CardContent>
             </Card>
-
-            <Dialog open={issueDialogOpen} onOpenChange={setIssueDialogOpen}>
-              <DialogContent className="max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>{editingIssue ? "Edit Issue" : "New Issue"}</DialogTitle>
-                  <DialogDescription>
-                    {editingIssue ? "Update the issue details below." : "Log a new deal-related issue."}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label>Title</Label>
-                    <Input
-                      value={issueForm.title}
-                      onChange={(e) => setIssueForm(f => ({ ...f, title: e.target.value }))}
-                      placeholder="Brief description of the issue"
-                      data-testid="input-issue-title"
-                    />
-                  </div>
-                  <div>
-                    <Label>Description</Label>
-                    <Textarea
-                      value={issueForm.description}
-                      onChange={(e) => setIssueForm(f => ({ ...f, description: e.target.value }))}
-                      placeholder="Detailed description..."
-                      data-testid="input-issue-description"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Severity</Label>
-                      <Select value={issueForm.severity} onValueChange={(v) => setIssueForm(f => ({ ...f, severity: v }))}>
-                        <SelectTrigger data-testid="select-issue-severity">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="low">Low</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                          <SelectItem value="critical">Critical</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>Category</Label>
-                      <Select value={issueForm.category} onValueChange={(v) => setIssueForm(f => ({ ...f, category: v }))}>
-                        <SelectTrigger data-testid="select-issue-category">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="legal">Legal</SelectItem>
-                          <SelectItem value="financial">Financial</SelectItem>
-                          <SelectItem value="regulatory">Regulatory</SelectItem>
-                          <SelectItem value="operational">Operational</SelectItem>
-                          <SelectItem value="environmental">Environmental</SelectItem>
-                          <SelectItem value="tax">Tax</SelectItem>
-                          <SelectItem value="ip">IP</SelectItem>
-                          <SelectItem value="hr">HR</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  {editingIssue && (
-                    <>
-                      <div>
-                        <Label>Status</Label>
-                        <Select value={issueForm.status} onValueChange={(v) => setIssueForm(f => ({ ...f, status: v }))}>
-                          <SelectTrigger data-testid="select-issue-status">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="open">Open</SelectItem>
-                            <SelectItem value="in_progress">In Progress</SelectItem>
-                            <SelectItem value="resolved">Resolved</SelectItem>
-                            <SelectItem value="closed">Closed</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {(issueForm.status === "resolved" || issueForm.status === "closed") && (
-                        <div>
-                          <Label>Resolution</Label>
-                          <Textarea
-                            value={issueForm.resolution}
-                            onChange={(e) => setIssueForm(f => ({ ...f, resolution: e.target.value }))}
-                            placeholder="How was this issue resolved?"
-                            data-testid="input-issue-resolution"
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIssueDialogOpen(false)} data-testid="button-cancel-issue">
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSaveIssue}
-                    disabled={!issueForm.title.trim() || createIssueMutation.isPending || updateIssueMutation.isPending}
-                    data-testid="button-save-issue"
-                  >
-                    {(createIssueMutation.isPending || updateIssueMutation.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    {editingIssue ? "Save Changes" : "Create Issue"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </TabsContent>
 
           <TabsContent value="research" className="mt-6">
