@@ -7,7 +7,8 @@ import multer from "multer";
 import { emailService } from "../services/email-service";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE } });
 const REJECTED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"]);
 const FILE_DATA_MAX_SIZE = 5 * 1024 * 1024;
 
@@ -173,7 +174,20 @@ router.get("/form-templates/:id/view", isAuthenticated, async (req: any, res) =>
   }
 });
 
-router.post("/form-templates", isAuthenticated, upload.single("file"), async (req: any, res) => {
+function handleMulterErrorSingle(req: any, res: any, next: any) {
+  upload.single("file")(req, res, (err: any) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        const maxMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));
+        return res.status(413).json({ error: `File exceeds the ${maxMB}MB size limit.` });
+      }
+      return res.status(400).json({ error: err.message || "File upload error" });
+    }
+    next();
+  });
+}
+
+router.post("/form-templates", isAuthenticated, handleMulterErrorSingle, async (req: any, res) => {
   try {
     const { name, description, documentType, dealType, isDefault } = req.body;
     if (!name || !documentType) {
@@ -246,7 +260,23 @@ const ALLOWED_DOC_TYPES = new Set([
   "escrow_agreement", "power_of_attorney", "affidavit_of_title", "other",
 ]);
 
-router.post("/form-templates/bulk", isAuthenticated, upload.array("files", 50), async (req: any, res) => {
+function handleMulterError(req: any, res: any, next: any) {
+  upload.array("files", 50)(req, res, (err: any) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        const maxMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));
+        return res.status(413).json({
+          error: `One or more files exceed the ${maxMB}MB size limit. Please remove oversized files and try again.`,
+          code: "FILE_TOO_LARGE",
+        });
+      }
+      return res.status(400).json({ error: err.message || "File upload error" });
+    }
+    next();
+  });
+}
+
+router.post("/form-templates/bulk", isAuthenticated, handleMulterError, async (req: any, res) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {

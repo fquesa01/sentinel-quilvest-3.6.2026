@@ -117,6 +117,7 @@ function guessDocumentType(filename: string): string {
 }
 
 const REJECTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"];
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 function isZipFile(file: File): boolean {
   const name = file.name.toLowerCase();
@@ -327,7 +328,25 @@ export default function FormTemplatesPage() {
       }
     }
 
-    const entries: BulkFileEntry[] = allFiles.map((file, i) => ({
+    const oversized: string[] = [];
+    const validFiles = allFiles.filter(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        oversized.push(file.name);
+        return false;
+      }
+      return true;
+    });
+
+    if (oversized.length > 0) {
+      const maxMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));
+      toast({
+        title: `${oversized.length} file${oversized.length !== 1 ? "s" : ""} too large`,
+        description: `Files over ${maxMB}MB were removed: ${oversized.slice(0, 3).join(", ")}${oversized.length > 3 ? ` and ${oversized.length - 3} more` : ""}`,
+        variant: "destructive",
+      });
+    }
+
+    const entries: BulkFileEntry[] = validFiles.map((file, i) => ({
       id: `${Date.now()}-${i}`,
       file,
       name: file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ").replace(/\s+/g, " ").trim(),
@@ -896,6 +915,11 @@ export default function FormTemplatesPage() {
                     }
                     if (!isSupportedFile(file)) {
                       toast({ title: "Unsupported file type", description: "This file type is not supported. Try .pdf, .docx, .doc, .rtf, .html, or .txt.", variant: "destructive" });
+                      return;
+                    }
+                    if (file.size > MAX_FILE_SIZE) {
+                      const maxMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));
+                      toast({ title: "File too large", description: `This file exceeds the ${maxMB}MB limit. Try a smaller file.`, variant: "destructive" });
                       return;
                     }
                     setSelectedFile(file);
