@@ -15193,6 +15193,20 @@ Guidelines:
         queueDocumentsForGeminiIndexing(uploadedDocs.map(d => d.id));
       }
 
+      // Fire-and-forget audit log for each uploaded document
+      for (const doc of uploadedDocs) {
+        db.insert(schema.dataRoomAuditLog).values({
+          dataRoomId: roomId,
+          userId: req.user.id,
+          action: "upload",
+          resourceType: "document",
+          resourceId: doc.id,
+          resourceName: doc.fileName,
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent"),
+        }).catch(err => console.error("Error logging upload action:", err));
+      }
+
       res.status(201).json(uploadedDocs);
     } catch (error: any) {
       console.error("Error uploading documents:", error);
@@ -15312,7 +15326,7 @@ Guidelines:
   });
 
   // Download a document
-  app.get("/api/data-room-documents/:id/download", isAuthenticated, async (req, res) => {
+  app.get("/api/data-room-documents/:id/download", isAuthenticated, async (req: any, res) => {
     try {
       const [doc] = await db
         .select()
@@ -15325,6 +15339,21 @@ Guidelines:
 
       if (!doc.storagePath) {
         return res.status(404).json({ message: "Document file not found" });
+      }
+
+      // Fire-and-forget audit log for download action
+      const userId = req.user?.id;
+      if (userId) {
+        db.insert(schema.dataRoomAuditLog).values({
+          dataRoomId: doc.dataRoomId,
+          userId,
+          action: "download",
+          resourceType: "document",
+          resourceId: doc.id,
+          resourceName: doc.fileName,
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent"),
+        }).catch(err => console.error("Error logging download action:", err));
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -15378,6 +15407,20 @@ Guidelines:
 
       if (!doc.storagePath) {
         return res.status(404).json({ message: "Document file not found" });
+      }
+
+      // Fire-and-forget audit log for view action
+      if (userId) {
+        db.insert(schema.dataRoomAuditLog).values({
+          dataRoomId: doc.dataRoomId,
+          userId,
+          action: "view",
+          resourceType: "document",
+          resourceId: doc.id,
+          resourceName: doc.fileName,
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent"),
+        }).catch(err => console.error("Error logging view action:", err));
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -15946,7 +15989,15 @@ Guidelines:
       const limit = parseInt(limitParam as string) || 100;
       const offset = parseInt(offsetParam as string) || 0;
 
-      let query = db
+      const conditions = [eq(schema.dataRoomAuditLog.dataRoomId, req.params.roomId)];
+      if (action && typeof action === "string") {
+        conditions.push(eq(schema.dataRoomAuditLog.action, action));
+      }
+      if (resourceType && typeof resourceType === "string") {
+        conditions.push(eq(schema.dataRoomAuditLog.resourceType, resourceType));
+      }
+
+      const logs = await db
         .select({
           log: schema.dataRoomAuditLog,
           user: schema.users,
@@ -15955,12 +16006,10 @@ Guidelines:
         .from(schema.dataRoomAuditLog)
         .leftJoin(schema.users, eq(schema.dataRoomAuditLog.userId, schema.users.id))
         .leftJoin(schema.dataRoomGuests, eq(schema.dataRoomAuditLog.guestId, schema.dataRoomGuests.id))
-        .where(eq(schema.dataRoomAuditLog.dataRoomId, req.params.roomId))
+        .where(and(...conditions))
         .orderBy(desc(schema.dataRoomAuditLog.createdAt))
         .limit(limit)
         .offset(offset);
-
-      const logs = await query;
       res.json(logs);
     } catch (error: any) {
       console.error("Error fetching audit log:", error);
