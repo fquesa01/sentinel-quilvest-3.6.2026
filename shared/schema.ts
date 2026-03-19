@@ -32,6 +32,8 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   },
 });
 
+export const userTypeEnum = pgEnum("user_type", ["individual", "corporate"]);
+
 // Enums
 export const userRoleEnum = pgEnum("user_role", [
   "admin",
@@ -431,9 +433,46 @@ export const users = pgTable("users", {
   microsoftId: varchar("microsoft_id").unique(),
   googleId: varchar("google_id").unique(),
   role: userRoleEnum("role").default("compliance_officer").notNull(),
+  userType: userTypeEnum("user_type").default("individual").notNull(),
+  passwordHash: varchar("password_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull().unique(),
+  description: text("description"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const organizationMembers = pgTable("organization_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+}, (table) => ({
+  orgIdx: index("idx_org_members_org").on(table.organizationId),
+  userIdx: uniqueIndex("idx_org_members_user_unique").on(table.userId),
+  uniqueMembership: unique("unique_org_member").on(table.organizationId, table.userId),
+}));
+
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  members: many(organizationMembers),
+}));
+
+export const organizationMembersRelations = relations(organizationMembers, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationMembers.organizationId],
+    references: [organizations.id],
+  }),
+  user: one(users, {
+    fields: [organizationMembers.userId],
+    references: [users.id],
+  }),
+}));
 
 // Communications being monitored
 export const communications = pgTable("communications", {
@@ -3486,6 +3525,17 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 // Types
 export type User = typeof users.$inferSelect;
 export type UpsertUser = typeof users.$inferInsert;
+
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = typeof organizations.$inferInsert;
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type OrganizationMember = typeof organizationMembers.$inferSelect;
+export type InsertOrganizationMember = typeof organizationMembers.$inferInsert;
 
 export type Communication = typeof communications.$inferSelect;
 export const insertCommunicationSchema = createInsertSchema(communications).omit({

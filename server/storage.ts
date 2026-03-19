@@ -98,6 +98,12 @@ import {
   type InsertDocumentSetMember,
   type DocumentForward,
   type InsertDocumentForward,
+  organizations,
+  organizationMembers,
+  type Organization,
+  type InsertOrganization,
+  type OrganizationMember,
+  type InsertOrganizationMember,
   employees,
   vendorContacts,
   monitoredDevices,
@@ -455,6 +461,18 @@ export interface IStorage {
   createUser(user: any): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User>;
   deleteUser(id: string): Promise<void>;
+
+  // Organization operations
+  getOrganizations(): Promise<Organization[]>;
+  getOrganization(id: string): Promise<Organization | undefined>;
+  createOrganization(org: InsertOrganization): Promise<Organization>;
+  updateOrganization(id: string, updates: Partial<Organization>): Promise<Organization>;
+  deleteOrganization(id: string): Promise<void>;
+  getOrganizationMembers(orgId: string): Promise<(OrganizationMember & { user?: User })[]>;
+  addOrganizationMember(orgId: string, userId: string): Promise<OrganizationMember>;
+  removeOrganizationMember(orgId: string, userId: string): Promise<void>;
+  getUserOrganization(userId: string): Promise<Organization | undefined>;
+  getOrganizationMemberUserIds(orgId: string): Promise<string[]>;
 
   // Communication operations
   getCommunications(filters?: CommunicationFilters): Promise<Communication[]>;
@@ -1169,7 +1187,77 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: string): Promise<void> {
+    await db.delete(organizationMembers).where(eq(organizationMembers.userId, id));
     await db.delete(users).where(eq(users.id, id));
+  }
+
+  // Organization operations
+  async getOrganizations(): Promise<Organization[]> {
+    return await db.select().from(organizations).orderBy(desc(organizations.createdAt));
+  }
+
+  async getOrganization(id: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return org;
+  }
+
+  async createOrganization(orgData: InsertOrganization): Promise<Organization> {
+    const [org] = await db.insert(organizations).values(orgData).returning();
+    return org;
+  }
+
+  async updateOrganization(id: string, updates: Partial<Organization>): Promise<Organization> {
+    const [org] = await db
+      .update(organizations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return org;
+  }
+
+  async deleteOrganization(id: string): Promise<void> {
+    const members = await db.select().from(organizationMembers).where(eq(organizationMembers.organizationId, id));
+    if (members.length > 0) {
+      const memberUserIds = members.map(m => m.userId);
+      await db.update(users).set({ userType: "individual", updatedAt: new Date() }).where(inArray(users.id, memberUserIds));
+    }
+    await db.delete(organizationMembers).where(eq(organizationMembers.organizationId, id));
+    await db.delete(organizations).where(eq(organizations.id, id));
+  }
+
+  async getOrganizationMembers(orgId: string): Promise<(OrganizationMember & { user?: User })[]> {
+    const members = await db.select().from(organizationMembers).where(eq(organizationMembers.organizationId, orgId));
+    const result = await Promise.all(members.map(async (member) => {
+      const [user] = await db.select().from(users).where(eq(users.id, member.userId));
+      return { ...member, user };
+    }));
+    return result;
+  }
+
+  async addOrganizationMember(orgId: string, userId: string): Promise<OrganizationMember> {
+    await db.delete(organizationMembers).where(eq(organizationMembers.userId, userId));
+    const [member] = await db.insert(organizationMembers).values({ organizationId: orgId, userId }).returning();
+    await db.update(users).set({ userType: "corporate", updatedAt: new Date() }).where(eq(users.id, userId));
+    return member;
+  }
+
+  async removeOrganizationMember(orgId: string, userId: string): Promise<void> {
+    await db.delete(organizationMembers).where(
+      and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.userId, userId))
+    );
+    await db.update(users).set({ userType: "individual", updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async getUserOrganization(userId: string): Promise<Organization | undefined> {
+    const [membership] = await db.select().from(organizationMembers).where(eq(organizationMembers.userId, userId));
+    if (!membership) return undefined;
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, membership.organizationId));
+    return org;
+  }
+
+  async getOrganizationMemberUserIds(orgId: string): Promise<string[]> {
+    const members = await db.select({ userId: organizationMembers.userId }).from(organizationMembers).where(eq(organizationMembers.organizationId, orgId));
+    return members.map(m => m.userId);
   }
 
   // Communication operations

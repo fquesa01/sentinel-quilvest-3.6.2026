@@ -7,6 +7,7 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
+import type { User } from "@shared/schema";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
@@ -433,7 +434,12 @@ export function requireRole(...roles: string[]): RequestHandler {
         dbUser = await storage.getUser(userId);
       }
       
-      console.log("[Auth] requireRole: DB user found:", dbUser ? JSON.stringify(dbUser, null, 2) : "NULL");
+      if (dbUser) {
+        const { passwordHash: _ph, ...safeDbUser } = dbUser as User;
+        console.log("[Auth] requireRole: DB user found:", JSON.stringify(safeDbUser, null, 2));
+      } else {
+        console.log("[Auth] requireRole: DB user found: NULL");
+      }
       
       if (!dbUser) {
         console.log("[Auth] requireRole: User not found in database");

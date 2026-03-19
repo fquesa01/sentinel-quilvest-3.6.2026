@@ -328,12 +328,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Investor memo engine routes
   app.use(investorMemoRouter);
 
+  function sanitizeUser(user: any) {
+    if (!user) return user;
+    const { passwordHash, ...safe } = user;
+    return safe;
+  }
+
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      // req.user already contains the full user object from the session
-      // which includes id, email, firstName, lastName, role, etc.
-      res.json(req.user);
+      res.json(sanitizeUser(req.user));
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -344,7 +348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/users", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
     try {
       const users = await storage.getAllUsers();
-      res.json(users);
+      res.json(users.map(sanitizeUser));
     } catch (error: any) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: error.message });
@@ -359,7 +363,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const investigators = users.filter((user) =>
         ["admin", "compliance_officer", "attorney", "external_counsel", "auditor"].includes(user.role || "")
       );
-      res.json(investigators);
+      res.json(investigators.map(sanitizeUser));
     } catch (error: any) {
       console.error("Error fetching investigators:", error);
       res.status(500).json({ message: error.message });
@@ -495,14 +499,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/users/:id/role", isAuthenticated, requireRole("admin"), async (req: any, res) => {
     try {
       const { role } = req.body;
-      const validRoles = ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor", "external_counsel"];
+      const validRoles = ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor", "external_counsel", "cro", "risk_manager"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
       }
 
       const user = await storage.updateUserRole(req.params.id, role);
       await logAction(req, "user_role_updated", "user", user.id, { newRole: role });
-      res.json(user);
+      res.json(sanitizeUser(user));
     } catch (error: any) {
       console.error("Error updating user role:", error);
       res.status(400).json({ message: error.message });
@@ -512,32 +516,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new user (admin only)
   app.post("/api/users", isAuthenticated, requireRole("admin"), async (req: any, res) => {
     try {
-      const { email, firstName, lastName, role } = req.body;
+      const { email, firstName, lastName, role, password, userType, organizationId } = req.body;
       
       if (!email || !firstName || !lastName || !role) {
         return res.status(400).json({ message: "Missing required fields" });
       }
 
-      const validRoles = ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor", "external_counsel"];
+      if (!password || password.length < 8) {
+        return res.status(400).json({ message: "Password is required and must be at least 8 characters" });
+      }
+
+      const validRoles = ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor", "external_counsel", "cro", "risk_manager"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
       }
 
-      // Check if user already exists
+      if (userType === "corporate" && !organizationId) {
+        return res.status(400).json({ message: "Organization is required for corporate users" });
+      }
+
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
         return res.status(400).json({ message: "User with this email already exists" });
       }
 
-      const user = await storage.createUser({
-        email,
-        firstName,
-        lastName,
-        role,
+      let passwordHash: string | undefined;
+      if (password) {
+        passwordHash = await bcrypt.hash(password, 10);
+      }
+
+      if (userType === "corporate" && organizationId) {
+        const [org] = await db.select().from(schema.organizations).where(eq(schema.organizations.id, organizationId));
+        if (!org) {
+          return res.status(400).json({ message: "Organization not found" });
+        }
+      }
+
+      const user = await db.transaction(async (tx) => {
+        const [createdUser] = await tx.insert(schema.users).values({
+          id: `user_${Date.now()}`,
+          email,
+          firstName,
+          lastName,
+          role,
+          userType: userType || "individual",
+          passwordHash,
+        }).returning();
+
+        if (userType === "corporate" && organizationId) {
+          await tx.delete(schema.organizationMembers).where(eq(schema.organizationMembers.userId, createdUser.id));
+          await tx.insert(schema.organizationMembers).values({
+            organizationId,
+            userId: createdUser.id,
+          });
+        }
+
+        return createdUser;
       });
 
-      await logAction(req, "user_created", "user", user.id, { email, role });
-      res.json(user);
+      await logAction(req, "user_created", "user", user.id, { email, role, userType });
+      res.json(sanitizeUser(user));
     } catch (error: any) {
       console.error("Error creating user:", error);
       res.status(500).json({ message: error.message });
@@ -568,6 +606,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting user:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== PASSWORD AUTH LOGIN =====
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      const isValid = await bcrypt.compare(password, user.passwordHash);
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      const { passwordHash: _ph, ...safeUser } = user;
+      req.login({ ...safeUser, claims: { sub: user.id }, expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 }, (err: any) => {
+        if (err) {
+          console.error("[Auth] Password login error:", err);
+          return res.status(500).json({ message: "Login failed" });
+        }
+        res.json({ user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, userType: user.userType } });
+      });
+    } catch (error: any) {
+      console.error("Error during password login:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===== ORGANIZATION MANAGEMENT ROUTES =====
+
+  app.get("/api/organizations", isAuthenticated, requireRole("admin"), async (req, res) => {
+    try {
+      const orgs = await storage.getOrganizations();
+      res.json(orgs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/organizations", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const { name, description } = req.body;
+      if (!name) return res.status(400).json({ message: "Name is required" });
+      const org = await storage.createOrganization({ name, description });
+      res.json(org);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/organizations/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const org = await storage.updateOrganization(req.params.id, req.body);
+      res.json(org);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/organizations/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      await storage.deleteOrganization(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/organizations/:id/members", isAuthenticated, requireRole("admin"), async (req, res) => {
+    try {
+      const members = await storage.getOrganizationMembers(req.params.id);
+      res.json(members.map(m => ({ ...m, user: m.user ? sanitizeUser(m.user) : undefined })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/organizations/:id/members", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ message: "userId is required" });
+      const member = await storage.addOrganizationMember(req.params.id, userId);
+      res.json(member);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/organizations/:orgId/members/:userId", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      await storage.removeOrganizationMember(req.params.orgId, req.params.userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/users/:id/organization", isAuthenticated, requireRole("admin"), async (req, res) => {
+    try {
+      const org = await storage.getUserOrganization(req.params.id);
+      res.json(org || null);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/user-org-map", isAuthenticated, requireRole("admin"), async (req, res) => {
+    try {
+      const members = await db.select({
+        userId: schema.organizationMembers.userId,
+        organizationId: schema.organizationMembers.organizationId,
+        orgName: schema.organizations.name,
+      }).from(schema.organizationMembers)
+        .innerJoin(schema.organizations, eq(schema.organizationMembers.organizationId, schema.organizations.id));
+      const map: Record<string, { organizationId: string; orgName: string }> = {};
+      for (const m of members) {
+        map[m.userId] = { organizationId: m.organizationId, orgName: m.orgName };
+      }
+      res.json(map);
+    } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
   });
@@ -12495,6 +12661,23 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
 
+  // ===== SHARED VISIBILITY HELPER =====
+  const { getVisibleUserIds, checkDealVisibility } = await import('./routes/visibility-helper');
+
+  // Deal-scoped visibility middleware: enforce tenant isolation on all deal sub-resource routes
+  app.use("/api/deals/:dealId", async (req: any, res, next) => {
+    if (!req.isAuthenticated || !req.isAuthenticated()) return next();
+    const dealId = req.params.dealId;
+    if (!dealId) return next();
+    try {
+      const canAccess = await checkDealVisibility(req, dealId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // ===== BUSINESS TRANSACTIONS MODULE API Endpoints =====
   // Role-restricted to: admin, attorney, external_counsel
 
@@ -12576,13 +12759,23 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
           deals = scoredDeals.map(({ score, ...d }) => d);
         }
         
+        const visibleIds = await getVisibleUserIds(req);
+        if (visibleIds) {
+          deals = deals.filter(d => d.createdBy && visibleIds.includes(d.createdBy));
+        }
+        
         console.log(`[Deal Search] Found ${deals.length} results`);
         res.json(deals);
       } else {
-        // Return all deals if no search
+        const visibleIds = await getVisibleUserIds(req);
+        let whereClause;
+        if (visibleIds) {
+          whereClause = inArray(schema.deals.createdBy, visibleIds);
+        }
         const allDeals = await db
           .select()
           .from(schema.deals)
+          .where(whereClause)
           .orderBy(sql`${schema.deals.createdAt} DESC`);
         res.json(allDeals);
       }
@@ -12602,6 +12795,11 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
       
       if (!deal) {
         return res.status(404).json({ message: "Deal not found" });
+      }
+
+      const visibleIds = await getVisibleUserIds(req);
+      if (visibleIds && deal.createdBy && !visibleIds.includes(deal.createdBy)) {
+        return res.status(403).json({ message: "Access denied" });
       }
       
       // Check if this deal has a linked data room, create one if not
@@ -14505,7 +14703,7 @@ Guidelines:
   });
   
   // Get all documents for a deal (across all data rooms)
-  app.get("/api/deals/:dealId/documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
     try {
       const { dealId } = req.params;
       
@@ -14535,8 +14733,15 @@ Guidelines:
   // ===== Data Rooms API Endpoints =====
 
   // Get all data rooms for a deal
-  app.get("/api/deals/:dealId/data-rooms", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req, res) => {
+  app.get("/api/deals/:dealId/data-rooms", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req: any, res) => {
     try {
+      const visibleIds = await getVisibleUserIds(req);
+      if (visibleIds) {
+        const [deal] = await db.select({ createdBy: schema.deals.createdBy }).from(schema.deals).where(eq(schema.deals.id, req.params.dealId));
+        if (deal?.createdBy && !visibleIds.includes(deal.createdBy)) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
       const rooms = await db
         .select()
         .from(schema.dataRooms)
@@ -14574,10 +14779,15 @@ Guidelines:
   // Get all data rooms (both deal-linked and standalone) with metadata
   app.get("/api/data-rooms", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req, res) => {
     try {
-      // Return all data rooms
+      const visibleIds = await getVisibleUserIds(req);
+      let whereClause;
+      if (visibleIds) {
+        whereClause = inArray(schema.dataRooms.createdBy, visibleIds);
+      }
       const rooms = await db
         .select()
         .from(schema.dataRooms)
+        .where(whereClause)
         .orderBy(desc(schema.dataRooms.createdAt));
       
       // Fetch deal info, folder and document counts for each room
@@ -14649,7 +14859,7 @@ Guidelines:
   });
 
   // Get a single data room with folders and documents
-  app.get("/api/data-rooms/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req, res) => {
+  app.get("/api/data-rooms/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req: any, res) => {
     try {
       const [room] = await db
         .select()
@@ -14658,6 +14868,11 @@ Guidelines:
       
       if (!room) {
         return res.status(404).json({ message: "Data room not found" });
+      }
+
+      const visibleIds = await getVisibleUserIds(req);
+      if (visibleIds && room.createdBy && !visibleIds.includes(room.createdBy)) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const folders = await db

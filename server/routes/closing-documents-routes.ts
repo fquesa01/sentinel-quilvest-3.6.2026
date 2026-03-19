@@ -3,6 +3,7 @@ import { db } from "../db";
 import { eq, and, desc } from "drizzle-orm";
 import * as schema from "@shared/schema";
 import { isAuthenticated, requireRole } from "../replitAuth";
+import { checkDealVisibility } from "./visibility-helper";
 import {
   autoGenerateClosingDocuments,
   aiEditDocument,
@@ -23,6 +24,19 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const VALID_STATUSES = ["draft", "review", "approved", "executed", "superseded"];
+
+router.use("/api/deals/:dealId/closing-documents*", isAuthenticated, async (req: any, res, next) => {
+  try {
+    const dealId = req.params.dealId;
+    if (dealId) {
+      const canAccess = await checkDealVisibility(req, dealId);
+      if (!canAccess) return res.status(403).json({ message: "Access denied" });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 async function getDocForDeal(docId: string, dealId: string) {
   const [doc] = await db.select()

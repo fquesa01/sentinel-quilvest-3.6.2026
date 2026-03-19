@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { db } from "../db";
-import { eq, desc, and, sql, isNull } from "drizzle-orm";
-import { firmFormTemplates } from "@shared/schema";
+import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
+import { firmFormTemplates, organizationMembers } from "@shared/schema";
 import { isAuthenticated } from "../replitAuth";
+import { getVisibleUserIds } from "./visibility-helper";
 import multer from "multer";
 import { emailService } from "../services/email-service";
+import { storage } from "../storage";
 
 const router = Router();
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -78,6 +80,25 @@ async function extractContentRaw(buffer: Buffer, fileName: string, mimeType: str
 
 router.get("/form-templates", isAuthenticated, async (req: any, res) => {
   try {
+    const dbUser = req.dbUser;
+    let visibleUserIds: string[] | null = null;
+    if (dbUser && dbUser.role !== "admin") {
+      if (dbUser.userType === "corporate") {
+        const org = await storage.getUserOrganization(dbUser.id);
+        if (org) {
+          visibleUserIds = await storage.getOrganizationMemberUserIds(org.id);
+        }
+      }
+      if (!visibleUserIds) {
+        visibleUserIds = [dbUser.id];
+      }
+    }
+
+    let whereClause;
+    if (visibleUserIds) {
+      whereClause = inArray(firmFormTemplates.uploadedBy, visibleUserIds);
+    }
+
     const templates = await db.select({
       id: firmFormTemplates.id,
       name: firmFormTemplates.name,
@@ -93,7 +114,7 @@ router.get("/form-templates", isAuthenticated, async (req: any, res) => {
       createdAt: firmFormTemplates.createdAt,
       updatedAt: firmFormTemplates.updatedAt,
       hasFileData: sql<boolean>`file_data IS NOT NULL`.as("has_file_data"),
-    }).from(firmFormTemplates).orderBy(desc(firmFormTemplates.updatedAt));
+    }).from(firmFormTemplates).where(whereClause).orderBy(desc(firmFormTemplates.updatedAt));
     res.json(templates);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -120,6 +141,10 @@ router.get("/form-templates/:id", isAuthenticated, async (req: any, res) => {
       hasFileData: sql<boolean>`file_data IS NOT NULL`.as("has_file_data"),
     }).from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
     if (!template) return res.status(404).json({ error: "Template not found" });
+    const visibleIds = await getVisibleUserIds(req);
+    if (visibleIds && template.uploadedBy && !visibleIds.includes(template.uploadedBy)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(template);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -132,9 +157,14 @@ router.get("/form-templates/:id/download", isAuthenticated, async (req: any, res
       fileName: firmFormTemplates.fileName,
       mimeType: firmFormTemplates.mimeType,
       fileData: firmFormTemplates.fileData,
+      uploadedBy: firmFormTemplates.uploadedBy,
     }).from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
 
     if (!template) return res.status(404).json({ error: "Template not found" });
+    const visibleIds = await getVisibleUserIds(req);
+    if (visibleIds && template.uploadedBy && !visibleIds.includes(template.uploadedBy)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     if (!template.fileData) return res.status(404).json({ error: "Original file data not available for this template" });
 
     const contentType = template.mimeType || "application/octet-stream";
@@ -156,9 +186,14 @@ router.get("/form-templates/:id/view", isAuthenticated, async (req: any, res) =>
       fileName: firmFormTemplates.fileName,
       mimeType: firmFormTemplates.mimeType,
       fileData: firmFormTemplates.fileData,
+      uploadedBy: firmFormTemplates.uploadedBy,
     }).from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
 
     if (!template) return res.status(404).json({ error: "Template not found" });
+    const visibleIds = await getVisibleUserIds(req);
+    if (visibleIds && template.uploadedBy && !visibleIds.includes(template.uploadedBy)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     if (!template.fileData) return res.status(404).json({ error: "Original file data not available for this template" });
 
     const contentType = template.mimeType || "application/octet-stream";

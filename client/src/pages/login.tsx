@@ -1,10 +1,19 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Helmet } from "react-helmet";
 import { SiGoogle } from "react-icons/si";
 import { useQuery } from "@tanstack/react-query";
+import { Lock, Mail } from "lucide-react";
 import earthImage from "@assets/stock_images/earth_from_space_at__22b72e59.jpg";
 
 export default function Login() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const { data: providers } = useQuery<{ google: boolean; replit: boolean; microsoft: boolean }>({
     queryKey: ["/api/auth/providers"],
   });
@@ -12,7 +21,34 @@ export default function Login() {
   const hasGoogle = providers?.google;
   const hasReplit = providers?.replit;
   const hasMicrosoft = providers?.microsoft;
-  const hasMultipleProviders = [hasGoogle, hasReplit, hasMicrosoft].filter(Boolean).length > 1;
+  const hasAnyOAuth = hasGoogle || hasReplit || hasMicrosoft;
+
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setLoginError("Please enter email and password");
+      return;
+    }
+    setIsLoggingIn(true);
+    setLoginError("");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setLoginError(data.message || "Login failed");
+        return;
+      }
+      window.location.href = "/";
+    } catch {
+      setLoginError("An error occurred. Please try again.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
   return (
     <>
@@ -32,7 +68,6 @@ export default function Login() {
         className="min-h-screen bg-black flex flex-col relative overflow-hidden"
         style={{ fontFamily: "'Barlow', sans-serif" }}
       >
-        {/* Background */}
         <div
           className="absolute inset-0 bg-cover bg-center"
           style={{
@@ -41,10 +76,8 @@ export default function Login() {
           }}
         />
 
-        {/* Login Form */}
         <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
           <div className="w-full max-w-sm space-y-8">
-            {/* Brand */}
             <div className="text-center space-y-2">
               <h1
                 className="uppercase tracking-[0.15em] text-white font-semibold text-[24px]"
@@ -57,69 +90,95 @@ export default function Login() {
               </p>
             </div>
 
-            {/* Sign In Buttons */}
-            <div className="space-y-3">
-              {hasGoogle && (
-                <Button
-                  data-testid="button-login-google"
-                  onClick={() => {
-                    window.location.href = "/api/auth/google";
-                  }}
-                  className="w-full bg-white text-gray-800 font-medium tracking-wide border border-gray-300"
-                >
-                  <SiGoogle className="mr-2 h-4 w-4" />
-                  Sign in with Google
-                </Button>
+            <form onSubmit={handlePasswordLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="login-email" className="text-gray-300 text-sm">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <Input
+                    id="login-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="pl-10 bg-black/50 border-gray-600 text-white placeholder:text-gray-500"
+                    data-testid="input-login-email"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="login-password" className="text-gray-300 text-sm">Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <Input
+                    id="login-password"
+                    type="password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10 bg-black/50 border-gray-600 text-white placeholder:text-gray-500"
+                    data-testid="input-login-password"
+                  />
+                </div>
+              </div>
+              {loginError && (
+                <p className="text-red-400 text-sm" data-testid="text-login-error">{loginError}</p>
               )}
+              <Button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full bg-[#5ba897] text-white font-medium tracking-wide"
+                data-testid="button-login-submit"
+              >
+                {isLoggingIn ? "Signing in..." : "Sign In"}
+              </Button>
+            </form>
 
-              {hasGoogle && hasMultipleProviders && (
+            {hasAnyOAuth && (
+              <>
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-px bg-gray-600" />
-                  <span className="text-[11px] text-gray-500 uppercase tracking-wider">or</span>
+                  <span className="text-[11px] text-gray-500 uppercase tracking-wider">or continue with</span>
                   <div className="flex-1 h-px bg-gray-600" />
                 </div>
-              )}
 
-              {hasMicrosoft && (
-                <Button
-                  data-testid="button-login-microsoft"
-                  onClick={() => {
-                    window.location.href = "/api/auth/microsoft";
-                  }}
-                  variant="outline"
-                  className="w-full border-gray-600 text-gray-300 font-medium tracking-wide"
-                >
-                  Sign In with Microsoft
-                </Button>
-              )}
+                <div className="space-y-3">
+                  {hasGoogle && (
+                    <Button
+                      data-testid="button-login-google"
+                      onClick={() => { window.location.href = "/api/auth/google"; }}
+                      className="w-full bg-white text-gray-800 font-medium tracking-wide border border-gray-300"
+                    >
+                      <SiGoogle className="mr-2 h-4 w-4" />
+                      Sign in with Google
+                    </Button>
+                  )}
 
-              {hasReplit && (
-                <Button
-                  data-testid="button-login-replit"
-                  onClick={() => {
-                    window.location.href = "/api/login";
-                  }}
-                  variant="outline"
-                  className="w-full border-gray-600 text-gray-300 font-medium tracking-wide"
-                >
-                  Sign In with Replit
-                </Button>
-              )}
+                  {hasMicrosoft && (
+                    <Button
+                      data-testid="button-login-microsoft"
+                      onClick={() => { window.location.href = "/api/auth/microsoft"; }}
+                      variant="outline"
+                      className="w-full border-gray-600 text-gray-300 font-medium tracking-wide"
+                    >
+                      Sign In with Microsoft
+                    </Button>
+                  )}
 
-              {!hasGoogle && !hasReplit && !hasMicrosoft && providers && (
-                <Button
-                  data-testid="button-login-fallback"
-                  onClick={() => {
-                    window.location.href = "/api/login";
-                  }}
-                  className="w-full bg-[#5ba897] text-white font-medium tracking-wide"
-                >
-                  Sign In
-                </Button>
-              )}
-            </div>
+                  {hasReplit && (
+                    <Button
+                      data-testid="button-login-replit"
+                      onClick={() => { window.location.href = "/api/login"; }}
+                      variant="outline"
+                      className="w-full border-gray-600 text-gray-300 font-medium tracking-wide"
+                    >
+                      Sign In with Replit
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
 
-            {/* Back link */}
             <div className="text-center">
               <button
                 type="button"
