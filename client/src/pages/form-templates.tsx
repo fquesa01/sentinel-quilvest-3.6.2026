@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import JSZip from "jszip";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -115,15 +116,45 @@ function guessDocumentType(filename: string): string {
   return "other";
 }
 
-const REJECTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"];
+const REJECTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"];
+
+function isZipFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+}
 
 function isSupportedFile(file: File): boolean {
   const name = file.name.toLowerCase();
+  if (name.endsWith(".zip")) return false;
   const dotIndex = name.lastIndexOf(".");
   if (dotIndex <= 0) return true;
   const ext = name.slice(dotIndex);
   if (REJECTED_EXTENSIONS.includes(ext)) return false;
   return true;
+}
+
+async function extractFilesFromZip(zipFile: File): Promise<File[]> {
+  const zip = await JSZip.loadAsync(zipFile);
+  const extracted: File[] = [];
+  const entries = Object.entries(zip.files);
+
+  for (const [path, entry] of entries) {
+    if (entry.dir) continue;
+    const name = path.split("/").pop() || "";
+    if (!name || name.startsWith(".") || path.includes("__MACOSX")) continue;
+    if (name.toLowerCase().endsWith(".zip")) continue;
+
+    const testFile = new File([], name);
+    if (!isSupportedFile(testFile)) continue;
+
+    const blob = await entry.async("blob");
+    const file = new File([blob], name, {
+      type: blob.type || "application/octet-stream",
+    });
+    extracted.push(file);
+  }
+
+  return extracted;
 }
 
 export default function FormTemplatesPage() {
@@ -255,29 +286,54 @@ export default function FormTemplatesPage() {
     uploadMutation.mutate(formData);
   };
 
-  const handleFilesSelected = useCallback((files: FileList | null) => {
+  const handleFilesSelected = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
-    const entries: BulkFileEntry[] = [];
+    const allFiles: File[] = [];
+    let zipCount = 0;
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (!isSupportedFile(file)) continue;
-      const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ").replace(/\s+/g, " ").trim();
-      entries.push({
-        id: `${Date.now()}-${i}`,
-        file,
-        name: baseName,
-        documentType: guessDocumentType(file.name),
-      });
+      if (isZipFile(file)) {
+        zipCount++;
+        try {
+          const extracted = await extractFilesFromZip(file);
+          allFiles.push(...extracted);
+        } catch {
+          toast({
+            title: "ZIP extraction failed",
+            description: `Could not read "${file.name}". The file may be corrupted or password-protected.`,
+            variant: "destructive",
+          });
+        }
+      } else if (isSupportedFile(file)) {
+        allFiles.push(file);
+      }
     }
+
+    const entries: BulkFileEntry[] = allFiles.map((file, i) => ({
+      id: `${Date.now()}-${i}`,
+      file,
+      name: file.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ").replace(/\s+/g, " ").trim(),
+      documentType: guessDocumentType(file.name),
+    }));
 
     if (entries.length === 0) {
       toast({
         title: "No supported files",
-        description: "No document files were found. Image, video, and archive files are not supported.",
+        description: zipCount > 0
+          ? "The ZIP file contained no supported document files. Only .pdf, .docx, .doc, .rtf, .html, and .txt files are supported."
+          : "No document files were found. Image, video, and archive files are not supported.",
         variant: "destructive",
       });
       return;
+    }
+
+    if (zipCount > 0) {
+      toast({
+        title: `Extracted ${entries.length} file${entries.length !== 1 ? "s" : ""} from ZIP`,
+        description: "Review the files below before uploading.",
+      });
     }
 
     setBulkFiles(entries);
@@ -747,7 +803,7 @@ export default function FormTemplatesPage() {
                     <>
                       <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
                       <p className="text-sm text-muted-foreground">
-                        Click to upload a document file (.docx, .doc, .pdf, .rtf, .html, .txt)
+                        Click to upload a document file (.docx, .doc, .pdf, .rtf, .html, .txt, .zip)
                       </p>
                     </>
                   )}
@@ -756,13 +812,23 @@ export default function FormTemplatesPage() {
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const file = e.target.files?.[0];
-                    if (file) {
-                      setSelectedFile(file);
-                      if (!uploadForm.name) {
-                        setUploadForm(prev => ({ ...prev, name: file.name.replace(/\.[^.]+$/, "") }));
-                      }
+                    if (!file) return;
+                    if (isZipFile(file)) {
+                      resetUploadForm();
+                      const dt = new DataTransfer();
+                      dt.items.add(file);
+                      await handleFilesSelected(dt.files);
+                      return;
+                    }
+                    if (!isSupportedFile(file)) {
+                      toast({ title: "Unsupported file type", description: "This file type is not supported. Try .pdf, .docx, .doc, .rtf, .html, or .txt.", variant: "destructive" });
+                      return;
+                    }
+                    setSelectedFile(file);
+                    if (!uploadForm.name) {
+                      setUploadForm(prev => ({ ...prev, name: file.name.replace(/\.[^.]+$/, "") }));
                     }
                   }}
                   data-testid="input-file-upload"
