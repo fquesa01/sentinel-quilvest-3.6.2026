@@ -6851,18 +6851,6 @@ export const dataRoomFolders = pgTable("data_room_folders", {
   parentIdx: index("idx_data_room_folders_parent").on(table.parentFolderId),
 }));
 
-// Data Room Templates Table
-export const dataRoomTemplates = pgTable("data_room_templates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: varchar("name", { length: 255 }).notNull(),
-  description: text("description"),
-  dealType: varchar("deal_type", { length: 100 }),
-  folderStructure: jsonb("folder_structure"),
-  isDefault: boolean("is_default").default(false),
-  isGlobal: boolean("is_global").default(true),
-  createdBy: varchar("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow(),
-});
 
 // OCR status enum for document processing
 export const ocrStatusEnum = pgEnum("ocr_status", ["pending", "processing", "completed", "failed", "not_applicable"]);
@@ -7324,14 +7312,6 @@ export const insertDataRoomFolderSchema = createInsertSchema(dataRoomFolders).om
   lockedAt: true,
 });
 export type InsertDataRoomFolder = z.infer<typeof insertDataRoomFolderSchema>;
-
-// Data Room Template Types
-export type DataRoomTemplate = typeof dataRoomTemplates.$inferSelect;
-export const insertDataRoomTemplateSchema = createInsertSchema(dataRoomTemplates).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertDataRoomTemplate = z.infer<typeof insertDataRoomTemplateSchema>;
 
 // Data Room Document Types
 export type DataRoomDocument = typeof dataRoomDocuments.$inferSelect;

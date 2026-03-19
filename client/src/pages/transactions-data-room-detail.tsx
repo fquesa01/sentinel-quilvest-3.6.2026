@@ -59,7 +59,6 @@ import {
   Trash2,
   Edit,
   FileUp,
-  LayoutTemplate,
   Users,
   History,
   Shield,
@@ -82,7 +81,7 @@ import {
   File,
   ChevronUp,
 } from "lucide-react";
-import type { DataRoom, DataRoomFolder, DataRoomDocument, DataRoomTemplate } from "@shared/schema";
+import type { DataRoom, DataRoomFolder, DataRoomDocument } from "@shared/schema";
 import { format } from "date-fns";
 import { AccessManagementPanel } from "@/components/data-room/access-management-panel";
 import { ActivityLogPanel } from "@/components/data-room/activity-log-panel";
@@ -350,7 +349,6 @@ export default function TransactionsDataRoomDetail() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isFolderPanelCollapsed, setIsFolderPanelCollapsed] = useState(false);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
-  const [isTemplateOpen, setIsTemplateOpen] = useState(false);
   const [isRenameFolderOpen, setIsRenameFolderOpen] = useState(false);
   const [folderToRename, setFolderToRename] = useState<DataRoomFolder | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -411,10 +409,6 @@ export default function TransactionsDataRoomDetail() {
   const { data: room, isLoading } = useQuery<DataRoomWithContent>({
     queryKey: ["/api/data-rooms", roomId],
     enabled: !!roomId,
-  });
-
-  const { data: templates } = useQuery<DataRoomTemplate[]>({
-    queryKey: ["/api/data-room-templates"],
   });
 
   const folderTree = useMemo(() => {
@@ -542,21 +536,6 @@ export default function TransactionsDataRoomDetail() {
       await queryClient.resetQueries({ queryKey: ["/api/data-rooms", roomId] });
       setIsCreateFolderOpen(false);
       toast({ title: "Folder created successfully" });
-    },
-    onError: (error: any) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const applyTemplateMutation = useMutation({
-    mutationFn: async (templateId: string) => {
-      return apiRequest("POST", `/api/data-rooms/${roomId}/apply-template/${templateId}`, {});
-    },
-    onSuccess: async () => {
-      // Force clear the cache and refetch
-      await queryClient.resetQueries({ queryKey: ["/api/data-rooms", roomId] });
-      setIsTemplateOpen(false);
-      toast({ title: "Template applied successfully" });
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -849,46 +828,6 @@ export default function TransactionsDataRoomDetail() {
             <Users className="h-4 w-4 mr-2" />
             Access
           </Button>
-          <Dialog open={isTemplateOpen} onOpenChange={setIsTemplateOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="button-apply-template">
-                <LayoutTemplate className="h-4 w-4 mr-2" />
-                Apply Template
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Apply Folder Template</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Select a template to create a standard folder structure. This will add folders to your data room.
-                </p>
-                <div className="space-y-2">
-                  {templates?.map((template) => (
-                    <Card
-                      key={template.id}
-                      className="cursor-pointer hover-elevate"
-                      onClick={() => applyTemplateMutation.mutate(template.id)}
-                      data-testid={`template-${template.id}`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{template.name}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {template.description}
-                            </p>
-                          </div>
-                          <Badge variant="secondary">{template.dealType}</Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
