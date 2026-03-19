@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -24,6 +26,8 @@ import {
   Percent,
   Scale,
   Target,
+  Check,
+  X,
 } from "lucide-react";
 
 interface ClosingData {
@@ -62,6 +66,7 @@ interface StatementFormProps {
   closing: ClosingData;
   lineItems: LineItem[];
   onAddItem?: (section: string, defaults?: Record<string, string>) => void;
+  onInlineAdd?: (data: { description: string; amount: string }, sectionDefaults?: Record<string, string>) => Promise<void>;
   onUpdateItem?: (itemId: string, updates: Record<string, unknown>) => void;
 }
 
@@ -78,14 +83,49 @@ function sumItems(items: LineItem[]): number {
   }, 0);
 }
 
-function SectionBlock({ title, icon, items, color, onAdd }: {
+function SectionBlock({ title, icon, items, color, onAdd, onInlineAdd }: {
   title: string;
   icon: React.ReactNode;
   items: LineItem[];
   color?: string;
   onAdd?: () => void;
+  onInlineAdd?: (data: { description: string; amount: string }) => Promise<void>;
 }) {
   const total = sumItems(items);
+  const [showInlineForm, setShowInlineForm] = useState(false);
+  const [inlineDesc, setInlineDesc] = useState("");
+  const [inlineAmount, setInlineAmount] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  function handleInlineAdd() {
+    if (onInlineAdd) {
+      setShowInlineForm(true);
+    } else if (onAdd) {
+      onAdd();
+    }
+  }
+
+  async function handleInlineSave() {
+    if (!inlineDesc.trim() || isSaving) return;
+    setIsSaving(true);
+    try {
+      await onInlineAdd?.({ description: inlineDesc.trim(), amount: inlineAmount || "0" });
+      setInlineDesc("");
+      setInlineAmount("");
+      setShowInlineForm(false);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function handleInlineCancel() {
+    setInlineDesc("");
+    setInlineAmount("");
+    setShowInlineForm(false);
+  }
+
+  const testId = title.toLowerCase().replace(/\s/g, "-");
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -95,17 +135,17 @@ function SectionBlock({ title, icon, items, color, onAdd }: {
           <Badge variant="outline" className="text-xs">{items.length}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-sm" data-testid={`text-section-total-${title.toLowerCase().replace(/\s/g, "-")}`}>
+          <span className="font-mono text-sm" data-testid={`text-section-total-${testId}`}>
             {formatCurrency(total.toString())}
           </span>
-          {onAdd && (
-            <button className="text-xs text-primary hover:underline" onClick={onAdd} data-testid={`button-add-${title.toLowerCase().replace(/\s/g, "-")}`}>
+          {(onAdd || onInlineAdd) && (
+            <button className="text-xs text-primary hover:underline" onClick={handleInlineAdd} data-testid={`button-add-${testId}`}>
               + Add
             </button>
           )}
         </div>
       </div>
-      {items.length === 0 ? (
+      {items.length === 0 && !showInlineForm ? (
         <p className="text-xs text-muted-foreground pl-6">No items yet</p>
       ) : (
         <div className="pl-6 space-y-1">
@@ -117,11 +157,38 @@ function SectionBlock({ title, icon, items, color, onAdd }: {
           ))}
         </div>
       )}
+      {showInlineForm && (
+        <div className="pl-6 flex items-center gap-2 pt-1" data-testid={`inline-form-${testId}`}>
+          <Input
+            value={inlineDesc}
+            onChange={e => setInlineDesc(e.target.value)}
+            placeholder="Description"
+            className="flex-1 h-8 text-sm"
+            data-testid={`input-inline-desc-${testId}`}
+            autoFocus
+            onKeyDown={e => { if (e.key === "Enter") handleInlineSave(); if (e.key === "Escape") handleInlineCancel(); }}
+          />
+          <Input
+            value={inlineAmount}
+            onChange={e => setInlineAmount(e.target.value)}
+            placeholder="0.00"
+            className="w-28 h-8 text-sm font-mono"
+            data-testid={`input-inline-amount-${testId}`}
+            onKeyDown={e => { if (e.key === "Enter") handleInlineSave(); if (e.key === "Escape") handleInlineCancel(); }}
+          />
+          <Button size="icon" variant="ghost" onClick={handleInlineSave} disabled={isSaving} data-testid={`button-inline-save-${testId}`}>
+            <Check className="h-4 w-4 text-green-600" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={handleInlineCancel} disabled={isSaving} data-testid={`button-inline-cancel-${testId}`}>
+            <X className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-export function ClosingDisclosureForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function ClosingDisclosureForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const loanTerms = lineItems.filter(i => i.cdSection === "loan_terms");
   const projectedPayments = lineItems.filter(i => i.cdSection === "projected_payments");
   const closingCosts = lineItems.filter(i => i.cdSection === "closing_costs");
@@ -160,35 +227,40 @@ export function ClosingDisclosureForm({ closing, lineItems, onAddItem }: Stateme
           title="Loan Terms"
           icon={<CreditCard className="h-4 w-4 text-blue-500" />}
           items={loanTerms}
-          onAdd={() => onAddItem?.("loan_terms", { cdSection: "loan_terms" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { cdSection: "loan_terms" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("loan_terms", { cdSection: "loan_terms" }) : undefined}
         />
         <Separator />
         <SectionBlock
           title="Projected Payments"
           icon={<DollarSign className="h-4 w-4 text-green-500" />}
           items={projectedPayments}
-          onAdd={() => onAddItem?.("projected_payments", { cdSection: "projected_payments" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { cdSection: "projected_payments" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("projected_payments", { cdSection: "projected_payments" }) : undefined}
         />
         <Separator />
         <SectionBlock
           title="Closing Costs"
           icon={<Percent className="h-4 w-4 text-orange-500" />}
           items={closingCosts}
-          onAdd={() => onAddItem?.("closing_costs", { cdSection: "closing_costs" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { cdSection: "closing_costs" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("closing_costs", { cdSection: "closing_costs" }) : undefined}
         />
         <Separator />
         <SectionBlock
           title="Cash to Close"
           icon={<DollarSign className="h-4 w-4 text-purple-500" />}
           items={cashToClose}
-          onAdd={() => onAddItem?.("cash_to_close", { cdSection: "cash_to_close" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { cdSection: "cash_to_close" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("cash_to_close", { cdSection: "cash_to_close" }) : undefined}
         />
         <Separator />
         <SectionBlock
           title="Summaries of Transactions"
           icon={<Scale className="h-4 w-4 text-indigo-500" />}
           items={summaries}
-          onAdd={() => onAddItem?.("summaries", { cdSection: "summaries" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { cdSection: "summaries" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("summaries", { cdSection: "summaries" }) : undefined}
         />
         {other.length > 0 && (
           <>
@@ -201,7 +273,7 @@ export function ClosingDisclosureForm({ closing, lineItems, onAddItem }: Stateme
   );
 }
 
-export function Hud1Form({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function Hud1Form({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const sectionConfig = [
     { num: "100", label: "Gross Amount Due from Borrower", icon: <DollarSign className="h-4 w-4 text-red-500" /> },
     { num: "200", label: "Amounts Paid By/on Behalf of Borrower", icon: <DollarSign className="h-4 w-4 text-green-500" /> },
@@ -255,7 +327,8 @@ export function Hud1Form({ closing, lineItems, onAddItem }: StatementFormProps) 
                 title={`${sec.num}. ${sec.label}`}
                 icon={sec.icon}
                 items={items}
-                onAdd={() => onAddItem?.(sec.num, { hudSection: sec.num })}
+                onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: sec.num }) : undefined}
+                onAdd={!onInlineAdd ? () => onAddItem?.(sec.num, { hudSection: sec.num }) : undefined}
               />
             );
           })}
@@ -270,7 +343,8 @@ export function Hud1Form({ closing, lineItems, onAddItem }: StatementFormProps) 
                 title={`${sec.num}. ${sec.label}`}
                 icon={sec.icon}
                 items={items}
-                onAdd={() => onAddItem?.(sec.num, { hudSection: sec.num })}
+                onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: sec.num }) : undefined}
+                onAdd={!onInlineAdd ? () => onAddItem?.(sec.num, { hudSection: sec.num }) : undefined}
               />
             );
           })}
@@ -288,7 +362,8 @@ export function Hud1Form({ closing, lineItems, onAddItem }: StatementFormProps) 
               title={`${sec.num}. ${sec.label}`}
               icon={sec.icon}
               items={items}
-              onAdd={() => onAddItem?.(sec.num, { hudSection: sec.num })}
+              onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: sec.num }) : undefined}
+              onAdd={!onInlineAdd ? () => onAddItem?.(sec.num, { hudSection: sec.num }) : undefined}
             />
           );
         })}
@@ -297,7 +372,7 @@ export function Hud1Form({ closing, lineItems, onAddItem }: StatementFormProps) 
   );
 }
 
-export function AltaForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function AltaForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const isCombo = closing.statementType === "alta_combined";
   const isBuyer = closing.statementType === "alta_buyer";
 
@@ -357,7 +432,8 @@ export function AltaForm({ closing, lineItems, onAddItem }: StatementFormProps) 
                   title={cat.label}
                   icon={cat.icon}
                   items={items}
-                  onAdd={() => onAddItem?.(cat.key, { altaCategory: cat.key, paidBy: "buyer" })}
+                  onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { altaCategory: cat.key, paidBy: "buyer" }) : undefined}
+                  onAdd={!onInlineAdd ? () => onAddItem?.(cat.key, { altaCategory: cat.key, paidBy: "buyer" }) : undefined}
                 />
               );
             })}
@@ -372,7 +448,8 @@ export function AltaForm({ closing, lineItems, onAddItem }: StatementFormProps) 
                   title={cat.label}
                   icon={cat.icon}
                   items={items}
-                  onAdd={() => onAddItem?.(cat.key, { altaCategory: cat.key, paidBy: "seller" })}
+                  onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { altaCategory: cat.key, paidBy: "seller" }) : undefined}
+                  onAdd={!onInlineAdd ? () => onAddItem?.(cat.key, { altaCategory: cat.key, paidBy: "seller" }) : undefined}
                 />
               );
             })}
@@ -388,7 +465,8 @@ export function AltaForm({ closing, lineItems, onAddItem }: StatementFormProps) 
               title={cat.label}
               icon={cat.icon}
               items={getAltaItems(cat.key)}
-              onAdd={() => onAddItem?.(cat.key, { altaCategory: cat.key })}
+              onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { altaCategory: cat.key }) : undefined}
+              onAdd={!onInlineAdd ? () => onAddItem?.(cat.key, { altaCategory: cat.key }) : undefined}
             />
           ))}
         </div>
@@ -397,7 +475,7 @@ export function AltaForm({ closing, lineItems, onAddItem }: StatementFormProps) 
   );
 }
 
-export function SourcesUsesForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function SourcesUsesForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const sources = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
   const uses = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
   const totalSources = sumItems(sources);
@@ -439,7 +517,8 @@ export function SourcesUsesForm({ closing, lineItems, onAddItem }: StatementForm
             title="Sources of Funds"
             icon={<ArrowUpRight className="h-4 w-4 text-green-500" />}
             items={sources}
-            onAdd={() => onAddItem?.("source", { side: "source" })}
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "source" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("source", { side: "source" }) : undefined}
           />
         </div>
         <div className="space-y-3">
@@ -447,7 +526,8 @@ export function SourcesUsesForm({ closing, lineItems, onAddItem }: StatementForm
             title="Uses of Funds"
             icon={<ArrowDownRight className="h-4 w-4 text-red-500" />}
             items={uses}
-            onAdd={() => onAddItem?.("use", { side: "use" })}
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "use" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("use", { side: "use" }) : undefined}
           />
         </div>
       </div>
@@ -455,7 +535,7 @@ export function SourcesUsesForm({ closing, lineItems, onAddItem }: StatementForm
   );
 }
 
-export function FundsFlowForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function FundsFlowForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const incoming = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
   const outgoing = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
   const totalIn = sumItems(incoming);
@@ -493,7 +573,8 @@ export function FundsFlowForm({ closing, lineItems, onAddItem }: StatementFormPr
             title="Incoming Wires"
             icon={<ArrowUpRight className="h-4 w-4 text-green-500" />}
             items={incoming}
-            onAdd={() => onAddItem?.("incoming", { side: "source" })}
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "source" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("incoming", { side: "source" }) : undefined}
           />
           {incoming.map(item => (
             <div key={item.id} className="pl-6 text-xs text-muted-foreground">
@@ -507,7 +588,8 @@ export function FundsFlowForm({ closing, lineItems, onAddItem }: StatementFormPr
             title="Outgoing Wires"
             icon={<ArrowDownRight className="h-4 w-4 text-red-500" />}
             items={outgoing}
-            onAdd={() => onAddItem?.("outgoing", { side: "use" })}
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "use" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("outgoing", { side: "use" }) : undefined}
           />
           {outgoing.map(item => (
             <div key={item.id} className="pl-6 text-xs text-muted-foreground">
@@ -521,7 +603,7 @@ export function FundsFlowForm({ closing, lineItems, onAddItem }: StatementFormPr
   );
 }
 
-export function Exchange1031Form({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function Exchange1031Form({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const relinquished = lineItems.filter(li => li.hudSection === "relinquished" || (li.side === "source" && !li.hudSection));
   const replacement = lineItems.filter(li => li.hudSection === "replacement" || (li.side === "use" && !li.hudSection));
   const exchangeFunds = lineItems.filter(li => li.hudSection === "exchange_funds");
@@ -553,28 +635,31 @@ export function Exchange1031Form({ closing, lineItems, onAddItem }: StatementFor
           title="Relinquished Property Proceeds"
           icon={<Home className="h-4 w-4 text-amber-500" />}
           items={relinquished}
-          onAdd={() => onAddItem?.("relinquished", { hudSection: "relinquished", side: "source" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "relinquished", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("relinquished", { hudSection: "relinquished", side: "source" }) : undefined}
         />
         <Separator />
         <SectionBlock
           title="Replacement Property Costs"
           icon={<Home className="h-4 w-4 text-blue-500" />}
           items={replacement}
-          onAdd={() => onAddItem?.("replacement", { hudSection: "replacement", side: "use" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "replacement", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("replacement", { hudSection: "replacement", side: "use" }) : undefined}
         />
         <Separator />
         <SectionBlock
           title="Exchange Funds"
           icon={<RefreshCw className="h-4 w-4 text-green-500" />}
           items={exchangeFunds}
-          onAdd={() => onAddItem?.("exchange_funds", { hudSection: "exchange_funds" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "exchange_funds" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("exchange_funds", { hudSection: "exchange_funds" }) : undefined}
         />
       </div>
     </div>
   );
 }
 
-export function PortfolioForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function PortfolioForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const summaryItems = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit" || li.hudSection === "summary");
   const allocations = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit" || li.hudSection === "allocation");
 
@@ -606,7 +691,8 @@ export function PortfolioForm({ closing, lineItems, onAddItem }: StatementFormPr
             title="Capital Summary"
             icon={<DollarSign className="h-4 w-4 text-green-500" />}
             items={summaryItems}
-            onAdd={() => onAddItem?.("summary", { side: "source", hudSection: "summary" })}
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "source", hudSection: "summary" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("summary", { side: "source", hudSection: "summary" }) : undefined}
           />
         </div>
         <div className="space-y-3">
@@ -614,7 +700,8 @@ export function PortfolioForm({ closing, lineItems, onAddItem }: StatementFormPr
             title="Allocations"
             icon={<Layers className="h-4 w-4 text-blue-500" />}
             items={allocations}
-            onAdd={() => onAddItem?.("allocation", { side: "use", hudSection: "allocation" })}
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "use", hudSection: "allocation" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("allocation", { side: "use", hudSection: "allocation" }) : undefined}
           />
         </div>
       </div>
@@ -622,7 +709,7 @@ export function PortfolioForm({ closing, lineItems, onAddItem }: StatementFormPr
   );
 }
 
-export function LenderFundingForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function LenderFundingForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const loanProceeds = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
   const disbursements = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
   const totalProceeds = sumItems(loanProceeds);
@@ -659,20 +746,22 @@ export function LenderFundingForm({ closing, lineItems, onAddItem }: StatementFo
           title="Loan Proceeds"
           icon={<ArrowUpRight className="h-4 w-4 text-green-500" />}
           items={loanProceeds}
-          onAdd={() => onAddItem?.("proceeds", { side: "source" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("proceeds", { side: "source" }) : undefined}
         />
         <SectionBlock
           title="Disbursements"
           icon={<ArrowDownRight className="h-4 w-4 text-red-500" />}
           items={disbursements}
-          onAdd={() => onAddItem?.("disbursement", { side: "use" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("disbursement", { side: "use" }) : undefined}
         />
       </div>
     </div>
   );
 }
 
-export function CashSettlementForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function CashSettlementForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const receipts = lineItems.filter(li => li.side === "source" || li.side === "buyer_credit" || li.side === "seller_credit");
   const payments = lineItems.filter(li => li.side === "use" || li.side === "buyer_debit" || li.side === "seller_debit");
   const totalReceipts = sumItems(receipts);
@@ -712,20 +801,22 @@ export function CashSettlementForm({ closing, lineItems, onAddItem }: StatementF
           title="Receipts"
           icon={<ArrowUpRight className="h-4 w-4 text-green-500" />}
           items={receipts}
-          onAdd={() => onAddItem?.("receipt", { side: "source" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("receipt", { side: "source" }) : undefined}
         />
         <SectionBlock
           title="Payments"
           icon={<ArrowDownRight className="h-4 w-4 text-red-500" />}
           items={payments}
-          onAdd={() => onAddItem?.("payment", { side: "use" })}
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("payment", { side: "use" }) : undefined}
         />
       </div>
     </div>
   );
 }
 
-export function ConstructionSourcesUsesForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function ConstructionSourcesUsesForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const hardCosts = lineItems.filter(li => li.hudSection === "hard_costs" || li.altaCategory === "hard_costs");
   const softCosts = lineItems.filter(li => li.hudSection === "soft_costs" || li.altaCategory === "soft_costs");
   const interestReserves = lineItems.filter(li => li.hudSection === "interest_reserve" || li.altaCategory === "interest_reserve");
@@ -767,32 +858,38 @@ export function ConstructionSourcesUsesForm({ closing, lineItems, onAddItem }: S
       <div className="space-y-4">
         <h3 className="text-sm font-semibold text-muted-foreground">Uses of Funds</h3>
         <SectionBlock title="Hard Costs" icon={<Building2 className="h-4 w-4 text-blue-500" />} items={hardCosts}
-          onAdd={() => onAddItem?.("hard_costs", { hudSection: "hard_costs", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "hard_costs", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("hard_costs", { hudSection: "hard_costs", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Soft Costs" icon={<FileText className="h-4 w-4 text-purple-500" />} items={softCosts}
-          onAdd={() => onAddItem?.("soft_costs", { hudSection: "soft_costs", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "soft_costs", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("soft_costs", { hudSection: "soft_costs", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Interest Reserves" icon={<Percent className="h-4 w-4 text-amber-500" />} items={interestReserves}
-          onAdd={() => onAddItem?.("interest_reserve", { hudSection: "interest_reserve", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "interest_reserve", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("interest_reserve", { hudSection: "interest_reserve", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Developer Fees" icon={<DollarSign className="h-4 w-4 text-teal-500" />} items={developerFees}
-          onAdd={() => onAddItem?.("developer_fees", { hudSection: "developer_fees", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "developer_fees", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("developer_fees", { hudSection: "developer_fees", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Contingency" icon={<Scale className="h-4 w-4 text-orange-500" />} items={contingency}
-          onAdd={() => onAddItem?.("contingency", { hudSection: "contingency", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "contingency", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("contingency", { hudSection: "contingency", side: "use" }) : undefined} />
       </div>
 
       <Separator />
       <div className="space-y-4">
         <h3 className="text-sm font-semibold text-muted-foreground">Sources of Funds</h3>
         <SectionBlock title="Funding Sources" icon={<ArrowUpRight className="h-4 w-4 text-green-500" />} items={sources}
-          onAdd={() => onAddItem?.("source", { side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("source", { side: "source" }) : undefined} />
       </div>
     </div>
   );
 }
 
-export function ConstructionDrawForm({ closing, lineItems, onAddItem, onUpdateItem }: StatementFormProps) {
+export function ConstructionDrawForm({ closing, lineItems, onAddItem, onInlineAdd, onUpdateItem }: StatementFormProps) {
   const draws = lineItems.filter(li => li.hudSection === "draw" || li.altaCategory === "draw");
   const retainage = lineItems.filter(li => li.hudSection === "retainage" || li.altaCategory === "retainage");
   const changeOrders = lineItems.filter(li => li.hudSection === "change_order" || li.altaCategory === "change_order");
@@ -932,22 +1029,26 @@ export function ConstructionDrawForm({ closing, lineItems, onAddItem, onUpdateIt
 
       <div className="space-y-4">
         <SectionBlock title="Milestones" icon={<Target className="h-4 w-4 text-teal-500" />} items={milestones}
-          onAdd={() => onAddItem?.("milestone", { hudSection: "milestone", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "milestone", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("milestone", { hudSection: "milestone", side: "source" }) : undefined} />
         <Separator />
         <SectionBlock title="Draw Requests" icon={<ArrowDownRight className="h-4 w-4 text-blue-500" />} items={draws}
-          onAdd={() => onAddItem?.("draw", { hudSection: "draw", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "draw", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("draw", { hudSection: "draw", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Retainage" icon={<Scale className="h-4 w-4 text-orange-500" />} items={retainage}
-          onAdd={() => onAddItem?.("retainage", { hudSection: "retainage", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "retainage", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("retainage", { hudSection: "retainage", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Change Orders" icon={<FileText className="h-4 w-4 text-purple-500" />} items={changeOrders}
-          onAdd={() => onAddItem?.("change_order", { hudSection: "change_order", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "change_order", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("change_order", { hudSection: "change_order", side: "use" }) : undefined} />
       </div>
     </div>
   );
 }
 
-export function CMBSFundingMemoForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function CMBSFundingMemoForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const seniorTranche = lineItems.filter(li => li.hudSection === "senior_tranche" || li.altaCategory === "senior_tranche");
   const mezzTranche = lineItems.filter(li => li.hudSection === "mezz_tranche" || li.altaCategory === "mezz_tranche");
   const prefEquity = lineItems.filter(li => li.hudSection === "pref_equity" || li.altaCategory === "pref_equity");
@@ -984,26 +1085,31 @@ export function CMBSFundingMemoForm({ closing, lineItems, onAddItem }: Statement
       <div className="space-y-4">
         <h3 className="text-sm font-semibold text-muted-foreground">Tranche Funding</h3>
         <SectionBlock title="Senior Tranche (A-Note)" icon={<Layers className="h-4 w-4 text-blue-500" />} items={seniorTranche}
-          onAdd={() => onAddItem?.("senior_tranche", { hudSection: "senior_tranche", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "senior_tranche", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("senior_tranche", { hudSection: "senior_tranche", side: "source" }) : undefined} />
         <Separator />
         <SectionBlock title="Mezzanine Tranche (B-Note)" icon={<Layers className="h-4 w-4 text-purple-500" />} items={mezzTranche}
-          onAdd={() => onAddItem?.("mezz_tranche", { hudSection: "mezz_tranche", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "mezz_tranche", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("mezz_tranche", { hudSection: "mezz_tranche", side: "source" }) : undefined} />
         <Separator />
         <SectionBlock title="Preferred Equity" icon={<Layers className="h-4 w-4 text-teal-500" />} items={prefEquity}
-          onAdd={() => onAddItem?.("pref_equity", { hudSection: "pref_equity", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "pref_equity", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("pref_equity", { hudSection: "pref_equity", side: "source" }) : undefined} />
         <Separator />
         <SectionBlock title="Defeasance / Yield Maintenance" icon={<Percent className="h-4 w-4 text-amber-500" />} items={defeasance}
-          onAdd={() => onAddItem?.("defeasance", { hudSection: "defeasance", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "defeasance", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("defeasance", { hudSection: "defeasance", side: "use" }) : undefined} />
       </div>
 
       <Separator />
       <SectionBlock title="Disbursements" icon={<ArrowDownRight className="h-4 w-4 text-red-500" />} items={disbursements}
-        onAdd={() => onAddItem?.("disbursement", { side: "use" })} />
+        onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "use" }) : undefined}
+        onAdd={!onInlineAdd ? () => onAddItem?.("disbursement", { side: "use" }) : undefined} />
     </div>
   );
 }
 
-export function CapitalStackForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function CapitalStackForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const seniorDebt = lineItems.filter(li => li.hudSection === "senior_debt" || li.altaCategory === "senior_debt");
   const mezzDebt = lineItems.filter(li => li.hudSection === "mezz_debt" || li.altaCategory === "mezz_debt");
   const prefEquity = lineItems.filter(li => li.hudSection === "pref_equity" || li.altaCategory === "pref_equity");
@@ -1046,22 +1152,26 @@ export function CapitalStackForm({ closing, lineItems, onAddItem }: StatementFor
 
       <div className="space-y-4">
         <SectionBlock title="Senior Debt" icon={<Layers className="h-4 w-4 text-blue-500" />} items={seniorDebt}
-          onAdd={() => onAddItem?.("senior_debt", { hudSection: "senior_debt", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "senior_debt", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("senior_debt", { hudSection: "senior_debt", side: "source" }) : undefined} />
         <Separator />
         <SectionBlock title="Mezzanine Debt" icon={<Layers className="h-4 w-4 text-purple-500" />} items={mezzDebt}
-          onAdd={() => onAddItem?.("mezz_debt", { hudSection: "mezz_debt", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "mezz_debt", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("mezz_debt", { hudSection: "mezz_debt", side: "source" }) : undefined} />
         <Separator />
         <SectionBlock title="Preferred Equity" icon={<Layers className="h-4 w-4 text-teal-500" />} items={prefEquity}
-          onAdd={() => onAddItem?.("pref_equity", { hudSection: "pref_equity", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "pref_equity", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("pref_equity", { hudSection: "pref_equity", side: "source" }) : undefined} />
         <Separator />
         <SectionBlock title="Sponsor / Common Equity" icon={<DollarSign className="h-4 w-4 text-green-500" />} items={sponsorEquity}
-          onAdd={() => onAddItem?.("sponsor_equity", { hudSection: "sponsor_equity", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "sponsor_equity", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("sponsor_equity", { hudSection: "sponsor_equity", side: "source" }) : undefined} />
       </div>
     </div>
   );
 }
 
-export function InvestorWaterfallForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function InvestorWaterfallForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const returnOfCapital = lineItems.filter(li => li.hudSection === "return_of_capital");
   const prefReturn = lineItems.filter(li => li.hudSection === "pref_return");
   const catchUp = lineItems.filter(li => li.hudSection === "catch_up");
@@ -1098,25 +1208,30 @@ export function InvestorWaterfallForm({ closing, lineItems, onAddItem }: Stateme
       <div className="space-y-4">
         <h3 className="text-sm font-semibold text-muted-foreground">Waterfall Tiers</h3>
         <SectionBlock title="Tier 1: Return of Capital" icon={<ArrowUpRight className="h-4 w-4 text-blue-500" />} items={returnOfCapital}
-          onAdd={() => onAddItem?.("return_of_capital", { hudSection: "return_of_capital", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "return_of_capital", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("return_of_capital", { hudSection: "return_of_capital", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Tier 2: Preferred Return" icon={<Percent className="h-4 w-4 text-teal-500" />} items={prefReturn}
-          onAdd={() => onAddItem?.("pref_return", { hudSection: "pref_return", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "pref_return", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("pref_return", { hudSection: "pref_return", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Tier 3: GP Catch-Up" icon={<ArrowUpRight className="h-4 w-4 text-purple-500" />} items={catchUp}
-          onAdd={() => onAddItem?.("catch_up", { hudSection: "catch_up", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "catch_up", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("catch_up", { hudSection: "catch_up", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Tier 4: Promote / Carried Interest" icon={<DollarSign className="h-4 w-4 text-amber-500" />} items={promote}
-          onAdd={() => onAddItem?.("promote", { hudSection: "promote", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "promote", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("promote", { hudSection: "promote", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Tier 5: Residual Split" icon={<Scale className="h-4 w-4 text-green-500" />} items={residualSplit}
-          onAdd={() => onAddItem?.("residual_split", { hudSection: "residual_split", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "residual_split", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("residual_split", { hudSection: "residual_split", side: "use" }) : undefined} />
       </div>
     </div>
   );
 }
 
-export function GroundLeaseForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function GroundLeaseForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const prepaidRent = lineItems.filter(li => li.hudSection === "prepaid_rent" || li.altaCategory === "prepaid_rent");
   const leaseholdFinancing = lineItems.filter(li => li.hudSection === "leasehold_financing" || li.altaCategory === "leasehold_financing");
   const leaseholdTaxes = lineItems.filter(li => li.hudSection === "leasehold_taxes" || li.altaCategory === "leasehold_taxes");
@@ -1152,25 +1267,30 @@ export function GroundLeaseForm({ closing, lineItems, onAddItem }: StatementForm
 
       <div className="space-y-4">
         <SectionBlock title="Prepaid Rent" icon={<DollarSign className="h-4 w-4 text-blue-500" />} items={prepaidRent}
-          onAdd={() => onAddItem?.("prepaid_rent", { hudSection: "prepaid_rent", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "prepaid_rent", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("prepaid_rent", { hudSection: "prepaid_rent", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Leasehold Financing" icon={<Building2 className="h-4 w-4 text-purple-500" />} items={leaseholdFinancing}
-          onAdd={() => onAddItem?.("leasehold_financing", { hudSection: "leasehold_financing", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "leasehold_financing", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("leasehold_financing", { hudSection: "leasehold_financing", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Leasehold Taxes & Assessments" icon={<Percent className="h-4 w-4 text-amber-500" />} items={leaseholdTaxes}
-          onAdd={() => onAddItem?.("leasehold_taxes", { hudSection: "leasehold_taxes", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "leasehold_taxes", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("leasehold_taxes", { hudSection: "leasehold_taxes", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Closing Costs" icon={<FileText className="h-4 w-4 text-orange-500" />} items={closingCosts}
-          onAdd={() => onAddItem?.("closing_costs", { hudSection: "closing_costs", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "closing_costs", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("closing_costs", { hudSection: "closing_costs", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Deposits & Funding" icon={<ArrowUpRight className="h-4 w-4 text-green-500" />} items={deposits}
-          onAdd={() => onAddItem?.("deposit", { side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("deposit", { side: "source" }) : undefined} />
       </div>
     </div>
   );
 }
 
-export function MasterClosingForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function MasterClosingForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const buyerCharges = lineItems.filter(li => li.side === "buyer_debit");
   const buyerCredits = lineItems.filter(li => li.side === "buyer_credit");
   const sellerCharges = lineItems.filter(li => li.side === "seller_debit");
@@ -1218,33 +1338,39 @@ export function MasterClosingForm({ closing, lineItems, onAddItem }: StatementFo
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-muted-foreground">Buyer&apos;s Statement</h3>
           <SectionBlock title="Buyer Credits" icon={<ArrowUpRight className="h-4 w-4 text-green-500" />} items={buyerCredits}
-            onAdd={() => onAddItem?.("buyer_credit", { side: "buyer_credit" })} />
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "buyer_credit" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("buyer_credit", { side: "buyer_credit" }) : undefined} />
           <Separator />
           <SectionBlock title="Buyer Charges" icon={<ArrowDownRight className="h-4 w-4 text-red-500" />} items={buyerCharges}
-            onAdd={() => onAddItem?.("buyer_debit", { side: "buyer_debit" })} />
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "buyer_debit" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("buyer_debit", { side: "buyer_debit" }) : undefined} />
         </div>
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-muted-foreground">Seller&apos;s Statement</h3>
           <SectionBlock title="Seller Credits" icon={<ArrowUpRight className="h-4 w-4 text-green-500" />} items={sellerCredits}
-            onAdd={() => onAddItem?.("seller_credit", { side: "seller_credit" })} />
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "seller_credit" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("seller_credit", { side: "seller_credit" }) : undefined} />
           <Separator />
           <SectionBlock title="Seller Charges" icon={<ArrowDownRight className="h-4 w-4 text-red-500" />} items={sellerCharges}
-            onAdd={() => onAddItem?.("seller_debit", { side: "seller_debit" })} />
+            onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "seller_debit" }) : undefined}
+            onAdd={!onInlineAdd ? () => onAddItem?.("seller_debit", { side: "seller_debit" }) : undefined} />
         </div>
       </div>
 
       <Separator />
       <div className="grid grid-cols-2 gap-6">
         <SectionBlock title="Sources" icon={<ArrowUpRight className="h-4 w-4 text-green-500" />} items={sources}
-          onAdd={() => onAddItem?.("source", { side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("source", { side: "source" }) : undefined} />
         <SectionBlock title="Uses" icon={<ArrowDownRight className="h-4 w-4 text-red-500" />} items={uses}
-          onAdd={() => onAddItem?.("use", { side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("use", { side: "use" }) : undefined} />
       </div>
     </div>
   );
 }
 
-export function REITContributionForm({ closing, lineItems, onAddItem }: StatementFormProps) {
+export function REITContributionForm({ closing, lineItems, onAddItem, onInlineAdd }: StatementFormProps) {
   const contributedAssets = lineItems.filter(li => li.hudSection === "contributed_assets" || li.altaCategory === "contributed_assets");
   const opUnits = lineItems.filter(li => li.hudSection === "op_units" || li.altaCategory === "op_units");
   const assumedLiabilities = lineItems.filter(li => li.hudSection === "assumed_liabilities" || li.altaCategory === "assumed_liabilities");
@@ -1283,19 +1409,24 @@ export function REITContributionForm({ closing, lineItems, onAddItem }: Statemen
 
       <div className="space-y-4">
         <SectionBlock title="Contributed Assets" icon={<Building2 className="h-4 w-4 text-blue-500" />} items={contributedAssets}
-          onAdd={() => onAddItem?.("contributed_assets", { hudSection: "contributed_assets", side: "source" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "contributed_assets", side: "source" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("contributed_assets", { hudSection: "contributed_assets", side: "source" }) : undefined} />
         <Separator />
         <SectionBlock title="OP Units Issued" icon={<Layers className="h-4 w-4 text-purple-500" />} items={opUnits}
-          onAdd={() => onAddItem?.("op_units", { hudSection: "op_units", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "op_units", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("op_units", { hudSection: "op_units", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Assumed Liabilities" icon={<CreditCard className="h-4 w-4 text-red-500" />} items={assumedLiabilities}
-          onAdd={() => onAddItem?.("assumed_liabilities", { hudSection: "assumed_liabilities", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "assumed_liabilities", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("assumed_liabilities", { hudSection: "assumed_liabilities", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Cash Consideration" icon={<DollarSign className="h-4 w-4 text-green-500" />} items={cashConsideration}
-          onAdd={() => onAddItem?.("cash_consideration", { hudSection: "cash_consideration", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "cash_consideration", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("cash_consideration", { hudSection: "cash_consideration", side: "use" }) : undefined} />
         <Separator />
         <SectionBlock title="Closing Adjustments" icon={<Scale className="h-4 w-4 text-amber-500" />} items={closingAdj}
-          onAdd={() => onAddItem?.("closing_adjustments", { hudSection: "closing_adjustments", side: "use" })} />
+          onInlineAdd={onInlineAdd ? (data) => onInlineAdd(data, { hudSection: "closing_adjustments", side: "use" }) : undefined}
+          onAdd={!onInlineAdd ? () => onAddItem?.("closing_adjustments", { hudSection: "closing_adjustments", side: "use" }) : undefined} />
       </div>
     </div>
   );

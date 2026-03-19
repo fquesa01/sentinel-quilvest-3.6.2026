@@ -1370,6 +1370,17 @@ export default function ClosingDetail() {
                     }
                     setLineItemDialog(true);
                   }}
+                  onInlineAdd={async (data, sectionDefaults) => {
+                    const payload: Record<string, unknown> = {
+                      category: "other",
+                      side: "use",
+                      description: data.description,
+                      amount: data.amount,
+                      lineNumber: null,
+                      ...sectionDefaults,
+                    };
+                    await createLineItemMutation.mutateAsync(payload);
+                  }}
                   onUpdateItem={(itemId, updates) => {
                     updateLineItemMutation.mutate({ itemId, data: updates });
                   }}

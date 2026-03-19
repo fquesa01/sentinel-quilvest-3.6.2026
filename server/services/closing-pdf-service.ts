@@ -477,12 +477,14 @@ function renderHud1Sections(doc: PDFKit.PDFDocument, data: ClosingData, firstPag
     .text(fmtCurrency(gross100 - paid200), 395, doc.y - 10, { width: 80, align: "right" });
   doc.y += 18;
 
-  doc.addPage();
-  drawBoxFill(doc, 50, 45, doc.page.width - 100, 18, "#1a365d");
+  doc.moveDown(0.3);
+  if (doc.y > doc.page.height - 80) doc.addPage();
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 18, "#1a365d");
+  const kHeaderY = doc.y;
   doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff")
-    .text("K. SUMMARY OF SELLER'S TRANSACTION", 55, 49, { width: doc.page.width - 110 });
+    .text("K. SUMMARY OF SELLER'S TRANSACTION", 55, kHeaderY + 4, { width: doc.page.width - 110 });
   doc.fillColor("#000000");
-  doc.y = 66;
+  doc.y = kHeaderY + 20;
 
   const kSections = [
     { num: "400", label: "GROSS AMOUNT DUE TO SELLER" },
@@ -504,12 +506,14 @@ function renderHud1Sections(doc: PDFKit.PDFDocument, data: ClosingData, firstPag
     .text(fmtCurrency(gross400 - red500), 395, doc.y - 10, { width: 80, align: "right" });
   doc.y += 18;
 
-  doc.addPage();
-  drawBoxFill(doc, 50, 45, doc.page.width - 100, 18, "#1a365d");
+  doc.moveDown(0.3);
+  if (doc.y > doc.page.height - 80) doc.addPage();
+  drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 18, "#1a365d");
+  const lHeaderY = doc.y;
   doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff")
-    .text("L. SETTLEMENT CHARGES", 55, 49, { width: doc.page.width - 110 });
+    .text("L. SETTLEMENT CHARGES", 55, lHeaderY + 4, { width: doc.page.width - 110 });
   doc.fillColor("#000000");
-  doc.y = 66;
+  doc.y = lHeaderY + 20;
 
   const lSections = [
     { num: "700", label: "TOTAL REAL ESTATE BROKER FEES" },
@@ -533,11 +537,12 @@ function renderHud1Sections(doc: PDFKit.PDFDocument, data: ClosingData, firstPag
     .text(fmtCurrency(totalCharges), 395, doc.y - 9, { width: 80, align: "right" });
   doc.y += 20;
 
-  doc.moveDown(0.5);
+  doc.moveDown(0.3);
+  if (doc.y > doc.page.height - 100) doc.addPage();
   doc.fontSize(7).font("Helvetica").fillColor("#666666");
   doc.text("I have carefully reviewed the HUD-1 Settlement Statement and to the best of my knowledge and belief, it is a true and accurate account of this transaction.", 50, doc.y, { width: doc.page.width - 100 });
   doc.fillColor("#000000");
-  doc.moveDown(1.5);
+  doc.moveDown(0.8);
 
   const sigY = doc.y;
   drawLine(doc, sigY);
@@ -620,7 +625,8 @@ function renderHud1aSections(doc: PDFKit.PDFDocument, data: ClosingData, firstPa
     .text(fmtCurrency(totalCharges), 410, doc.y - 9, { width: 80, align: "right" });
   doc.y += 20;
 
-  doc.moveDown(0.5);
+  doc.moveDown(0.3);
+  if (doc.y > doc.page.height - 80) doc.addPage();
   drawBoxFill(doc, 50, doc.y, doc.page.width - 100, 18, "#1a365d");
   doc.fontSize(9).font("Helvetica-Bold").fillColor("#ffffff")
     .text("LOAN DISBURSEMENT", 55, doc.y + 4, { width: doc.page.width - 110 });
@@ -648,12 +654,12 @@ function renderHud1aSections(doc: PDFKit.PDFDocument, data: ClosingData, firstPa
   doc.text(fmtCurrency(netDisbursement), 410, netY, { width: 80, align: "right" });
   doc.y = netY + 18;
 
-  if (doc.y > doc.page.height - 80) doc.addPage();
-  doc.moveDown(1);
+  if (doc.y > doc.page.height - 100) doc.addPage();
+  doc.moveDown(0.3);
   doc.fontSize(7).font("Helvetica").fillColor("#666666");
   doc.text("I have carefully reviewed the HUD-1A Settlement Statement and to the best of my knowledge and belief, it is a true and accurate account of this transaction.", 50, doc.y, { width: doc.page.width - 100 });
   doc.fillColor("#000000");
-  doc.moveDown(1.5);
+  doc.moveDown(0.8);
   const sigY = doc.y;
   drawLine(doc, sigY);
   doc.fontSize(7).font("Helvetica").text("Borrower Signature", 55, sigY + 2);
@@ -2180,8 +2186,21 @@ export async function generateClosingStatementPDF(data: ClosingData): Promise<PD
   const firmName = getFirmName(data);
   const pageRange = doc.bufferedPageRange();
   if (pageRange && typeof pageRange.count === "number" && pageRange.count > 0) {
-    const totalPages = pageRange.count;
     const startPage = pageRange.start || 0;
+    const totalRawPages = pageRange.count;
+
+    let activePageCount = totalRawPages;
+    for (let i = startPage + totalRawPages - 1; i > startPage; i--) {
+      doc.switchToPage(i);
+      const topMargin = doc.page.margins.top;
+      if (doc.y <= topMargin + 2) {
+        activePageCount--;
+      } else {
+        break;
+      }
+    }
+
+    const totalPages = Math.max(activePageCount, 1);
     for (let i = startPage; i < startPage + totalPages; i++) {
       doc.switchToPage(i);
       addPageFooter(doc, i - startPage + 1, totalPages, data.closing, firmName);
