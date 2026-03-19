@@ -975,6 +975,21 @@ export async function executeAvaCommand(
       closeDrawer?.();
       return { navigateTo: "/transactions/templates" };
 
+    case "navigate_to_form_templates":
+      navigate("/transactions/form-templates");
+      closeDrawer?.();
+      return { navigateTo: "/transactions/form-templates" };
+
+    case "search_form_templates":
+      if (parameters.resolvedTemplateId) {
+        navigate(`/transactions/form-templates/${parameters.resolvedTemplateId}/view`);
+        closeDrawer?.();
+        return { navigateTo: `/transactions/form-templates/${parameters.resolvedTemplateId}/view` };
+      }
+      navigate("/transactions/form-templates");
+      closeDrawer?.();
+      return { navigateTo: "/transactions/form-templates" };
+
     case "navigate_to_request_lists":
       navigate("/transactions/request-lists");
       closeDrawer?.();

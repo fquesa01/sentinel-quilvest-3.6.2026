@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { db } from "../db";
 import * as schema from "@shared/schema";
-import { eq, or, sql } from "drizzle-orm";
+import { eq, or, and, sql, ilike } from "drizzle-orm";
 import * as transactionSearchService from "./transaction-search-service";
 import * as globalKnowledge from "./global-knowledge-service";
 
@@ -299,6 +299,8 @@ const NAVIGATION_INTENTS = [
   "navigate_to_contacts",
   "navigate_to_client_intelligence",
   "navigate_to_deal_templates",
+  "navigate_to_form_templates",
+  "search_form_templates",
   "navigate_to_request_lists",
   "navigate_to_deal_chat",
   "navigate_to_data_rooms",
@@ -424,7 +426,16 @@ These intents navigate to major platform sections:
 - "Go to relationship intelligence" / "Show me the intelligence feed" / "Open my feed" / "Show alerts" → navigate_to_relationship_intelligence
 - "Go to contacts" / "Show my contacts" / "Open contacts" → navigate_to_contacts
 - "Go to client intelligence" / "Show client intelligence" / "Deal intelligence" → navigate_to_client_intelligence
-- "Go to deal templates" / "Show templates" / "Open templates" → navigate_to_deal_templates
+- "Go to deal templates" / "Show deal templates" / "Open deal templates" / "Show closing templates" → navigate_to_deal_templates
+  IMPORTANT: "deal templates" are closing/checklist templates for deal workflows, NOT document form templates.
+- "Go to forms and templates" / "Show form templates" / "Open forms" / "Go to form templates" / "Show me forms" → navigate_to_form_templates
+  IMPORTANT: "form templates" or "forms" refers to the Forms & Templates library (uploaded document templates like loan agreements, escrow forms, etc.), NOT deal/closing templates.
+- "Show me an escrow form" / "Find a loan agreement template" / "I need a [type] form" / "Take me to a [name] template" / "Find a [person] template" → search_form_templates
+  - Parameters: searchQuery (the form/template name, type, or keyword to search for), uploaderName (optional - filter by who uploaded it)
+  - Example: "Show me an escrow form" → searchQuery: "escrow"
+  - Example: "Find a loan agreement template" → searchQuery: "loan agreement"
+  - Example: "Take me to a Jeffrey Chen template" → searchQuery: "", uploaderName: "Jeffrey Chen"
+  - Example: "I need a disclosure form" → searchQuery: "disclosure"
 - "Go to request lists" / "Show DRL" / "Open request lists" → navigate_to_request_lists
 - "Go to deal chat" / "Open deal chat" → navigate_to_deal_chat
 - "Go to data rooms" / "Show data rooms" → navigate_to_data_rooms
@@ -1388,6 +1399,101 @@ export async function interpretUserMessage(
         parsed.actionLink = {
           label: "Browse Transactions",
           href: "/transactions",
+        };
+      }
+    }
+
+    if (parsed.mode === "command" && parsed.intent === "search_form_templates") {
+      const searchQuery = parsed.parameters?.searchQuery || "";
+      const uploaderName = parsed.parameters?.uploaderName || "";
+      console.log(`[AvaInterpreter] Form template search: searchQuery="${searchQuery}", uploaderName="${uploaderName}" from message: "${message}"`);
+
+      try {
+        let results: any[] = [];
+
+        if (uploaderName) {
+          const uploaderPattern = `%${uploaderName.replace(/\s+/g, '%')}%`;
+          const users = await db
+            .select({ id: schema.users.id })
+            .from(schema.users)
+            .where(
+              or(
+                sql`CONCAT(${schema.users.firstName}, ' ', ${schema.users.lastName}) ILIKE ${uploaderPattern}`,
+                ilike(schema.users.firstName, uploaderPattern),
+                ilike(schema.users.lastName, uploaderPattern)
+              )
+            );
+
+          if (users.length > 0) {
+            const userIds = users.map(u => u.id);
+            let query = db
+              .select()
+              .from(schema.firmFormTemplates)
+              .where(
+                searchQuery
+                  ? and(
+                      sql`${schema.firmFormTemplates.uploadedBy} = ANY(${userIds})`,
+                      or(
+                        ilike(schema.firmFormTemplates.name, `%${searchQuery.replace(/\s+/g, '%')}%`),
+                        ilike(schema.firmFormTemplates.documentType, `%${searchQuery.replace(/\s+/g, '%')}%`),
+                        ilike(schema.firmFormTemplates.description, `%${searchQuery.replace(/\s+/g, '%')}%`)
+                      )
+                    )
+                  : sql`${schema.firmFormTemplates.uploadedBy} = ANY(${userIds})`
+              )
+              .orderBy(schema.firmFormTemplates.updatedAt)
+              .limit(5);
+            results = await query;
+          }
+        } else if (searchQuery) {
+          const searchPattern = `%${searchQuery.replace(/\s+/g, '%')}%`;
+          results = await db
+            .select()
+            .from(schema.firmFormTemplates)
+            .where(
+              or(
+                ilike(schema.firmFormTemplates.name, searchPattern),
+                ilike(schema.firmFormTemplates.documentType, searchPattern),
+                ilike(schema.firmFormTemplates.description, searchPattern),
+                ilike(schema.firmFormTemplates.fileName, searchPattern)
+              )
+            )
+            .orderBy(schema.firmFormTemplates.updatedAt)
+            .limit(5);
+        }
+
+        if (results.length > 0) {
+          parsed.parameters = parsed.parameters ?? {};
+          if (results.length === 1) {
+            const template = results[0];
+            parsed.actionLink = {
+              label: `View ${template.name}`,
+              href: `/transactions/form-templates/${template.id}/view`,
+            };
+            parsed.parameters.resolvedTemplateId = template.id;
+            parsed.parameters.resolvedTemplateName = template.name;
+            parsed.assistantMessage = `Found "${template.name}" (${template.documentType}). I'll take you there now.`;
+          } else {
+            const templateList = results.map((t: any) => `- ${t.name} (${t.documentType})`).join("\n");
+            parsed.actionLink = {
+              label: "Browse Form Templates",
+              href: "/transactions/form-templates",
+            };
+            parsed.assistantMessage = `I found ${results.length} matching form templates:\n${templateList}\n\nClick below to browse them.`;
+          }
+        } else {
+          parsed.assistantMessage = `I couldn't find any form templates matching "${searchQuery || uploaderName}". You can browse all available form templates in the Forms & Templates library.`;
+          parsed.actionLink = {
+            label: "Browse Form Templates",
+            href: "/transactions/form-templates",
+          };
+        }
+      } catch (error) {
+        console.error("[AvaInterpreter] Error searching form templates:", error);
+        parsed.assistantMessage = `I had trouble searching for form templates. You can browse them directly in the Forms & Templates library.`;
+        parsed.actionLink = {
+          label: "Browse Form Templates",
+          href: "/transactions/form-templates",
         };
       }
     }
