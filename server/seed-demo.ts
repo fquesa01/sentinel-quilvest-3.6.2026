@@ -22,7 +22,7 @@ export async function seedDemoData() {
   console.log("🌱 Seeding demo investigation data...");
 
   // Get admin user for demo data
-  const [adminUser] = await db.select().from(users).where(sql`role = 'admin'`).limit(1);
+  const [adminUser] = await db.select().from(users).where(sql`role = 'super_admin'`).limit(1);
   if (!adminUser) {
     console.log("⚠️  No admin user found, skipping seed");
     return;

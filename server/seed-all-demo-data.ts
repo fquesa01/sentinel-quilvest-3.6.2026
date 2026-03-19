@@ -96,7 +96,7 @@ export async function seedAllDemoData() {
         email: "demo.admin@sentinelcounsel.com",
         firstName: "Demo",
         lastName: "Admin",
-        role: "admin",
+        role: "super_admin",
       })
       .returning();
   }
