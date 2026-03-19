@@ -69,6 +69,16 @@ app.get("/api/health", (_req, res) => {
     await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signed_at timestamp`);
     await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signed_by varchar(500)`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id varchar UNIQUE`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS microsoft_id varchar UNIQUE`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash varchar`);
+
+    // Ensure user_type enum and column exist
+    try {
+      await pool.query(`CREATE TYPE user_type AS ENUM ('individual', 'corporate')`);
+    } catch (e: any) {
+      // Type already exists — safe to ignore
+    }
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS user_type user_type NOT NULL DEFAULT 'individual'`);
 
     // Migrate old role enum values to new 4-role model
     // First, add new enum values if they don't exist

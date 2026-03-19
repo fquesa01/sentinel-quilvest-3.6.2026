@@ -106,8 +106,8 @@ export default function EmailIntegrationPage() {
   });
 
   const { data: emailIntegrationStatus } = useQuery<{
-    google: { configured: boolean; connectorAvailable?: boolean; connectorConnected?: boolean };
-    microsoft: { configured: boolean; connectorAvailable?: boolean; connectorConnected?: boolean };
+    google: { configured: boolean };
+    microsoft: { configured: boolean };
   }>({
     queryKey: ["/api/email/integration-status"],
   });
@@ -257,31 +257,15 @@ export default function EmailIntegrationPage() {
                     <Button
                       variant="outline"
                       className="w-full justify-start gap-3 h-14"
+                      disabled={!emailIntegrationStatus?.microsoft.configured}
                       onClick={async () => {
-                        if (emailIntegrationStatus?.microsoft.connectorConnected) {
-                          try {
-                            const response = await apiRequest("POST", "/api/email/connector/connect", { provider: "microsoft" });
-                            const data = await response.json();
-                            toast({ title: "Microsoft account connected", description: `Connected as ${data.email}` });
-                            queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
-                            setIsConnectOpen(false);
-                            return;
-                          } catch (error: any) {
-                            toast({ title: "Connection failed", description: error.message, variant: "destructive" });
-                            return;
-                          }
-                        }
-                        if (emailIntegrationStatus?.microsoft.connectorAvailable && !emailIntegrationStatus?.microsoft.configured) {
-                          toast({ title: "Connector not yet authorized", description: "Please connect your Microsoft account via the Replit Connectors panel first, then try again.", variant: "destructive" });
+                        if (!emailIntegrationStatus?.microsoft.configured) {
+                          toast({ title: "Not available", description: "Microsoft email is not available. Please contact your administrator.", variant: "destructive" });
                           return;
                         }
-                        if (emailIntegrationStatus?.microsoft.configured) {
-                          setIsConnectOpen(false);
-                          const returnUrl = encodeURIComponent("/email-integration");
-                          window.location.href = `/api/email/oauth/microsoft?returnUrl=${returnUrl}`;
-                          return;
-                        }
-                        toast({ title: "Not configured", description: "Microsoft email is not configured. Please set up the integration first.", variant: "destructive" });
+                        setIsConnectOpen(false);
+                        const returnUrl = encodeURIComponent("/email-integration");
+                        window.location.href = `/api/email/oauth/microsoft?returnUrl=${returnUrl}`;
                       }}
                       data-testid="button-oauth-microsoft"
                     >
@@ -294,42 +278,24 @@ export default function EmailIntegrationPage() {
                       <div className="text-left">
                         <div className="font-medium">Microsoft 365</div>
                         <div className="text-xs text-muted-foreground">
-                          {emailIntegrationStatus?.microsoft.connectorConnected
-                            ? "Connect via Replit (one-click)"
-                            : emailIntegrationStatus?.microsoft.connectorAvailable
-                              ? "Connector available - authorize to connect"
-                              : "Outlook, Exchange Online"}
+                          {emailIntegrationStatus?.microsoft.configured
+                            ? "Outlook, Exchange Online"
+                            : "Not available — contact your administrator"}
                         </div>
                       </div>
                     </Button>
                     <Button
                       variant="outline"
                       className="w-full justify-start gap-3 h-14"
+                      disabled={!emailIntegrationStatus?.google.configured}
                       onClick={async () => {
-                        if (emailIntegrationStatus?.google.connectorConnected) {
-                          try {
-                            const response = await apiRequest("POST", "/api/email/connector/connect", { provider: "google" });
-                            const data = await response.json();
-                            toast({ title: "Google account connected", description: `Connected as ${data.email}` });
-                            queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
-                            setIsConnectOpen(false);
-                            return;
-                          } catch (error: any) {
-                            toast({ title: "Connection failed", description: error.message, variant: "destructive" });
-                            return;
-                          }
-                        }
-                        if (emailIntegrationStatus?.google.connectorAvailable && !emailIntegrationStatus?.google.configured) {
-                          toast({ title: "Connector not yet authorized", description: "Please connect your Google account via the Replit Connectors panel first, then try again.", variant: "destructive" });
+                        if (!emailIntegrationStatus?.google.configured) {
+                          toast({ title: "Not available", description: "Google email is not available. Please contact your administrator.", variant: "destructive" });
                           return;
                         }
-                        if (emailIntegrationStatus?.google.configured) {
-                          setIsConnectOpen(false);
-                          const returnUrl = encodeURIComponent("/email-integration");
-                          window.location.href = `/api/email/oauth/google?returnUrl=${returnUrl}`;
-                          return;
-                        }
-                        toast({ title: "Not configured", description: "Google email is not configured. Please set up the integration first.", variant: "destructive" });
+                        setIsConnectOpen(false);
+                        const returnUrl = encodeURIComponent("/email-integration");
+                        window.location.href = `/api/email/oauth/google?returnUrl=${returnUrl}`;
                       }}
                       data-testid="button-oauth-google"
                     >
@@ -337,11 +303,9 @@ export default function EmailIntegrationPage() {
                       <div className="text-left">
                         <div className="font-medium">Google</div>
                         <div className="text-xs text-muted-foreground">
-                          {emailIntegrationStatus?.google.connectorConnected
-                            ? "Connect via Replit (one-click)"
-                            : emailIntegrationStatus?.google.connectorAvailable
-                              ? "Connector available - authorize to connect"
-                              : "Gmail, Google Workspace"}
+                          {emailIntegrationStatus?.google.configured
+                            ? "Gmail, Google Workspace"
+                            : "Not available — contact your administrator"}
                         </div>
                       </div>
                     </Button>

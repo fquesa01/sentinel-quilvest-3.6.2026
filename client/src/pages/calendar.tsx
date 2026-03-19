@@ -258,8 +258,8 @@ export default function CalendarPage() {
   });
 
   const { data: integrationStatus } = useQuery<{
-    google: { configured: boolean; connectorAvailable?: boolean; connectorConnected?: boolean };
-    microsoft: { configured: boolean; connectorAvailable?: boolean; connectorConnected?: boolean };
+    google: { configured: boolean };
+    microsoft: { configured: boolean };
   }>({
     queryKey: ["/api/calendar/integration-status"],
   });
@@ -317,29 +317,16 @@ export default function CalendarPage() {
 
   const connectGoogleMutation = useMutation({
     mutationFn: async () => {
-      if (integrationStatus?.google.connectorConnected) {
-        const response = await apiRequest("POST", "/api/calendar/connector/connect", { provider: "google" });
-        return { connector: true, data: await response.json() };
+      if (!integrationStatus?.google.configured) {
+        throw new Error("Google Calendar is not available. Please contact your administrator.");
       }
-      if (integrationStatus?.google.connectorAvailable && !integrationStatus?.google.configured) {
-        throw new Error("Google Calendar connector is available but not yet connected. Please connect your Google account via the Replit Connectors panel, then try again.");
-      }
-      if (integrationStatus?.google.configured) {
-        const response = await fetch("/api/calendar/oauth/google/connect");
-        if (!response.ok) throw new Error("Failed to get auth URL");
-        const data = await response.json();
-        return { connector: false, authUrl: data.authUrl };
-      }
-      throw new Error("Google Calendar is not configured. Please set up the integration first.");
+      const response = await fetch("/api/calendar/oauth/google/connect");
+      if (!response.ok) throw new Error("Failed to get auth URL");
+      const data = await response.json();
+      return { authUrl: data.authUrl };
     },
-    onSuccess: (result: any) => {
-      if (result.connector) {
-        toast({ title: "Google Calendar connected", description: `Connected as ${result.data.email}` });
-        queryClient.invalidateQueries({ queryKey: ["/api/calendar/connected-accounts"] });
-        setIsConnectAccountsOpen(false);
-      } else {
-        window.location.href = result.authUrl;
-      }
+    onSuccess: (result) => {
+      window.location.href = result.authUrl;
     },
     onError: (error: any) => {
       toast({ title: "Failed to connect Google Calendar", description: error.message, variant: "destructive" });
@@ -348,29 +335,16 @@ export default function CalendarPage() {
 
   const connectMicrosoftMutation = useMutation({
     mutationFn: async () => {
-      if (integrationStatus?.microsoft.connectorConnected) {
-        const response = await apiRequest("POST", "/api/calendar/connector/connect", { provider: "microsoft" });
-        return { connector: true, data: await response.json() };
+      if (!integrationStatus?.microsoft.configured) {
+        throw new Error("Microsoft Outlook is not available. Please contact your administrator.");
       }
-      if (integrationStatus?.microsoft.connectorAvailable && !integrationStatus?.microsoft.configured) {
-        throw new Error("Microsoft Outlook connector is available but not yet connected. Please connect your Microsoft account via the Replit Connectors panel, then try again.");
-      }
-      if (integrationStatus?.microsoft.configured) {
-        const response = await fetch("/api/calendar/oauth/microsoft/connect");
-        if (!response.ok) throw new Error("Failed to get auth URL");
-        const data = await response.json();
-        return { connector: false, authUrl: data.authUrl };
-      }
-      throw new Error("Microsoft Outlook is not configured. Please set up the integration first.");
+      const response = await fetch("/api/calendar/oauth/microsoft/connect");
+      if (!response.ok) throw new Error("Failed to get auth URL");
+      const data = await response.json();
+      return { authUrl: data.authUrl };
     },
-    onSuccess: (result: any) => {
-      if (result.connector) {
-        toast({ title: "Microsoft Outlook connected", description: `Connected as ${result.data.email}` });
-        queryClient.invalidateQueries({ queryKey: ["/api/calendar/connected-accounts"] });
-        setIsConnectAccountsOpen(false);
-      } else {
-        window.location.href = result.authUrl;
-      }
+    onSuccess: (result) => {
+      window.location.href = result.authUrl;
     },
     onError: (error: any) => {
       toast({ title: "Failed to connect Outlook Calendar", description: error.message, variant: "destructive" });
@@ -3182,20 +3156,16 @@ export default function CalendarPage() {
                 variant="outline"
                 className="w-full justify-start gap-3 h-14"
                 onClick={() => connectGoogleMutation.mutate()}
-                disabled={(!integrationStatus?.google.configured && !integrationStatus?.google.connectorAvailable) || connectGoogleMutation.isPending}
+                disabled={!integrationStatus?.google.configured || connectGoogleMutation.isPending}
                 data-testid="button-connect-google"
               >
                 <SiGoogle className="w-5 h-5 text-red-500" />
                 <div className="text-left">
                   <div className="font-medium">Google Calendar</div>
                   <div className="text-xs text-muted-foreground">
-                    {integrationStatus?.google.connectorConnected
-                      ? "Connect via Replit (one-click)"
-                      : integrationStatus?.google.connectorAvailable
-                        ? "Connector available - authorize to connect"
-                        : integrationStatus?.google.configured 
-                          ? "Connect your Google account" 
-                          : "Setup required"}
+                    {integrationStatus?.google.configured 
+                      ? "Connect your Google account" 
+                      : "Not available — contact your administrator"}
                   </div>
                 </div>
               </Button>
@@ -3204,31 +3174,25 @@ export default function CalendarPage() {
                 variant="outline"
                 className="w-full justify-start gap-3 h-14"
                 onClick={() => connectMicrosoftMutation.mutate()}
-                disabled={(!integrationStatus?.microsoft.configured && !integrationStatus?.microsoft.connectorAvailable) || connectMicrosoftMutation.isPending}
+                disabled={!integrationStatus?.microsoft.configured || connectMicrosoftMutation.isPending}
                 data-testid="button-connect-microsoft"
               >
                 <Mail className="w-5 h-5 text-blue-600" />
                 <div className="text-left">
                   <div className="font-medium">Microsoft Outlook</div>
                   <div className="text-xs text-muted-foreground">
-                    {integrationStatus?.microsoft.connectorConnected
-                      ? "Connect via Replit (one-click)"
-                      : integrationStatus?.microsoft.connectorAvailable
-                        ? "Connector available - authorize to connect"
-                        : integrationStatus?.microsoft.configured 
-                          ? "Connect your Microsoft account" 
-                          : "Setup required"}
+                    {integrationStatus?.microsoft.configured 
+                      ? "Connect your Microsoft account" 
+                      : "Not available — contact your administrator"}
                   </div>
                 </div>
               </Button>
             </div>
 
-            {(!integrationStatus?.google.configured && !integrationStatus?.microsoft.configured && !integrationStatus?.google.connectorAvailable && !integrationStatus?.microsoft.connectorAvailable) && (
+            {(!integrationStatus?.google.configured && !integrationStatus?.microsoft.configured) && (
               <div className="p-3 rounded-md bg-muted/50 text-sm">
-                <p className="font-medium mb-1">Setup Required</p>
                 <p className="text-muted-foreground text-xs">
-                  To enable calendar sync, connect your Google or Microsoft account via the 
-                  Replit Connectors panel, or add API credentials to your environment variables.
+                  Calendar integration is not yet available. Please contact your administrator.
                 </p>
               </div>
             )}
