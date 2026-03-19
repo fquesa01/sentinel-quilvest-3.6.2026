@@ -92,7 +92,7 @@ export default function CasesPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "super_admin";
   
   const form = useForm<CreateCaseFormData>({
     resolver: zodResolver(createCaseSchema),

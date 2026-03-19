@@ -19,7 +19,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Initial Triage",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 15,
         requiredActions: [
           "Review flagged communication",
@@ -38,7 +38,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "Supervisory Review",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 30,
         requiredActions: [
           "Pull complete communication thread",
@@ -58,7 +58,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Formal Investigation",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Issue legal hold on all related communications",
@@ -79,7 +79,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 4,
         stepName: "Remediation & Reporting",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 60,
         requiredActions: [
           "Document violation in compliance log",
@@ -118,7 +118,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Immediate Risk Assessment",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 30,
         requiredActions: [
           "Review communication for off-label claims",
@@ -138,7 +138,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "Legal Hold & Evidence Preservation",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 45,
         requiredActions: [
           "Issue litigation hold on all related materials",
@@ -158,7 +158,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Investigation & Root Cause Analysis",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 240,
         requiredActions: [
           "Interview sales reps and managers",
@@ -180,7 +180,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 4,
         stepName: "Remediation & Potential Self-Disclosure",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 180,
         requiredActions: [
           "Assess pros/cons of voluntary FDA disclosure",
@@ -220,7 +220,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Immediate Containment",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 60,
         requiredActions: [
           "Immediately stop ongoing transfer if active",
@@ -241,7 +241,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "Legal Assessment & Preliminary Review",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Engage outside ITAR/export control counsel",
@@ -263,7 +263,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Comprehensive Investigation",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 300,
         requiredActions: [
           "Interview all employees involved",
@@ -286,7 +286,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 4,
         stepName: "Voluntary Self-Disclosure & Remediation",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 240,
         requiredActions: [
           "Prepare DDTC voluntary disclosure submission",
@@ -326,7 +326,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Transaction Pattern Analysis",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 45,
         requiredActions: [
           "Pull 90-day transaction history for customer",
@@ -347,7 +347,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "SAR Determination & Filing",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 120,
         requiredActions: [
           "Conduct enhanced due diligence on customer",
@@ -369,7 +369,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Account Action & Ongoing Monitoring",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 60,
         requiredActions: [
           "Determine if account closure warranted",
@@ -408,7 +408,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Immediate Assessment & Containment",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 60,
         requiredActions: [
           "Review flagged communications immediately",
@@ -429,7 +429,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "DOJ Leniency Evaluation",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 240,
         requiredActions: [
           "Engage experienced antitrust defense counsel",
@@ -451,7 +451,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Cooperation & Investigation",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 480,
         requiredActions: [
           "Full cooperation with DOJ investigation",
@@ -472,7 +472,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 4,
         stepName: "Resolution & Remediation",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 360,
         requiredActions: [
           "Negotiate conditional leniency agreement",
@@ -512,7 +512,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Preliminary Assessment",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 60,
         requiredActions: [
           "Review flagged communication",
@@ -533,7 +533,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "Legal Investigation & Evidence Gathering",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 360,
         requiredActions: [
           "Engage experienced FCPA counsel",
@@ -556,7 +556,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Voluntary Disclosure Decision",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Assess DOJ FCPA Corporate Enforcement Policy applicability",
@@ -577,7 +577,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 4,
         stepName: "Disclosure, Cooperation & Resolution",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 720,
         requiredActions: [
           "Submit voluntary disclosure to DOJ/SEC",
@@ -619,7 +619,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Complaint Receipt and Documentation",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 30,
         requiredActions: [
           "Document complaint details (who, what, when, where, how)",
@@ -640,7 +640,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "Initial Assessment and Risk Evaluation",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 45,
         requiredActions: [
           "Assess severity and credibility of allegations",
@@ -661,7 +661,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Interim Protective Measures",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 15,
         requiredActions: [
           "Implement no-contact directive between parties",
@@ -680,7 +680,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 4,
         stepName: "Investigation Planning",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 60,
         requiredActions: [
           "Develop investigation plan and timeline",
@@ -699,7 +699,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 5,
         stepName: "Complainant Interview",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Conduct detailed interview with complainant",
@@ -718,7 +718,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 6,
         stepName: "Accused Interview",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Interview accused about specific allegations",
@@ -737,7 +737,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 7,
         stepName: "Witness Interviews",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 180,
         requiredActions: [
           "Interview all identified witnesses separately",
@@ -756,7 +756,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 8,
         stepName: "Evidence Collection and Review",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Collect all relevant documents (emails, texts, photos)",
@@ -775,7 +775,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 9,
         stepName: "Follow-Up Interviews (if needed)",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 90,
         requiredActions: [
           "Conduct follow-up interviews to clarify inconsistencies",
@@ -795,7 +795,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 10,
         stepName: "Credibility Assessment and Findings",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 180,
         requiredActions: [
           "Assess credibility of complainant, accused, and witnesses",
@@ -814,7 +814,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 11,
         stepName: "Legal Analysis and Conclusions",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Apply legal standards (severe or pervasive harassment test)",
@@ -833,7 +833,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 12,
         stepName: "Corrective Action and Discipline",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 90,
         requiredActions: [
           "Determine appropriate disciplinary action if harassment found",
@@ -860,7 +860,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 13,
         stepName: "Follow-Up Monitoring and Closure",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 60,
         requiredActions: [
           "Monitor workplace for retaliation or recurrence",
@@ -898,7 +898,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Complaint Intake",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 45,
         requiredActions: [
           "Document protected characteristic(s) at issue",
@@ -912,7 +912,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "Protected Class and Adverse Action Analysis",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 60,
         requiredActions: [
           "Verify protected class status under applicable law",
@@ -925,7 +925,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Evidence Gathering - Personnel Files",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 90,
         requiredActions: [
           "Pull personnel files for complainant and comparators",
@@ -938,7 +938,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 4,
         stepName: "Decision-Maker Interviews",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Interview supervisor who made challenged employment decision",
@@ -951,7 +951,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 5,
         stepName: "Complainant Interview",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 90,
         requiredActions: [
           "Interview complainant about alleged discrimination",
@@ -964,7 +964,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 6,
         stepName: "Comparator Analysis",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Identify similarly situated employees (same supervisor, similar violations, similar qualifications)",
@@ -977,7 +977,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 7,
         stepName: "Witness Interviews",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 150,
         requiredActions: [
           "Interview witnesses to alleged discriminatory statements",
@@ -990,7 +990,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 8,
         stepName: "Pretext Analysis",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Evaluate whether employer's stated reasons are pretextual",
@@ -1003,7 +1003,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 9,
         stepName: "Factual Findings",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 180,
         requiredActions: [
           "Document all factual findings",
@@ -1016,7 +1016,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 10,
         stepName: "Legal Conclusion",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Apply McDonnell Douglas burden-shifting framework",
@@ -1029,7 +1029,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 11,
         stepName: "Remedial Action",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 90,
         requiredActions: [
           "Reverse discriminatory decision if discrimination found",
@@ -1042,7 +1042,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 12,
         stepName: "Outcome Communication",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 30,
         requiredActions: [
           "Communicate outcome to complainant (general findings)",
@@ -1055,7 +1055,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 13,
         stepName: "Monitoring and Follow-Up",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 60,
         requiredActions: [
           "Monitor for retaliation against complainant",
@@ -1088,7 +1088,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 1,
         stepName: "Protected Activity Identification",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 45,
         requiredActions: [
           "Document protected activity (discrimination complaint, OSHA report, SOX disclosure)",
@@ -1101,7 +1101,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 2,
         stepName: "Adverse Action Assessment",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 60,
         requiredActions: [
           "Determine if action is materially adverse under Burlington Northern standard",
@@ -1113,7 +1113,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 3,
         stepName: "Causation Analysis - Temporal Proximity",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 45,
         requiredActions: [
           "Calculate time between protected activity and adverse action",
@@ -1125,7 +1125,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 4,
         stepName: "Decision-Maker Interview",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Interview supervisor who took adverse action",
@@ -1138,7 +1138,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 5,
         stepName: "Evidence Review - Pre and Post Protected Activity",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 90,
         requiredActions: [
           "Review complainant's performance evaluations before and after",
@@ -1151,7 +1151,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 6,
         stepName: "Complainant Interview",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 90,
         requiredActions: [
           "Interview complainant about protected activity",
@@ -1164,7 +1164,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 7,
         stepName: "Comparator Analysis",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 90,
         requiredActions: [
           "Identify similarly situated employees who did not engage in protected activity",
@@ -1176,7 +1176,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 8,
         stepName: "Witness Interviews",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Interview witnesses to retaliatory statements or conduct",
@@ -1188,7 +1188,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 9,
         stepName: "Pretext Assessment",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Evaluate whether stated reasons are pretextual",
@@ -1201,7 +1201,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 10,
         stepName: "But-For Causation Determination",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 90,
         requiredActions: [
           "Apply but-for causation test (protected activity was but-for cause)",
@@ -1214,7 +1214,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 11,
         stepName: "Legal Conclusions and Findings",
-        assignedRole: "attorney",
+        assignedRole: "entity_user",
         estimatedDuration: 120,
         requiredActions: [
           "Apply legal framework (Title VII, SOX, OSHA, Florida §448.102)",
@@ -1227,7 +1227,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 12,
         stepName: "Corrective Action",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 90,
         requiredActions: [
           "Reverse retaliatory action if retaliation substantiated",
@@ -1240,7 +1240,7 @@ export const complianceWorkflowTemplates = [
       {
         stepNumber: 13,
         stepName: "Follow-Up and Monitoring",
-        assignedRole: "compliance_officer",
+        assignedRole: "entity_admin",
         estimatedDuration: 60,
         requiredActions: [
           "Monitor to ensure no continuing retaliation",

@@ -145,7 +145,7 @@ export default function TagManagement() {
           <p className="text-muted-foreground">Manage investigation tags and document coding labels</p>
         </div>
         <div className="flex gap-2">
-          {tags.length === 0 && user?.role === "admin" && (
+          {tags.length === 0 && user?.role === "super_admin" && (
             <Button 
               variant="outline" 
               onClick={() => seedTagsMutation.mutate()}

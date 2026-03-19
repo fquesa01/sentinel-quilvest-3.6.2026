@@ -98,7 +98,7 @@ export default function UserManagement() {
     email: "",
     firstName: "",
     lastName: "",
-    role: "employee",
+    role: "individual_user",
     password: "",
     userType: "individual" as "individual" | "corporate",
     organizationId: "",
@@ -155,7 +155,7 @@ export default function UserManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/user-org-map"] });
       toast({ title: "User Created", description: "New user has been created successfully" });
       setAddUserDialogOpen(false);
-      setNewUser({ email: "", firstName: "", lastName: "", role: "employee", password: "", userType: "individual", organizationId: "" });
+      setNewUser({ email: "", firstName: "", lastName: "", role: "individual_user", password: "", userType: "individual", organizationId: "" });
     },
     onError: (error: any) => {
       toast({ title: "Creation Failed", description: error.message || "Failed to create user", variant: "destructive" });
@@ -412,15 +412,10 @@ export default function UserManagement() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="admin">Admin</SelectItem>
-                              <SelectItem value="compliance_officer">Compliance Officer</SelectItem>
-                              <SelectItem value="attorney">Attorney</SelectItem>
-                              <SelectItem value="auditor">Auditor</SelectItem>
-                              <SelectItem value="employee">Employee</SelectItem>
-                              <SelectItem value="vendor">Vendor</SelectItem>
-                              <SelectItem value="external_counsel">External Counsel</SelectItem>
-                              <SelectItem value="cro">CRO</SelectItem>
-                              <SelectItem value="risk_manager">Risk Manager</SelectItem>
+                              <SelectItem value="super_admin">Super Admin</SelectItem>
+                              <SelectItem value="entity_admin">Entity Admin</SelectItem>
+                              <SelectItem value="entity_user">Entity User</SelectItem>
+                              <SelectItem value="individual_user">Individual User</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
@@ -723,15 +718,10 @@ export default function UserManagement() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="compliance_officer">Compliance Officer</SelectItem>
-                  <SelectItem value="attorney">Attorney</SelectItem>
-                  <SelectItem value="auditor">Auditor</SelectItem>
-                  <SelectItem value="employee">Employee</SelectItem>
-                  <SelectItem value="vendor">Vendor</SelectItem>
-                  <SelectItem value="external_counsel">External Counsel</SelectItem>
-                  <SelectItem value="cro">CRO</SelectItem>
-                  <SelectItem value="risk_manager">Risk Manager</SelectItem>
+                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                  <SelectItem value="entity_admin">Entity Admin</SelectItem>
+                  <SelectItem value="entity_user">Entity User</SelectItem>
+                  <SelectItem value="individual_user">Individual User</SelectItem>
                 </SelectContent>
               </Select>
             </div>

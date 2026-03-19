@@ -56,7 +56,7 @@ export default function TransactionsDataRooms() {
     queryKey: ["/api/user"],
   });
   
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "super_admin";
 
   const { data: deals, isLoading: dealsLoading } = useQuery<Deal[]>({
     queryKey: ["/api/deals"],

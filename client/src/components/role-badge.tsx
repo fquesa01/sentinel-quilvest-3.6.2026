@@ -6,25 +6,25 @@ interface RoleBadgeProps {
 
 export function RoleBadge({ role }: RoleBadgeProps) {
   const config: Record<string, { label: string; className: string }> = {
-    admin: {
-      label: "Admin",
+    super_admin: {
+      label: "Super Admin",
       className: "bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400",
     },
-    compliance_officer: {
-      label: "Compliance Officer",
+    entity_admin: {
+      label: "Entity Admin",
       className: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400",
     },
-    attorney: {
-      label: "Attorney",
+    entity_user: {
+      label: "Entity User",
       className: "bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400",
     },
-    auditor: {
-      label: "Auditor",
+    individual_user: {
+      label: "Individual User",
       className: "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400",
     },
   };
 
-  const { label, className } = config[role] || config.compliance_officer;
+  const { label, className } = config[role] || config.individual_user;
 
   return (
     <Badge

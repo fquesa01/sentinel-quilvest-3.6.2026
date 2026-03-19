@@ -79,8 +79,8 @@ async function upsertUser(
   };
   
   if (isAdminEmail(claims["email"])) {
-    userData.role = "admin";
-    console.log("[Auth] Assigning admin role to testing admin:", claims["email"]);
+    userData.role = "super_admin";
+    console.log("[Auth] Assigning super_admin role to admin:", claims["email"]);
   } else if (claims["role"]) {
     // Add role if provided in claims (for other testing purposes)
     userData.role = claims["role"];
@@ -275,12 +275,12 @@ export async function setupAuth(app: Express) {
                 googleId: profile.id,
                 profileImageUrl: existingUser.profileImageUrl || profile.photos?.[0]?.value || null,
               };
-              if (isAdminEmail(email) && existingUser.role !== "admin") {
-                linkUpdates.role = "admin";
+              if (isAdminEmail(email) && existingUser.role !== "super_admin") {
+                linkUpdates.role = "super_admin";
               }
               user = await storage.updateUser(existingUser.id, linkUpdates);
             } else {
-              const role = isAdminEmail(email) ? "admin" : "compliance_officer";
+              const role = isAdminEmail(email) ? "super_admin" : "individual_user";
 
               const userData = {
                 email,

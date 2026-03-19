@@ -99,13 +99,13 @@ export function ShareDocumentDialog({
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
-      case "admin":
+      case "super_admin":
         return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-      case "attorney":
+      case "entity_admin":
         return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
-      case "compliance_officer":
+      case "entity_user":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-      case "auditor":
+      case "individual_user":
         return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";

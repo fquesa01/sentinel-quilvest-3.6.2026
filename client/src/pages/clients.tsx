@@ -1064,7 +1064,7 @@ export default function ClientsPage() {
               </>
             )}
 
-            {user?.role === "admin" && (
+            {user?.role === "super_admin" && (
               <>
                 <Separator />
                 <div className="flex gap-2">

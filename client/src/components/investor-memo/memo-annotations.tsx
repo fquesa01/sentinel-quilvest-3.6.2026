@@ -384,7 +384,7 @@ export function MemoAnnotationsPanel({ memoId, sectionKey, annotations }: MemoAn
             annotation={annotation}
             memoId={memoId}
             currentUserId={user?.id}
-            isAdmin={user?.role === "admin"}
+            isAdmin={user?.role === "super_admin"}
           />
         ))}
       </div>

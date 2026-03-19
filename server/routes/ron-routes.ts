@@ -26,7 +26,7 @@ router.use(isAuthenticated);
 async function verifyTransactionAccess(transactionId: string, userId: string, userRole: string) {
   const txn = await storage.getRonTransaction(transactionId);
   if (!txn) return { txn: null, error: "Transaction not found" };
-  if (userRole !== "admin" && txn.createdBy !== userId) {
+  if (userRole !== "super_admin" && txn.createdBy !== userId) {
     return { txn: null, error: "Access denied" };
   }
   return { txn };
@@ -36,11 +36,11 @@ async function verifyTransactionAccess(transactionId: string, userId: string, us
 // TRANSACTIONS
 // ============================================================================
 
-router.get("/transactions", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+router.get("/transactions", async (req: any, res) => {
   try {
     const { status, dealId } = req.query;
     const filters: { status?: string; dealId?: string; createdBy?: string } = {};
-    if (req.user.role !== "admin") filters.createdBy = req.user.id;
+    if (req.user.role !== "super_admin") filters.createdBy = req.user.id;
     if (status) filters.status = status as string;
     if (dealId) filters.dealId = dealId as string;
 
@@ -82,7 +82,7 @@ router.get("/transactions/:id", async (req: any, res) => {
   }
 });
 
-router.post("/transactions", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+router.post("/transactions", async (req: any, res) => {
   try {
     const body = req.body;
     const txn = await storage.createRonTransaction({
@@ -151,7 +151,7 @@ router.delete("/transactions/:id", async (req: any, res) => {
 // NOTARIES
 // ============================================================================
 
-router.get("/notaries", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+router.get("/notaries", async (req: any, res) => {
   try {
     const { state, language, status, available } = req.query;
     const filters: { state?: string; status?: string } = {};
@@ -184,7 +184,7 @@ router.get("/notaries", requireRole("admin", "attorney", "external_counsel"), as
   }
 });
 
-router.get("/notaries/:id", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+router.get("/notaries/:id", async (req: any, res) => {
   try {
     const notary = await storage.getRonNotary(req.params.id);
     if (!notary) return res.status(404).json({ message: "Notary not found" });
@@ -199,7 +199,7 @@ router.get("/notaries/:id", requireRole("admin", "attorney", "external_counsel")
   }
 });
 
-router.post("/notaries", requireRole("admin"), async (req: any, res) => {
+router.post("/notaries", requireRole("super_admin"), async (req: any, res) => {
   try {
     const body = req.body;
     const notary = await storage.createRonNotary({
@@ -229,7 +229,7 @@ router.post("/notaries", requireRole("admin"), async (req: any, res) => {
   }
 });
 
-router.patch("/notaries/:id", requireRole("admin"), async (req: any, res) => {
+router.patch("/notaries/:id", requireRole("super_admin"), async (req: any, res) => {
   try {
     const updates: any = { ...req.body };
     delete updates.id; delete updates.createdAt;
@@ -247,7 +247,7 @@ router.patch("/notaries/:id", requireRole("admin"), async (req: any, res) => {
   }
 });
 
-router.delete("/notaries/:id", requireRole("admin"), async (req: any, res) => {
+router.delete("/notaries/:id", requireRole("super_admin"), async (req: any, res) => {
   try {
     const scheduledSessions = await storage.getRonSessionsByNotary(req.params.id, { status: "scheduled" });
     const inProgressSessions = await storage.getRonSessionsByNotary(req.params.id, { status: "in_progress" });
@@ -853,7 +853,7 @@ router.post("/sessions/:id/start", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    if (session.notaryId && req.user.role !== "admin") {
+    if (session.notaryId && req.user.role !== "super_admin") {
       const notaryRecord = await storage.getRonNotary(session.notaryId);
       if (!notaryRecord || !notaryRecord.userId || notaryRecord.userId !== req.user.id) {
         return res.status(403).json({ message: "Only the assigned notary or an admin can start this session" });
@@ -931,7 +931,7 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    if (session.notaryId && req.user.role !== "admin") {
+    if (session.notaryId && req.user.role !== "super_admin") {
       const notaryRecord = await storage.getRonNotary(session.notaryId);
       if (!notaryRecord || !notaryRecord.userId || notaryRecord.userId !== req.user.id) {
         return res.status(403).json({ message: "Only the assigned notary or an admin can complete this session" });
@@ -1032,7 +1032,7 @@ router.post("/signatures", async (req: any, res) => {
       return res.status(400).json({ message: "Signer does not belong to this transaction" });
     }
 
-    if (req.user.role !== "admin") {
+    if (req.user.role !== "super_admin") {
       const callerEmail = req.user.email || req.user.profileData?.email;
       if (!callerEmail || !signer.email) {
         return res.status(403).json({ message: "Cannot verify signer identity: email information is missing" });
@@ -1118,7 +1118,7 @@ router.post("/seals", async (req: any, res) => {
       return res.status(400).json({ message: "Notary is not active" });
     }
 
-    if (req.user.role !== "admin") {
+    if (req.user.role !== "super_admin") {
       if (!notary.userId) {
         return res.status(403).json({ message: "Notary does not have a linked user account. Contact an admin to bind the notary record." });
       }
@@ -1667,10 +1667,10 @@ router.get("/sessions/:id/detail", async (req: any, res) => {
 // COMPLIANCE DASHBOARD
 // ============================================================================
 
-router.get("/compliance/dashboard", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+router.get("/compliance/dashboard", async (req: any, res) => {
   try {
     const allTransactions = await storage.getRonTransactions(
-      req.user.role !== "admin" ? { createdBy: req.user.id } : {}
+      req.user.role !== "super_admin" ? { createdBy: req.user.id } : {}
     );
 
     const allChecks: Array<{
@@ -1780,7 +1780,7 @@ router.get("/transactions/:transactionId/journal/verify", async (req: any, res) 
 // COMPLIANCE
 // ============================================================================
 
-router.get("/compliance/rules", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+router.get("/compliance/rules", async (req: any, res) => {
   try {
     const { state } = req.query;
     if (state) {
@@ -1930,10 +1930,10 @@ router.post("/sessions/:sessionId/recordings", async (req: any, res) => {
 // DASHBOARD STATS
 // ============================================================================
 
-router.get("/dashboard/stats", requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+router.get("/dashboard/stats", async (req: any, res) => {
   try {
     const filters: { createdBy?: string } = {};
-    if (req.user.role !== "admin") filters.createdBy = req.user.id;
+    if (req.user.role !== "super_admin") filters.createdBy = req.user.id;
 
     const allTxns = await storage.getRonTransactions(filters);
 
@@ -1948,7 +1948,7 @@ router.get("/dashboard/stats", requireRole("admin", "attorney", "external_counse
     let pendingSessionCount = 0;
     let activeNotaryCount = 0;
 
-    if (req.user.role === "admin") {
+    if (req.user.role === "super_admin") {
       const allSessions = await storage.getAllRonSessions();
       pendingSessionCount = allSessions.filter(s => s.status === "scheduled").length;
       const activeNotaries = await storage.getRonNotaries({ status: "active" });
@@ -1966,7 +1966,7 @@ router.get("/dashboard/stats", requireRole("admin", "attorney", "external_counse
       completedThisMonth: completedRecently.length,
       pendingSessions: pendingSessionCount,
       totalTransactions: allTxns.length,
-      ...(req.user.role === "admin" ? { activeNotaries: activeNotaryCount } : {}),
+      ...(req.user.role === "super_admin" ? { activeNotaries: activeNotaryCount } : {}),
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";

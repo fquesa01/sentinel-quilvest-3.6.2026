@@ -126,7 +126,7 @@ export default function Dashboard() {
       </div>
 
       {/* Demo Data Prompt */}
-      {user?.role === "admin" && showDemoPrompt && (metrics?.totalAlerts === 0 || !metrics) && (
+      {user?.role === "super_admin" && showDemoPrompt && (metrics?.totalAlerts === 0 || !metrics) && (
         <Alert data-testid="alert-demo-prompt" className="stagger-2">
           <PlayCircle className="h-4 w-4" />
           <AlertTitle>Get Started with Demo Data</AlertTitle>

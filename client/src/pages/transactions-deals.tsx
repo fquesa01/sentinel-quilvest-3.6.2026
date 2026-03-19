@@ -291,7 +291,7 @@ export default function TransactionsDeals() {
     }
   };
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "super_admin";
 
   const handleCreateDeal = () => {
     if (!newDeal.title.trim()) {

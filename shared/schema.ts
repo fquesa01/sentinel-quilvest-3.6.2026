@@ -36,15 +36,10 @@ export const userTypeEnum = pgEnum("user_type", ["individual", "corporate"]);
 
 // Enums
 export const userRoleEnum = pgEnum("user_role", [
-  "admin",
-  "compliance_officer",
-  "attorney",
-  "auditor",
-  "employee",
-  "vendor",
-  "external_counsel",
-  "cro",
-  "risk_manager",
+  "super_admin",
+  "entity_admin",
+  "entity_user",
+  "individual_user",
 ]);
 
 export const alertSeverityEnum = pgEnum("alert_severity", [
@@ -432,7 +427,7 @@ export const users = pgTable("users", {
   profileImageUrl: varchar("profile_image_url"),
   microsoftId: varchar("microsoft_id").unique(),
   googleId: varchar("google_id").unique(),
-  role: userRoleEnum("role").default("compliance_officer").notNull(),
+  role: userRoleEnum("role").default("individual_user").notNull(),
   userType: userTypeEnum("user_type").default("individual").notNull(),
   passwordHash: varchar("password_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

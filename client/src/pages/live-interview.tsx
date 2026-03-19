@@ -135,7 +135,7 @@ export default function LiveInterviewPage() {
       return 'interviewer';
     }
     
-    if (user.role === 'admin' || user.role === 'compliance_officer' || user.role === 'attorney') {
+    if (user.role === 'super_admin' || user.role === 'entity_admin' || user.role === 'entity_user') {
       return 'interviewer';
     }
     

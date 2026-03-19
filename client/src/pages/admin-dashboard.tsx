@@ -235,7 +235,7 @@ export default function AdminDashboard() {
   };
 
   const investigators = users?.filter(u => 
-    u.role === "compliance_officer" || u.role === "attorney" || u.role === "external_counsel"
+    u.role === "super_admin" || u.role === "entity_admin" || u.role === "entity_user"
   ) || [];
 
   const activeCases = cases?.filter(c => c.status !== "closed") || [];

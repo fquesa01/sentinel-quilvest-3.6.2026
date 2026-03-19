@@ -131,10 +131,10 @@ async function createDataRoomDocument(meta: UploadSessionMeta, objectStoragePath
 }
 
 // Roles allowed to upload documents
-const UPLOAD_ALLOWED_ROLES = ['admin', 'compliance_officer', 'attorney', 'external_counsel'];
+// Role-based upload restriction removed - all authenticated users can upload
 
 // Initialize upload session
-router.post('/init', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), async (req: any, res: Response) => {
+router.post('/init', isAuthenticated, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -242,7 +242,7 @@ router.post('/init', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), asyn
 });
 
 // Upload a chunk
-router.post('/chunk', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), upload.single('chunk'), async (req: any, res: Response) => {
+router.post('/chunk', isAuthenticated, upload.single('chunk'), async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -292,7 +292,7 @@ router.post('/chunk', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), upl
 });
 
 // Finalize upload - stream directly to object storage (no temp file needed)
-router.post('/finalize', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), async (req: any, res: Response) => {
+router.post('/finalize', isAuthenticated, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -489,7 +489,7 @@ router.post('/finalize', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), 
 });
 
 // Cancel upload - clean up session
-router.post('/cancel', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), async (req: any, res: Response) => {
+router.post('/cancel', isAuthenticated, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -530,7 +530,7 @@ router.post('/cancel', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), as
 });
 
 // Get session status
-router.get('/status/:sessionId', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), async (req: any, res: Response) => {
+router.get('/status/:sessionId', isAuthenticated, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -570,7 +570,7 @@ router.get('/status/:sessionId', isAuthenticated, requireRole(...UPLOAD_ALLOWED_
 });
 
 // Get the final file after upload is complete
-router.get('/file/:sessionId', isAuthenticated, requireRole(...UPLOAD_ALLOWED_ROLES), async (req: any, res: Response) => {
+router.get('/file/:sessionId', isAuthenticated, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {

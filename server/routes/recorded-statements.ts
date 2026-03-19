@@ -19,9 +19,9 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 },
 });
 
-const ALLOWED_ROLES = ["admin", "compliance_officer", "attorney", "external_counsel"];
+// Role-based access removed - all authenticated users can access
 
-router.get("/", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.get("/", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { caseId, speakerName, statementType } = req.query;
     
@@ -42,7 +42,7 @@ router.get("/", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any,
   }
 });
 
-router.get("/:id", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.get("/:id", isAuthenticated, async (req: any, res: Response) => {
   try {
     const [statement] = await db
       .select()
@@ -61,7 +61,7 @@ router.get("/:id", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: a
   }
 });
 
-router.post("/", isAuthenticated, requireRole(...ALLOWED_ROLES), upload.single("file"), async (req: any, res: Response) => {
+router.post("/", isAuthenticated, upload.single("file"), async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -349,7 +349,7 @@ router.post("/", isAuthenticated, requireRole(...ALLOWED_ROLES), upload.single("
   }
 });
 
-router.patch("/:id", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.patch("/:id", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -387,7 +387,7 @@ router.patch("/:id", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req:
   }
 });
 
-router.delete("/:id", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.delete("/:id", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -407,7 +407,7 @@ router.delete("/:id", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req
   }
 });
 
-router.post("/:id/reprocess", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.post("/:id/reprocess", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -503,7 +503,7 @@ router.post("/:id/reprocess", isAuthenticated, requireRole(...ALLOWED_ROLES), as
   }
 });
 
-router.get("/:id/annotations", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.get("/:id/annotations", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -520,7 +520,7 @@ router.get("/:id/annotations", isAuthenticated, requireRole(...ALLOWED_ROLES), a
   }
 });
 
-router.post("/:id/annotations", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.post("/:id/annotations", isAuthenticated, async (req: any, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -554,7 +554,7 @@ router.post("/:id/annotations", isAuthenticated, requireRole(...ALLOWED_ROLES), 
   }
 });
 
-router.delete("/:statementId/annotations/:annotationId", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.delete("/:statementId/annotations/:annotationId", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { annotationId } = req.params;
 
@@ -575,7 +575,7 @@ router.delete("/:statementId/annotations/:annotationId", isAuthenticated, requir
 });
 
 // Q&A endpoint for asking questions about the statement
-router.post("/:id/ask", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.post("/:id/ask", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const { question } = req.body;
@@ -648,7 +648,7 @@ USER QUESTION: ${question}`;
 });
 
 // Download original file endpoint - downloads the actual uploaded file from storage
-router.get("/:id/download", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.get("/:id/download", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -712,7 +712,7 @@ router.get("/:id/download", isAuthenticated, requireRole(...ALLOWED_ROLES), asyn
 });
 
 // PDF summary export endpoint - generates a summary PDF with metadata and analysis
-router.get("/:id/pdf", isAuthenticated, requireRole(...ALLOWED_ROLES), async (req: any, res: Response) => {
+router.get("/:id/pdf", isAuthenticated, async (req: any, res: Response) => {
   try {
     const { id } = req.params;
 

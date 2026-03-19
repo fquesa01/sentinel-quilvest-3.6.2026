@@ -86,7 +86,7 @@ export default function KnowledgeBase() {
             Searchable database of compliance regulations and guidance
           </p>
         </div>
-        {user?.role === "admin" && (
+        {user?.role === "super_admin" && (
           <Button
             onClick={() => seedRegulations.mutate()}
             disabled={seedRegulations.isPending || (regulations && regulations.length > 0)}

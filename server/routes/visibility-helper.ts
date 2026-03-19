@@ -5,7 +5,7 @@ import * as schema from "@shared/schema";
 export async function getVisibleUserIds(req: any): Promise<string[] | null> {
   const dbUser = req.dbUser;
   if (!dbUser) return [];
-  if (dbUser.role === "admin") return null;
+  if (dbUser.role === "super_admin") return null;
   if (dbUser.userType === "corporate") {
     const [membership] = await db.select().from(schema.organizationMembers).where(eq(schema.organizationMembers.userId, dbUser.id));
     if (membership) {

@@ -79,7 +79,7 @@ interface MenuItem {
   title: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
-  roles: string[];
+  roles?: string[];
   showBadge?: boolean;
   groupLabel?: string;
 }
@@ -99,7 +99,7 @@ export function AppSidebar() {
   // Fetch unread message count
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["/api/messages/unread-count"],
-    enabled: !!user && ["admin", "compliance_officer", "attorney", "external_counsel", "auditor"].includes(user.role || ""),
+    enabled: !!user,
     refetchInterval: 30000,
   });
 
@@ -131,68 +131,57 @@ export function AppSidebar() {
           title: "Transaction List",
           url: "/transactions/deals",
           icon: Handshake,
-          roles: ["admin", "attorney", "external_counsel"],
         },
         {
           title: "Client Intelligence",
           url: "/business-intelligence",
           icon: Briefcase,
-          roles: ["admin", "attorney", "external_counsel", "auditor"],
         },
         {
           title: "Diligence - Docs & Checklists",
           url: "/transactions/diligence",
           icon: ClipboardList,
-          roles: ["admin", "attorney", "external_counsel"],
         },
         {
           title: "Deal Chat",
           url: "/deal-chat",
           icon: MessageSquare,
-          roles: ["admin", "attorney", "external_counsel"],
         },
         {
           title: "Data Rooms",
           url: "/transactions/data-rooms",
           icon: Database,
-          roles: ["admin", "attorney", "external_counsel", "compliance_officer"],
         },
         {
           title: "Due Diligence Reports",
           url: "/pe/deal-intelligence",
           icon: FileScan,
-          roles: ["admin", "attorney", "external_counsel"],
         },
         {
           title: "Forms & Templates",
           url: "/transactions/form-templates",
           icon: FileStack,
-          roles: ["admin", "attorney", "external_counsel"],
         },
         {
           title: "Dashboard",
           url: "/ron/dashboard",
           icon: Stamp,
-          roles: ["admin", "attorney", "external_counsel"],
           groupLabel: "Notarization",
         },
         {
           title: "Transactions",
           url: "/ron/transactions",
           icon: Stamp,
-          roles: ["admin", "attorney", "external_counsel"],
         },
         {
           title: "Notaries",
           url: "/ron/notaries",
           icon: Shield,
-          roles: ["admin", "attorney", "external_counsel"],
         },
         {
           title: "Compliance",
           url: "/ron/compliance",
           icon: Shield,
-          roles: ["admin", "attorney", "external_counsel"],
         },
       ],
     },
@@ -204,13 +193,11 @@ export function AppSidebar() {
           title: "My Data Lake",
           url: "/my-data-lake",
           icon: Brain,
-          roles: ["admin", "attorney", "compliance_officer", "external_counsel"],
         },
         {
           title: "Document Review",
           url: "/document-review",
           icon: Eye,
-          roles: ["admin", "attorney", "compliance_officer"],
         },
       ],
     },
@@ -222,19 +209,16 @@ export function AppSidebar() {
           title: "Intelligence Feed",
           url: "/relationship-intelligence",
           icon: Radar,
-          roles: ["admin", "attorney", "compliance_officer"],
         },
         {
           title: "Contacts",
           url: "/relationship-contacts",
           icon: Contact,
-          roles: ["admin", "attorney", "compliance_officer"],
         },
         {
           title: "Drafts",
           url: "/relationship-drafts",
           icon: FileEdit,
-          roles: ["admin", "attorney", "compliance_officer"],
         },
       ],
     },
@@ -246,13 +230,11 @@ export function AppSidebar() {
           title: "Communication Analytics",
           url: "/communication-analytics",
           icon: BarChart3,
-          roles: ["admin", "compliance_officer", "attorney", "auditor"],
         },
         {
           title: "Issue Heatmap",
           url: "/issue-heatmap",
           icon: Flame,
-          roles: ["admin", "compliance_officer", "attorney", "auditor"],
         },
       ],
     },
@@ -264,25 +246,24 @@ export function AppSidebar() {
           title: "Dashboard",
           url: "/dashboard",
           icon: Home,
-          roles: ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor"],
         },
-                {
+        {
           title: "Admin Dashboard",
           url: "/admin",
           icon: Settings,
-          roles: ["admin", "compliance_officer"],
+          roles: ["super_admin", "entity_admin"],
         },
         {
           title: "User Management",
           url: "/users",
           icon: Users,
-          roles: ["admin"],
+          roles: ["super_admin"],
         },
-                {
+        {
           title: "Role Management",
           url: "/roles",
           icon: UserCog,
-          roles: ["admin"],
+          roles: ["super_admin"],
         },
       ],
     },
@@ -296,9 +277,8 @@ export function AppSidebar() {
   };
 
   const filterItemsByRole = (items: MenuItem[]) => {
-    // During auth loading, hide all items to prevent showing admin-only sections
     if (!user || !user.role) return [];
-    return items.filter(item => item.roles.includes(user.role));
+    return items.filter(item => !item.roles || item.roles.includes(user.role));
   };
 
   const renderMenuItem = (item: MenuItem) => {
@@ -395,7 +375,7 @@ export function AppSidebar() {
           )}
         </SidebarGroup>
         {/* Pinned top nav items */}
-        {user && ["admin", "attorney", "external_counsel"].includes(user.role || "") && (
+        {user && (
           <SidebarGroup className="py-2">
             <SidebarMenu>
               <SidebarMenuItem>

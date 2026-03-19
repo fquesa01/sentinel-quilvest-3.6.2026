@@ -8,14 +8,14 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100
 async function verifySessionOwnership(sessionId: string, userId: string, userRole: string): Promise<{ session: any; error?: string }> {
   const session = await bulkIntakeService.getSession(sessionId);
   if (!session) return { session: null, error: "Session not found" };
-  if (userRole !== "admin" && session.uploadedBy !== userId) {
+  if (userRole !== "super_admin" && session.uploadedBy !== userId) {
     return { session: null, error: "Access denied" };
   }
   return { session };
 }
 
 export function registerBulkIntakeRoutes(app: Router, isAuthenticated: any, requireRole: any) {
-  app.post("/api/bulk-intake/sessions", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/bulk-intake/sessions", isAuthenticated, async (req: any, res) => {
     try {
       const session = await bulkIntakeService.createSession(req.user.id);
       res.status(201).json(session);
@@ -121,7 +121,7 @@ export function registerBulkIntakeRoutes(app: Router, isAuthenticated: any, requ
     }
   });
 
-  app.post("/api/bulk-intake/sessions/:id/confirm", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/bulk-intake/sessions/:id/confirm", isAuthenticated, async (req: any, res) => {
     try {
       const { session, error } = await verifySessionOwnership(req.params.id, req.user.id, req.user.role);
       if (error) return res.status(error === "Session not found" ? 404 : 403).json({ message: error });

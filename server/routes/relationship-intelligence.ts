@@ -25,9 +25,9 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
   // CONTACTS CRUD
   // =============================================
 
-  const riRoles = requireRole("admin", "attorney", "compliance_officer");
+  
 
-  app.get("/api/relationship-intelligence/contacts", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/contacts", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { search, company, tag, priority, limit: limitStr, offset: offsetStr } = req.query;
@@ -75,7 +75,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
     }
   });
 
-  app.get("/api/relationship-intelligence/contacts/:id", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/contacts/:id", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const [contact] = await db
@@ -90,7 +90,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
     }
   });
 
-  app.post("/api/relationship-intelligence/contacts", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/contacts", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { firstName, lastName, email, phone, company, jobTitle, linkedinUrl, city, state, country, tags, priorityLevel } = req.body;
@@ -121,7 +121,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/relationship-intelligence/contacts/:id", isAuthenticated, riRoles, async (req: any, res) => {
+  app.patch("/api/relationship-intelligence/contacts/:id", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { firstName, lastName, email, phone, company, jobTitle, linkedinUrl, city, state, country, tags, priorityLevel } = req.body;
@@ -163,7 +163,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/relationship-intelligence/contacts/:id", isAuthenticated, riRoles, async (req: any, res) => {
+  app.delete("/api/relationship-intelligence/contacts/:id", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const [deleted] = await db
@@ -183,7 +183,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
   // CSV UPLOAD
   // =============================================
 
-  app.post("/api/relationship-intelligence/contacts/import-csv", isAuthenticated, riRoles, upload.single("file"), async (req: any, res) => {
+  app.post("/api/relationship-intelligence/contacts/import-csv", isAuthenticated,  upload.single("file"), async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!req.file) return res.status(400).json({ message: "No file provided" });
@@ -312,7 +312,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
   // CONTACT SOURCES
   // =============================================
 
-  app.get("/api/relationship-intelligence/sources", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/sources", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const sources = await db.select().from(contactSources)
@@ -328,7 +328,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
   // NEWS ALERTS
   // =============================================
 
-  app.get("/api/relationship-intelligence/alerts", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/alerts", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { category, sentiment, contactId, unreadOnly, limit: limitStr, offset: offsetStr } = req.query;
@@ -377,7 +377,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/relationship-intelligence/alerts/:id", isAuthenticated, riRoles, async (req: any, res) => {
+  app.patch("/api/relationship-intelligence/alerts/:id", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { isRead, isDismissed, isActedOn, isHighPriority } = req.body;
@@ -404,7 +404,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
     }
   });
 
-  app.get("/api/relationship-intelligence/alerts/flagged", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/alerts/flagged", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const alerts = await db
@@ -436,7 +436,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
   // NEWS SCANNING
   // =============================================
 
-  app.post("/api/relationship-intelligence/scan", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/scan", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { contactId, searchMode: rawSearchMode } = req.body;
@@ -737,7 +737,7 @@ Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "pr
   // KNOWLEDGE BASE
   // =============================================
 
-  app.get("/api/relationship-intelligence/knowledge-base", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/knowledge-base", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { search, documentType, limit: limitStr, offset: offsetStr } = req.query;
@@ -777,7 +777,7 @@ Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "pr
     }
   });
 
-  app.post("/api/relationship-intelligence/knowledge-base", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/knowledge-base", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { documentType, title, content, dealValue, dealDate, tags } = req.body;
@@ -838,7 +838,7 @@ Respond with JSON: { "summary": "2-3 sentence summary", "people": ["name1","name
     }
   });
 
-  app.delete("/api/relationship-intelligence/knowledge-base/:id", isAuthenticated, riRoles, async (req: any, res) => {
+  app.delete("/api/relationship-intelligence/knowledge-base/:id", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const [deleted] = await db.delete(knowledgeBaseEntries)
@@ -855,7 +855,7 @@ Respond with JSON: { "summary": "2-3 sentence summary", "people": ["name1","name
   // KNOWLEDGE BASE CONNECTION
   // =============================================
 
-  app.post("/api/relationship-intelligence/connect", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/connect", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { alertId } = req.body;
@@ -945,7 +945,7 @@ Write a 2-3 sentence connection summary explaining how this news relates to the 
   // AI OUTREACH GENERATION
   // =============================================
 
-  app.post("/api/relationship-intelligence/outreach/generate", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/outreach/generate", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { alertId, contactId } = req.body;
@@ -1023,7 +1023,7 @@ Generate 3 variants as JSON:
   // DRAFT RESPONSE WITH CONTEXT SEARCH
   // =============================================
 
-  app.post("/api/relationship-intelligence/outreach/draft-response", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/outreach/draft-response", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { alertId, contactId, tone = "formal" } = req.body;
@@ -1259,7 +1259,7 @@ Example response format:
   // ALERT DETAIL & OVERLAP
   // =============================================
 
-  app.get("/api/relationship-intelligence/alerts/:alertId/overlap", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/alerts/:alertId/overlap", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { alertId } = req.params;
@@ -1364,7 +1364,7 @@ Example response format:
   // EMAIL ACCOUNTS (for send integration)
   // =============================================
 
-  app.get("/api/relationship-intelligence/email-accounts", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/email-accounts", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const accounts = await db.select({
@@ -1387,7 +1387,7 @@ Example response format:
   // SEND EMAIL
   // =============================================
 
-  app.post("/api/relationship-intelligence/outreach/send-email", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/outreach/send-email", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { contactId, alertId, accountId, subject, bodyHtml } = req.body;
@@ -1444,7 +1444,7 @@ Example response format:
   // OUTREACH LOG
   // =============================================
 
-  app.get("/api/relationship-intelligence/outreach", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/outreach", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { contactId } = req.query;
@@ -1465,7 +1465,7 @@ Example response format:
     }
   });
 
-  app.post("/api/relationship-intelligence/outreach", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/outreach", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { contactId, newsAlertId, channel, messageContent, notes } = req.body;
@@ -1489,7 +1489,7 @@ Example response format:
     }
   });
 
-  app.patch("/api/relationship-intelligence/outreach/:id", isAuthenticated, riRoles, async (req: any, res) => {
+  app.patch("/api/relationship-intelligence/outreach/:id", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { responseReceived, outcome, notes } = req.body;
@@ -1519,7 +1519,7 @@ Example response format:
   // DASHBOARD STATS
   // =============================================
 
-  app.get("/api/relationship-intelligence/stats", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/stats", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
 
@@ -1572,7 +1572,7 @@ Example response format:
     }
   });
 
-  app.post("/api/relationship-intelligence/seed-demo", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/seed-demo", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const [existing] = await db
@@ -1803,7 +1803,7 @@ Example response format:
     return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
   }
 
-  app.get("/api/relationship-intelligence/cases-with-comms", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/cases-with-comms", isAuthenticated,  async (req: any, res) => {
     try {
       const result = await pool.query(`
         SELECT c.id, c.title, count(comm.id)::int as comm_count,
@@ -1821,7 +1821,7 @@ Example response format:
     }
   });
 
-  app.post("/api/relationship-intelligence/import-from-case", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/import-from-case", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { caseId } = req.body;
@@ -2016,7 +2016,7 @@ Example response format:
     }
   });
 
-  app.post("/api/relationship-intelligence/import-from-case-selective", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/import-from-case-selective", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { caseId, contactEmails } = req.body;
@@ -2205,7 +2205,7 @@ Example response format:
   // DRAFT NOTES CRUD
   // =============================================
 
-  app.get("/api/relationship-intelligence/drafts", isAuthenticated, riRoles, async (req: any, res) => {
+  app.get("/api/relationship-intelligence/drafts", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { status } = req.query;
@@ -2251,7 +2251,7 @@ Example response format:
     }
   });
 
-  app.post("/api/relationship-intelligence/drafts", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/drafts", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { contactId, alertId, subjectLine, body, tone, channel, contextSources } = req.body;
@@ -2296,7 +2296,7 @@ Example response format:
     }
   });
 
-  app.patch("/api/relationship-intelligence/drafts/:id", isAuthenticated, riRoles, async (req: any, res) => {
+  app.patch("/api/relationship-intelligence/drafts/:id", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { id } = req.params;
@@ -2336,7 +2336,7 @@ Example response format:
     }
   });
 
-  app.delete("/api/relationship-intelligence/drafts/:id", isAuthenticated, riRoles, async (req: any, res) => {
+  app.delete("/api/relationship-intelligence/drafts/:id", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { id } = req.params;
@@ -2359,7 +2359,7 @@ Example response format:
   // BULK DRAFT GENERATION
   // =============================================
 
-  app.post("/api/relationship-intelligence/drafts/bulk-generate", isAuthenticated, riRoles, async (req: any, res) => {
+  app.post("/api/relationship-intelligence/drafts/bulk-generate", isAuthenticated,  async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const { items, tone = "formal" } = req.body;

@@ -345,7 +345,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User management routes
-  app.get("/api/users", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/users", isAuthenticated, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       res.json(users.map(sanitizeUser));
@@ -356,14 +356,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get investigators (for message composer) - accessible to all investigator roles
-  app.get("/api/users/investigators", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req, res) => {
+  app.get("/api/users/investigators", isAuthenticated, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       // Filter to only investigator roles
-      const investigators = users.filter((user) =>
-        ["admin", "compliance_officer", "attorney", "external_counsel", "auditor"].includes(user.role || "")
-      );
-      res.json(investigators.map(sanitizeUser));
+      res.json(users.map(sanitizeUser));
     } catch (error: any) {
       console.error("Error fetching investigators:", error);
       res.status(500).json({ message: error.message });
@@ -379,14 +376,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const users = await storage.getAllUsers();
-      // Filter by role-based access (only show users with investigator/legal roles)
-      const eligibleUsers = users.filter((user) =>
-        ["admin", "compliance_officer", "attorney", "external_counsel", "auditor"].includes(user.role || "")
-      );
 
-      // Search by name or email (case insensitive)
       const searchLower = query.toLowerCase();
-      const results = eligibleUsers
+      const results = users
         .filter((user) => {
           const fullName = `${user.firstName || ""} ${user.lastName || ""}`.toLowerCase();
           const email = (user.email || "").toLowerCase();
@@ -432,7 +424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Email service routes
-  app.get("/api/email/status", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.get("/api/email/status", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       res.json({
         configured: emailService.isReady(),
@@ -444,7 +436,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/email/test", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/email/test", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { email } = req.body;
       const testEmail = email || req.user.email;
@@ -482,7 +474,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/email/reinitialize", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/email/reinitialize", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       emailService.reinitialize();
       res.json({
@@ -496,10 +488,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/users/:id/role", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.patch("/api/users/:id/role", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { role } = req.body;
-      const validRoles = ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor", "external_counsel", "cro", "risk_manager"];
+      const validRoles = ["super_admin", "entity_admin", "entity_user", "individual_user"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
       }
@@ -514,7 +506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new user (admin only)
-  app.post("/api/users", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/users", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { email, firstName, lastName, role, password, userType, organizationId } = req.body;
       
@@ -526,7 +518,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Password is required and must be at least 8 characters" });
       }
 
-      const validRoles = ["admin", "compliance_officer", "attorney", "auditor", "employee", "vendor", "external_counsel", "cro", "risk_manager"];
+      const validRoles = ["super_admin", "entity_admin", "entity_user", "individual_user"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
       }
@@ -583,7 +575,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete user (admin only)
-  app.delete("/api/users/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/users/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const userId = req.params.id;
       
@@ -644,7 +636,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ===== ORGANIZATION MANAGEMENT ROUTES =====
 
-  app.get("/api/organizations", isAuthenticated, requireRole("admin"), async (req, res) => {
+  app.get("/api/organizations", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const orgs = await storage.getOrganizations();
       res.json(orgs);
@@ -653,7 +645,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/organizations", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/organizations", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { name, description } = req.body;
       if (!name) return res.status(400).json({ message: "Name is required" });
@@ -664,7 +656,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/organizations/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.patch("/api/organizations/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const org = await storage.updateOrganization(req.params.id, req.body);
       res.json(org);
@@ -673,7 +665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/organizations/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/organizations/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       await storage.deleteOrganization(req.params.id);
       res.json({ success: true });
@@ -682,7 +674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/organizations/:id/members", isAuthenticated, requireRole("admin"), async (req, res) => {
+  app.get("/api/organizations/:id/members", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const members = await storage.getOrganizationMembers(req.params.id);
       res.json(members.map(m => ({ ...m, user: m.user ? sanitizeUser(m.user) : undefined })));
@@ -691,7 +683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/organizations/:id/members", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/organizations/:id/members", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { userId } = req.body;
       if (!userId) return res.status(400).json({ message: "userId is required" });
@@ -702,7 +694,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/organizations/:orgId/members/:userId", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/organizations/:orgId/members/:userId", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       await storage.removeOrganizationMember(req.params.orgId, req.params.userId);
       res.json({ success: true });
@@ -711,7 +703,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users/:id/organization", isAuthenticated, requireRole("admin"), async (req, res) => {
+  app.get("/api/users/:id/organization", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const org = await storage.getUserOrganization(req.params.id);
       res.json(org || null);
@@ -720,7 +712,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/user-org-map", isAuthenticated, requireRole("admin"), async (req, res) => {
+  app.get("/api/user-org-map", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const members = await db.select({
         userId: schema.organizationMembers.userId,
@@ -741,7 +733,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== CLIENT MANAGEMENT ROUTES =====
   
   // Get all clients
-  app.get("/api/clients", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/clients", isAuthenticated, async (req, res) => {
     try {
       const isActive = req.query.isActive ? req.query.isActive === 'true' : undefined;
       const searchQuery = req.query.search as string | undefined;
@@ -754,7 +746,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single client with full details
-  app.get("/api/clients/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/clients/:id", isAuthenticated, async (req, res) => {
     try {
       const client = await storage.getClientWithDetails(req.params.id);
       if (!client) {
@@ -768,7 +760,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new client
-  app.post("/api/clients", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/clients", isAuthenticated, async (req: any, res) => {
     try {
       const clientData = { ...req.body, createdBy: req.user.id };
       const client = await storage.createClient(clientData);
@@ -781,7 +773,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update client
-  app.patch("/api/clients/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/clients/:id", isAuthenticated, async (req: any, res) => {
     try {
       const client = await storage.updateClient(req.params.id, req.body);
       await logAction(req, "update", "client", client.id, { updates: Object.keys(req.body) });
@@ -793,7 +785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete client
-  app.delete("/api/clients/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/clients/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       await storage.deleteClient(req.params.id);
       await logAction(req, "delete", "client", req.params.id, {});
@@ -806,7 +798,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Import clients from Excel
-  app.post("/api/clients/import", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), upload.single("file"), async (req: any, res) => {
+  app.post("/api/clients/import", isAuthenticated, upload.single("file"), async (req: any, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -859,7 +851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   // Get client contacts
-  app.get("/api/clients/:id/contacts", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/clients/:id/contacts", isAuthenticated, async (req, res) => {
     try {
       const contacts = await storage.getClientContacts(req.params.id);
       res.json(contacts);
@@ -870,7 +862,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create client contact
-  app.post("/api/clients/:id/contacts", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/clients/:id/contacts", isAuthenticated, async (req: any, res) => {
     try {
       const contactData = { ...req.body, clientId: req.params.id };
       const contact = await storage.createClientContact(contactData);
@@ -882,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update client contact
-  app.patch("/api/client-contacts/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/client-contacts/:id", isAuthenticated, async (req: any, res) => {
     try {
       const contact = await storage.updateClientContact(req.params.id, req.body);
       res.json(contact);
@@ -893,7 +885,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete client contact
-  app.delete("/api/client-contacts/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/client-contacts/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       await storage.deleteClientContact(req.params.id);
       res.json({ success: true });
@@ -904,7 +896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Link client to case
-  app.post("/api/clients/:id/cases", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/clients/:id/cases", isAuthenticated, async (req: any, res) => {
     try {
       const linkData = { clientId: req.params.id, caseId: req.body.caseId, role: req.body.role };
       const link = await storage.linkClientToCase(linkData);
@@ -916,7 +908,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Unlink client from case
-  app.delete("/api/clients/:clientId/cases/:caseId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.delete("/api/clients/:clientId/cases/:caseId", isAuthenticated, async (req: any, res) => {
     try {
       await storage.unlinkClientFromCase(req.params.clientId, req.params.caseId);
       res.json({ success: true });
@@ -931,7 +923,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ========================
   
   // Get all templates with filters
-  app.get("/api/litigation-templates", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req: any, res) => {
+  app.get("/api/litigation-templates", isAuthenticated, async (req: any, res) => {
     try {
       const filters = {
         category: req.query.category as string | undefined,
@@ -948,7 +940,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single template
-  app.get("/api/litigation-templates/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/litigation-templates/:id", isAuthenticated, async (req, res) => {
     try {
       const template = await storage.getLitigationTemplate(req.params.id);
       if (!template) {
@@ -962,7 +954,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload new template
-  app.post("/api/litigation-templates", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), upload.single("file"), async (req: any, res) => {
+  app.post("/api/litigation-templates", isAuthenticated, upload.single("file"), async (req: any, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -997,7 +989,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update template metadata
-  app.patch("/api/litigation-templates/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/litigation-templates/:id", isAuthenticated, async (req: any, res) => {
     try {
       const updates: any = {};
       if (req.body.name) updates.name = req.body.name;
@@ -1017,7 +1009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete template
-  app.delete("/api/litigation-templates/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/litigation-templates/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       await storage.deleteLitigationTemplate(req.params.id);
       await logAction(req, "delete", "litigation_template", req.params.id, {});
@@ -1029,7 +1021,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Download template file
-  app.get("/api/litigation-templates/:id/download", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel"), async (req: any, res) => {
+  app.get("/api/litigation-templates/:id/download", isAuthenticated, async (req: any, res) => {
     try {
       const template = await storage.getLitigationTemplate(req.params.id);
       if (!template) {
@@ -1558,7 +1550,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Search autocomplete endpoint
-  app.get("/api/search/autocomplete", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/search/autocomplete", isAuthenticated, async (req, res) => {
     try {
       const query = (req.query.query as string || '').toLowerCase();
       const caseId = req.query.caseId ? parseInt(req.query.caseId as string) : undefined;
@@ -1674,7 +1666,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Communication routes
-  app.get("/api/communications", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/communications", isAuthenticated, async (req, res) => {
     try {
       const filters: import("./storage").CommunicationFilters = {};
       
@@ -1772,7 +1764,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.get("/api/communications/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/communications/:id", isAuthenticated, async (req, res) => {
     try {
       const communication = await storage.getCommunication(req.params.id);
       if (!communication) {
@@ -1788,7 +1780,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   // Batch fetch communications by IDs (for ambient AI suggestions)
   // Batch fetch communications by IDs (for ambient AI suggestions)
   // Requires caseId to enforce case-level authorization
-  app.post("/api/communications/batch", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.post("/api/communications/batch", isAuthenticated, async (req, res) => {
     try {
       const { ids, caseId } = req.body;
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -1828,7 +1820,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.post("/api/communications", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/communications", isAuthenticated, async (req, res) => {
     try {
       const validated = insertCommunicationSchema.parse(req.body);
       const communication = await storage.createCommunication(validated);
@@ -1865,7 +1857,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.post("/api/communications/search", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.post("/api/communications/search", isAuthenticated, async (req, res) => {
     try {
       const { query, mode } = req.body;
       
@@ -1885,7 +1877,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Compliance analysis endpoint
-  app.post("/api/communications/:id/analyze-compliance", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req: any, res) => {
+  app.post("/api/communications/:id/analyze-compliance", isAuthenticated, async (req: any, res) => {
     try {
       const communication = await storage.getCommunication(req.params.id);
       if (!communication) {
@@ -1977,7 +1969,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Get related documents
-  app.get("/api/communications/:id/related", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/communications/:id/related", isAuthenticated, async (req, res) => {
     try {
       const relationships = await db.select()
         .from(schema.documentRelationships)
@@ -2004,7 +1996,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Get attachments for a communication
-  app.get("/api/communications/attachments/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/communications/attachments/:id", isAuthenticated, async (req, res) => {
     try {
       const parentDoc = await storage.getCommunication(req.params.id);
       if (!parentDoc) {
@@ -2033,7 +2025,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Translation endpoint - translate communication to English
-  app.post("/api/communications/:id/translate", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req: any, res) => {
+  app.post("/api/communications/:id/translate", isAuthenticated, async (req: any, res) => {
     try {
       const communication = await storage.getCommunication(req.params.id);
       if (!communication) {
@@ -2109,7 +2101,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Bulk review status update endpoint
-  app.patch("/api/communications/bulk-review-status", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/communications/bulk-review-status", isAuthenticated, async (req: any, res) => {
     try {
       const { documentIds, reviewStatus } = req.body;
       
@@ -2159,7 +2151,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Connector management routes
-  app.get("/api/connectors", isAuthenticated, requireRole("admin"), async (req, res) => {
+  app.get("/api/connectors", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const connectors = await storage.getConnectors();
       res.json(connectors);
@@ -2169,7 +2161,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.post("/api/connectors", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/connectors", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const validated = schema.insertConnectorConfigurationSchema.parse(req.body);
       const connector = await storage.createConnector({
@@ -2184,7 +2176,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.patch("/api/connectors/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.patch("/api/connectors/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const connector = await storage.updateConnector(req.params.id, req.body);
       await logAction(req, "connector_updated", "connector", connector.id);
@@ -2195,7 +2187,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.delete("/api/connectors/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/connectors/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       await storage.deleteConnector(req.params.id);
       await logAction(req, "connector_deleted", "connector", req.params.id);
@@ -2207,7 +2199,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Alert routes
-  app.get("/api/alerts", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/alerts", isAuthenticated, async (req, res) => {
     try {
       const alerts = await storage.getAlerts();
       res.json(alerts);
@@ -2217,7 +2209,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.get("/api/alerts/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/alerts/:id", isAuthenticated, async (req, res) => {
     try {
       const alert = await storage.getAlert(req.params.id);
       if (!alert) {
@@ -2230,7 +2222,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.patch("/api/alerts/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/alerts/:id", isAuthenticated, async (req: any, res) => {
     try {
       const alert = await storage.updateAlert(req.params.id, {
         ...req.body,
@@ -2329,15 +2321,15 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.get("/api/cases", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/cases", isAuthenticated, async (req: any, res) => {
     try {
       const allCases = await storage.getCases();
-      const userRole = req.user?.role || "employee";
+      const userRole = req.user?.role || "individual_user";
       const includeClosedArchived = req.query.includeClosedArchived === "true";
       
       // Only admins can request closed/archived cases
       // For everyone else, always filter out closed/archived cases
-      if (userRole !== "admin" || !includeClosedArchived) {
+      if (userRole !== "super_admin" || !includeClosedArchived) {
         const activeCases = allCases.filter((c: any) => 
           c.status !== "closed" && !c.archivedAt
         );
@@ -2352,7 +2344,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.get("/api/cases/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:id", isAuthenticated, async (req, res) => {
     try {
       const caseData = await storage.getCase(req.params.id);
       if (!caseData) {
@@ -2365,7 +2357,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
-  app.post("/api/cases", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/cases", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.id;
 
@@ -2399,7 +2391,7 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
   });
 
   // Crisis Intake - Specialized endpoint for government investigations
-  app.post("/api/crisis-intake", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/crisis-intake", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       
@@ -2616,7 +2608,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     enableWebResearch: z.boolean().optional().default(true), // Enable external web research by default
   });
 
-  app.post("/api/business-summary/generate", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "auditor"), async (req: any, res) => {
+  app.post("/api/business-summary/generate", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -2739,7 +2731,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // List saved business reports for a case
-  app.get("/api/business-reports/:caseId", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "auditor"), async (req: any, res) => {
+  app.get("/api/business-reports/:caseId", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -2794,7 +2786,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Download a specific business report PDF
-  app.get("/api/business-reports/:caseId/:reportId/download", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "auditor"), async (req: any, res) => {
+  app.get("/api/business-reports/:caseId/:reportId/download", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -2842,7 +2834,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Delete a business report
-  app.delete("/api/business-reports/:caseId/:reportId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/business-reports/:caseId/:reportId", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -2879,7 +2871,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Document Export to PDF
-  app.post("/api/documents/export", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "external_counsel", "auditor"), async (req: any, res) => {
+  app.post("/api/documents/export", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -3014,7 +3006,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.patch("/api/cases/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.patch("/api/cases/:id", isAuthenticated, async (req, res) => {
     try {
       const validated = updateCaseSchema.parse(req.body);
       const caseData = await storage.updateCase(req.params.id, validated);
@@ -3027,7 +3019,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Close case - Admin only
-  app.post("/api/cases/:id/close", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/cases/:id/close", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const caseData = await storage.updateCase(req.params.id, {
         status: "closed",
@@ -3043,7 +3035,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Archive case - Admin only
-  app.post("/api/cases/:id/archive", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/cases/:id/archive", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const caseData = await storage.updateCase(req.params.id, {
         archivedAt: new Date(),
@@ -3058,7 +3050,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Reopen case - Admin only (clears both closed and archived status)
-  app.post("/api/cases/:id/reopen", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/cases/:id/reopen", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const caseData = await storage.updateCase(req.params.id, {
         status: "investigation",
@@ -3076,7 +3068,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Case Detail Page endpoints
-  app.get("/api/cases/:caseId/stats", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/stats", isAuthenticated, async (req, res) => {
     try {
       const stats = await storage.getCaseStats(req.params.caseId);
       res.json(stats);
@@ -3086,7 +3078,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/cases/:caseId/parties", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/parties", isAuthenticated, async (req, res) => {
     try {
       const parties = await storage.getCaseParties(req.params.caseId);
       res.json(parties);
@@ -3096,7 +3088,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/cases/:caseId/parties", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/parties", isAuthenticated, async (req: any, res) => {
     try {
       const validated = insertCasePartySchema.parse({
         ...req.body,
@@ -3112,7 +3104,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.patch("/api/cases/:caseId/parties/:partyId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/cases/:caseId/parties/:partyId", isAuthenticated, async (req: any, res) => {
     try {
       const party = await storage.updateCaseParty(req.params.partyId, req.body);
       await logAction(req, "case_party_updated", "case_party", party.id, req.body);
@@ -3124,7 +3116,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get discovered entities (unique senders/recipients) from case evidence
-  app.get("/api/cases/:caseId/discovered-entities", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/discovered-entities", isAuthenticated, async (req, res) => {
     try {
       const entities = await storage.getDiscoveredEntities(req.params.caseId);
       
@@ -3157,7 +3149,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Trigger entity extraction for a case
-  app.post("/api/cases/:caseId/extract-entities", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.post("/api/cases/:caseId/extract-entities", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.params.caseId;
       
@@ -3181,7 +3173,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get entity extraction progress
-  app.get("/api/cases/:caseId/extract-entities/progress", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/extract-entities/progress", isAuthenticated, async (req, res) => {
     try {
       const progress = entityExtractionService.getExtractionProgress(req.params.caseId);
       res.json(progress || { status: "not_started" });
@@ -3196,7 +3188,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   // ===========================================
 
   // Time-of-Day / Day-of-Week Heatmap
-  app.get("/api/cases/:caseId/communications/heatmap/time", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/communications/heatmap/time", isAuthenticated, async (req, res) => {
     try {
       let participants: string[] | undefined;
       if (req.query.selectedPerson) {
@@ -3222,7 +3214,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Person-to-Person Interaction Matrix
-  app.get("/api/cases/:caseId/communications/heatmap/person-matrix", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/communications/heatmap/person-matrix", isAuthenticated, async (req, res) => {
     try {
       const filters: heatmapService.HeatmapFilters = {
         caseId: req.params.caseId,
@@ -3239,7 +3231,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Organization/Domain Interaction Matrix
-  app.get("/api/cases/:caseId/communications/heatmap/org-matrix", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/communications/heatmap/org-matrix", isAuthenticated, async (req, res) => {
     try {
       const filters: heatmapService.HeatmapFilters = {
         caseId: req.params.caseId,
@@ -3256,7 +3248,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Topic vs Person Heatmap
-  app.get("/api/cases/:caseId/communications/heatmap/topic", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/communications/heatmap/topic", isAuthenticated, async (req, res) => {
     try {
       const filters: heatmapService.HeatmapFilters = {
         caseId: req.params.caseId,
@@ -3273,7 +3265,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Anomaly Detection Heatmap
-  app.get("/api/cases/:caseId/communications/heatmap/anomalies", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/communications/heatmap/anomalies", isAuthenticated, async (req, res) => {
     try {
       const filters: heatmapService.HeatmapFilters = {
         caseId: req.params.caseId,
@@ -3289,7 +3281,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Insights Summary
-  app.get("/api/cases/:caseId/communications/heatmap/insights", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/communications/heatmap/insights", isAuthenticated, async (req, res) => {
     try {
       const filters: heatmapService.HeatmapFilters = {
         caseId: req.params.caseId,
@@ -3305,7 +3297,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get messages between two people
-  app.get("/api/cases/:caseId/communications/heatmap/messages-between", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/communications/heatmap/messages-between", isAuthenticated, async (req, res) => {
     try {
       const personA = req.query.personA as string;
       const personB = req.query.personB as string;
@@ -3325,7 +3317,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   // ===========================================
 
   // Get network graph data (nodes and edges) for force-directed visualization
-  app.get("/api/cases/:caseId/communications/network", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/communications/network", isAuthenticated, async (req: any, res) => {
     try {
       const caseId = req.params.caseId;
       const minMessages = parseInt(req.query.minMessages as string) || 1;
@@ -3518,7 +3510,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   // ===========================================
 
   // Trigger issue extraction for a case
-  app.post("/api/cases/:caseId/issues/extract", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/issues/extract", isAuthenticated, async (req: any, res) => {
     try {
       const caseId = req.params.caseId;
       console.log(`[IssueExtraction] Starting extraction for case ${caseId}`);
@@ -3538,7 +3530,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get issue extraction progress
-  app.get("/api/cases/:caseId/issues/extract/progress", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/issues/extract/progress", isAuthenticated, async (req, res) => {
     try {
       const progress = issueExtractionService.getIssueExtractionProgress(req.params.caseId);
       res.json(progress || { status: "not_started" });
@@ -3549,7 +3541,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get all issues for a case
-  app.get("/api/cases/:caseId/issues", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/issues", isAuthenticated, async (req, res) => {
     try {
       const issues = await issueExtractionService.getIssuesByCase(req.params.caseId);
       res.json(issues);
@@ -3560,7 +3552,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get issues grouped by person
-  app.get("/api/cases/:caseId/issues/by-person", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/issues/by-person", isAuthenticated, async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 20;
       const result = await issueExtractionService.getIssuesByPerson(req.params.caseId, limit);
@@ -3572,7 +3564,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get issues grouped by domain/organization
-  app.get("/api/cases/:caseId/issues/by-domain", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/issues/by-domain", isAuthenticated, async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 20;
       const result = await issueExtractionService.getIssuesByDomain(req.params.caseId, limit);
@@ -3584,7 +3576,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get issue urgency data
-  app.get("/api/cases/:caseId/issues/urgency", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/issues/urgency", isAuthenticated, async (req, res) => {
     try {
       const result = await issueExtractionService.getIssueUrgencyData(req.params.caseId);
       res.json(result);
@@ -3595,7 +3587,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get issue timeline
-  app.get("/api/cases/:caseId/issues/timeline", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/issues/timeline", isAuthenticated, async (req, res) => {
     try {
       const result = await issueExtractionService.getIssueTimeline(req.params.caseId);
       res.json(result);
@@ -3606,7 +3598,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get issue insights summary
-  app.get("/api/cases/:caseId/issues/insights", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/issues/insights", isAuthenticated, async (req, res) => {
     try {
       const result = await issueExtractionService.getIssueInsights(req.params.caseId);
       res.json(result);
@@ -3621,7 +3613,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   // ===========================================
 
   // Get communications (evidence) for a specific case
-  app.get("/api/cases/:caseId/communications", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/communications", isAuthenticated, async (req, res) => {
     try {
       const communications = await storage.getCommunications({ caseId: req.params.caseId });
       res.json(communications);
@@ -3632,7 +3624,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get interviews for a specific case
-  app.get("/api/cases/:caseId/interviews", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/interviews", isAuthenticated, async (req, res) => {
     try {
       const interviews = await storage.getInterviews({ caseId: req.params.caseId });
       res.json(interviews);
@@ -3642,7 +3634,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/cases/:caseId/timeline", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/timeline", isAuthenticated, async (req, res) => {
     try {
       // Validate query parameters with Zod
       const querySchema = z.object({
@@ -3675,7 +3667,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/cases/:caseId/timeline", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/timeline", isAuthenticated, async (req: any, res) => {
     try {
       const validated = insertCaseTimelineEventSchema.parse({
         ...req.body,
@@ -3691,7 +3683,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.patch("/api/cases/:caseId/timeline/:eventId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/cases/:caseId/timeline/:eventId", isAuthenticated, async (req: any, res) => {
     try {
       // Verify event belongs to case before updating (include hidden events)
       const events = await storage.getCaseTimelineEvents(req.params.caseId, { showHidden: true });
@@ -3711,7 +3703,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Evidence Upload Routes
-  app.post("/api/cases/:caseId/evidence/upload-url", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/evidence/upload-url", isAuthenticated, async (req: any, res) => {
     try {
       // Verify case exists and user has access
       const caseData = await storage.getCase(req.params.caseId);
@@ -3730,7 +3722,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/cases/:caseId/evidence/process", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/evidence/process", isAuthenticated, async (req: any, res) => {
     try {
       const { uploadURL, fileName } = req.body;
       
@@ -4146,7 +4138,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get uploaded files for a case (from ingestion jobs)
-  app.get("/api/cases/:caseId/uploaded-files", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/uploaded-files", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       
@@ -4238,7 +4230,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Reprocess uploaded files for a case (to create communications after schema fixes)
-  app.post("/api/cases/:caseId/reprocess-files", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/reprocess-files", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { caseId } = req.params;
       
@@ -4324,7 +4316,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
 
 
   // Retry failed uploads for a case
-  app.post("/api/cases/:caseId/retry-failed-uploads", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/retry-failed-uploads", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       
@@ -4467,7 +4459,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get ingested chat messages (with optional case filtering and access control)
-  app.get("/api/chats", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/chats", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId, threadId } = req.query;
       
@@ -4497,7 +4489,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   // ============================================================
 
   // Get chat threads for a case
-  app.get("/api/cases/:caseId/chat-threads", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/chat-threads", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       
@@ -4515,7 +4507,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get a single chat thread with its messages
-  app.get("/api/chat-threads/:threadId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/chat-threads/:threadId", isAuthenticated, async (req: any, res) => {
     try {
       const { threadId } = req.params;
       
@@ -4538,7 +4530,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Update chat thread (for review status, etc.)
-  app.patch("/api/chat-threads/:threadId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/chat-threads/:threadId", isAuthenticated, async (req: any, res) => {
     try {
       const { threadId } = req.params;
       const updates = req.body;
@@ -4559,7 +4551,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get a single chat message
-  app.get("/api/chat-messages/:messageId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/chat-messages/:messageId", isAuthenticated, async (req: any, res) => {
     try {
       const { messageId } = req.params;
       
@@ -4576,7 +4568,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Update chat message (for flagging, notes, review status)
-  app.patch("/api/chat-messages/:messageId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/chat-messages/:messageId", isAuthenticated, async (req: any, res) => {
     try {
       const { messageId } = req.params;
       const updates = req.body;
@@ -4597,7 +4589,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Get notes for a chat message
-  app.get("/api/chat-messages/:messageId/notes", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/chat-messages/:messageId/notes", isAuthenticated, async (req: any, res) => {
     try {
       const { messageId } = req.params;
       
@@ -4615,7 +4607,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Add a note to a chat message
-  app.post("/api/chat-messages/:messageId/notes", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/chat-messages/:messageId/notes", isAuthenticated, async (req: any, res) => {
     try {
       const { messageId } = req.params;
       const { content } = req.body;
@@ -4648,7 +4640,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Delete a note from a chat message
-  app.delete("/api/chat-messages/:messageId/notes/:noteId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/chat-messages/:messageId/notes/:noteId", isAuthenticated, async (req: any, res) => {
     try {
       const { messageId, noteId } = req.params;
       
@@ -4662,7 +4654,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.delete("/api/cases/:caseId/timeline/:eventId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/cases/:caseId/timeline/:eventId", isAuthenticated, async (req: any, res) => {
     try{
       // Verify event belongs to case before deleting (include hidden events)
       const events = await storage.getCaseTimelineEvents(req.params.caseId, { showHidden: true });
@@ -4681,7 +4673,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Timeline Export Routes
-  app.get("/api/cases/:caseId/timeline/export/csv", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/timeline/export/csv", isAuthenticated, async (req, res) => {
     try {
       const querySchema = z.object({
         showHidden: z.string().optional().transform(val => val === 'true' ? true : undefined),
@@ -4733,7 +4725,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/cases/:caseId/timeline/export/pdf", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/timeline/export/pdf", isAuthenticated, async (req, res) => {
     try {
       const querySchema = z.object({
         showHidden: z.string().optional().transform(val => val === 'true' ? true : undefined),
@@ -4800,7 +4792,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/cases/:caseId/timeline/export/word", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/timeline/export/word", isAuthenticated, async (req, res) => {
     try {
       const querySchema = z.object({
         showHidden: z.string().optional().transform(val => val === 'true' ? true : undefined),
@@ -4877,7 +4869,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Custom Timeline Columns Routes
-  app.get("/api/cases/:caseId/timeline/columns", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/timeline/columns", isAuthenticated, async (req: any, res) => {
     try {
       const columns = await storage.getCustomTimelineColumns(req.params.caseId, req.user.id);
       res.json(columns);
@@ -4887,7 +4879,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/cases/:caseId/timeline/columns", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/timeline/columns", isAuthenticated, async (req: any, res) => {
     try {
       const validated = insertCustomTimelineColumnSchema.parse({
         ...req.body,
@@ -4903,7 +4895,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.patch("/api/cases/:caseId/timeline/columns/:columnId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/cases/:caseId/timeline/columns/:columnId", isAuthenticated, async (req: any, res) => {
     try {
       const columns = await storage.getCustomTimelineColumns(req.params.caseId, req.user.id);
       const existingColumn = columns.find(c => c.id === req.params.columnId);
@@ -4921,7 +4913,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.delete("/api/cases/:caseId/timeline/columns/:columnId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/cases/:caseId/timeline/columns/:columnId", isAuthenticated, async (req: any, res) => {
     try {
       const columns = await storage.getCustomTimelineColumns(req.params.caseId, req.user.id);
       const existingColumn = columns.find(c => c.id === req.params.columnId);
@@ -4938,7 +4930,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.patch("/api/cases/:caseId/timeline/columns/reorder", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/cases/:caseId/timeline/columns/reorder", isAuthenticated, async (req: any, res) => {
     try {
       const reorderSchema = z.object({
         columns: z.array(z.object({
@@ -4968,7 +4960,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/cases/:caseId/timeline/:eventId/column-values", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/timeline/:eventId/column-values", isAuthenticated, async (req, res) => {
     try {
       const values = await storage.getCustomTimelineColumnValues(req.params.eventId);
       res.json(values);
@@ -4978,7 +4970,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.put("/api/cases/:caseId/timeline/:eventId/column-values/:columnId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.put("/api/cases/:caseId/timeline/:eventId/column-values/:columnId", isAuthenticated, async (req: any, res) => {
     try {
       const valueSchema = z.object({
         value: z.string(),
@@ -4999,7 +4991,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/cases/:caseId/ai-analysis", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/ai-analysis", isAuthenticated, async (req, res) => {
     try {
       const analysis = await storage.getCaseAIAnalysis(req.params.caseId);
       res.json(analysis || null);
@@ -5009,7 +5001,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/cases/:caseId/generate-ai-analysis", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/generate-ai-analysis", isAuthenticated, async (req: any, res) => {
     try {
       const caseId = req.params.caseId;
 
@@ -5037,7 +5029,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Update AI Analysis (user edits to AI-generated summary/laws)
-  app.patch("/api/cases/:caseId/ai-analysis", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/cases/:caseId/ai-analysis", isAuthenticated, async (req: any, res) => {
     try {
       const caseId = req.params.caseId;
       const userId = req.user.id;
@@ -5065,7 +5057,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Ask About Case - AI-powered investigation assistant
-  app.post("/api/cases/:caseId/ask", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/ask", isAuthenticated, async (req: any, res) => {
     try {
       const caseId = req.params.caseId;
       const userId = req.user.id;
@@ -5079,7 +5071,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
 
       // Per-case authorization: Verify user has access to this specific case
       // Admins and compliance officers have global access
-      if (userRole !== "admin" && userRole !== "compliance_officer") {
+      if (userRole !== "super_admin") {
         // Check if user is case creator or assigned to the case
         const isAssigned = await db.query.caseAssignments.findFirst({
           where: and(
@@ -5117,7 +5109,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/cases/:caseId/search", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/search", isAuthenticated, async (req, res) => {
     try {
       const query = req.query.q as string;
       if (!query) {
@@ -5133,7 +5125,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // File Search RAG endpoints
-  app.post("/api/cases/:caseId/file-search/query", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/file-search/query", isAuthenticated, async (req: any, res) => {
     try {
       const { query, metadataFilter } = req.body;
       if (!query || typeof query !== "string") {
@@ -5170,7 +5162,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
 
   // Upload endpoint removed - auto-upload implemented in task 8 via document ingestion hooks
 
-  app.get("/api/cases/:caseId/file-search/stores", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/file-search/stores", isAuthenticated, async (req, res) => {
     try {
       const caseData = await storage.getCase(req.params.caseId);
       if (!caseData) {
@@ -5185,7 +5177,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.delete("/api/file-search/stores/:storeId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/file-search/stores/:storeId", isAuthenticated, async (req: any, res) => {
     try {
       const storeRecord = await db.query.fileSearchStores.findFirst({
         where: eq(schema.fileSearchStores.id, req.params.storeId),
@@ -5210,7 +5202,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Case Assignment routes - for administrators to assign investigators and external counsel
-  app.get("/api/case-assignments/case/:caseId", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/case-assignments/case/:caseId", isAuthenticated, async (req, res) => {
     try {
       const assignments = await storage.getCaseAssignments(req.params.caseId);
       res.json(assignments);
@@ -5227,7 +5219,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
       const userRole = req.user?.role;
       
       // Only allow users to see their own assignments, unless they're admin/compliance_officer
-      if (currentUserId !== requestedUserId && !["admin", "compliance_officer"].includes(userRole)) {
+      if (currentUserId !== requestedUserId && userRole !== "super_admin") {
         return res.status(403).json({ message: "Unauthorized to view other users' assignments" });
       }
 
@@ -5239,7 +5231,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/case-assignments", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/case-assignments", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -5260,7 +5252,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.delete("/api/case-assignments/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/case-assignments/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -5277,7 +5269,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Case Messages routes - Internal investigator communications
-  app.get("/api/cases/:caseId/messages", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req, res) => {
+  app.get("/api/cases/:caseId/messages", isAuthenticated, async (req, res) => {
     try {
       const messages = await storage.getCaseMessages({ caseId: req.params.caseId });
       res.json(messages);
@@ -5287,7 +5279,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/cases/:caseId/messages", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/messages", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -5309,7 +5301,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/messages/inbox", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req: any, res) => {
+  app.get("/api/messages/inbox", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -5324,7 +5316,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.get("/api/messages/unread-count", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req: any, res) => {
+  app.get("/api/messages/unread-count", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -5339,7 +5331,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.patch("/api/messages/:id/read", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req: any, res) => {
+  app.patch("/api/messages/:id/read", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -5356,7 +5348,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
   });
 
   // Admin Dashboard routes
-  app.get("/api/admin/review-queue", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/admin/review-queue", isAuthenticated, async (req, res) => {
     try {
       // Get recent communications that need review (not assigned to any case, created in last 7 days)
       const communications = await db.select({
@@ -5384,7 +5376,7 @@ ${initialAssessment.nextSteps || 'To be determined'}
     }
   });
 
-  app.post("/api/admin/ai-recommendations/:caseId", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/admin/ai-recommendations/:caseId", isAuthenticated, async (req, res) => {
     try {
       // Get case details with related communications and alerts
       const caseData = await storage.getCase(req.params.caseId);
@@ -5496,7 +5488,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
     }
   });
 
-  app.post("/api/tags", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/tags", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -5517,7 +5509,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
     }
   });
 
-  app.patch("/api/tags/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/tags/:id", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertTagSchema.partial().parse(req.body);
       const tag = await storage.updateTag(req.params.id, validated);
@@ -5529,7 +5521,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
     }
   });
 
-  app.delete("/api/tags/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.delete("/api/tags/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteTag(req.params.id);
       await logAction(req, "tag_deleted", "tag", req.params.id);
@@ -5541,7 +5533,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
   });
 
   // Seed preset tags
-  app.post("/api/tags/seed", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/tags/seed", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { seedTags } = await import("./seed-tags");
       await seedTags();
@@ -5809,7 +5801,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
   });
 
   // Tag Usage Report - Get statistics on tag usage for a case
-  app.get("/api/cases/:caseId/tags/usage-report", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/cases/:caseId/tags/usage-report", isAuthenticated, async (req, res) => {
     try {
       const { caseId } = req.params;
       
@@ -5914,7 +5906,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
   });
 
   // Bulk tagging routes
-  app.post("/api/bulk-tag/preview", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/bulk-tag/preview", isAuthenticated, async (req: any, res) => {
     try {
       const { calculateBulkTagImpact } = await import("./services/bulk-tagging-service");
       const preview = await calculateBulkTagImpact({
@@ -5928,7 +5920,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
     }
   });
 
-  app.post("/api/bulk-tag", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/bulk-tag", isAuthenticated, async (req: any, res) => {
     try {
       const { executeBulkTag } = await import("./services/bulk-tagging-service");
       
@@ -5966,7 +5958,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
   });
 
   // Bulk tag removal routes
-  app.post("/api/bulk-tag/remove/preview", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/bulk-tag/remove/preview", isAuthenticated, async (req: any, res) => {
     try {
       const { calculateBulkTagRemovalImpact } = await import("./services/bulk-tagging-service");
       const preview = await calculateBulkTagRemovalImpact({
@@ -5980,7 +5972,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
     }
   });
 
-  app.post("/api/bulk-tag/remove", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/bulk-tag/remove", isAuthenticated, async (req: any, res) => {
     try {
       const { executeBulkTagRemoval } = await import("./services/bulk-tagging-service");
       
@@ -6087,7 +6079,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
         return res.status(404).json({ message: "Saved search not found" });
       }
       
-      if (existing.ownerId !== userId && !['admin', 'compliance_officer'].includes(req.user?.role)) {
+      if (existing.ownerId !== userId && req.user?.role !== 'super_admin') {
         return res.status(403).json({ message: "Not authorized to update this search" });
       }
       
@@ -6120,7 +6112,7 @@ Format your response as JSON with these keys: immediateSteps (array), investigat
         return res.status(404).json({ message: "Saved search not found" });
       }
       
-      if (existing.ownerId !== userId && !['admin', 'compliance_officer'].includes(req.user?.role)) {
+      if (existing.ownerId !== userId && req.user?.role !== 'super_admin') {
         return res.status(403).json({ message: "Not authorized to delete this search" });
       }
       
@@ -6731,7 +6723,7 @@ Provide one actionable recommendation.`
         return res.status(404).json({ message: "Highlight not found" });
       }
       
-      if (existing.userId !== userId && !['admin', 'compliance_officer'].includes(req.user?.role)) {
+      if (existing.userId !== userId && req.user?.role !== 'super_admin') {
         return res.status(403).json({ message: "Not authorized to update this highlight" });
       }
       
@@ -6755,7 +6747,7 @@ Provide one actionable recommendation.`
         return res.status(404).json({ message: "Highlight not found" });
       }
       
-      if (existing.userId !== userId && !['admin', 'compliance_officer'].includes(req.user?.role)) {
+      if (existing.userId !== userId && req.user?.role !== 'super_admin') {
         return res.status(403).json({ message: "Not authorized to delete this highlight" });
       }
       
@@ -6861,7 +6853,7 @@ Provide one actionable recommendation.`
   });
 
   // Duplicate detection routes
-  app.post("/api/duplicate-detection", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/duplicate-detection", isAuthenticated, async (req: any, res) => {
     try {
       const { detectDuplicates } = await import("./services/duplicate-detection-service");
       const { documentIds, options } = req.body;
@@ -6878,7 +6870,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/duplicate-detection/preview", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/duplicate-detection/preview", isAuthenticated, async (req: any, res) => {
     try {
       const { getDuplicatesForPreview } = await import("./services/duplicate-detection-service");
       const { documentIds } = req.body;
@@ -6896,7 +6888,7 @@ Provide one actionable recommendation.`
   });
 
   // eDiscovery Production Set routes
-  app.get("/api/production-sets", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/production-sets", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.query.caseId as string | undefined;
       const productionSets = await storage.getProductionSets(caseId);
@@ -6907,7 +6899,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.get("/api/production-sets/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/production-sets/:id", isAuthenticated, async (req, res) => {
     try {
       const productionSet = await storage.getProductionSet(req.params.id);
       if (!productionSet) {
@@ -6920,7 +6912,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/production-sets", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/production-sets", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertProductionSetSchema.parse(req.body);
       const productionSet = await storage.createProductionSet(validated);
@@ -6932,7 +6924,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.patch("/api/production-sets/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.patch("/api/production-sets/:id", isAuthenticated, async (req, res) => {
     try {
       const productionSet = await storage.getProductionSet(req.params.id);
       if (!productionSet) {
@@ -6948,7 +6940,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.delete("/api/production-sets/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/production-sets/:id", isAuthenticated, async (req, res) => {
     try {
       await storage.deleteProductionSet(req.params.id);
       await logAction(req, "production_set_deleted", "production_set", req.params.id);
@@ -6989,7 +6981,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/report-templates", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/report-templates", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertReportTemplateSchema.parse(req.body);
       const template = await storage.createReportTemplate(validated);
@@ -7001,7 +6993,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.put("/api/report-templates/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.put("/api/report-templates/:id", isAuthenticated, async (req: any, res) => {
     try {
       const template = await storage.getReportTemplate(req.params.id);
       if (!template) {
@@ -7017,7 +7009,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.delete("/api/report-templates/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/report-templates/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteReportTemplate(req.params.id);
       await logAction(req, "report_template_deleted", "report_template", req.params.id);
@@ -7029,7 +7021,7 @@ Provide one actionable recommendation.`
   });
 
   // Discovery Report Generation
-  app.get("/api/reports/:caseId/discovery", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/reports/:caseId/discovery", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const userId = req.user?.id || "system";
@@ -7048,7 +7040,7 @@ Provide one actionable recommendation.`
   });
 
   // Connector configuration routes
-  app.get("/api/connector-configs", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/connector-configs", isAuthenticated, async (req, res) => {
     try {
       const connectors = await storage.getConnectors();
       res.json(connectors);
@@ -7058,7 +7050,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/connector-configs", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/connector-configs", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertConnectorConfigurationSchema.parse(req.body);
       const connector = await storage.createConnector(validated);
@@ -7070,7 +7062,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.delete("/api/connector-configs/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/connector-configs/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteConnector(req.params.id);
       await logAction(req, "connector_deleted", "connector", req.params.id);
@@ -7082,7 +7074,7 @@ Provide one actionable recommendation.`
   });
 
   // New production-ready connector sync endpoint using the connector framework
-  app.post("/api/connectors/:id/sync", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/connectors/:id/sync", isAuthenticated, async (req: any, res) => {
     try {
       const { runConnectorSync } = await import('./connectors/engine');
       
@@ -7124,7 +7116,7 @@ Provide one actionable recommendation.`
   });
   
   // Legacy endpoint for backward compatibility (delegates to new endpoint)
-  app.post("/api/connector-configs/:id/sync", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/connector-configs/:id/sync", isAuthenticated, async (req: any, res) => {
     try {
       const connector = await storage.getConnector(req.params.id);
       if (!connector) {
@@ -7150,7 +7142,7 @@ Provide one actionable recommendation.`
   });
 
   // Document coding routes
-  app.get("/api/document-codings/:documentId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/document-codings/:documentId", isAuthenticated, async (req, res) => {
     try {
       const coding = await storage.getDocumentCoding(req.params.documentId);
       res.json(coding || null);
@@ -7160,7 +7152,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/document-codings", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/document-codings", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertDocumentCodingSchema.parse(req.body);
       const coding = await storage.saveDocumentCoding({
@@ -7213,7 +7205,7 @@ Provide one actionable recommendation.`
   });
 
   // Regulation routes
-  app.get("/api/regulations", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/regulations", isAuthenticated, async (req, res) => {
     try {
       const regulations = await storage.getRegulations();
       res.json(regulations);
@@ -7223,7 +7215,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/regulations", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/regulations", isAuthenticated, async (req, res) => {
     try {
       const validated = insertRegulationSchema.parse(req.body);
       const regulation = await storage.createRegulation(validated);
@@ -7235,7 +7227,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/regulations/seed", isAuthenticated, requireRole("admin"), async (req, res) => {
+  app.post("/api/regulations/seed", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const { regulationsSeedData } = await import("./seed-regulations");
       const createdRegulations = [];
@@ -7258,7 +7250,7 @@ Provide one actionable recommendation.`
   });
 
   // Compliance Workflow routes
-  app.get("/api/compliance-workflows", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/compliance-workflows", isAuthenticated, async (req, res) => {
     try {
       const { complianceWorkflowTemplates } = await import("./seed-workflows");
       res.json(complianceWorkflowTemplates);
@@ -7268,7 +7260,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.get("/api/investigation-playbooks", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/investigation-playbooks", isAuthenticated, async (req, res) => {
     try {
       const { investigationPlaybookTemplates } = await import("./seed-workflows");
       res.json(investigationPlaybookTemplates);
@@ -7279,7 +7271,7 @@ Provide one actionable recommendation.`
   });
 
   // Sector Rule Pack routes
-  app.get("/api/sector-rule-packs", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/sector-rule-packs", isAuthenticated, async (req, res) => {
     try {
       const packs = await storage.getSectorRulePacks();
       res.json(packs);
@@ -7289,7 +7281,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.get("/api/sector-rule-packs/:id", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/sector-rule-packs/:id", isAuthenticated, async (req, res) => {
     try {
       const pack = await storage.getSectorRulePack(req.params.id);
       if (!pack) {
@@ -7302,7 +7294,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.get("/api/sector-rule-packs/:id/rules", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/sector-rule-packs/:id/rules", isAuthenticated, async (req, res) => {
     try {
       const rules = await storage.getDetectionRulesByPack(req.params.id);
       res.json(rules);
@@ -7312,7 +7304,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/sector-rule-packs", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/sector-rule-packs", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const validated = schema.insertSectorRulePackSchema.parse(req.body);
       const pack = await storage.createSectorRulePack({
@@ -7327,7 +7319,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.patch("/api/sector-rule-packs/:id", isAuthenticated, requireRole("admin"), async (req, res) => {
+  app.patch("/api/sector-rule-packs/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const updates = schema.insertSectorRulePackSchema.partial().parse(req.body);
       const updated = await storage.updateSectorRulePack(req.params.id, updates);
@@ -7342,7 +7334,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/sector-rule-packs/seed", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/sector-rule-packs/seed", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { sectorRulePacksData } = await import("./seed-rule-packs");
       const createdPacks = [];
@@ -7382,7 +7374,7 @@ Provide one actionable recommendation.`
   });
 
   // Interview routes
-  app.get("/api/interviews", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interviews", isAuthenticated, async (req, res) => {
     try {
       const interviews = await storage.getInterviews();
       res.json(interviews);
@@ -7393,7 +7385,7 @@ Provide one actionable recommendation.`
   });
 
   // Get interviews that have recorded responses (completed or partial)
-  app.get("/api/interviews/with-responses", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interviews/with-responses", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.query.caseId as string | undefined;
       const interviewsWithResponses = await storage.getInterviewsWithResponses(caseId);
@@ -7404,7 +7396,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.post("/api/interviews", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.post("/api/interviews", isAuthenticated, async (req, res) => {
     try {
       const validated = insertInterviewSchema.parse(req.body);
       // Generate unique access token for instant link sharing
@@ -7421,7 +7413,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.patch("/api/interviews/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/interviews/:id", isAuthenticated, async (req: any, res) => {
     try {
       // Convert any date strings to Date objects
       const updates = { ...req.body };
@@ -7464,7 +7456,7 @@ Provide one actionable recommendation.`
     }
   });
 
-  app.get("/api/interviews/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interviews/:id", isAuthenticated, async (req, res) => {
     try {
       const interview = await storage.getInterview(req.params.id);
       if (!interview) {
@@ -7478,7 +7470,7 @@ Provide one actionable recommendation.`
   });
 
   // Schedule live interview and send invitation
-  app.post("/api/interviews/schedule-live", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interviews/schedule-live", isAuthenticated, async (req: any, res) => {
     try {
       const {
         caseId,
@@ -7796,7 +7788,7 @@ Provide one actionable recommendation.`
   // ===== Live Interview Session Routes =====
 
   // Get all live interview sessions (with optional filters)
-  app.get("/api/live-interview-sessions", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/live-interview-sessions", isAuthenticated, async (req, res) => {
     try {
       const { caseId, interviewId, status } = req.query;
       const filters: any = {};
@@ -7813,7 +7805,7 @@ Provide one actionable recommendation.`
   });
 
   // Get single live interview session
-  app.get("/api/live-interview-sessions/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/live-interview-sessions/:id", isAuthenticated, async (req, res) => {
     try {
       const session = await storage.getLiveInterviewSession(req.params.id);
       if (!session) {
@@ -7841,7 +7833,7 @@ Provide one actionable recommendation.`
   });
 
   // Create new live interview session
-  app.post("/api/live-interview-sessions", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions", isAuthenticated, async (req: any, res) => {
     try {
       const { interviewId, caseId, scheduledStartTime } = req.body;
       
@@ -7868,7 +7860,7 @@ Provide one actionable recommendation.`
   });
 
   // Update live interview session (status, times, etc.)
-  app.patch("/api/live-interview-sessions/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/live-interview-sessions/:id", isAuthenticated, async (req: any, res) => {
     try {
       const updates: any = { ...req.body };
       
@@ -7899,7 +7891,7 @@ Provide one actionable recommendation.`
   });
 
   // Start live interview session
-  app.post("/api/live-interview-sessions/:id/start", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:id/start", isAuthenticated, async (req: any, res) => {
     try {
       const session = await storage.updateLiveInterviewSession(req.params.id, {
         status: "in_progress",
@@ -7915,7 +7907,7 @@ Provide one actionable recommendation.`
   });
 
   // End live interview session
-  app.post("/api/live-interview-sessions/:id/end", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:id/end", isAuthenticated, async (req: any, res) => {
     try {
       const existingSession = await storage.getLiveInterviewSession(req.params.id);
       if (!existingSession) {
@@ -7955,7 +7947,7 @@ Provide one actionable recommendation.`
       
       // Allow if user is on the case team, is admin/attorney/compliance_officer, or is a participant
       const isParticipant = participants.some(p => p.userId === user.id);
-      const hasRoleAccess = ["admin", "compliance_officer", "attorney"].includes(user.role);
+      const hasRoleAccess = true;
       
       if (!hasRoleAccess && !isParticipant) {
         return res.status(403).json({ message: "Not authorized to join this session" });
@@ -8072,7 +8064,7 @@ Provide one actionable recommendation.`
   // ===== Interview Recording Routes =====
 
   // Get recordings for a session
-  app.get("/api/live-interview-sessions/:sessionId/recordings", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/live-interview-sessions/:sessionId/recordings", isAuthenticated, async (req, res) => {
     try {
       const recordings = await storage.getInterviewRecordings(req.params.sessionId);
       res.json(recordings);
@@ -8083,7 +8075,7 @@ Provide one actionable recommendation.`
   });
 
   // Create recording record
-  app.post("/api/live-interview-sessions/:sessionId/recordings", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:sessionId/recordings", isAuthenticated, async (req: any, res) => {
     try {
       const recordingData = {
         sessionId: req.params.sessionId,
@@ -8104,7 +8096,7 @@ Provide one actionable recommendation.`
   });
 
   // Update recording (status, URLs, duration)
-  app.patch("/api/live-interview-sessions/:sessionId/recordings/:recordingId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/live-interview-sessions/:sessionId/recordings/:recordingId", isAuthenticated, async (req: any, res) => {
     try {
       const recording = await storage.updateInterviewRecording(req.params.recordingId, req.body);
       
@@ -8120,7 +8112,7 @@ Provide one actionable recommendation.`
   });
 
   // Get signed upload URL for recording
-  app.post("/api/live-interview-sessions/:sessionId/recordings/:recordingId/upload-url", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:sessionId/recordings/:recordingId/upload-url", isAuthenticated, async (req: any, res) => {
     try {
       const { sessionId, recordingId } = req.params;
       
@@ -8155,7 +8147,7 @@ Provide one actionable recommendation.`
   });
 
   // Complete recording upload and trigger transcription
-  app.post("/api/live-interview-sessions/:sessionId/recordings/:recordingId/complete-upload", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:sessionId/recordings/:recordingId/complete-upload", isAuthenticated, async (req: any, res) => {
     try {
       const { sessionId, recordingId } = req.params;
       const { objectPath, fileName, fileSize, duration, transcribe = true } = req.body;
@@ -8290,7 +8282,7 @@ Provide one actionable recommendation.`
   // ===== Interview Transcript Segment Routes =====
 
   // Get transcript segments for a session
-  app.get("/api/live-interview-sessions/:sessionId/transcript-segments", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/live-interview-sessions/:sessionId/transcript-segments", isAuthenticated, async (req, res) => {
     try {
       const segments = await storage.getInterviewTranscriptSegments(req.params.sessionId);
       res.json(segments);
@@ -8301,7 +8293,7 @@ Provide one actionable recommendation.`
   });
 
   // Bulk create transcript segments (from transcription service)
-  app.post("/api/live-interview-sessions/:sessionId/transcript-segments/bulk", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:sessionId/transcript-segments/bulk", isAuthenticated, async (req: any, res) => {
     try {
       const segmentsData = req.body.segments.map((seg: any) => ({
         ...seg,
@@ -8321,7 +8313,7 @@ Provide one actionable recommendation.`
   });
 
   // Update transcript segment (AI enrichment, highlighting)
-  app.patch("/api/transcript-segments/:segmentId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/transcript-segments/:segmentId", isAuthenticated, async (req: any, res) => {
     try {
       const segment = await storage.updateInterviewTranscriptSegment(req.params.segmentId, req.body);
       res.json(segment);
@@ -8334,7 +8326,7 @@ Provide one actionable recommendation.`
   // ===== Interview Question Routes =====
 
   // Get questions for a session
-  app.get("/api/live-interview-sessions/:sessionId/questions", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/live-interview-sessions/:sessionId/questions", isAuthenticated, async (req, res) => {
     try {
       const questions = await storage.getInterviewQuestions(req.params.sessionId);
       res.json(questions);
@@ -8345,7 +8337,7 @@ Provide one actionable recommendation.`
   });
 
   // Create question
-  app.post("/api/live-interview-sessions/:sessionId/questions", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:sessionId/questions", isAuthenticated, async (req: any, res) => {
     try {
       const questionData = {
         sessionId: req.params.sessionId,
@@ -8364,7 +8356,7 @@ Provide one actionable recommendation.`
   });
 
   // Update question (mark as asked, add response segments, AI analysis)
-  app.patch("/api/live-interview-sessions/:sessionId/questions/:questionId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/live-interview-sessions/:sessionId/questions/:questionId", isAuthenticated, async (req: any, res) => {
     try {
       const updates: any = { ...req.body };
       if (updates.askedAt) updates.askedAt = new Date(updates.askedAt);
@@ -8381,7 +8373,7 @@ Provide one actionable recommendation.`
   // ===== Interview Analysis Routes =====
 
   // Get analyses for a session
-  app.get("/api/live-interview-sessions/:sessionId/analyses", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/live-interview-sessions/:sessionId/analyses", isAuthenticated, async (req, res) => {
     try {
       const analyses = await storage.getInterviewAnalyses(req.params.sessionId);
       res.json(analyses);
@@ -8392,7 +8384,7 @@ Provide one actionable recommendation.`
   });
 
   // Trigger AI analysis for a completed interview session
-  app.post("/api/live-interview-sessions/:sessionId/analyses", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:sessionId/analyses", isAuthenticated, async (req: any, res) => {
     try {
       const sessionId = req.params.sessionId;
       const analysisType = req.body.analysisType || "comprehensive";
@@ -8496,7 +8488,7 @@ Provide a comprehensive analysis in the following JSON format:
   });
 
   // Get single analysis
-  app.get("/api/interview-analyses/:analysisId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interview-analyses/:analysisId", isAuthenticated, async (req, res) => {
     try {
       const analysis = await storage.getInterviewAnalysis(req.params.analysisId);
       if (!analysis) {
@@ -8512,7 +8504,7 @@ Provide a comprehensive analysis in the following JSON format:
   // ===== Interview Session Notes Routes =====
 
   // Get notes for a session
-  app.get("/api/live-interview-sessions/:sessionId/notes", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/live-interview-sessions/:sessionId/notes", isAuthenticated, async (req, res) => {
     try {
       const notes = await storage.getInterviewSessionNotes(req.params.sessionId);
       res.json(notes);
@@ -8523,7 +8515,7 @@ Provide a comprehensive analysis in the following JSON format:
   });
 
   // Create session note
-  app.post("/api/live-interview-sessions/:sessionId/notes", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:sessionId/notes", isAuthenticated, async (req: any, res) => {
     try {
       const noteData = {
         sessionId: req.params.sessionId,
@@ -8551,7 +8543,7 @@ Provide a comprehensive analysis in the following JSON format:
   });
 
   // Update session note
-  app.patch("/api/live-interview-sessions/:sessionId/notes/:noteId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/live-interview-sessions/:sessionId/notes/:noteId", isAuthenticated, async (req: any, res) => {
     try {
       const note = await storage.updateInterviewSessionNote(req.params.noteId, req.body);
       res.json(note);
@@ -8562,7 +8554,7 @@ Provide a comprehensive analysis in the following JSON format:
   });
 
   // Delete session note
-  app.delete("/api/live-interview-sessions/:sessionId/notes/:noteId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.delete("/api/live-interview-sessions/:sessionId/notes/:noteId", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteInterviewSessionNote(req.params.noteId);
       await logAction(req, "session_note_deleted", "live_interview_session", req.params.sessionId);
@@ -8576,7 +8568,7 @@ Provide a comprehensive analysis in the following JSON format:
   // ===== Interview Evidence Link Routes =====
 
   // Get evidence links for a session
-  app.get("/api/live-interview-sessions/:sessionId/evidence-links", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/live-interview-sessions/:sessionId/evidence-links", isAuthenticated, async (req, res) => {
     try {
       const links = await storage.getInterviewEvidenceLinks(req.params.sessionId);
       res.json(links);
@@ -8587,7 +8579,7 @@ Provide a comprehensive analysis in the following JSON format:
   });
 
   // Create evidence link
-  app.post("/api/live-interview-sessions/:sessionId/evidence-links", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/live-interview-sessions/:sessionId/evidence-links", isAuthenticated, async (req: any, res) => {
     try {
       const linkData = {
         sessionId: req.params.sessionId,
@@ -8617,7 +8609,7 @@ Provide a comprehensive analysis in the following JSON format:
   });
 
   // Delete evidence link
-  app.delete("/api/live-interview-sessions/:sessionId/evidence-links/:linkId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.delete("/api/live-interview-sessions/:sessionId/evidence-links/:linkId", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteInterviewEvidenceLink(req.params.linkId);
       await logAction(req, "evidence_link_deleted", "live_interview_session", req.params.sessionId);
@@ -8629,7 +8621,7 @@ Provide a comprehensive analysis in the following JSON format:
   });
 
   // Interview Template routes
-  app.get("/api/interview-templates", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interview-templates", isAuthenticated, async (req, res) => {
     try {
       const templates = await storage.getInterviewTemplates();
       console.log("[DEBUG] GET /api/interview-templates - Returning", templates.length, "templates");
@@ -8640,7 +8632,7 @@ Provide a comprehensive analysis in the following JSON format:
     }
   });
 
-  app.get("/api/interview-templates/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interview-templates/:id", isAuthenticated, async (req, res) => {
     try {
       const template = await storage.getInterviewTemplate(req.params.id);
       if (!template) {
@@ -8653,7 +8645,7 @@ Provide a comprehensive analysis in the following JSON format:
     }
   });
 
-  app.post("/api/interview-templates", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interview-templates", isAuthenticated, async (req: any, res) => {
     try {
       console.log("[DEBUG] POST /api/interview-templates - Request body:", JSON.stringify(req.body, null, 2));
       const validated = insertInterviewTemplateSchema.parse({
@@ -8671,7 +8663,7 @@ Provide a comprehensive analysis in the following JSON format:
     }
   });
 
-  app.patch("/api/interview-templates/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/interview-templates/:id", isAuthenticated, async (req: any, res) => {
     try {
       const validation = updateInterviewTemplateSchema.safeParse(req.body);
       if (!validation.success) {
@@ -8689,7 +8681,7 @@ Provide a comprehensive analysis in the following JSON format:
     }
   });
 
-  app.post("/api/interview-templates/generate-questions", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interview-templates/generate-questions", isAuthenticated, async (req: any, res) => {
     try {
       const { narrative, category, documentSetIds, tagIds } = req.body;
       
@@ -8797,7 +8789,7 @@ Only return the JSON array, no additional text.`
     }
   });
 
-  app.delete("/api/interview-templates/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.delete("/api/interview-templates/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       await storage.deleteInterviewTemplate(req.params.id);
       await logAction(req, "interview_template_deleted", "interview_template", req.params.id);
@@ -8812,7 +8804,7 @@ Only return the JSON array, no additional text.`
   });
 
   // Interview Invite routes
-  app.get("/api/interview-invites", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interview-invites", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.query.caseId as string | undefined;
       const invites = await storage.getInterviewInvites(caseId);
@@ -8823,7 +8815,7 @@ Only return the JSON array, no additional text.`
     }
   });
 
-  app.get("/api/interview-invites/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interview-invites/:id", isAuthenticated, async (req, res) => {
     try {
       const invite = await storage.getInterviewInvite(req.params.id);
       if (!invite) {
@@ -8836,7 +8828,7 @@ Only return the JSON array, no additional text.`
     }
   });
 
-  app.post("/api/interview-invites", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interview-invites", isAuthenticated, async (req: any, res) => {
     try {
       // Extract sendInstantly before validation (it's not part of the schema)
       const sendInstantly = req.body.sendInstantly === true;
@@ -8956,7 +8948,7 @@ Only return the JSON array, no additional text.`
     }
   });
 
-  app.patch("/api/interview-invites/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/interview-invites/:id", isAuthenticated, async (req: any, res) => {
     try {
       const validation = updateInterviewInviteSchema.safeParse(req.body);
       if (!validation.success) {
@@ -8975,7 +8967,7 @@ Only return the JSON array, no additional text.`
   });
 
   // Send interview invite immediately (for existing draft invites or resend)
-  app.post("/api/interview-invites/:id/send", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interview-invites/:id/send", isAuthenticated, async (req: any, res) => {
     try {
       const invite = await storage.getInterviewInvite(req.params.id);
       if (!invite) {
@@ -9253,7 +9245,7 @@ Only return the JSON array, no additional text.`
   });
 
   // Transcribe a specific interview response (requires authentication)
-  app.post("/api/interview-responses/:responseId/transcribe", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interview-responses/:responseId/transcribe", isAuthenticated, async (req: any, res) => {
     try {
       const { responseId } = req.params;
       
@@ -9307,7 +9299,7 @@ Only return the JSON array, no additional text.`
   });
 
   // Generate AI summary for an interview (requires authentication)
-  app.post("/api/interviews/:interviewId/generate-summary", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interviews/:interviewId/generate-summary", isAuthenticated, async (req: any, res) => {
     try {
       const { interviewId } = req.params;
       
@@ -9380,7 +9372,7 @@ Format your response in clear sections with headers.`
   });
 
   // Ask follow-up questions about an interview
-  app.post("/api/interviews/:interviewId/ask-followup", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interviews/:interviewId/ask-followup", isAuthenticated, async (req: any, res) => {
     try {
       const { interviewId } = req.params;
       const { question, context } = req.body;
@@ -9634,8 +9626,7 @@ Please provide a helpful clarification that helps the witness understand what is
       // - User is admin or compliance_officer (oversight roles)
       // - User is assigned to this specific case (investigator or counsel)
       const hasAccess = 
-        userRole === "admin" ||
-        userRole === "compliance_officer" ||
+        userRole === "super_admin" ||
         caseData.assignedInvestigators?.includes(userId) ||
         caseData.assignedCounsel?.includes(userId);
       
@@ -9887,7 +9878,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Recorded Interview routes
-  app.get("/api/recorded-interviews", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/recorded-interviews", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.query.caseId as string | undefined;
       const interviews = await storage.getRecordedInterviews(caseId);
@@ -9898,7 +9889,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/recorded-interviews/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/recorded-interviews/:id", isAuthenticated, async (req, res) => {
     try {
       const interview = await storage.getRecordedInterview(req.params.id);
       if (!interview) {
@@ -9911,7 +9902,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.post("/api/recorded-interviews", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/recorded-interviews", isAuthenticated, async (req: any, res) => {
     try {
       const validated = insertRecordedInterviewSchema.parse(req.body);
       const interview = await storage.createRecordedInterview(validated);
@@ -9923,7 +9914,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.patch("/api/recorded-interviews/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/recorded-interviews/:id", isAuthenticated, async (req: any, res) => {
     try {
       const validation = updateRecordedInterviewSchema.safeParse(req.body);
       if (!validation.success) {
@@ -9942,7 +9933,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Transcribe recorded interview video
-  app.post("/api/recorded-interviews/:id/transcribe", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/recorded-interviews/:id/transcribe", isAuthenticated, async (req: any, res) => {
     try {
       // Validate request body
       const bodySchema = z.object({
@@ -10048,7 +10039,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Interview Note routes
-  app.get("/api/interview-notes", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/interview-notes", isAuthenticated, async (req, res) => {
     try {
       const recordedInterviewId = req.query.recordedInterviewId as string;
       if (!recordedInterviewId) {
@@ -10062,7 +10053,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.post("/api/interview-notes", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/interview-notes", isAuthenticated, async (req: any, res) => {
     try {
       const validated = insertInterviewNoteSchema.parse({
         ...req.body,
@@ -10077,7 +10068,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.patch("/api/interview-notes/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/interview-notes/:id", isAuthenticated, async (req: any, res) => {
     try {
       const validation = updateInterviewNoteSchema.safeParse(req.body);
       if (!validation.success) {
@@ -10095,7 +10086,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.delete("/api/interview-notes/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.delete("/api/interview-notes/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteInterviewNote(req.params.id);
       await logAction(req, "interview_note_deleted", "interview_note", req.params.id);
@@ -10110,7 +10101,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // ElevenLabs Transcription Route
-  app.post("/api/transcribe", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/transcribe", isAuthenticated, async (req: any, res) => {
     try {
       const { audioUrl } = req.body;
       if (!audioUrl) {
@@ -10160,7 +10151,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Seed demo data
-  app.post("/api/seed-demo", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/seed-demo", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { seedDemoData } = await import("./seed-demo");
       const result = await seedDemoData();
@@ -10511,7 +10502,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Analytics routes
-  app.get("/api/analytics/dashboard", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req: any, res) => {
+  app.get("/api/analytics/dashboard", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const metrics = await storage.getDashboardMetrics(userId);
@@ -10522,7 +10513,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/analytics", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/analytics", isAuthenticated, async (req, res) => {
     try {
       const analytics = await storage.getAnalytics();
       res.json(analytics);
@@ -10532,7 +10523,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/analytics/network", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/analytics/network", isAuthenticated, async (req, res) => {
     try {
       const network = await storage.getNetworkAnalysis();
       res.json(network);
@@ -10542,7 +10533,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/analytics/trending-risks", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/analytics/trending-risks", isAuthenticated, async (req, res) => {
     try {
       const trends = await storage.getTrendingRisks();
       res.json(trends);
@@ -10552,7 +10543,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/analytics/cost-savings", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/analytics/cost-savings", isAuthenticated, async (req, res) => {
     try {
       const costSavings = await storage.getCostSavingsModel();
       res.json(costSavings);
@@ -10563,7 +10554,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Case Efficiency Metrics
-  app.get("/api/analytics/case-efficiency", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/analytics/case-efficiency", isAuthenticated, async (req, res) => {
     try {
       const allCases = await db.select({
         id: schema.cases.id,
@@ -10692,12 +10683,12 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Compliance Health Score
-  app.get("/api/analytics/health-score", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/analytics/health-score", isAuthenticated, async (req, res) => {
     try {
       // 1. Coverage Score (25%) - monitoring coverage
       const totalUsers = await db.select().from(schema.users);
-      const employees = totalUsers.filter(u => u.role === "employee");
-      const vendors = totalUsers.filter(u => u.role === "vendor");
+      const employees = totalUsers.filter(u => u.role === "individual_user" || u.role === "entity_user");
+      const vendors = totalUsers.filter(u => u.role === "individual_user");
       
       // Get users who have communications (are being monitored)
       const monitoredUserIds = await db
@@ -10890,7 +10881,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Communication Analytics Endpoints
-  app.get("/api/analytics/communication-summary", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/analytics/communication-summary", isAuthenticated, async (req: any, res) => {
     try {
       const { min_messages, case_id } = req.query;
       const minMessages = min_messages ? parseInt(min_messages as string, 10) : 1;
@@ -10903,7 +10894,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/analytics/communication-matrix", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/analytics/communication-matrix", isAuthenticated, async (req: any, res) => {
     try {
       const { top_n, case_id } = req.query;
       const topN = top_n ? parseInt(top_n as string, 10) : 10;
@@ -10916,7 +10907,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/analytics/timeline", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/analytics/timeline", isAuthenticated, async (req: any, res) => {
     try {
       const { channel_type, limit: limitParam, case_id } = req.query;
       const channelType = (channel_type as "all" | "email" | "chat") || "all";
@@ -10932,7 +10923,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
 
   // Management Analytics Endpoints (Admin Only)
   // Generate employee communication analytics using Gemini + OpenAI
-  app.post("/api/management/employee-analytics", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/management/employee-analytics", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { employeeId, dateRangeStart, dateRangeEnd } = req.body;
       const requestedBy = req.user.claims.sub;
@@ -10971,7 +10962,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Get employee analytics by ID
-  app.get("/api/management/employee-analytics/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.get("/api/management/employee-analytics/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const { id } = req.params;
       
@@ -11014,7 +11005,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
 
   // List all employees for analytics selector
   // Returns users whose emails appear in communications table
-  app.get("/api/management/employees", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.get("/api/management/employees", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       // Get all distinct senders
       const senders = await db
@@ -11105,7 +11096,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   // Regulatory Change Tracking & Analysis Routes
   
   // Get all regulatory changes
-  app.get("/api/regulatory-changes", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/regulatory-changes", isAuthenticated, async (req, res) => {
     try {
       const changes = await db
         .select()
@@ -11119,7 +11110,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Get specific regulatory change with details
-  app.get("/api/regulatory-changes/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/regulatory-changes/:id", isAuthenticated, async (req, res) => {
     try {
       const [change] = await db
         .select()
@@ -11138,7 +11129,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Create new regulatory change
-  app.post("/api/regulatory-changes", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/regulatory-changes", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const validated = insertRegulatoryChangeSchema.parse(req.body);
@@ -11162,7 +11153,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Update regulatory change
-  app.patch("/api/regulatory-changes/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/regulatory-changes/:id", isAuthenticated, async (req, res) => {
     try {
       const validated = insertRegulatoryChangeSchema.partial().parse(req.body);
       
@@ -11188,7 +11179,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Run impact analysis for a regulatory change
-  app.post("/api/regulatory-changes/:id/impact-analysis", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.post("/api/regulatory-changes/:id/impact-analysis", isAuthenticated, async (req, res) => {
     try {
       const [change] = await db
         .select()
@@ -11255,7 +11246,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Run compliance gap analysis
-  app.post("/api/regulatory-changes/:id/gap-analysis", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.post("/api/regulatory-changes/:id/gap-analysis", isAuthenticated, async (req, res) => {
     try {
       const [change] = await db
         .select()
@@ -11762,7 +11753,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   // ===== GRC (Governance, Risk & Compliance) API Endpoints =====
 
   // GRC Risks endpoints
-  app.get("/api/grc/risks", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/risks", isAuthenticated, async (req, res) => {
     try {
       const { status, category } = req.query;
       
@@ -11792,7 +11783,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/grc/risks/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/risks/:id", isAuthenticated, async (req, res) => {
     try {
       const [risk] = await db
         .select()
@@ -11810,7 +11801,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.post("/api/grc/risks", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/risks", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const validated = insertGrcRiskSchema.parse(req.body);
@@ -11837,7 +11828,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.patch("/api/grc/risks/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/risks/:id", isAuthenticated, async (req, res) => {
     try {
       const validated = insertGrcRiskSchema.partial().parse(req.body);
       
@@ -11877,7 +11868,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.delete("/api/grc/risks/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/risks/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.grcRisks)
@@ -11897,7 +11888,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Ask About GRC Risks - AI-powered GRC knowledge assistant (Emma RAG integration)
-  app.post("/api/grc/ask", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req: any, res) => {
+  app.post("/api/grc/ask", isAuthenticated, async (req: any, res) => {
     try {
       const { askAboutGrc } = await import("./services/grc-risk-knowledge-service");
       const userId = req.user?.claims?.sub || req.user?.id || "anonymous";
@@ -11927,7 +11918,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // GRC Controls endpoints
-  app.get("/api/grc/controls", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/controls", isAuthenticated, async (req, res) => {
     try {
       const { effectiveness, testStatus, controlType } = req.query;
       
@@ -11961,7 +11952,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/grc/controls/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/controls/:id", isAuthenticated, async (req, res) => {
     try {
       const [control] = await db
         .select()
@@ -11979,7 +11970,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.post("/api/grc/controls", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/controls", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const validated = insertGrcControlSchema.parse(req.body);
@@ -12002,7 +11993,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.patch("/api/grc/controls/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/controls/:id", isAuthenticated, async (req, res) => {
     try {
       const validated = insertGrcControlSchema.partial().parse(req.body);
       
@@ -12027,7 +12018,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.delete("/api/grc/controls/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/controls/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.grcControls)
@@ -12047,7 +12038,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // GRC Incidents endpoints
-  app.get("/api/grc/incidents", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/incidents", isAuthenticated, async (req, res) => {
     try {
       const { status, severity, incidentType } = req.query;
       
@@ -12081,7 +12072,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.get("/api/grc/incidents/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/incidents/:id", isAuthenticated, async (req, res) => {
     try {
       const [incident] = await db
         .select()
@@ -12127,7 +12118,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.patch("/api/grc/incidents/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.patch("/api/grc/incidents/:id", isAuthenticated, async (req, res) => {
     try {
       const validated = insertGrcIncidentSchema.partial().parse(req.body);
       
@@ -12152,7 +12143,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.delete("/api/grc/incidents/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/incidents/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.grcIncidents)
@@ -12172,7 +12163,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // GRC Dashboard metrics endpoint
-  app.get("/api/grc/dashboard", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/dashboard", isAuthenticated, async (req, res) => {
     try {
       // Get risk metrics
       const risks = await db.select().from(schema.grcRisks);
@@ -12231,7 +12222,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     return `RA-${year}-${nextNumber}`;
   }
   
-  app.get("/api/grc/risk-assessments", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/risk-assessments", isAuthenticated, async (req, res) => {
     try {
       const assessments = await db.select().from(schema.grcRiskAssessments).orderBy(desc(schema.grcRiskAssessments.createdAt));
       res.json(assessments);
@@ -12240,7 +12231,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.get("/api/grc/risk-assessments/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/risk-assessments/:id", isAuthenticated, async (req, res) => {
     try {
       const [assessment] = await db.select().from(schema.grcRiskAssessments).where(eq(schema.grcRiskAssessments.id, req.params.id));
       if (!assessment) return res.status(404).json({ message: "Assessment not found" });
@@ -12250,7 +12241,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.post("/api/grc/risk-assessments", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/risk-assessments", isAuthenticated, async (req: any, res) => {
     try {
       const assessmentNumber = await generateAssessmentNumber();
       const validated = schema.insertGrcRiskAssessmentSchema.parse(req.body);
@@ -12267,7 +12258,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.patch("/api/grc/risk-assessments/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/risk-assessments/:id", isAuthenticated, async (req, res) => {
     try {
       const [updated] = await db.update(schema.grcRiskAssessments)
         .set({ ...req.body, updatedAt: new Date() })
@@ -12280,7 +12271,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.delete("/api/grc/risk-assessments/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/risk-assessments/:id", isAuthenticated, async (req, res) => {
     try {
       await db.delete(schema.grcRiskAssessments).where(eq(schema.grcRiskAssessments.id, req.params.id));
       res.status(204).send();
@@ -12299,7 +12290,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     return `KRI-${catCode}-${nextNumber}`;
   }
   
-  app.get("/api/grc/kris", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/kris", isAuthenticated, async (req, res) => {
     try {
       const kris = await db.select().from(schema.grcKeyRiskIndicators).orderBy(desc(schema.grcKeyRiskIndicators.createdAt));
       res.json(kris);
@@ -12308,7 +12299,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.get("/api/grc/kris/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/kris/:id", isAuthenticated, async (req, res) => {
     try {
       const [kri] = await db.select().from(schema.grcKeyRiskIndicators).where(eq(schema.grcKeyRiskIndicators.id, req.params.id));
       if (!kri) return res.status(404).json({ message: "KRI not found" });
@@ -12318,7 +12309,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.post("/api/grc/kris", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/kris", isAuthenticated, async (req: any, res) => {
     try {
       const kriCode = await generateKriCode(req.body.category || "GEN");
       const [kri] = await db.insert(schema.grcKeyRiskIndicators).values({
@@ -12333,7 +12324,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.patch("/api/grc/kris/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/kris/:id", isAuthenticated, async (req, res) => {
     try {
       const [updated] = await db.update(schema.grcKeyRiskIndicators)
         .set({ ...req.body, updatedAt: new Date() })
@@ -12346,7 +12337,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.delete("/api/grc/kris/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/kris/:id", isAuthenticated, async (req, res) => {
     try {
       await db.delete(schema.grcKeyRiskIndicators).where(eq(schema.grcKeyRiskIndicators.id, req.params.id));
       res.status(204).send();
@@ -12356,7 +12347,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
   
   // KRI Measurements
-  app.get("/api/grc/kris/:id/measurements", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/kris/:id/measurements", isAuthenticated, async (req, res) => {
     try {
       const measurements = await db.select().from(schema.grcKriMeasurements)
         .where(eq(schema.grcKriMeasurements.kriId, req.params.id))
@@ -12367,7 +12358,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.post("/api/grc/kris/:id/measurements", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/kris/:id/measurements", isAuthenticated, async (req: any, res) => {
     try {
       const [measurement] = await db.insert(schema.grcKriMeasurements).values({
         ...req.body,
@@ -12394,7 +12385,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
 
   // ===== RISK APPETITE API =====
   
-  app.get("/api/grc/risk-appetite", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/risk-appetite", isAuthenticated, async (req, res) => {
     try {
       const appetites = await db.select().from(schema.grcRiskAppetite).orderBy(schema.grcRiskAppetite.category);
       res.json(appetites);
@@ -12403,7 +12394,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.get("/api/grc/risk-appetite/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/risk-appetite/:id", isAuthenticated, async (req, res) => {
     try {
       const [appetite] = await db.select().from(schema.grcRiskAppetite).where(eq(schema.grcRiskAppetite.id, req.params.id));
       if (!appetite) return res.status(404).json({ message: "Risk appetite not found" });
@@ -12413,7 +12404,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.post("/api/grc/risk-appetite", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/risk-appetite", isAuthenticated, async (req: any, res) => {
     try {
       const [appetite] = await db.insert(schema.grcRiskAppetite).values({
         ...req.body,
@@ -12425,7 +12416,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.patch("/api/grc/risk-appetite/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/risk-appetite/:id", isAuthenticated, async (req, res) => {
     try {
       const [updated] = await db.update(schema.grcRiskAppetite)
         .set({ ...req.body, updatedAt: new Date() })
@@ -12438,7 +12429,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.delete("/api/grc/risk-appetite/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/risk-appetite/:id", isAuthenticated, async (req, res) => {
     try {
       await db.delete(schema.grcRiskAppetite).where(eq(schema.grcRiskAppetite.id, req.params.id));
       res.status(204).send();
@@ -12459,7 +12450,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     return `BTA-${year}-${nextNumber}`;
   }
   
-  app.get("/api/grc/bow-tie", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/bow-tie", isAuthenticated, async (req, res) => {
     try {
       const analyses = await db.select().from(schema.grcBowTieAnalyses).orderBy(desc(schema.grcBowTieAnalyses.createdAt));
       res.json(analyses);
@@ -12468,7 +12459,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.get("/api/grc/bow-tie/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/bow-tie/:id", isAuthenticated, async (req, res) => {
     try {
       const [analysis] = await db.select().from(schema.grcBowTieAnalyses).where(eq(schema.grcBowTieAnalyses.id, req.params.id));
       if (!analysis) return res.status(404).json({ message: "Bow-tie analysis not found" });
@@ -12480,7 +12471,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.post("/api/grc/bow-tie", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/bow-tie", isAuthenticated, async (req: any, res) => {
     try {
       const analysisNumber = await generateBowTieNumber();
       const [analysis] = await db.insert(schema.grcBowTieAnalyses).values({
@@ -12494,7 +12485,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.patch("/api/grc/bow-tie/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/bow-tie/:id", isAuthenticated, async (req, res) => {
     try {
       const [updated] = await db.update(schema.grcBowTieAnalyses)
         .set({ ...req.body, updatedAt: new Date() })
@@ -12507,7 +12498,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.delete("/api/grc/bow-tie/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/bow-tie/:id", isAuthenticated, async (req, res) => {
     try {
       await db.delete(schema.grcBowTieNodes).where(eq(schema.grcBowTieNodes.analysisId, req.params.id));
       await db.delete(schema.grcBowTieAnalyses).where(eq(schema.grcBowTieAnalyses.id, req.params.id));
@@ -12518,7 +12509,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
   
   // Bow-tie nodes
-  app.post("/api/grc/bow-tie/:id/nodes", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/bow-tie/:id/nodes", isAuthenticated, async (req: any, res) => {
     try {
       const [node] = await db.insert(schema.grcBowTieNodes).values({
         ...req.body,
@@ -12530,7 +12521,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.patch("/api/grc/bow-tie/:analysisId/nodes/:nodeId", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/bow-tie/:analysisId/nodes/:nodeId", isAuthenticated, async (req, res) => {
     try {
       const [updated] = await db.update(schema.grcBowTieNodes)
         .set({ ...req.body, updatedAt: new Date() })
@@ -12543,7 +12534,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.delete("/api/grc/bow-tie/:analysisId/nodes/:nodeId", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/bow-tie/:analysisId/nodes/:nodeId", isAuthenticated, async (req, res) => {
     try {
       await db.delete(schema.grcBowTieNodes).where(eq(schema.grcBowTieNodes.id, req.params.nodeId));
       res.status(204).send();
@@ -12564,7 +12555,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     return `BCP-${year}-${nextNumber}`;
   }
   
-  app.get("/api/grc/bcp", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/bcp", isAuthenticated, async (req, res) => {
     try {
       const plans = await db.select().from(schema.grcBusinessContinuityPlans).orderBy(desc(schema.grcBusinessContinuityPlans.createdAt));
       res.json(plans);
@@ -12573,7 +12564,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.get("/api/grc/bcp/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req, res) => {
+  app.get("/api/grc/bcp/:id", isAuthenticated, async (req, res) => {
     try {
       const [plan] = await db.select().from(schema.grcBusinessContinuityPlans).where(eq(schema.grcBusinessContinuityPlans.id, req.params.id));
       if (!plan) return res.status(404).json({ message: "BCP not found" });
@@ -12587,7 +12578,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.post("/api/grc/bcp", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/bcp", isAuthenticated, async (req: any, res) => {
     try {
       const planNumber = await generateBcpNumber();
       const [plan] = await db.insert(schema.grcBusinessContinuityPlans).values({
@@ -12602,7 +12593,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.patch("/api/grc/bcp/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/bcp/:id", isAuthenticated, async (req, res) => {
     try {
       const [updated] = await db.update(schema.grcBusinessContinuityPlans)
         .set({ ...req.body, updatedAt: new Date() })
@@ -12615,7 +12606,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.delete("/api/grc/bcp/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/bcp/:id", isAuthenticated, async (req, res) => {
     try {
       await db.delete(schema.grcBcpRecoverySteps).where(eq(schema.grcBcpRecoverySteps.planId, req.params.id));
       await db.delete(schema.grcBusinessContinuityPlans).where(eq(schema.grcBusinessContinuityPlans.id, req.params.id));
@@ -12626,7 +12617,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
   
   // BCP Recovery Steps
-  app.post("/api/grc/bcp/:id/steps", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/grc/bcp/:id/steps", isAuthenticated, async (req: any, res) => {
     try {
       const [step] = await db.insert(schema.grcBcpRecoverySteps).values({
         ...req.body,
@@ -12638,7 +12629,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.patch("/api/grc/bcp/:planId/steps/:stepId", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/grc/bcp/:planId/steps/:stepId", isAuthenticated, async (req, res) => {
     try {
       const [updated] = await db.update(schema.grcBcpRecoverySteps)
         .set({ ...req.body, updatedAt: new Date() })
@@ -12651,7 +12642,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
   
-  app.delete("/api/grc/bcp/:planId/steps/:stepId", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/grc/bcp/:planId/steps/:stepId", isAuthenticated, async (req, res) => {
     try {
       await db.delete(schema.grcBcpRecoverySteps).where(eq(schema.grcBcpRecoverySteps.id, req.params.stepId));
       res.status(204).send();
@@ -12693,7 +12684,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   }
 
   // Get all deals (with optional search)
-  app.get("/api/deals", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals", isAuthenticated, async (req, res) => {
     try {
       const { search } = req.query;
       
@@ -12786,7 +12777,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Get single deal
-  app.get("/api/deals/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.get("/api/deals/:id", isAuthenticated, async (req: any, res) => {
     try {
       const [deal] = await db
         .select()
@@ -12830,7 +12821,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Create new deal
-  app.post("/api/deals", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals", isAuthenticated, async (req: any, res) => {
     try {
       const dealNumber = await generateDealNumber();
       const validated = schema.insertDealSchema.parse(req.body);
@@ -12873,7 +12864,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Update deal
-  app.patch("/api/deals/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.patch("/api/deals/:id", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertDealSchema.partial().parse(req.body);
       
@@ -12899,7 +12890,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Delete deal
-  app.delete("/api/deals/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/deals/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.deals)
@@ -12919,7 +12910,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Get deal participants
-  app.get("/api/deals/:dealId/participants", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/participants", isAuthenticated, async (req, res) => {
     try {
       const participants = await db
         .select()
@@ -12933,7 +12924,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Add deal participant
-  app.post("/api/deals/:dealId/participants", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/participants", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertDealParticipantSchema.parse({
         ...req.body,
@@ -12956,7 +12947,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Remove deal participant
-  app.delete("/api/deals/:dealId/participants/:participantId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/deals/:dealId/participants/:participantId", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dealParticipants)
@@ -12975,7 +12966,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Get deal milestones
-  app.get("/api/deals/:dealId/milestones", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/milestones", isAuthenticated, async (req, res) => {
     try {
       const milestones = await db
         .select()
@@ -12990,7 +12981,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Create deal milestone
-  app.post("/api/deals/:dealId/milestones", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/milestones", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertDealMilestoneSchema.parse({
         ...req.body,
@@ -13010,7 +13001,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Update deal milestone
-  app.patch("/api/deals/:dealId/milestones/:milestoneId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.patch("/api/deals/:dealId/milestones/:milestoneId", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertDealMilestoneSchema.partial().parse(req.body);
       
@@ -13043,7 +13034,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Delete deal milestone
-  app.delete("/api/deals/:dealId/milestones/:milestoneId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/deals/:dealId/milestones/:milestoneId", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dealMilestones)
@@ -13062,7 +13053,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Deal Title Events CRUD
-  app.get("/api/deals/:dealId/title-events", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/title-events", isAuthenticated, async (req, res) => {
     try {
       const events = await db
         .select()
@@ -13076,7 +13067,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.post("/api/deals/:dealId/title-events", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/title-events", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertDealTitleEventSchema.parse({
         ...req.body,
@@ -13093,7 +13084,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.patch("/api/deals/:dealId/title-events/:eventId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.patch("/api/deals/:dealId/title-events/:eventId", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertDealTitleEventSchema.partial().parse(req.body);
       const { dealId: _ignoredDealId, ...updateFields } = validated;
@@ -13112,7 +13103,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.delete("/api/deals/:dealId/title-events/:eventId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/deals/:dealId/title-events/:eventId", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dealTitleEvents)
@@ -13128,7 +13119,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.post("/api/deals/:dealId/title-events/extract", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/title-events/extract", isAuthenticated, async (req: any, res) => {
     try {
       const { extractTitleHistory } = await import("./services/title-history-service");
       const result = await extractTitleHistory(req.params.dealId);
@@ -13140,7 +13131,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Deal Meeting Notes CRUD
-  app.get("/api/deals/:dealId/meeting-notes", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/meeting-notes", isAuthenticated, async (req, res) => {
     try {
       const notes = await db.select()
         .from(schema.dealMeetingNotes)
@@ -13153,7 +13144,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.post("/api/deals/:dealId/meeting-notes", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/meeting-notes", isAuthenticated, async (req: any, res) => {
     try {
       const { title, meetingDate, source, sourceUrl, transcript, summary, keyPoints, actionItems, decisions, attendees, duration, tags } = req.body;
       const [note] = await db.insert(schema.dealMeetingNotes).values({
@@ -13168,7 +13159,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.patch("/api/deals/:dealId/meeting-notes/:noteId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/deals/:dealId/meeting-notes/:noteId", isAuthenticated, async (req: any, res) => {
     try {
       const allowedFields = ["title", "meetingDate", "source", "sourceUrl", "transcript", "summary", "keyPoints", "actionItems", "decisions", "attendees", "duration", "tags"];
       const updateData: Record<string, any> = { updatedAt: new Date() };
@@ -13192,7 +13183,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.delete("/api/deals/:dealId/meeting-notes/:noteId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/deals/:dealId/meeting-notes/:noteId", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db.delete(schema.dealMeetingNotes)
         .where(and(
@@ -13208,7 +13199,7 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
     }
   });
 
-  app.post("/api/deals/:dealId/meeting-notes/:noteId/summarize", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/meeting-notes/:noteId/summarize", isAuthenticated, async (req: any, res) => {
     try {
       const [note] = await db.select()
         .from(schema.dealMeetingNotes)
@@ -13272,7 +13263,7 @@ ${note.transcript.slice(0, 20000)}`
     }
   });
 
-  app.get("/api/deals/:dealId/issues", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/issues", isAuthenticated, async (req, res) => {
     try {
       const issues = await db.select()
         .from(schema.dealIssues)
@@ -13284,7 +13275,7 @@ ${note.transcript.slice(0, 20000)}`
     }
   });
 
-  app.post("/api/deals/:dealId/issues", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/issues", isAuthenticated, async (req: any, res) => {
     try {
       const [issue] = await db.insert(schema.dealIssues).values({
         dealId: req.params.dealId,
@@ -13302,7 +13293,7 @@ ${note.transcript.slice(0, 20000)}`
     }
   });
 
-  app.patch("/api/deals/:dealId/issues/:issueId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/deals/:dealId/issues/:issueId", isAuthenticated, async (req: any, res) => {
     try {
       const updateData: Record<string, any> = { updatedAt: new Date() };
       if (req.body.title !== undefined) updateData.title = req.body.title;
@@ -13331,7 +13322,7 @@ ${note.transcript.slice(0, 20000)}`
     }
   });
 
-  app.delete("/api/deals/:dealId/issues/:issueId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/deals/:dealId/issues/:issueId", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dealIssues)
@@ -13346,7 +13337,7 @@ ${note.transcript.slice(0, 20000)}`
   });
 
   // Business Transactions Dashboard metrics
-  app.get("/api/transactions/dashboard", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/transactions/dashboard", isAuthenticated, async (req, res) => {
     try {
       const allDeals = await db.select().from(schema.deals);
       
@@ -13395,7 +13386,7 @@ ${note.transcript.slice(0, 20000)}`
   // ===== Request Lists (DRL) API Endpoints =====
 
   // Get all request lists for a deal
-  app.get("/api/deals/:dealId/request-lists", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/request-lists", isAuthenticated, async (req, res) => {
     try {
       const lists = await db
         .select()
@@ -13410,7 +13401,7 @@ ${note.transcript.slice(0, 20000)}`
   });
 
   // Get a single request list with items
-  app.get("/api/request-lists/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/request-lists/:id", isAuthenticated, async (req, res) => {
     try {
       const [list] = await db
         .select()
@@ -13435,7 +13426,7 @@ ${note.transcript.slice(0, 20000)}`
   });
 
   // Create a new request list
-  app.post("/api/deals/:dealId/request-lists", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/request-lists", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = schema.insertRequestListSchema.parse({
         ...req.body,
@@ -13458,7 +13449,7 @@ ${note.transcript.slice(0, 20000)}`
   });
 
   // Update a request list
-  app.patch("/api/request-lists/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/request-lists/:id", isAuthenticated, async (req: any, res) => {
     try {
       const [updated] = await db
         .update(schema.requestLists)
@@ -13481,7 +13472,7 @@ ${note.transcript.slice(0, 20000)}`
   });
 
   // Delete a request list
-  app.delete("/api/request-lists/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/request-lists/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.requestLists)
@@ -13499,7 +13490,7 @@ ${note.transcript.slice(0, 20000)}`
     }
   });
 
-  app.post("/api/deals/:dealId/diligence/upload", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), upload.single("file"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/diligence/upload", isAuthenticated, upload.single("file"), async (req: any, res) => {
     try {
       const { dealId } = req.params;
       const file = req.file;
@@ -13605,7 +13596,7 @@ ${note.transcript.slice(0, 20000)}`
   // ===== Request Items API Endpoints =====
 
   // Create a new request item
-  app.post("/api/request-lists/:listId/items", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/request-lists/:listId/items", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = schema.insertRequestItemSchema.parse({
         ...req.body,
@@ -13625,7 +13616,7 @@ ${note.transcript.slice(0, 20000)}`
   });
 
   // Update a request item
-  app.patch("/api/request-items/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/request-items/:id", isAuthenticated, async (req: any, res) => {
     try {
       const updateData: any = {
         ...req.body,
@@ -13659,7 +13650,7 @@ ${note.transcript.slice(0, 20000)}`
   });
 
   // Delete a request item
-  app.delete("/api/request-items/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/request-items/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.requestItems)
@@ -13678,7 +13669,7 @@ ${note.transcript.slice(0, 20000)}`
   });
 
   // Bulk update request items (for batch status changes)
-  app.post("/api/request-items/bulk-update", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/request-items/bulk-update", isAuthenticated, async (req: any, res) => {
     try {
       const { itemIds, updates } = req.body;
       
@@ -13715,7 +13706,7 @@ ${note.transcript.slice(0, 20000)}`
   // ===== Deal Templates API Endpoints =====
   
   // Get all deal templates
-  app.get("/api/deal-templates", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req, res) => {
+  app.get("/api/deal-templates", isAuthenticated, async (req, res) => {
     try {
       const { transactionType, isActive, isSystemTemplate } = req.query;
       const filters: { transactionType?: string; isActive?: boolean; isSystemTemplate?: boolean } = {};
@@ -13733,7 +13724,7 @@ ${note.transcript.slice(0, 20000)}`
   });
   
   // Get deal template by ID with full details (categories and items)
-  app.get("/api/deal-templates/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req, res) => {
+  app.get("/api/deal-templates/:id", isAuthenticated, async (req, res) => {
     try {
       const result = await storage.getDealTemplateWithDetails(req.params.id);
       if (!result) {
@@ -13747,7 +13738,7 @@ ${note.transcript.slice(0, 20000)}`
   });
   
   // Get deal template by slug
-  app.get("/api/deal-templates/slug/:slug", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req, res) => {
+  app.get("/api/deal-templates/slug/:slug", isAuthenticated, async (req, res) => {
     try {
       const template = await storage.getDealTemplateBySlug(req.params.slug);
       if (!template) {
@@ -13763,7 +13754,7 @@ ${note.transcript.slice(0, 20000)}`
   });
   
   // Create a new deal template (admin only)
-  app.post("/api/deal-templates", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/deal-templates", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const template = await storage.createDealTemplate({
         ...req.body,
@@ -13777,7 +13768,7 @@ ${note.transcript.slice(0, 20000)}`
   });
   
   // Update a deal template (admin only)
-  app.patch("/api/deal-templates/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.patch("/api/deal-templates/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       const template = await storage.updateDealTemplate(req.params.id, req.body);
       res.json(template);
@@ -13788,7 +13779,7 @@ ${note.transcript.slice(0, 20000)}`
   });
   
   // Delete a deal template (admin only)
-  app.delete("/api/deal-templates/:id", isAuthenticated, requireRole("admin"), async (req, res) => {
+  app.delete("/api/deal-templates/:id", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       await storage.deleteDealTemplate(req.params.id);
       res.status(204).send();
@@ -13820,7 +13811,7 @@ ${note.transcript.slice(0, 20000)}`
     }
   });
   
-  app.post("/api/deal-templates/generate", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deal-templates/generate", isAuthenticated, async (req: any, res) => {
     try {
       const { description, transactionType } = req.body;
       if (!description) {
@@ -13947,7 +13938,7 @@ Guidelines:
     }
   });
 
-  app.post("/api/deal-templates/seed-pe-templates", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/deal-templates/seed-pe-templates", isAuthenticated, async (req: any, res) => {
     try {
       const { seedEquityDDTemplate, seedDebtDDTemplate } = await import("./scripts/seed-deal-templates");
       const equity = await seedEquityDDTemplate();
@@ -14011,7 +14002,7 @@ Guidelines:
   });
 
   // Apply AI-detected deal type and optionally auto-apply matching template
-  app.post("/api/deals/:dealId/apply-detected-type", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/apply-detected-type", isAuthenticated, async (req: any, res) => {
     try {
       const { applyDetectedDealType } = await import("./services/deal-intelligence-service");
       const result = await applyDetectedDealType(req.params.dealId);
@@ -14023,7 +14014,7 @@ Guidelines:
   });
 
   // Suggest checklist template based on uploaded documents
-  app.post("/api/deals/:dealId/suggest-checklist", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/suggest-checklist", isAuthenticated, async (req: any, res) => {
     try {
       const { suggestChecklistTemplate } = await import("./services/deal-intelligence-service");
       const result = await suggestChecklistTemplate(req.params.dealId);
@@ -14064,7 +14055,7 @@ Guidelines:
   });
 
   // Dismiss checklist suggestion
-  app.post("/api/deals/:dealId/dismiss-checklist-suggestion", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/dismiss-checklist-suggestion", isAuthenticated, async (req: any, res) => {
     try {
       const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, req.params.dealId));
       if (!deal) return res.status(404).json({ message: "Deal not found" });
@@ -14097,7 +14088,7 @@ Guidelines:
   });
 
   // Dismiss detected deal type suggestion
-  app.post("/api/deals/:dealId/dismiss-detected-type", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/dismiss-detected-type", isAuthenticated, async (req: any, res) => {
     try {
       const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, req.params.dealId));
       if (!deal) return res.status(404).json({ message: "Deal not found" });
@@ -14114,7 +14105,7 @@ Guidelines:
     }
   });
 
-  app.post("/api/deals/:dealId/milestones/auto-populate", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/milestones/auto-populate", isAuthenticated, async (req: any, res) => {
     try {
       const { autoPopulateMilestones } = await import("./services/deal-intelligence-service");
       const result = await autoPopulateMilestones(req.params.dealId);
@@ -14125,7 +14116,7 @@ Guidelines:
     }
   });
 
-  app.post("/api/deals/:dealId/populate-overview", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/populate-overview", isAuthenticated, async (req: any, res) => {
     try {
       const { populateDealOverview } = await import("./services/deal-intelligence-service");
       const result = await populateDealOverview(req.params.dealId);
@@ -14136,7 +14127,7 @@ Guidelines:
     }
   });
 
-  app.post("/api/deals/:dealId/extract-parties", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/extract-parties", isAuthenticated, async (req: any, res) => {
     try {
       const { extractDealParties } = await import("./services/deal-intelligence-service");
       const result = await extractDealParties(req.params.dealId);
@@ -14148,7 +14139,7 @@ Guidelines:
   });
 
   // Apply template to a deal - creates a checklist
-  app.post("/api/deals/:dealId/apply-template/:templateId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/apply-template/:templateId", isAuthenticated, async (req: any, res) => {
     try {
       const { dealId, templateId } = req.params;
       const { effectiveDate, targetCloseDate } = req.body;
@@ -14211,7 +14202,7 @@ Guidelines:
   });
   
   // Get deal checklists
-  app.get("/api/deals/:dealId/checklists", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/checklists", isAuthenticated, async (req, res) => {
     try {
       const checklists = await storage.getDealChecklists(req.params.dealId);
       res.json(checklists);
@@ -14222,7 +14213,7 @@ Guidelines:
   });
   
   // Get checklist items with template info
-  app.get("/api/deal-checklists/:checklistId/items", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deal-checklists/:checklistId/items", isAuthenticated, async (req, res) => {
     try {
       const items = await storage.getDealChecklistItems(req.params.checklistId);
       
@@ -14278,7 +14269,7 @@ Guidelines:
   });
   
   // Get single deal checklist with template info
-  app.get("/api/deal-checklists/:checklistId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deal-checklists/:checklistId", isAuthenticated, async (req, res) => {
     try {
       const checklist = await storage.getDealChecklist(req.params.checklistId);
       if (!checklist) {
@@ -14310,7 +14301,7 @@ Guidelines:
   });
   
   // Update checklist item status
-  app.patch("/api/deal-checklist-items/:itemId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/deal-checklist-items/:itemId", isAuthenticated, async (req: any, res) => {
     try {
       const item = await storage.updateDealChecklistItem(req.params.itemId, {
         ...req.body,
@@ -14338,7 +14329,7 @@ Guidelines:
   });
   
   // Get documents linked to a checklist item
-  app.get("/api/deal-checklist-items/:itemId/documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deal-checklist-items/:itemId/documents", isAuthenticated, async (req, res) => {
     try {
       const docs = await storage.getChecklistItemDocuments(req.params.itemId);
       
@@ -14364,7 +14355,7 @@ Guidelines:
   });
   
   // Link a document to a checklist item
-  app.post("/api/deal-checklist-items/:itemId/documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deal-checklist-items/:itemId/documents", isAuthenticated, async (req: any, res) => {
     try {
       const { documentId, autoMatched, matchConfidence, notes } = req.body;
       
@@ -14385,7 +14376,7 @@ Guidelines:
   });
   
   // Unlink a document from a checklist item
-  app.delete("/api/checklist-item-documents/:linkId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.delete("/api/checklist-item-documents/:linkId", isAuthenticated, async (req, res) => {
     try {
       await db.delete(schema.checklistItemDocuments)
         .where(eq(schema.checklistItemDocuments.id, req.params.linkId));
@@ -14397,7 +14388,7 @@ Guidelines:
   });
   
   // Run auto-matching for a checklist - matches documents to items based on keywords
-  app.post("/api/deal-checklists/:checklistId/auto-match", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deal-checklists/:checklistId/auto-match", isAuthenticated, async (req: any, res) => {
     try {
       const { checklistId } = req.params;
       
@@ -14703,7 +14694,7 @@ Guidelines:
   });
   
   // Get all documents for a deal (across all data rooms)
-  app.get("/api/deals/:dealId/documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.get("/api/deals/:dealId/documents", isAuthenticated, async (req: any, res) => {
     try {
       const { dealId } = req.params;
       
@@ -14733,7 +14724,7 @@ Guidelines:
   // ===== Data Rooms API Endpoints =====
 
   // Get all data rooms for a deal
-  app.get("/api/deals/:dealId/data-rooms", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/deals/:dealId/data-rooms", isAuthenticated, async (req: any, res) => {
     try {
       const visibleIds = await getVisibleUserIds(req);
       if (visibleIds) {
@@ -14777,7 +14768,7 @@ Guidelines:
   });
 
   // Get all data rooms (both deal-linked and standalone) with metadata
-  app.get("/api/data-rooms", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req, res) => {
+  app.get("/api/data-rooms", isAuthenticated, async (req, res) => {
     try {
       const visibleIds = await getVisibleUserIds(req);
       let whereClause;
@@ -14836,7 +14827,7 @@ Guidelines:
   });
 
   // Create a standalone data room (no deal association)
-  app.post("/api/data-rooms", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/data-rooms", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = schema.insertDataRoomSchema.parse({
         ...req.body,
@@ -14859,7 +14850,7 @@ Guidelines:
   });
 
   // Get a single data room with folders and documents
-  app.get("/api/data-rooms/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/data-rooms/:id", isAuthenticated, async (req: any, res) => {
     try {
       const [room] = await db
         .select()
@@ -14895,7 +14886,7 @@ Guidelines:
   });
 
   // Create a new data room
-  app.post("/api/deals/:dealId/data-rooms", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/data-rooms", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = schema.insertDataRoomSchema.parse({
         ...req.body,
@@ -14918,7 +14909,7 @@ Guidelines:
   });
 
   // Update a data room
-  app.patch("/api/data-rooms/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/data-rooms/:id", isAuthenticated, async (req: any, res) => {
     try {
       const [updated] = await db
         .update(schema.dataRooms)
@@ -14941,7 +14932,7 @@ Guidelines:
   });
 
   // Delete a data room
-  app.delete("/api/data-rooms/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/data-rooms/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dataRooms)
@@ -14962,7 +14953,7 @@ Guidelines:
   // ===== Data Room Folders API Endpoints =====
 
   // Create a folder
-  app.post("/api/data-rooms/:roomId/folders", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/data-rooms/:roomId/folders", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = schema.insertDataRoomFolderSchema.parse({
         ...req.body,
@@ -14982,7 +14973,7 @@ Guidelines:
   });
 
   // Update a folder
-  app.patch("/api/data-room-folders/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/data-room-folders/:id", isAuthenticated, async (req: any, res) => {
     try {
       const [updated] = await db
         .update(schema.dataRoomFolders)
@@ -15005,7 +14996,7 @@ Guidelines:
   });
 
   // Delete a folder
-  app.delete("/api/data-room-folders/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/data-room-folders/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dataRoomFolders)
@@ -15026,7 +15017,7 @@ Guidelines:
   // ===== Data Room Documents API Endpoints =====
 
   // Upload documents to a data room (with file upload and ZIP extraction)
-  app.post("/api/data-rooms/:roomId/upload", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), upload.array("files", 100), async (req: any, res) => {
+  app.post("/api/data-rooms/:roomId/upload", isAuthenticated, upload.array("files", 100), async (req: any, res) => {
     try {
       const { roomId } = req.params;
       // Normalize folderId - treat empty string, "null", "undefined" as null
@@ -15428,7 +15419,7 @@ Guidelines:
   });
 
   // Admin endpoint to re-process pending OCR documents
-  app.post("/api/data-room-documents/reprocess-ocr", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+  app.post("/api/data-room-documents/reprocess-ocr", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
       // Find all documents with pending or processing status
       const pendingDocs = await db
@@ -15493,7 +15484,7 @@ Guidelines:
   }
 
   // Create a document record (for document upload tracking)
-  app.post("/api/data-rooms/:roomId/documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/data-rooms/:roomId/documents", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = schema.insertDataRoomDocumentSchema.parse({
         ...req.body,
@@ -15516,7 +15507,7 @@ Guidelines:
   });
 
   // Update a document
-  app.patch("/api/data-room-documents/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/data-room-documents/:id", isAuthenticated, async (req: any, res) => {
     try {
       const [updated] = await db
         .update(schema.dataRoomDocuments)
@@ -15613,7 +15604,7 @@ Guidelines:
         .from(schema.users)
         .where(eq(schema.users.id, userId));
 
-      const hasAccess = access || (dbUser && ['admin', 'attorney', 'external_counsel', 'compliance_officer'].includes(dbUser.role || ''));
+      const hasAccess = access || !!dbUser;
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied to this document" });
       }
@@ -15706,7 +15697,7 @@ Guidelines:
         .from(schema.users)
         .where(eq(schema.users.id, userId));
 
-      const hasAccess = access || (dbUser && ['admin', 'attorney', 'external_counsel', 'compliance_officer'].includes(dbUser.role || ''));
+      const hasAccess = access || !!dbUser;
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied to this document" });
       }
@@ -15742,7 +15733,7 @@ Guidelines:
   });
 
   // Delete a document
-  app.delete("/api/data-room-documents/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/data-room-documents/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dataRoomDocuments)
@@ -15763,7 +15754,7 @@ Guidelines:
   // ===== Data Room Access Control API Endpoints =====
   
   // Get all guests in a data room
-  app.get("/api/data-rooms/:roomId/guests", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/data-rooms/:roomId/guests", isAuthenticated, async (req, res) => {
     try {
       const guests = await db
         .select({
@@ -15784,7 +15775,7 @@ Guidelines:
   });
 
   // Invite a guest to a data room
-  app.post("/api/data-rooms/:roomId/guests", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/data-rooms/:roomId/guests", isAuthenticated, async (req: any, res) => {
     try {
       const { email, firstName, lastName, company, phone, groupId, role, accessNotes, accessExpiresAt } = req.body;
       
@@ -15883,7 +15874,7 @@ Guidelines:
   });
 
   // Get all access records for a data room (users and guests)
-  app.get("/api/data-rooms/:roomId/access", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/data-rooms/:roomId/access", isAuthenticated, async (req, res) => {
     try {
       // Get user access
       const userAccess = await db
@@ -15923,7 +15914,7 @@ Guidelines:
   });
 
   // Update access record
-  app.patch("/api/data-room-access/:accessId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/data-room-access/:accessId", isAuthenticated, async (req: any, res) => {
     try {
       const { groupId, role, accessExpiresAt, accessNotes, status } = req.body;
 
@@ -15963,7 +15954,7 @@ Guidelines:
   });
 
   // Revoke access
-  app.delete("/api/data-room-access/:accessId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/data-room-access/:accessId", isAuthenticated, async (req: any, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dataRoomAccess)
@@ -15996,7 +15987,7 @@ Guidelines:
   // ===== Data Room Groups API Endpoints =====
 
   // Get all groups for a data room
-  app.get("/api/data-rooms/:roomId/groups", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/data-rooms/:roomId/groups", isAuthenticated, async (req, res) => {
     try {
       const groups = await db
         .select()
@@ -16011,7 +16002,7 @@ Guidelines:
   });
 
   // Create a permission group
-  app.post("/api/data-rooms/:roomId/groups", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/data-rooms/:roomId/groups", isAuthenticated, async (req: any, res) => {
     try {
       const groupData = schema.insertDataRoomGroupSchema.parse({
         ...req.body,
@@ -16043,7 +16034,7 @@ Guidelines:
   });
 
   // Update a permission group
-  app.patch("/api/data-room-groups/:groupId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/data-room-groups/:groupId", isAuthenticated, async (req: any, res) => {
     try {
       const [updated] = await db
         .update(schema.dataRoomGroups)
@@ -16076,7 +16067,7 @@ Guidelines:
   });
 
   // Delete a permission group
-  app.delete("/api/data-room-groups/:groupId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/data-room-groups/:groupId", isAuthenticated, async (req: any, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dataRoomGroups)
@@ -16109,7 +16100,7 @@ Guidelines:
   // ===== Folder Permissions API Endpoints =====
 
   // Get folder permissions
-  app.get("/api/data-room-folders/:folderId/permissions", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/data-room-folders/:folderId/permissions", isAuthenticated, async (req, res) => {
     try {
       const permissions = await db
         .select({
@@ -16128,7 +16119,7 @@ Guidelines:
   });
 
   // Set folder permissions
-  app.post("/api/data-room-folders/:folderId/permissions", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/data-room-folders/:folderId/permissions", isAuthenticated, async (req: any, res) => {
     try {
       const { groupId, accessId, isVisible, canView, canDownload, canUpload, canDelete, applyToSubfolders } = req.body;
 
@@ -16155,7 +16146,7 @@ Guidelines:
   });
 
   // Update folder permission
-  app.patch("/api/data-room-folder-permissions/:permId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/data-room-folder-permissions/:permId", isAuthenticated, async (req: any, res) => {
     try {
       const [updated] = await db
         .update(schema.dataRoomFolderPermissions)
@@ -16175,7 +16166,7 @@ Guidelines:
   });
 
   // Delete folder permission
-  app.delete("/api/data-room-folder-permissions/:permId", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/data-room-folder-permissions/:permId", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.dataRoomFolderPermissions)
@@ -16196,7 +16187,7 @@ Guidelines:
   // ===== Data Room Audit Log API Endpoints =====
 
   // Get audit log for a data room
-  app.get("/api/data-rooms/:roomId/audit-log", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.get("/api/data-rooms/:roomId/audit-log", isAuthenticated, async (req, res) => {
     try {
       const { action, resourceType, limit: limitParam, offset: offsetParam } = req.query;
       const limit = parseInt(limitParam as string) || 100;
@@ -16231,7 +16222,7 @@ Guidelines:
   });
 
   // Add internal user to data room
-  app.post("/api/data-rooms/:roomId/users", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/data-rooms/:roomId/users", isAuthenticated, async (req: any, res) => {
     try {
       const { userId, groupId, role, accessNotes, accessExpiresAt } = req.body;
       
@@ -16288,7 +16279,7 @@ Guidelines:
   // ===== Due Diligence Checklists API Endpoints =====
 
   // Get all checklists for a deal
-  app.get("/api/deals/:dealId/checklists", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/checklists", isAuthenticated, async (req, res) => {
     try {
       const checklists = await db
         .select()
@@ -16303,7 +16294,7 @@ Guidelines:
   });
 
   // Get a single checklist with items
-  app.get("/api/checklists/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/checklists/:id", isAuthenticated, async (req, res) => {
     try {
       const [checklist] = await db
         .select()
@@ -16333,7 +16324,7 @@ Guidelines:
   });
 
   // Create a new checklist
-  app.post("/api/deals/:dealId/checklists", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/checklists", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = schema.insertDDChecklistSchema.parse({
         ...req.body,
@@ -16356,7 +16347,7 @@ Guidelines:
   });
 
   // Update a checklist
-  app.patch("/api/checklists/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/checklists/:id", isAuthenticated, async (req: any, res) => {
     try {
       const [updated] = await db
         .update(schema.ddChecklists)
@@ -16379,7 +16370,7 @@ Guidelines:
   });
 
   // Delete a checklist
-  app.delete("/api/checklists/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/checklists/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.ddChecklists)
@@ -16400,7 +16391,7 @@ Guidelines:
   // ===== Checklist Items API Endpoints =====
 
   // Create a checklist item
-  app.post("/api/checklists/:checklistId/items", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/checklists/:checklistId/items", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = schema.insertDDChecklistItemSchema.parse({
         ...req.body,
@@ -16420,7 +16411,7 @@ Guidelines:
   });
 
   // Update a checklist item
-  app.patch("/api/checklist-items/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/checklist-items/:id", isAuthenticated, async (req: any, res) => {
     try {
       const updateData: any = {
         ...req.body,
@@ -16466,7 +16457,7 @@ Guidelines:
   });
 
   // Delete a checklist item
-  app.delete("/api/checklist-items/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/checklist-items/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.ddChecklistItems)
@@ -16490,7 +16481,7 @@ Guidelines:
   const transactionSearchService = await import("./services/transaction-search-service");
 
   // Search documents within a deal
-  app.post("/api/deals/:dealId/search", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/search", isAuthenticated, async (req: any, res) => {
     try {
       const { query, filters } = req.body;
       
@@ -16512,7 +16503,7 @@ Guidelines:
   });
 
   // Search documents across all transactions (enterprise-wide)
-  app.post("/api/transactions/search", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/transactions/search", isAuthenticated, async (req: any, res) => {
     try {
       const { query, dealIds } = req.body;
       
@@ -16533,7 +16524,7 @@ Guidelines:
   });
 
   // Summarize a document
-  app.post("/api/documents/:documentId/summarize", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/documents/:documentId/summarize", isAuthenticated, async (req: any, res) => {
     try {
       const summary = await transactionSearchService.summarizeDocument(req.params.documentId);
       res.json({ summary });
@@ -16544,7 +16535,7 @@ Guidelines:
   });
 
   // Compare two documents
-  app.post("/api/documents/compare", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/documents/compare", isAuthenticated, async (req: any, res) => {
     try {
       const { documentId1, documentId2 } = req.body;
       
@@ -16561,7 +16552,7 @@ Guidelines:
   });
 
   // Analyze financials from a deal's documents
-  app.post("/api/deals/:dealId/analyze-financials", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/analyze-financials", isAuthenticated, async (req: any, res) => {
     try {
       const analysis = await transactionSearchService.analyzeFinancials(req.params.dealId);
       res.json(analysis);
@@ -16572,7 +16563,7 @@ Guidelines:
   });
 
   // Extract contract terms from a document
-  app.post("/api/documents/:documentId/extract-terms", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/documents/:documentId/extract-terms", isAuthenticated, async (req: any, res) => {
     try {
       const terms = await transactionSearchService.extractContractTerms(req.params.documentId);
       res.json(terms);
@@ -16583,7 +16574,7 @@ Guidelines:
   });
 
   // Upload and index a document to a data room
-  app.post("/api/data-rooms/:roomId/documents/upload", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/data-rooms/:roomId/documents/upload", isAuthenticated, async (req: any, res) => {
     try {
       // Get the data room to find the deal
       const [room] = await db
@@ -16642,7 +16633,7 @@ Guidelines:
   });
 
   // Get document index status
-  app.get("/api/documents/:documentId/index-status", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/documents/:documentId/index-status", isAuthenticated, async (req, res) => {
     try {
       const [doc] = await db
         .select()
@@ -16666,7 +16657,7 @@ Guidelines:
   });
 
   // Re-index a document
-  app.post("/api/documents/:documentId/reindex", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/documents/:documentId/reindex", isAuthenticated, async (req: any, res) => {
     try {
       const [doc] = await db
         .select()
@@ -16704,7 +16695,7 @@ Guidelines:
   // ===== DOCUMENT CLASSIFICATION - Intelligent Document Processing =====
 
   // Get all document type definitions
-  app.get("/api/document-types", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/document-types", isAuthenticated, async (req, res) => {
     try {
       const { documentClassifierService } = await import("./services/document-classifier-service");
       const types = await documentClassifierService.getDocumentTypes();
@@ -16716,7 +16707,7 @@ Guidelines:
   });
 
   // Classify a document
-  app.post("/api/documents/:documentId/classify", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/documents/:documentId/classify", isAuthenticated, async (req: any, res) => {
     try {
       const { dealId } = req.body;
       const documentId = req.params.documentId;
@@ -16752,7 +16743,7 @@ Guidelines:
   });
 
   // Get classification for a document
-  app.get("/api/documents/:documentId/classification", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/documents/:documentId/classification", isAuthenticated, async (req, res) => {
     try {
       const { documentClassifierService } = await import("./services/document-classifier-service");
       const classification = await documentClassifierService.getClassification(req.params.documentId);
@@ -16769,7 +16760,7 @@ Guidelines:
   });
 
   // Get all classifications for a deal
-  app.get("/api/deals/:dealId/classifications", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/classifications", isAuthenticated, async (req, res) => {
     try {
       const { documentClassifierService } = await import("./services/document-classifier-service");
       const classifications = await documentClassifierService.getClassificationsForDeal(req.params.dealId);
@@ -16781,7 +16772,7 @@ Guidelines:
   });
 
   // Reclassify a document
-  app.post("/api/documents/:documentId/reclassify", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/documents/:documentId/reclassify", isAuthenticated, async (req: any, res) => {
     try {
       const { newClassification } = req.body;
       const documentId = req.params.documentId;
@@ -16804,7 +16795,7 @@ Guidelines:
   // ===== DEAL TERMS - Extraction and Management =====
 
   // Get deal terms for a deal
-  app.get("/api/deals/:dealId/terms", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/terms", isAuthenticated, async (req, res) => {
     try {
       const { dealTermsService } = await import("./services/deal-terms-service");
       const terms = await dealTermsService.getDealTerms(req.params.dealId);
@@ -16822,7 +16813,7 @@ Guidelines:
   });
 
   // Extract deal terms from a document (LOI/Term Sheet)
-  app.post("/api/deals/:dealId/terms/extract", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/terms/extract", isAuthenticated, async (req: any, res) => {
     try {
       const { documentId, sourceType = 'loi' } = req.body;
       const dealId = req.params.dealId;
@@ -16864,7 +16855,7 @@ Guidelines:
     }
   });
 
-  app.post("/api/deals/:dealId/terms/extract-all", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/terms/extract-all", isAuthenticated, async (req: any, res) => {
     try {
       const { dealTermsService } = await import("./services/deal-terms-service");
       const result = await dealTermsService.extractFromAllDocuments(req.params.dealId);
@@ -16887,7 +16878,7 @@ Guidelines:
   });
 
   // Update deal terms
-  app.patch("/api/deals/:dealId/terms", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/deals/:dealId/terms", isAuthenticated, async (req: any, res) => {
     try {
       const dealId = req.params.dealId;
       const updates = req.body;
@@ -16922,7 +16913,7 @@ Guidelines:
   // ===== DOCUMENT GENERATION =====
 
   // Get available document types for generation
-  app.get("/api/document-generation/types", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/document-generation/types", isAuthenticated, async (req, res) => {
     const { documentGenerationService } = await import("./services/document-generation-service");
     const dealType = req.query.dealType as string | undefined;
     const representationRole = req.query.representationRole as string | undefined;
@@ -16931,7 +16922,7 @@ Guidelines:
   });
 
   // Get generated documents for a deal
-  app.get("/api/deals/:dealId/generated-documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/deals/:dealId/generated-documents", isAuthenticated, async (req, res) => {
     try {
       const { documentGenerationService } = await import("./services/document-generation-service");
       const generatedDocs = await documentGenerationService.getGeneratedDocuments(req.params.dealId);
@@ -16943,7 +16934,7 @@ Guidelines:
   });
 
   // Generate a document for a deal
-  app.post("/api/deals/:dealId/generate-document", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/deals/:dealId/generate-document", isAuthenticated, async (req: any, res) => {
     try {
       const { documentType, customInstructions } = req.body;
       const dealId = req.params.dealId;
@@ -16973,7 +16964,7 @@ Guidelines:
   });
 
   // Get a single generated document
-  app.get("/api/generated-documents/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/generated-documents/:id", isAuthenticated, async (req, res) => {
     try {
       const { documentGenerationService } = await import("./services/document-generation-service");
       const doc = await documentGenerationService.getGeneratedDocument(req.params.id);
@@ -16990,7 +16981,7 @@ Guidelines:
   });
 
   // Update generated document status
-  app.patch("/api/generated-documents/:id/status", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/generated-documents/:id/status", isAuthenticated, async (req: any, res) => {
     try {
       const { status } = req.body;
 
@@ -17010,7 +17001,7 @@ Guidelines:
   // ===== BACKGROUND RESEARCH - AI-Powered Preliminary Due Diligence =====
 
   // Get all background research projects
-  app.get("/api/background-research", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.get("/api/background-research", isAuthenticated, async (req: any, res) => {
     try {
       const { dealId, caseId, status } = req.query;
       
@@ -17034,7 +17025,7 @@ Guidelines:
   });
 
   // Get single background research by ID
-  app.get("/api/background-research/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/background-research/:id", isAuthenticated, async (req, res) => {
     try {
       const [research] = await db
         .select()
@@ -17053,7 +17044,7 @@ Guidelines:
   });
 
   // Create new background research project
-  app.post("/api/background-research", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/background-research", isAuthenticated, async (req: any, res) => {
     try {
       const { 
         dealId, 
@@ -17096,7 +17087,7 @@ Guidelines:
   });
 
   // Update background research project
-  app.patch("/api/background-research/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/background-research/:id", isAuthenticated, async (req: any, res) => {
     try {
       const [existing] = await db
         .select()
@@ -17138,7 +17129,7 @@ Guidelines:
   });
 
   // Delete background research project
-  app.delete("/api/background-research/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/background-research/:id", isAuthenticated, async (req, res) => {
     try {
       const [existing] = await db
         .select()
@@ -17161,7 +17152,7 @@ Guidelines:
   });
 
   // Get documents for a research project
-  app.get("/api/background-research/:researchId/documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/background-research/:researchId/documents", isAuthenticated, async (req, res) => {
     try {
       const documents = await db
         .select()
@@ -17177,7 +17168,7 @@ Guidelines:
   });
 
   // Upload document to research project
-  app.post("/api/background-research/:researchId/documents", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), upload.single("file"), async (req: any, res) => {
+  app.post("/api/background-research/:researchId/documents", isAuthenticated, upload.single("file"), async (req: any, res) => {
     try {
       const [research] = await db
         .select()
@@ -17339,7 +17330,7 @@ Guidelines:
   }
 
   // Delete research document
-  app.delete("/api/research-documents/:id", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.delete("/api/research-documents/:id", isAuthenticated, async (req, res) => {
     try {
       const [doc] = await db
         .select()
@@ -17384,7 +17375,7 @@ Guidelines:
   });
 
   // Get findings for a research project
-  app.get("/api/background-research/:researchId/findings", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/background-research/:researchId/findings", isAuthenticated, async (req, res) => {
     try {
       const { module, severity, isKeyFinding } = req.query;
       
@@ -17416,7 +17407,7 @@ Guidelines:
   });
 
   // Update a finding (mark verified, add notes, dismiss)
-  app.patch("/api/research-findings/:id", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/research-findings/:id", isAuthenticated, async (req: any, res) => {
     try {
       const { isVerified, userNotes, isDismissed, isKeyFinding, requiresFollowUp } = req.body;
       
@@ -17444,7 +17435,7 @@ Guidelines:
   });
 
   // Get entities for a research project
-  app.get("/api/background-research/:researchId/entities", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/background-research/:researchId/entities", isAuthenticated, async (req, res) => {
     try {
       const { entityType } = req.query;
       
@@ -17466,7 +17457,7 @@ Guidelines:
   });
 
   // Get follow-up questions for a research project
-  app.get("/api/background-research/:researchId/follow-up-questions", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req, res) => {
+  app.get("/api/background-research/:researchId/follow-up-questions", isAuthenticated, async (req, res) => {
     try {
       const { isAnswered, priority, category } = req.query;
       
@@ -17495,7 +17486,7 @@ Guidelines:
   });
 
   // Answer a follow-up question
-  app.patch("/api/research-follow-up-questions/:id/answer", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.patch("/api/research-follow-up-questions/:id/answer", isAuthenticated, async (req: any, res) => {
     try {
       const { answer } = req.body;
       
@@ -17522,7 +17513,7 @@ Guidelines:
   });
 
   // Start research analysis (triggers AI processing)
-  app.post("/api/background-research/:id/analyze", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res) => {
+  app.post("/api/background-research/:id/analyze", isAuthenticated, async (req: any, res) => {
     try {
       const [research] = await db
         .select()
@@ -18097,7 +18088,7 @@ Include:
   }
 
   // Vendors endpoints
-  app.get("/api/vendors", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/vendors", isAuthenticated, async (req, res) => {
     try {
       const { status, tier } = req.query;
       
@@ -18127,7 +18118,7 @@ Include:
     }
   });
 
-  app.get("/api/vendors/:id", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/vendors/:id", isAuthenticated, async (req, res) => {
     try {
       const [vendor] = await db
         .select()
@@ -18145,7 +18136,7 @@ Include:
     }
   });
 
-  app.post("/api/vendors", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/vendors", isAuthenticated, async (req, res) => {
     try {
       if (!req.user || !req.user.id) {
         console.error("User authentication error - req.user:", req.user);
@@ -18174,7 +18165,7 @@ Include:
     }
   });
 
-  app.patch("/api/vendors/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/vendors/:id", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertVendorSchema.partial().parse(req.body);
       
@@ -18199,7 +18190,7 @@ Include:
     }
   });
 
-  app.delete("/api/vendors/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.delete("/api/vendors/:id", isAuthenticated, async (req, res) => {
     try {
       const [deleted] = await db
         .delete(schema.vendors)
@@ -18219,7 +18210,7 @@ Include:
   });
 
   // Vendor Risk Assessments endpoints
-  app.get("/api/vendors/:vendorId/assessments", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/vendors/:vendorId/assessments", isAuthenticated, async (req, res) => {
     try {
       const assessments = await db
         .select()
@@ -18234,7 +18225,7 @@ Include:
     }
   });
 
-  app.post("/api/vendors/:vendorId/assessments", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/vendors/:vendorId/assessments", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertVendorRiskAssessmentSchema.parse(req.body);
       
@@ -18291,7 +18282,7 @@ Include:
   });
 
   // Vendor Onboarding Workflows endpoints
-  app.get("/api/vendors/:vendorId/onboarding", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/vendors/:vendorId/onboarding", isAuthenticated, async (req, res) => {
     try {
       const [workflow] = await db
         .select()
@@ -18307,7 +18298,7 @@ Include:
     }
   });
 
-  app.post("/api/vendors/:vendorId/onboarding", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/vendors/:vendorId/onboarding", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertVendorOnboardingWorkflowSchema.parse(req.body);
       
@@ -18337,7 +18328,7 @@ Include:
     }
   });
 
-  app.patch("/api/vendors/:vendorId/onboarding/:workflowId", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/vendors/:vendorId/onboarding/:workflowId", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertVendorOnboardingWorkflowSchema.partial().parse(req.body);
       
@@ -18385,7 +18376,7 @@ Include:
   });
 
   // Vendor Risk Alerts endpoints
-  app.get("/api/vendor-risk-alerts", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/vendor-risk-alerts", isAuthenticated, async (req, res) => {
     try {
       const { status, severity } = req.query;
       
@@ -18415,7 +18406,7 @@ Include:
     }
   });
 
-  app.patch("/api/vendor-risk-alerts/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/vendor-risk-alerts/:id", isAuthenticated, async (req, res) => {
     try {
       const validated = schema.insertVendorRiskAlertSchema.partial().parse(req.body);
       
@@ -18441,7 +18432,7 @@ Include:
   });
 
   // Vendor Risk Dashboard endpoint
-  app.get("/api/vendors/dashboard/metrics", isAuthenticated, requireRole("admin", "compliance_officer", "auditor"), async (req, res) => {
+  app.get("/api/vendors/dashboard/metrics", isAuthenticated, async (req, res) => {
     try {
       const vendors = await db.select().from(schema.vendors);
       const assessments = await db.select().from(schema.vendorRiskAssessments);
@@ -18502,7 +18493,7 @@ Include:
   });
 
   // Privilege Review Queue
-  app.get("/api/privilege-review-queue", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.get("/api/privilege-review-queue", isAuthenticated, async (req, res) => {
     try {
       const queue = await storage.getPrivilegeReviewQueue();
       res.json(queue);
@@ -18513,7 +18504,7 @@ Include:
   });
 
   // Assert privilege on communications (creates pending assertion)
-  app.post("/api/communications/:id/assert-privilege", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/communications/:id/assert-privilege", isAuthenticated, async (req: any, res) => {
     try {
       const updates = {
         privilegeStatus: req.body.privilegeStatus,
@@ -18533,7 +18524,7 @@ Include:
   });
 
   // Review privilege assertion on communications (attorney approval)
-  app.patch("/api/communications/:id/privilege", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/communications/:id/privilege", isAuthenticated, async (req: any, res) => {
     try {
       const updates = {
         privilegeReviewStatus: req.body.privilegeReviewStatus,
@@ -18551,7 +18542,7 @@ Include:
   });
 
   // Assert privilege on interviews (creates pending assertion)
-  app.post("/api/interviews/:id/assert-privilege", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/interviews/:id/assert-privilege", isAuthenticated, async (req: any, res) => {
     try {
       const updates = {
         privilegeStatus: req.body.privilegeStatus,
@@ -18571,7 +18562,7 @@ Include:
   });
 
   // Review privilege assertion on interviews (attorney approval)
-  app.patch("/api/interviews/:id/privilege", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/interviews/:id/privilege", isAuthenticated, async (req: any, res) => {
     try {
       const updates = {
         privilegeReviewStatus: req.body.privilegeReviewStatus,
@@ -18589,7 +18580,7 @@ Include:
   });
 
   // Assert privilege on cases (creates pending assertion)
-  app.post("/api/cases/:id/assert-privilege", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:id/assert-privilege", isAuthenticated, async (req: any, res) => {
     try {
       const updates = {
         privilegeStatus: req.body.privilegeStatus,
@@ -18609,7 +18600,7 @@ Include:
   });
 
   // Review privilege assertion on cases (attorney approval)
-  app.patch("/api/cases/:id/privilege", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/cases/:id/privilege", isAuthenticated, async (req: any, res) => {
     try {
       const updates = {
         privilegeReviewStatus: req.body.privilegeReviewStatus,
@@ -18627,7 +18618,7 @@ Include:
   });
 
   // Privilege Logs (eDiscovery)
-  app.get("/api/privilege-logs", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/privilege-logs", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.query.caseId as string | undefined;
       const logs = await storage.getPrivilegeLogs(caseId);
@@ -18638,7 +18629,7 @@ Include:
     }
   });
 
-  app.post("/api/privilege-logs", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/privilege-logs", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertPrivilegeLogSchema.parse({
         ...req.body,
@@ -18653,7 +18644,7 @@ Include:
     }
   });
 
-  app.patch("/api/privilege-logs/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/privilege-logs/:id", isAuthenticated, async (req: any, res) => {
     try {
       const updates = {
         ...req.body,
@@ -18669,7 +18660,7 @@ Include:
     }
   });
 
-  app.delete("/api/privilege-logs/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/privilege-logs/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deletePrivilegeLog(req.params.id);
       await logAction(req, "privilege_log_deleted", "privilege_log", req.params.id);
@@ -18681,7 +18672,7 @@ Include:
   });
 
   // Share document with another user (creates notification)
-  app.post("/api/communications/:id/share", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "auditor"), async (req: any, res) => {
+  app.post("/api/communications/:id/share", isAuthenticated, async (req: any, res) => {
     try {
       const { recipientUserIds, message } = req.body;
       
@@ -18770,7 +18761,7 @@ Include:
   });
 
   // Attorney Review Queue
-  app.get("/api/attorney-review-queue", isAuthenticated, requireRole("admin", "attorney"), async (req, res) => {
+  app.get("/api/attorney-review-queue", isAuthenticated, async (req, res) => {
     try {
       const queue = await storage.getAttorneyReviewQueue();
       res.json(queue);
@@ -18781,7 +18772,7 @@ Include:
   });
 
   // Remediation Plans
-  app.get("/api/remediation-plans", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/remediation-plans", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.query.caseId as string | undefined;
       const plans = await storage.getRemediationPlans(caseId);
@@ -18792,7 +18783,7 @@ Include:
     }
   });
 
-  app.get("/api/remediation-plans/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/remediation-plans/:id", isAuthenticated, async (req, res) => {
     try {
       const plan = await storage.getRemediationPlan(req.params.id);
       if (!plan) {
@@ -18805,7 +18796,7 @@ Include:
     }
   });
 
-  app.post("/api/remediation-plans", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/remediation-plans", isAuthenticated, async (req: any, res) => {
     try {
       const planData = { ...req.body, createdBy: req.user.id };
       const plan = await storage.createRemediationPlan(planData);
@@ -18817,7 +18808,7 @@ Include:
     }
   });
 
-  app.patch("/api/remediation-plans/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/remediation-plans/:id", isAuthenticated, async (req: any, res) => {
     try {
       const plan = await storage.updateRemediationPlan(req.params.id, req.body);
       await logAction(req, "remediation_plan_updated", "remediation_plan", plan.id, req.body);
@@ -18828,7 +18819,7 @@ Include:
     }
   });
 
-  app.delete("/api/remediation-plans/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/remediation-plans/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteRemediationPlan(req.params.id);
       await logAction(req, "remediation_plan_deleted", "remediation_plan", req.params.id);
@@ -18840,7 +18831,7 @@ Include:
   });
 
   // Regulatory Strategies
-  app.get("/api/regulatory-strategies", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/regulatory-strategies", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.query.caseId as string | undefined;
       const strategies = await storage.getRegulatoryStrategies(caseId);
@@ -18851,7 +18842,7 @@ Include:
     }
   });
 
-  app.get("/api/regulatory-strategies/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/regulatory-strategies/:id", isAuthenticated, async (req, res) => {
     try {
       const strategy = await storage.getRegulatoryStrategy(req.params.id);
       if (!strategy) {
@@ -18864,7 +18855,7 @@ Include:
     }
   });
 
-  app.post("/api/regulatory-strategies", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/regulatory-strategies", isAuthenticated, async (req: any, res) => {
     try {
       const strategyData = { ...req.body, createdBy: req.user.id };
       const strategy = await storage.createRegulatoryStrategy(strategyData);
@@ -18876,7 +18867,7 @@ Include:
     }
   });
 
-  app.patch("/api/regulatory-strategies/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/regulatory-strategies/:id", isAuthenticated, async (req: any, res) => {
     try {
       const strategy = await storage.updateRegulatoryStrategy(req.params.id, req.body);
       await logAction(req, "regulatory_strategy_updated", "regulatory_strategy", strategy.id, req.body);
@@ -18887,7 +18878,7 @@ Include:
     }
   });
 
-  app.delete("/api/regulatory-strategies/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/regulatory-strategies/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteRegulatoryStrategy(req.params.id);
       await logAction(req, "regulatory_strategy_deleted", "regulatory_strategy", req.params.id);
@@ -18899,7 +18890,7 @@ Include:
   });
 
   // Disclosure Playbooks
-  app.get("/api/disclosure-playbooks", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/disclosure-playbooks", isAuthenticated, async (req, res) => {
     try {
       const caseId = req.query.caseId as string | undefined;
       const playbooks = await storage.getDisclosurePlaybooks(caseId);
@@ -18910,7 +18901,7 @@ Include:
     }
   });
 
-  app.get("/api/disclosure-playbooks/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/disclosure-playbooks/:id", isAuthenticated, async (req, res) => {
     try {
       const playbook = await storage.getDisclosurePlaybook(req.params.id);
       if (!playbook) {
@@ -18923,7 +18914,7 @@ Include:
     }
   });
 
-  app.post("/api/disclosure-playbooks", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/disclosure-playbooks", isAuthenticated, async (req: any, res) => {
     try {
       const playbookData = { ...req.body, createdBy: req.user.id };
       const playbook = await storage.createDisclosurePlaybook(playbookData);
@@ -18935,7 +18926,7 @@ Include:
     }
   });
 
-  app.patch("/api/disclosure-playbooks/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/disclosure-playbooks/:id", isAuthenticated, async (req: any, res) => {
     try {
       const playbook = await storage.updateDisclosurePlaybook(req.params.id, req.body);
       await logAction(req, "disclosure_playbook_updated", "disclosure_playbook", playbook.id, req.body);
@@ -18946,7 +18937,7 @@ Include:
     }
   });
 
-  app.delete("/api/disclosure-playbooks/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/disclosure-playbooks/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteDisclosurePlaybook(req.params.id);
       await logAction(req, "disclosure_playbook_deleted", "disclosure_playbook", req.params.id);
@@ -18958,7 +18949,7 @@ Include:
   });
 
   // Board Reports
-  app.get("/api/board-reports", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/board-reports", isAuthenticated, async (req, res) => {
     try {
       const reports = await storage.getBoardReports();
       res.json(reports);
@@ -18968,7 +18959,7 @@ Include:
     }
   });
 
-  app.get("/api/board-reports/:id", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req, res) => {
+  app.get("/api/board-reports/:id", isAuthenticated, async (req, res) => {
     try {
       const report = await storage.getBoardReport(req.params.id);
       if (!report) {
@@ -18981,7 +18972,7 @@ Include:
     }
   });
 
-  app.post("/api/board-reports", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/board-reports", isAuthenticated, async (req: any, res) => {
     try {
       const reportData = { ...req.body, createdBy: req.user.id };
       const report = await storage.createBoardReport(reportData);
@@ -18993,7 +18984,7 @@ Include:
     }
   });
 
-  app.patch("/api/board-reports/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/board-reports/:id", isAuthenticated, async (req: any, res) => {
     try {
       const report = await storage.updateBoardReport(req.params.id, req.body);
       await logAction(req, "board_report_updated", "board_report", report.id, req.body);
@@ -19004,7 +18995,7 @@ Include:
     }
   });
 
-  app.delete("/api/board-reports/:id", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/board-reports/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteBoardReport(req.params.id);
       await logAction(req, "board_report_deleted", "board_report", req.params.id);
@@ -19016,7 +19007,7 @@ Include:
   });
 
   // Document Sets
-  app.get("/api/document-sets", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req, res) => {
+  app.get("/api/document-sets", isAuthenticated, async (req, res) => {
     try {
       const { caseId, unlinked } = req.query;
       const sets = await storage.getDocumentSets(caseId as string | undefined);
@@ -19027,7 +19018,7 @@ Include:
     }
   });
 
-  app.get("/api/document-sets/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req, res) => {
+  app.get("/api/document-sets/:id", isAuthenticated, async (req, res) => {
     try {
       const set = await storage.getDocumentSet(req.params.id);
       if (!set) {
@@ -19040,7 +19031,7 @@ Include:
     }
   });
 
-  app.post("/api/document-sets", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/document-sets", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = insertDocumentSetSchema.parse({ ...req.body, createdBy: req.user.id });
       const set = await storage.createDocumentSet(validatedData);
@@ -19052,7 +19043,7 @@ Include:
     }
   });
 
-  app.patch("/api/document-sets/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/document-sets/:id", isAuthenticated, async (req: any, res) => {
     try {
       const set = await storage.updateDocumentSet(req.params.id, req.body);
       await logAction(req, "document_set_updated", "document_set", set.id, req.body);
@@ -19063,7 +19054,7 @@ Include:
     }
   });
 
-  app.delete("/api/document-sets/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.delete("/api/document-sets/:id", isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteDocumentSet(req.params.id);
       await logAction(req, "document_set_deleted", "document_set", req.params.id);
@@ -19074,7 +19065,7 @@ Include:
     }
   });
 
-  app.post("/api/document-sets/:id/documents", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/document-sets/:id/documents", isAuthenticated, async (req: any, res) => {
     try {
       const { communicationId, notes } = req.body;
       const member = await storage.addDocumentToSet(req.params.id, communicationId, req.user.id, notes);
@@ -19086,7 +19077,7 @@ Include:
     }
   });
 
-  app.delete("/api/document-sets/:id/documents/:communicationId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.delete("/api/document-sets/:id/documents/:communicationId", isAuthenticated, async (req: any, res) => {
     try {
       await storage.removeDocumentFromSet(req.params.id, req.params.communicationId);
       await logAction(req, "document_removed_from_set", "document_set", req.params.id, { communicationId: req.params.communicationId });
@@ -19097,7 +19088,7 @@ Include:
     }
   });
 
-  app.get("/api/document-sets/:id/documents", isAuthenticated, requireRole("admin", "compliance_officer", "attorney", "external_counsel", "auditor"), async (req, res) => {
+  app.get("/api/document-sets/:id/documents", isAuthenticated, async (req, res) => {
     try {
       const documents = await storage.getDocumentsInSet(req.params.id);
       res.json(documents);
@@ -19108,7 +19099,7 @@ Include:
   });
 
   // Document Forwards
-  app.get("/api/document-forwards", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/document-forwards", isAuthenticated, async (req, res) => {
     try {
       const { communicationId } = req.query;
       const forwards = await storage.getDocumentForwards(communicationId as string | undefined);
@@ -19119,7 +19110,7 @@ Include:
     }
   });
 
-  app.post("/api/document-forwards", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.post("/api/document-forwards", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = insertDocumentForwardSchema.parse({ ...req.body, forwardedBy: req.user.id });
       const forward = await storage.createDocumentForward(validatedData);
@@ -19134,7 +19125,7 @@ Include:
     }
   });
 
-  app.patch("/api/document-forwards/:id/revoke", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req: any, res) => {
+  app.patch("/api/document-forwards/:id/revoke", isAuthenticated, async (req: any, res) => {
     try {
       const forward = await storage.revokeDocumentForward(req.params.id, req.user.id);
       await logAction(req, "document_forward_revoked", "communication", forward.communicationId, { forwardId: req.params.id });
@@ -19278,7 +19269,7 @@ Include:
 
   // Custom Rules API (Compliance Logic Studio)
   // GET /api/rules - List all detection rules (built-in + custom)
-  app.get("/api/rules", requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/rules", async (req, res) => {
     try {
       const { isCustom, isActive, severity, violationType } = req.query;
       
@@ -19323,7 +19314,7 @@ Include:
   });
 
   // POST /api/rules - Create custom rule
-  app.post("/api/rules", requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/rules", async (req, res) => {
     try {
       const {
         ruleName,
@@ -19367,7 +19358,7 @@ Include:
   });
 
   // GET /api/rules/:id - Get single rule
-  app.get("/api/rules/:id", requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/rules/:id", async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -19395,7 +19386,7 @@ Include:
   });
 
   // PATCH /api/rules/:id - Update rule
-  app.patch("/api/rules/:id", requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.patch("/api/rules/:id", async (req, res) => {
     try {
       const { id } = req.params;
       const updates = req.body;
@@ -19432,7 +19423,7 @@ Include:
   });
 
   // DELETE /api/rules/:id - Soft delete rule (deactivate)
-  app.delete("/api/rules/:id", requireRole("admin"), async (req, res) => {
+  app.delete("/api/rules/:id", requireRole("super_admin"), async (req, res) => {
     try {
       const { id } = req.params;
 
@@ -19454,7 +19445,7 @@ Include:
   });
 
   // POST /api/rules/:id/toggle - Activate/deactivate rule
-  app.post("/api/rules/:id/toggle", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/rules/:id/toggle", isAuthenticated, async (req, res) => {
     try {
       const { id } = req.params;
       const { isActive } = req.body;
@@ -19485,7 +19476,7 @@ Include:
   });
 
   // POST /api/rules/test - Test rule against sample text
-  app.post("/api/rules/test", requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/rules/test", async (req, res) => {
     try {
       const { rule, sampleText } = req.body;
 
@@ -19503,7 +19494,7 @@ Include:
   });
 
   // POST /api/rules/seed-fcpa-templates - Seed FCPA template rules (idempotent)
-  app.post("/api/rules/seed-fcpa-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-fcpa-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -19872,7 +19863,7 @@ Include:
   });
 
   // POST /api/rules/seed-antitrust-templates - Seed Federal Antitrust template rules (idempotent)
-  app.post("/api/rules/seed-antitrust-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-antitrust-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -20187,7 +20178,7 @@ Include:
   });
 
   // POST /api/rules/seed-sox-templates - Seed SOX (Sarbanes-Oxley) template rules (idempotent)
-  app.post("/api/rules/seed-sox-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-sox-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -20502,7 +20493,7 @@ Include:
   });
 
   // POST /api/rules/seed-cta-templates - Seed CTA (Corporate Transparency Act) template rules (idempotent)
-  app.post("/api/rules/seed-cta-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-cta-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -20817,7 +20808,7 @@ Include:
   });
 
   // POST /api/rules/seed-ear-itar-templates - Seed EAR/ITAR (Export Controls) template rules (idempotent)
-  app.post("/api/rules/seed-ear-itar-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-ear-itar-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -21132,7 +21123,7 @@ Include:
   });
 
   // POST /api/rules/seed-far-dfars-templates - Seed FAR/DFARS (Government Contracting) template rules (idempotent)
-  app.post("/api/rules/seed-far-dfars-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-far-dfars-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -21449,7 +21440,7 @@ Include:
   });
 
   // POST /api/rules/seed-dodd-frank-templates - Seed Dodd-Frank/SEC Whistleblower/Consumer Protection template rules (idempotent)
-  app.post("/api/rules/seed-dodd-frank-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-dodd-frank-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -21747,7 +21738,7 @@ Include:
   });
 
   // POST /api/rules/seed-glba-templates - Seed GLBA (Gramm-Leach-Bliley Act) template rules (idempotent)
-  app.post("/api/rules/seed-glba-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-glba-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -22034,7 +22025,7 @@ Include:
   });
 
   // POST /api/rules/seed-ofac-templates - Seed OFAC (Office of Foreign Assets Control) Sanctions template rules (idempotent)
-  app.post("/api/rules/seed-ofac-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-ofac-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -22364,7 +22355,7 @@ Include:
   });
 
   // POST /api/rules/seed-patriot-act-templates - Seed USA PATRIOT Act / KYC & Sanctions template rules (idempotent)
-  app.post("/api/rules/seed-patriot-act-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-patriot-act-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -22651,7 +22642,7 @@ Include:
   });
 
   // POST /api/demo/seed-fcpa-cases - Seed 3 demo FCPA investigation cases with communications
-  app.post("/api/demo/seed-fcpa-cases", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/demo/seed-fcpa-cases", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -23094,7 +23085,7 @@ David`,
   });
 
   // POST /api/demo/seed-antitrust-cases - Seed 3 demo Antitrust investigation cases with communications
-  app.post("/api/demo/seed-antitrust-cases", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/demo/seed-antitrust-cases", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -24139,7 +24130,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ===== POLICIES & TRAINING MANAGEMENT ENDPOINTS =====
 
   // GET /api/policies - Get all policies
-  app.get("/api/policies", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/policies", isAuthenticated, async (req, res) => {
     try {
       const policies = await storage.getPolicies();
       res.json(policies);
@@ -24150,7 +24141,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/policies/:id - Get a specific policy
-  app.get("/api/policies/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/policies/:id", isAuthenticated, async (req, res) => {
     try {
       const policy = await storage.getPolicy(req.params.id);
       if (!policy) {
@@ -24164,7 +24155,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/training/courses - Get all training courses
-  app.get("/api/training/courses", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/training/courses", isAuthenticated, async (req, res) => {
     try {
       const courses = await storage.getTrainingCourses();
       res.json(courses);
@@ -24175,7 +24166,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/training/assignments - Get all training assignments
-  app.get("/api/training/assignments/all", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/training/assignments/all", isAuthenticated, async (req, res) => {
     try {
       const assignments = await db.select().from(schema.trainingAssignments).orderBy(desc(schema.trainingAssignments.assignedAt));
       res.json(assignments);
@@ -24186,7 +24177,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/certifications - Get all certifications
-  app.get("/api/certifications", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/certifications", isAuthenticated, async (req, res) => {
     try {
       const certifications = await db.select().from(schema.certifications).orderBy(desc(schema.certifications.issuedDate));
       res.json(certifications);
@@ -24197,7 +24188,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/policy-attestations - Get all policy attestations
-  app.get("/api/policy-attestations", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/policy-attestations", isAuthenticated, async (req, res) => {
     try {
       const attestations = await storage.getPolicyAttestations();
       res.json(attestations);
@@ -24208,7 +24199,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/training/compliance-metrics - Get training and policy compliance metrics
-  app.get("/api/training/compliance-metrics", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/training/compliance-metrics", isAuthenticated, async (req, res) => {
     try {
       const trainingMetrics = await storage.getTrainingCompletionMetrics();
       const policyMetrics = await storage.getPolicyAttestationMetrics();
@@ -24228,7 +24219,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ========================================
 
   // GET /api/employees - Get all employees with optional filters
-  app.get("/api/employees", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/employees", isAuthenticated, async (req, res) => {
     try {
       const filters: { department?: string; search?: string } = {};
       
@@ -24249,7 +24240,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/employees/:id - Get a single employee by ID
-  app.get("/api/employees/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/employees/:id", isAuthenticated, async (req, res) => {
     try {
       const employee = await storage.getEmployee(req.params.id);
       if (!employee) {
@@ -24263,7 +24254,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // POST /api/employees - Create a new employee
-  app.post("/api/employees", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/employees", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertEmployeeSchema.parse(req.body);
       const employee = await storage.createEmployee(validated);
@@ -24276,7 +24267,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // PATCH /api/employees/:id - Update an employee
-  app.patch("/api/employees/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/employees/:id", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertEmployeeSchema.partial().parse(req.body);
       const employee = await storage.updateEmployee(req.params.id, validated);
@@ -24289,7 +24280,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/vendor-contacts - Get all vendor contacts with optional filters
-  app.get("/api/vendor-contacts", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/vendor-contacts", isAuthenticated, async (req, res) => {
     try {
       const filters: { vendorType?: string; search?: string } = {};
       
@@ -24310,7 +24301,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/vendor-contacts/:id - Get a single vendor contact by ID
-  app.get("/api/vendor-contacts/:id", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/vendor-contacts/:id", isAuthenticated, async (req, res) => {
     try {
       const vendorContact = await storage.getVendorContact(req.params.id);
       if (!vendorContact) {
@@ -24324,7 +24315,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // POST /api/vendor-contacts - Create a new vendor contact
-  app.post("/api/vendor-contacts", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/vendor-contacts", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertVendorContactSchema.parse(req.body);
       const vendorContact = await storage.createVendorContact(validated);
@@ -24337,7 +24328,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // PATCH /api/vendor-contacts/:id - Update a vendor contact
-  app.patch("/api/vendor-contacts/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/vendor-contacts/:id", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertVendorContactSchema.partial().parse(req.body);
       const vendorContact = await storage.updateVendorContact(req.params.id, validated);
@@ -24350,7 +24341,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/monitored-devices/:personType/:personId - Get monitored devices for a person
-  app.get("/api/monitored-devices/:personType/:personId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/monitored-devices/:personType/:personId", isAuthenticated, async (req, res) => {
     try {
       const { personType, personId } = req.params;
       const devices = await storage.getMonitoredDevices(personType, personId);
@@ -24362,7 +24353,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // POST /api/monitored-devices - Add a monitored device
-  app.post("/api/monitored-devices", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/monitored-devices", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertMonitoredDeviceSchema.parse(req.body);
       const device = await storage.createMonitoredDevice(validated);
@@ -24375,7 +24366,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/folder-access/:personType/:personId - Get folder access for a person
-  app.get("/api/folder-access/:personType/:personId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/folder-access/:personType/:personId", isAuthenticated, async (req, res) => {
     try {
       const { personType, personId } = req.params;
       const folders = await storage.getFolderAccess(personType, personId);
@@ -24387,7 +24378,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // POST /api/folder-access - Add folder access entry
-  app.post("/api/folder-access", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/folder-access", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertFolderAccessSchema.parse(req.body);
       const folder = await storage.createFolderAccess(validated);
@@ -24400,7 +24391,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/communication-stats/:personId - Get communication statistics for a person
-  app.get("/api/communication-stats/:personId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/communication-stats/:personId", isAuthenticated, async (req, res) => {
     try {
       const stats = await storage.getCommunicationStats(req.params.personId);
       res.json(stats);
@@ -24411,7 +24402,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // POST /api/communication-stats - Update or create communication statistics
-  app.post("/api/communication-stats", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/communication-stats", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertCommunicationStatSchema.parse(req.body);
       const stat = await storage.updateCommunicationStats(validated);
@@ -24423,7 +24414,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // GET /api/data-volume-history/:personType/:personId - Get data volume history for a person
-  app.get("/api/data-volume-history/:personType/:personId", isAuthenticated, requireRole("admin", "compliance_officer", "attorney"), async (req, res) => {
+  app.get("/api/data-volume-history/:personType/:personId", isAuthenticated, async (req, res) => {
     try {
       const { personType, personId } = req.params;
       const history = await storage.getDataVolumeHistory(personType, personId);
@@ -24435,7 +24426,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // POST /api/data-volume-history - Add data volume entry
-  app.post("/api/data-volume-history", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/data-volume-history", isAuthenticated, async (req: any, res) => {
     try {
       const validated = schema.insertDataVolumeHistorySchema.parse(req.body);
       const data = await storage.createDataVolumeHistory(validated);
@@ -24447,7 +24438,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // POST /api/rules/seed-bsa-aml-templates - Seed BSA (Bank Secrecy Act) / AML template rules (idempotent)
-  app.post("/api/rules/seed-bsa-aml-templates", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/rules/seed-bsa-aml-templates", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
 
@@ -24722,7 +24713,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
       
       // For admin/compliance_officer roles, allow access to all uploaded files
       // This enables viewing ingested media files in document review
-      if (userRole === "admin" || userRole === "compliance_officer") {
+      if (userRole === "super_admin") {
         objectStorageService.downloadObject(objectFile, res);
         return;
       }
@@ -24746,7 +24737,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get presigned upload URL for document ingestion
-  app.get("/api/ingestion/upload-url", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/ingestion/upload-url", isAuthenticated, async (req, res) => {
     try {
       const objectStorageService = new ObjectStorageService();
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
@@ -24769,8 +24760,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
       }
 
       // Basic role check: Only certain roles can ingest documents
-      const allowedRoles = ["admin", "compliance_officer", "attorney", "external_counsel"];
-      if (!allowedRoles.includes(userRole)) {
+      if (!userRole) {
         return res.status(403).json({ error: "You do not have permission to upload documents" });
       }
 
@@ -24792,7 +24782,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         });
         
         // Allow admins, compliance officers, case creator, and assigned users
-        if (userRole !== "admin" && userRole !== "compliance_officer" && 
+        if (userRole !== "super_admin" && 
             caseData.createdBy !== userId && !isAssigned) {
           return res.status(403).json({ error: "You do not have permission to link documents to this case" });
         }
@@ -24869,7 +24859,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create ingestion job and process uploaded file
-  app.post("/api/ingestion/jobs", isAuthenticated, requireRole("admin", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/ingestion/jobs", isAuthenticated, async (req: any, res) => {
     try {
       const { fileName, fileSize, fileType, uploadURL } = req.body;
       const userId = req.user?.claims?.sub;
@@ -24919,7 +24909,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get all ingestion jobs
-  app.get("/api/ingestion/jobs", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/ingestion/jobs", isAuthenticated, async (req, res) => {
     try {
       const jobs = await db.select().from(schema.ingestionJobs).orderBy(desc(schema.ingestionJobs.createdAt));
       res.json(jobs);
@@ -24930,7 +24920,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get specific ingestion job with files
-  app.get("/api/ingestion/jobs/:id", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/ingestion/jobs/:id", isAuthenticated, async (req, res) => {
     try {
       const [job] = await db.select().from(schema.ingestionJobs).where(eq(schema.ingestionJobs.id, req.params.id));
       if (!job) {
@@ -24947,7 +24937,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get files for a specific ingestion job
-  app.get("/api/ingestion/jobs/:jobId/files", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.get("/api/ingestion/jobs/:jobId/files", isAuthenticated, async (req, res) => {
     try {
       const files = await db.select().from(schema.ingestionFiles).where(eq(schema.ingestionFiles.jobId, req.params.jobId));
       res.json(files);
@@ -24958,7 +24948,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Trigger processing for a specific queued file
-  app.post("/api/ingestion/files/:fileId/process", isAuthenticated, requireRole("admin", "compliance_officer"), async (req, res) => {
+  app.post("/api/ingestion/files/:fileId/process", isAuthenticated, async (req, res) => {
     try {
       const { fileId } = req.params;
       
@@ -25234,7 +25224,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ===== FINDINGS MODULE ROUTES =====
 
   // Get all findings for a case
-  app.get("/api/cases/:caseId/findings", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/findings", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { category, isPinned, authorId, search, entryType } = req.query;
@@ -25255,7 +25245,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get findings counts by entry type for sidebar
-  app.get("/api/cases/:caseId/findings/counts", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/findings/counts", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const counts = await storage.getFindingsCountsByType(caseId);
@@ -25267,7 +25257,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create a new finding
-  app.post("/api/cases/:caseId/findings", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/findings", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { title, content, summary, isPinned, categories, entryType, legalDomain, aiGenerated, citations } = req.body;
@@ -25313,7 +25303,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get a specific finding
-  app.get("/api/findings/:findingId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/findings/:findingId", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       const finding = await storage.getFinding(findingId);
@@ -25330,7 +25320,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Update a finding
-  app.patch("/api/findings/:findingId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/findings/:findingId", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       const { title, content, summary, isPinned, createVersion, versionType } = req.body;
@@ -25350,7 +25340,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Delete a finding
-  app.delete("/api/findings/:findingId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/findings/:findingId", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       await storage.deleteFinding(findingId);
@@ -25364,7 +25354,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ===== FINDING TAGS ROUTES =====
 
   // Add tag to finding
-  app.post("/api/findings/:findingId/tags", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/findings/:findingId/tags", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       const { category } = req.body;
@@ -25382,7 +25372,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Remove tag from finding
-  app.delete("/api/findings/:findingId/tags/:category", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/findings/:findingId/tags/:category", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId, category } = req.params;
       await storage.removeFindingTag(findingId, category);
@@ -25396,7 +25386,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ===== FINDING EVIDENCE LINKS ROUTES =====
 
   // Get evidence links for a finding
-  app.get("/api/findings/:findingId/evidence-links", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/findings/:findingId/evidence-links", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       const links = await storage.getFindingEvidenceLinks(findingId);
@@ -25408,7 +25398,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create evidence link
-  app.post("/api/findings/:findingId/evidence-links", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/findings/:findingId/evidence-links", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       const { targetType, targetId, targetTitle, targetExcerpt, notes } = req.body;
@@ -25435,7 +25425,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Delete evidence link
-  app.delete("/api/findings/:findingId/evidence-links/:linkId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.delete("/api/findings/:findingId/evidence-links/:linkId", isAuthenticated, async (req: any, res) => {
     try {
       const { linkId } = req.params;
       await storage.deleteFindingEvidenceLink(linkId);
@@ -25449,7 +25439,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ===== FINDING VERSIONS ROUTES =====
 
   // Get versions for a finding
-  app.get("/api/findings/:findingId/versions", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/findings/:findingId/versions", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       const versions = await storage.getFindingVersions(findingId);
@@ -25461,7 +25451,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Restore a version
-  app.post("/api/findings/:findingId/versions/:versionId/restore", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/findings/:findingId/versions/:versionId/restore", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId, versionId } = req.params;
       const finding = await storage.restoreFindingVersion(findingId, versionId, req.user.id);
@@ -25473,7 +25463,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Accept AI-suggested version
-  app.post("/api/findings/:findingId/versions/:versionId/accept", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/findings/:findingId/versions/:versionId/accept", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId, versionId } = req.params;
       const finding = await storage.acceptAiSuggestedVersion(findingId, versionId, req.user.id);
@@ -25487,7 +25477,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ===== FINDING AI TASKS ROUTES =====
 
   // Get AI tasks for a finding or case
-  app.get("/api/findings/:findingId/ai-tasks", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/findings/:findingId/ai-tasks", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       const tasks = await storage.getFindingAiTasks({ findingId });
@@ -25499,7 +25489,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get AI tasks for a case (used for case-level AI actions)
-  app.get("/api/cases/:caseId/finding-ai-tasks", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/finding-ai-tasks", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const tasks = await storage.getFindingAiTasks({ caseId });
@@ -25511,7 +25501,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create an AI task (initiate AI action)
-  app.post("/api/findings/:findingId/ai-actions", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/findings/:findingId/ai-actions", isAuthenticated, async (req: any, res) => {
     try {
       const { findingId } = req.params;
       const { actionType, payload } = req.body;
@@ -25545,7 +25535,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create case-level AI action (not attached to a specific finding)
-  app.post("/api/cases/:caseId/finding-ai-actions", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/finding-ai-actions", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { actionType, payload, createFinding } = req.body;
@@ -25587,7 +25577,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get status of a specific AI task
-  app.get("/api/finding-ai-tasks/:taskId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/finding-ai-tasks/:taskId", isAuthenticated, async (req: any, res) => {
     try {
       const { taskId } = req.params;
       const task = await storage.getFindingAiTask(taskId);
@@ -25608,7 +25598,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================
 
   // Run full e-discovery processing on a case (deduplication, threading, family grouping)
-  app.post("/api/cases/:caseId/ediscovery/process", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/ediscovery/process", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const userId = req.user.id;
@@ -25622,7 +25612,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get processing jobs for a case
-  app.get("/api/cases/:caseId/ediscovery/jobs", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/ediscovery/jobs", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const jobs = await ProcessingJobsService.getJobsForCase(caseId);
@@ -25634,7 +25624,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get processing job progress
-  app.get("/api/ediscovery/jobs/:jobId/progress", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/ediscovery/jobs/:jobId/progress", isAuthenticated, async (req: any, res) => {
     try {
       const { jobId } = req.params;
       const progress = await ProcessingJobsService.getJobProgress(jobId);
@@ -25651,7 +25641,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get processing exceptions for a job
-  app.get("/api/ediscovery/jobs/:jobId/exceptions", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/ediscovery/jobs/:jobId/exceptions", isAuthenticated, async (req: any, res) => {
     try {
       const { jobId } = req.params;
       const exceptions = await ProcessingJobsService.getJobExceptions(jobId);
@@ -25663,7 +25653,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Resolve a processing exception
-  app.patch("/api/ediscovery/exceptions/:exceptionId/resolve", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/ediscovery/exceptions/:exceptionId/resolve", isAuthenticated, async (req: any, res) => {
     try {
       const { exceptionId } = req.params;
       const { resolution } = req.body;
@@ -25678,7 +25668,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get exceptions summary for a case
-  app.get("/api/cases/:caseId/ediscovery/exceptions-summary", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/ediscovery/exceptions-summary", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const summary = await ProcessingJobsService.getExceptionsSummary(caseId);
@@ -25694,7 +25684,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================
 
   // Run deduplication on a case
-  app.post("/api/cases/:caseId/ediscovery/deduplicate", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/ediscovery/deduplicate", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const result = await DeduplicationService.runCaseDeduplication(caseId);
@@ -25706,7 +25696,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get exact duplicates for a case
-  app.get("/api/cases/:caseId/ediscovery/duplicates", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/ediscovery/duplicates", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const duplicates = await DeduplicationService.getExactDuplicates(caseId);
@@ -25718,7 +25708,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get near-duplicate clusters for a case
-  app.get("/api/cases/:caseId/ediscovery/near-duplicates", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/ediscovery/near-duplicates", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { clusters, members } = await DeduplicationService.getDuplicateClusters(caseId);
@@ -25736,7 +25726,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Set cluster primary document
-  app.patch("/api/ediscovery/clusters/:clusterId/primary", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/ediscovery/clusters/:clusterId/primary", isAuthenticated, async (req: any, res) => {
     try {
       const { clusterId } = req.params;
       const { primaryDocumentId } = req.body;
@@ -25754,7 +25744,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================
 
   // Run email threading on a case
-  app.post("/api/cases/:caseId/ediscovery/thread", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/ediscovery/thread", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const result = await EmailThreadingService.runCaseThreading(caseId);
@@ -25766,7 +25756,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get email threads for a case
-  app.get("/api/cases/:caseId/ediscovery/threads", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/ediscovery/threads", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { threads, memberCounts } = await EmailThreadingService.getThreadsForCase(caseId);
@@ -25784,7 +25774,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get thread members
-  app.get("/api/ediscovery/threads/:threadId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/ediscovery/threads/:threadId", isAuthenticated, async (req: any, res) => {
     try {
       const { threadId } = req.params;
       const result = await EmailThreadingService.getThreadMembers(threadId);
@@ -25801,7 +25791,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get inclusive emails only for a case
-  app.get("/api/cases/:caseId/ediscovery/inclusive-emails", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/ediscovery/inclusive-emails", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const inclusiveIds = await EmailThreadingService.getInclusiveEmailsOnly(caseId);
@@ -25817,7 +25807,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================
 
   // Run family grouping on a case
-  app.post("/api/cases/:caseId/ediscovery/group-families", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/ediscovery/group-families", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const result = await DocumentFamilyService.runCaseFamilyGrouping(caseId);
@@ -25829,7 +25819,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get document families for a case
-  app.get("/api/cases/:caseId/ediscovery/families", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/ediscovery/families", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const families = await DocumentFamilyService.getFamiliesForCase(caseId);
@@ -25841,7 +25831,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get family details
-  app.get("/api/ediscovery/families/:familyId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/ediscovery/families/:familyId", isAuthenticated, async (req: any, res) => {
     try {
       const { familyId } = req.params;
       const result = await DocumentFamilyService.getFamilyById(familyId);
@@ -25858,7 +25848,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get family for a specific document
-  app.get("/api/communications/:communicationId/family", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/communications/:communicationId/family", isAuthenticated, async (req: any, res) => {
     try {
       const { communicationId } = req.params;
       const result = await DocumentFamilyService.getFamilyForDocument(communicationId);
@@ -25870,7 +25860,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Apply tag to entire family
-  app.post("/api/ediscovery/families/:familyId/apply-tag", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/ediscovery/families/:familyId/apply-tag", isAuthenticated, async (req: any, res) => {
     try {
       const { familyId } = req.params;
       const { tagId, applyToAttachments = true } = req.body;
@@ -25888,7 +25878,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ==========================================
 
   // Create a new prediction model for a case
-  app.post("/api/cases/:caseId/tar/models", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/tar/models", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { name, description } = req.body;
@@ -25907,7 +25897,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get all prediction models for a case
-  app.get("/api/cases/:caseId/tar/models", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/tar/models", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const models = await TARService.getModelsForCase(caseId);
@@ -25919,7 +25909,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get a specific model by ID
-  app.get("/api/tar/models/:modelId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/tar/models/:modelId", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId } = req.params;
       const model = await TARService.getModelById(modelId);
@@ -25936,7 +25926,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Add a training sample to a model
-  app.post("/api/tar/models/:modelId/samples", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/tar/models/:modelId/samples", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId } = req.params;
       const { communicationId, category, reviewNotes, confidence } = req.body;
@@ -25962,7 +25952,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get training samples for a model
-  app.get("/api/tar/models/:modelId/samples", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/tar/models/:modelId/samples", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId } = req.params;
       const samples = await TARService.getTrainingSamples(modelId);
@@ -25974,7 +25964,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Train a model
-  app.post("/api/tar/models/:modelId/train", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/tar/models/:modelId/train", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId } = req.params;
       const model = await TARService.trainModel(modelId);
@@ -25986,7 +25976,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Run predictions on documents
-  app.post("/api/tar/models/:modelId/predict", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/tar/models/:modelId/predict", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId } = req.params;
       const { communicationIds, savePredictions = true } = req.body;
@@ -26005,7 +25995,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get predictions for a model
-  app.get("/api/tar/models/:modelId/predictions", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/tar/models/:modelId/predictions", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId } = req.params;
       const limit = parseInt(req.query.limit as string) || 100;
@@ -26020,7 +26010,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get active learning queue (documents needing review)
-  app.get("/api/tar/models/:modelId/queue", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/tar/models/:modelId/queue", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId } = req.params;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -26034,7 +26024,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get high confidence predictions by category
-  app.get("/api/tar/models/:modelId/predictions/:category", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/tar/models/:modelId/predictions/:category", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId, category } = req.params;
       const minConfidence = parseFloat(req.query.minConfidence as string) || 0.7;
@@ -26054,7 +26044,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Mark a prediction as reviewed
-  app.patch("/api/tar/predictions/:predictionId/review", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.patch("/api/tar/predictions/:predictionId/review", isAuthenticated, async (req: any, res) => {
     try {
       const { predictionId } = req.params;
       const { agreed } = req.body;
@@ -26072,7 +26062,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get model statistics
-  app.get("/api/tar/models/:modelId/stats", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/tar/models/:modelId/stats", isAuthenticated, async (req: any, res) => {
     try {
       const { modelId } = req.params;
       const stats = await TARService.getModelStats(modelId);
@@ -26084,7 +26074,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get prediction for a specific document
-  app.get("/api/communications/:communicationId/prediction", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/communications/:communicationId/prediction", isAuthenticated, async (req: any, res) => {
     try {
       const { communicationId } = req.params;
       const modelId = req.query.modelId as string | undefined;
@@ -26102,7 +26092,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================================
 
   // Create production set
-  app.post("/api/cases/:caseId/production-sets", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-sets", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const data = { ...req.body, caseId, createdBy: req.user.id };
@@ -26115,7 +26105,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get production sets for case
-  app.get("/api/cases/:caseId/production-sets", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const productionSets = await ProductionService.getProductionSetsByCase(caseId);
@@ -26127,7 +26117,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get production set by ID
-  app.get("/api/cases/:caseId/production-sets/:productionSetId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets/:productionSetId", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       const productionSet = await ProductionService.getProductionSetById(productionSetId);
@@ -26142,7 +26132,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Update production set
-  app.patch("/api/cases/:caseId/production-sets/:productionSetId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/cases/:caseId/production-sets/:productionSetId", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       const productionSet = await ProductionService.updateProductionSet(productionSetId, req.body);
@@ -26154,7 +26144,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Add documents to production
-  app.post("/api/cases/:caseId/production-sets/:productionSetId/documents", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-sets/:productionSetId/documents", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       const { documentIds } = req.body;
@@ -26170,7 +26160,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Remove documents from production
-  app.delete("/api/cases/:caseId/production-sets/:productionSetId/documents", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/cases/:caseId/production-sets/:productionSetId/documents", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       const { documentIds } = req.body;
@@ -26186,7 +26176,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Apply Bates numbers
-  app.post("/api/cases/:caseId/production-sets/:productionSetId/bates", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-sets/:productionSetId/bates", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       const stampedDocs = await ProductionService.applyBatesNumbers(productionSetId);
@@ -26198,7 +26188,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Validate production
-  app.post("/api/cases/:caseId/production-sets/:productionSetId/validate", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-sets/:productionSetId/validate", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       const validation = await ProductionService.validateProduction(productionSetId);
@@ -26217,7 +26207,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   };
 
   // Generate Concordance load file (export)
-  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/concordance", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/concordance", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId, productionSetId } = req.params;
       if (!await validateProductionSetOwnership(productionSetId, caseId)) {
@@ -26232,7 +26222,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Generate Ringtail load file (export)
-  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/ringtail", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/ringtail", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId, productionSetId } = req.params;
       if (!await validateProductionSetOwnership(productionSetId, caseId)) {
@@ -26247,7 +26237,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Generate Relativity RDC format (export)
-  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/relativity", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/relativity", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId, productionSetId } = req.params;
       if (!await validateProductionSetOwnership(productionSetId, caseId)) {
@@ -26268,7 +26258,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Generate EDRM XML export
-  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/edrm", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/edrm", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId, productionSetId } = req.params;
       if (!await validateProductionSetOwnership(productionSetId, caseId)) {
@@ -26283,7 +26273,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Generate Native Package manifest
-  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/native", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/native", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId, productionSetId } = req.params;
       if (!await validateProductionSetOwnership(productionSetId, caseId)) {
@@ -26303,7 +26293,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Generate Image Production (PDF/TIFF)
-  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/images", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets/:productionSetId/export/images", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId, productionSetId } = req.params;
       if (!await validateProductionSetOwnership(productionSetId, caseId)) {
@@ -26342,7 +26332,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get production stats
-  app.get("/api/cases/:caseId/production-sets/:productionSetId/stats", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-sets/:productionSetId/stats", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       const stats = await ProductionService.getProductionStats(productionSetId);
@@ -26354,7 +26344,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Finalize production
-  app.post("/api/cases/:caseId/production-sets/:productionSetId/finalize", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-sets/:productionSetId/finalize", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       const { transmittedTo, transmissionMethod, deliveryReceipt } = req.body;
@@ -26369,7 +26359,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Delete production set
-  app.delete("/api/cases/:caseId/production-sets/:productionSetId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/cases/:caseId/production-sets/:productionSetId", isAuthenticated, async (req: any, res) => {
     try {
       const { productionSetId } = req.params;
       await ProductionService.deleteProductionSet(productionSetId);
@@ -26384,7 +26374,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================================
 
   // Get all production batches for a case
-  app.get("/api/cases/:caseId/production-batches", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-batches", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const batches = await ProductionService.getProductionBatchesByCase(caseId);
@@ -26396,7 +26386,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get production batch by ID with documents and events
-  app.get("/api/cases/:caseId/production-batches/:batchId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-batches/:batchId", isAuthenticated, async (req: any, res) => {
     try {
       const { batchId } = req.params;
       const result = await ProductionService.getProductionBatchWithDocuments(batchId);
@@ -26411,7 +26401,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create new production batch
-  app.post("/api/cases/:caseId/production-batches", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-batches", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { name, description, selectedTagIds, exclusionTagIds, exportFormat, batesPrefix, batesPadding } = req.body;
@@ -26440,7 +26430,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Preview production batch (shows documents and exclusions before confirmation)
-  app.get("/api/cases/:caseId/production-batches/:batchId/preview", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-batches/:batchId/preview", isAuthenticated, async (req: any, res) => {
     try {
       const { batchId } = req.params;
       const preview = await ProductionService.previewProductionBatch(batchId);
@@ -26452,7 +26442,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Preview documents for tag selection (without creating a batch)
-  app.post("/api/cases/:caseId/production-batches/preview-documents", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-batches/preview-documents", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { selectedTagIds, exclusionTagIds } = req.body;
@@ -26470,7 +26460,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Confirm production batch (assigns Bates numbers and processes)
-  app.post("/api/cases/:caseId/production-batches/:batchId/confirm", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-batches/:batchId/confirm", isAuthenticated, async (req: any, res) => {
     try {
       const { batchId } = req.params;
       const batch = await ProductionService.confirmProductionBatch(batchId, req.user.id);
@@ -26482,7 +26472,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Cancel production batch
-  app.post("/api/cases/:caseId/production-batches/:batchId/cancel", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-batches/:batchId/cancel", isAuthenticated, async (req: any, res) => {
     try {
       const { batchId } = req.params;
       const batch = await ProductionService.cancelProductionBatch(batchId, req.user.id);
@@ -26494,7 +26484,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Download production log
-  app.get("/api/cases/:caseId/production-batches/:batchId/log", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-batches/:batchId/log", isAuthenticated, async (req: any, res) => {
     try {
       const { batchId } = req.params;
       const { csvContent, filename } = await ProductionService.generateProductionLog(batchId);
@@ -26514,7 +26504,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================================
 
   // Get all production records for a case
-  app.get("/api/cases/:caseId/production-records", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-records", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { direction } = req.query;
@@ -26537,7 +26527,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get single production record
-  app.get("/api/cases/:caseId/production-records/:recordId", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/production-records/:recordId", isAuthenticated, async (req: any, res) => {
     try {
       const { recordId } = req.params;
       
@@ -26558,7 +26548,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create production record
-  app.post("/api/cases/:caseId/production-records", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/production-records", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const userId = req.user?.id;
@@ -26612,7 +26602,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Update production record
-  app.patch("/api/cases/:caseId/production-records/:recordId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/cases/:caseId/production-records/:recordId", isAuthenticated, async (req: any, res) => {
     try {
       const { recordId } = req.params;
       const updates = req.body;
@@ -26640,7 +26630,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Delete production record
-  app.delete("/api/cases/:caseId/production-records/:recordId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/cases/:caseId/production-records/:recordId", isAuthenticated, async (req: any, res) => {
     try {
       const { recordId } = req.params;
       
@@ -26669,7 +26659,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================================
 
   // Get files for a production record
-  app.get("/api/production-records/:recordId/files", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/production-records/:recordId/files", isAuthenticated, async (req: any, res) => {
     try {
       const { recordId } = req.params;
       
@@ -26687,7 +26677,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Upload files to a production record
-  app.post("/api/production-records/:recordId/files", isAuthenticated, requireRole("admin", "attorney"), upload.array("files", 50), async (req: any, res) => {
+  app.post("/api/production-records/:recordId/files", isAuthenticated, upload.array("files", 50), async (req: any, res) => {
     try {
       const { recordId } = req.params;
       const userId = req.user?.id;
@@ -26774,7 +26764,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Download a production record file
-  app.get("/api/production-records/files/:fileId/download", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/production-records/files/:fileId/download", isAuthenticated, async (req: any, res) => {
     try {
       const { fileId } = req.params;
       
@@ -26802,7 +26792,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Delete a production record file
-  app.delete("/api/production-records/files/:fileId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/production-records/files/:fileId", isAuthenticated, async (req: any, res) => {
     try {
       const { fileId } = req.params;
       
@@ -26850,7 +26840,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================================
 
   // Get redaction templates
-  app.get("/api/redaction-templates", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.get("/api/redaction-templates", isAuthenticated, async (req: any, res) => {
     try {
       const templates = await RedactionService.getTemplates();
       res.json(templates);
@@ -26861,7 +26851,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create redaction template
-  app.post("/api/redaction-templates", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/redaction-templates", isAuthenticated, async (req: any, res) => {
     try {
       const data = { ...req.body, createdBy: req.user.id };
       const template = await RedactionService.createTemplate(data);
@@ -26873,7 +26863,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Update redaction template
-  app.patch("/api/redaction-templates/:templateId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/redaction-templates/:templateId", isAuthenticated, async (req: any, res) => {
     try {
       const { templateId } = req.params;
       const template = await RedactionService.updateTemplate(templateId, req.body);
@@ -26885,7 +26875,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Scan document for PII
-  app.post("/api/communications/:communicationId/scan-pii", isAuthenticated, requireRole("admin", "attorney", "compliance_officer"), async (req: any, res) => {
+  app.post("/api/communications/:communicationId/scan-pii", isAuthenticated, async (req: any, res) => {
     try {
       const { communicationId } = req.params;
       const { patternTypes } = req.body;
@@ -26905,7 +26895,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Apply redactions to document
-  app.post("/api/communications/:communicationId/redactions", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/communications/:communicationId/redactions", isAuthenticated, async (req: any, res) => {
     try {
       const { communicationId } = req.params;
       const { matches, isAutomatic } = req.body;
@@ -26930,7 +26920,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get document redactions
-  app.get("/api/communications/:communicationId/redactions", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/communications/:communicationId/redactions", isAuthenticated, async (req: any, res) => {
     try {
       const { communicationId } = req.params;
       const redactions = await RedactionService.getDocumentRedactions(communicationId);
@@ -26942,7 +26932,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Review redaction
-  app.patch("/api/redactions/:redactionId/review", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/redactions/:redactionId/review", isAuthenticated, async (req: any, res) => {
     try {
       const { redactionId } = req.params;
       const { status, rejectionReason } = req.body;
@@ -26960,7 +26950,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Remove redaction
-  app.delete("/api/redactions/:redactionId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/redactions/:redactionId", isAuthenticated, async (req: any, res) => {
     try {
       const { redactionId } = req.params;
       await RedactionService.removeRedaction(redactionId);
@@ -26972,7 +26962,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get case redaction stats
-  app.get("/api/cases/:caseId/redaction-stats", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/redaction-stats", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const stats = await RedactionService.getRedactionStats(caseId);
@@ -26988,7 +26978,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // ============================================================
 
   // Get privilege log entries for case
-  app.get("/api/cases/:caseId/privilege-logs", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/privilege-logs", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const entries = await PrivilegeLogService.getEntriesByCase(caseId);
@@ -27000,7 +26990,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Create privilege log entry
-  app.post("/api/cases/:caseId/privilege-logs", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/privilege-logs", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const data = { ...req.body, caseId, assertedBy: req.user.id };
@@ -27013,7 +27003,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Generate privilege log from privileged documents
-  app.post("/api/cases/:caseId/privilege-logs/generate", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/privilege-logs/generate", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const result = await PrivilegeLogService.generateFromPrivilegedDocuments(caseId, req.user.id);
@@ -27025,7 +27015,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Update privilege log entry
-  app.patch("/api/cases/:caseId/privilege-logs/:entryId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.patch("/api/cases/:caseId/privilege-logs/:entryId", isAuthenticated, async (req: any, res) => {
     try {
       const { entryId } = req.params;
       const entry = await PrivilegeLogService.updateEntry(entryId, req.body);
@@ -27037,7 +27027,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Mark privilege log entry as reviewed
-  app.post("/api/cases/:caseId/privilege-logs/:entryId/review", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/privilege-logs/:entryId/review", isAuthenticated, async (req: any, res) => {
     try {
       const { entryId } = req.params;
       const entry = await PrivilegeLogService.markReviewed(entryId, req.user.id);
@@ -27049,7 +27039,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Delete privilege log entry
-  app.delete("/api/cases/:caseId/privilege-logs/:entryId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.delete("/api/cases/:caseId/privilege-logs/:entryId", isAuthenticated, async (req: any, res) => {
     try {
       const { entryId } = req.params;
       await PrivilegeLogService.deleteEntry(entryId);
@@ -27061,7 +27051,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Export privilege log as CSV
-  app.get("/api/cases/:caseId/privilege-logs/export", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/privilege-logs/export", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const csv = await PrivilegeLogService.generateCSV(caseId);
@@ -27073,7 +27063,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Get privilege log stats
-  app.get("/api/cases/:caseId/privilege-logs/stats", isAuthenticated, requireRole("admin", "attorney", "compliance_officer", "auditor"), async (req: any, res) => {
+  app.get("/api/cases/:caseId/privilege-logs/stats", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const stats = await PrivilegeLogService.getStats(caseId);
@@ -27085,7 +27075,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   });
 
   // Assign Bates numbers to privilege log entries
-  app.post("/api/cases/:caseId/privilege-logs/bates", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res) => {
+  app.post("/api/cases/:caseId/privilege-logs/bates", isAuthenticated, async (req: any, res) => {
     try {
       const { caseId } = req.params;
       const { prefix, startNumber, padding } = req.body;
@@ -28186,7 +28176,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
       SELECT id FROM deals WHERE id = ${dealId} AND created_by = ${userId}
     `);
     if ((dealOwnerCheck.rows as any[]).length > 0) return true;
-    return userRole === 'admin' || userRole === 'compliance_officer';
+    return userRole === 'super_admin';
   }
 
   app.get("/api/integrations/slack/authorize", isAuthenticated, async (req: any, res) => {
@@ -30737,7 +30727,7 @@ Guidelines:
         return res.status(404).json({ message: "Annotation not found" });
       }
 
-      if (existing.authorId !== req.user.id && req.user.role !== "admin") {
+      if (existing.authorId !== req.user.id && req.user.role !== "super_admin") {
         return res.status(403).json({ message: "Only the author or admin can update this annotation" });
       }
 
@@ -30770,7 +30760,7 @@ Guidelines:
         return res.status(404).json({ message: "Annotation not found" });
       }
 
-      if (existing.authorId !== req.user.id && req.user.role !== "admin") {
+      if (existing.authorId !== req.user.id && req.user.role !== "super_admin") {
         return res.status(403).json({ message: "Only the author or admin can delete this annotation" });
       }
 

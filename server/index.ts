@@ -70,7 +70,28 @@ app.get("/api/health", (_req, res) => {
     await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS signed_by varchar(500)`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id varchar UNIQUE`);
 
-    console.log("[Startup] Database columns verified");
+    // Migrate old role enum values to new 4-role model
+    // First, add new enum values if they don't exist
+    const addEnumValue = async (val: string) => {
+      try {
+        await pool.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS '${val}'`);
+      } catch (e: any) {
+        // Value already exists — safe to ignore
+      }
+    };
+    await addEnumValue('super_admin');
+    await addEnumValue('entity_admin');
+    await addEnumValue('entity_user');
+    await addEnumValue('individual_user');
+
+    // Migrate existing users from old roles to new roles
+    await pool.query(`UPDATE users SET role = 'super_admin' WHERE role = 'admin'`);
+    await pool.query(`UPDATE users SET role = 'individual_user' WHERE role NOT IN ('super_admin', 'entity_admin', 'entity_user', 'individual_user')`);
+
+    // Update the column default
+    await pool.query(`ALTER TABLE users ALTER COLUMN role SET DEFAULT 'individual_user'`);
+
+    console.log("[Startup] Database columns and role migration verified");
   } catch (err) {
     console.error("[Startup] Migration check error:", err);
   }

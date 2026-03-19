@@ -82,7 +82,7 @@ router.get("/form-templates", isAuthenticated, async (req: any, res) => {
   try {
     const dbUser = req.dbUser;
     let visibleUserIds: string[] | null = null;
-    if (dbUser && dbUser.role !== "admin") {
+    if (dbUser && dbUser.role !== "super_admin") {
       if (dbUser.userType === "corporate") {
         const org = await storage.getUserOrganization(dbUser.id);
         if (org) {

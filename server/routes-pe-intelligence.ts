@@ -18,7 +18,7 @@ const generateReportRequestSchema = z.object({
 
 export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any, requireRole: any, logAction: any) {
   // Get all PE deals for the deal intelligence dropdown
-  app.get("/api/pe-deals", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res: any) => {
+  app.get("/api/pe-deals", isAuthenticated, async (req: any, res: any) => {
     try {
       const deals = await db.select({
         id: schema.peDeals.id,
@@ -37,7 +37,7 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
   });
 
   // Get saved PE deal intelligence reports for a specific deal and source type
-  app.get("/api/pe-deal-intelligence/reports/:sourceType/:dealId", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res: any) => {
+  app.get("/api/pe-deal-intelligence/reports/:sourceType/:dealId", isAuthenticated, async (req: any, res: any) => {
     try {
       const { dealId, sourceType } = req.params;
       
@@ -82,7 +82,7 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
   });
 
   // Generate PE deal intelligence report
-  app.post("/api/pe-deal-intelligence/generate", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res: any) => {
+  app.post("/api/pe-deal-intelligence/generate", isAuthenticated, async (req: any, res: any) => {
     try {
       const userId = req.user?.id;
       if (!userId) {
@@ -277,7 +277,7 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
   });
 
   // Download saved PE deal intelligence report
-  app.get("/api/pe-deal-intelligence/reports/:sourceType/:dealId/:reportId/download", isAuthenticated, requireRole("admin", "attorney", "external_counsel"), async (req: any, res: any) => {
+  app.get("/api/pe-deal-intelligence/reports/:sourceType/:dealId/:reportId/download", isAuthenticated, async (req: any, res: any) => {
     try {
       const { sourceType, dealId, reportId } = req.params;
 
@@ -309,7 +309,7 @@ export function registerPEDealIntelligenceRoutes(app: any, isAuthenticated: any,
   });
 
   // Delete PE deal intelligence report
-  app.delete("/api/pe-deal-intelligence/reports/:sourceType/:dealId/:reportId", isAuthenticated, requireRole("admin", "attorney"), async (req: any, res: any) => {
+  app.delete("/api/pe-deal-intelligence/reports/:sourceType/:dealId/:reportId", isAuthenticated, requireRole("super_admin"), async (req: any, res: any) => {
     try {
       const { sourceType, dealId, reportId } = req.params;
 

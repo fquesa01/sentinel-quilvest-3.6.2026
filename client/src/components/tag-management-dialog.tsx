@@ -158,7 +158,7 @@ export function TagManagementDialog({ open, onOpenChange }: TagManagementDialogP
           </DialogHeader>
 
           <div className="flex gap-2 justify-end border-b pb-4">
-            {tags.length === 0 && user?.role === "admin" && (
+            {tags.length === 0 && user?.role === "super_admin" && (
               <Button 
                 variant="outline" 
                 onClick={() => seedTagsMutation.mutate()}
