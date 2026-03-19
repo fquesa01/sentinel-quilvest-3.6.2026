@@ -16843,6 +16843,7 @@ Guidelines:
       const { 
         dealId, 
         caseId, 
+        clientId,
         targetName, 
         targetWebsite, 
         targetIndustry, 
