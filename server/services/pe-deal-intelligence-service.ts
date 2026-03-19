@@ -652,8 +652,15 @@ export async function generatePEDueDiligencePDF(
   
   let y = 80;
   
-  // Executive summary text in card
-  drawRoundedRect(doc, leftMargin, y, contentWidth, 160, 6, COLORS.cardBg, COLORS.cardBorder);
+  // Executive summary text in card - dynamically sized
+  doc.font('Helvetica').fontSize(10);
+  const summaryTextHeight = doc.heightOfString(reportData.executiveSummary, { 
+    width: contentWidth - 32, 
+    lineGap: 4 
+  });
+  const summaryCardHeight = summaryTextHeight + 32;
+  
+  drawRoundedRect(doc, leftMargin, y, contentWidth, summaryCardHeight, 6, COLORS.cardBg, COLORS.cardBorder);
   
   doc.font('Helvetica').fontSize(10).fillColor(COLORS.text);
   doc.text(reportData.executiveSummary, leftMargin + 16, y + 16, { 
@@ -662,10 +669,40 @@ export async function generatePEDueDiligencePDF(
     lineGap: 4 
   });
   
-  y += 180;
+  y += summaryCardHeight + 20;
+  
+  // Calculate Key Risks box height dynamically
+  const halfWidth = (contentWidth - 16) / 2;
+  const riskTextWidth = (contentWidth - 60) / 2;
+  let riskContentHeight = 32;
+  doc.font('Helvetica').fontSize(9);
+  reportData.keyRisks.slice(0, 5).forEach((risk) => {
+    const h = doc.heightOfString(risk, { width: riskTextWidth, lineGap: 2 });
+    riskContentHeight += h + 8;
+  });
+  
+  // Calculate Recommendations box height dynamically
+  let recContentHeight = 32;
+  reportData.recommendations.slice(0, 5).forEach((rec) => {
+    const h = doc.heightOfString(rec, { width: riskTextWidth, lineGap: 2 });
+    recContentHeight += h + 8;
+  });
+  
+  const sideBySideHeight = Math.max(riskContentHeight + 16, recContentHeight + 16);
+  
+  // Check if side-by-side boxes fit on current page
+  if (y + sideBySideHeight > doc.page.height - 100) {
+    doc.addPage();
+    doc.rect(0, 0, pageWidth, 50).fill(COLORS.primary);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.white);
+    doc.text('EXECUTIVE SUMMARY', leftMargin, 20);
+    doc.font('Helvetica').fontSize(9).fillColor('#94b8db');
+    doc.text(targetCompany, pageWidth - 200, 20, { width: 144, align: 'right' });
+    y = 70;
+  }
   
   // Key Risks section
-  drawRoundedRect(doc, leftMargin, y, (contentWidth - 16) / 2, 220, 6, '#fef2f2', '#fecaca');
+  drawRoundedRect(doc, leftMargin, y, halfWidth, sideBySideHeight, 6, '#fef2f2', '#fecaca');
   
   doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.danger);
   doc.text('KEY RISKS', leftMargin + 12, y + 12);
@@ -674,14 +711,15 @@ export async function generatePEDueDiligencePDF(
   let riskY = y + 32;
   reportData.keyRisks.slice(0, 5).forEach((risk, i) => {
     doc.font('Helvetica-Bold').fillColor(COLORS.danger).text(`${i + 1}.`, leftMargin + 12, riskY);
-    doc.font('Helvetica').fillColor(COLORS.text);
-    doc.text(risk, leftMargin + 28, riskY, { width: (contentWidth - 60) / 2, lineGap: 2 });
-    riskY += 38;
+    doc.font('Helvetica').fontSize(9).fillColor(COLORS.text);
+    const riskH = doc.heightOfString(risk, { width: riskTextWidth, lineGap: 2 });
+    doc.text(risk, leftMargin + 28, riskY, { width: riskTextWidth, lineGap: 2 });
+    riskY += riskH + 8;
   });
   
   // Recommendations section
   const recX = leftMargin + (contentWidth + 16) / 2;
-  drawRoundedRect(doc, recX, y, (contentWidth - 16) / 2, 220, 6, '#ecfdf5', '#a7f3d0');
+  drawRoundedRect(doc, recX, y, halfWidth, sideBySideHeight, 6, '#ecfdf5', '#a7f3d0');
   
   doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.success);
   doc.text('RECOMMENDATIONS', recX + 12, y + 12);
@@ -690,40 +728,72 @@ export async function generatePEDueDiligencePDF(
   let recY = y + 32;
   reportData.recommendations.slice(0, 5).forEach((rec, i) => {
     doc.font('Helvetica-Bold').fillColor(COLORS.success).text(`${i + 1}.`, recX + 12, recY);
-    doc.font('Helvetica').fillColor(COLORS.text);
-    doc.text(rec, recX + 28, recY, { width: (contentWidth - 60) / 2, lineGap: 2 });
-    recY += 38;
+    doc.font('Helvetica').fontSize(9).fillColor(COLORS.text);
+    const recH = doc.heightOfString(rec, { width: riskTextWidth, lineGap: 2 });
+    doc.text(rec, recX + 28, recY, { width: riskTextWidth, lineGap: 2 });
+    recY += recH + 8;
   });
   
-  // ========== DUE DILIGENCE SECTIONS ==========
-  let sectionIndex = 0;
+  // Force due diligence sections to start on a fresh page with their own header
+  y = doc.page.height;
   
-  for (const section of reportData.sections) {
-    // Start new page for every 2 sections
-    if (sectionIndex % 2 === 0) {
-      doc.addPage();
-      
-      // Page header
-      doc.rect(0, 0, pageWidth, 50).fill(COLORS.primary);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.white);
-      doc.text('DUE DILIGENCE FINDINGS', leftMargin, 20);
-      doc.font('Helvetica').fontSize(9).fillColor('#94b8db');
-      doc.text(targetCompany, pageWidth - 200, 20, { width: 144, align: 'right' });
-      
-      y = 70;
+  // ========== DUE DILIGENCE SECTIONS ==========
+  // Helper to draw page header for findings pages
+  const drawFindingsPageHeader = () => {
+    doc.rect(0, 0, pageWidth, 50).fill(COLORS.primary);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.white);
+    doc.text('DUE DILIGENCE FINDINGS', leftMargin, 20);
+    doc.font('Helvetica').fontSize(9).fillColor('#94b8db');
+    doc.text(targetCompany, pageWidth - 200, 20, { width: 144, align: 'right' });
+  };
+  
+  // Helper to calculate actual section height using heightOfString
+  const calculateSectionHeight = (section: DiligenceSection): number => {
+    let h = 58; // header area (title + badge row)
+    
+    const findingsWidth = contentWidth - 50;
+    const riskDescWidth = contentWidth - 140;
+    const stepsWidth = contentWidth - 50;
+    
+    if (section.findings.length > 0) {
+      doc.font('Helvetica-Bold').fontSize(9);
+      h += 14; // "Findings:" label
+      doc.font('Helvetica').fontSize(9);
+      section.findings.forEach((finding: string) => {
+        h += doc.heightOfString(`•  ${finding}`, { width: findingsWidth, lineGap: 2 }) + 4;
+      });
     }
     
-    const categoryStyle = CATEGORY_COLORS[section.category] || CATEGORY_COLORS.legal;
-    const sectionHeight = Math.max(200, 80 + (section.findings.length * 18) + (section.riskFlags.length * 24) + (section.nextSteps.length * 18));
+    if (section.riskFlags.length > 0) {
+      h += 6; // spacing
+      h += 14; // "Risk Flags:" label
+      doc.font('Helvetica').fontSize(9);
+      section.riskFlags.forEach((flag) => {
+        const descH = doc.heightOfString(flag.description, { width: riskDescWidth, lineGap: 2 });
+        h += Math.max(descH, 16) + 6;
+      });
+    }
     
-    // Check if section fits on page
+    if (section.nextSteps.length > 0) {
+      h += 6; // spacing
+      h += 14; // "Next Steps:" label
+      doc.font('Helvetica').fontSize(9);
+      section.nextSteps.forEach((step: string) => {
+        h += doc.heightOfString(`→  ${step}`, { width: stepsWidth, lineGap: 2 }) + 4;
+      });
+    }
+    
+    h += 16; // bottom padding
+    return h;
+  };
+  
+  for (const section of reportData.sections) {
+    const categoryStyle = CATEGORY_COLORS[section.category] || CATEGORY_COLORS.legal;
+    const sectionHeight = calculateSectionHeight(section);
+    
     if (y + sectionHeight > doc.page.height - 100) {
       doc.addPage();
-      doc.rect(0, 0, pageWidth, 50).fill(COLORS.primary);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.white);
-      doc.text('DUE DILIGENCE FINDINGS', leftMargin, 20);
-      doc.font('Helvetica').fontSize(9).fillColor('#94b8db');
-      doc.text(targetCompany, pageWidth - 200, 20, { width: 144, align: 'right' });
+      drawFindingsPageHeader();
       y = 70;
     }
     
@@ -756,9 +826,10 @@ export async function generatePEDueDiligencePDF(
       contentY += 14;
       
       doc.font('Helvetica').fontSize(9).fillColor(COLORS.text);
-      section.findings.forEach(finding => {
+      section.findings.forEach((finding: string) => {
+        const fH = doc.heightOfString(`•  ${finding}`, { width: contentWidth - 50, lineGap: 2 });
         doc.text(`•  ${finding}`, leftMargin + 24, contentY, { width: contentWidth - 50, lineGap: 2 });
-        contentY += 16;
+        contentY += fH + 4;
       });
     }
     
@@ -769,11 +840,12 @@ export async function generatePEDueDiligencePDF(
       doc.text('Risk Flags:', leftMargin + 16, contentY);
       contentY += 14;
       
-      section.riskFlags.forEach(flag => {
+      section.riskFlags.forEach((flag) => {
         drawRiskBadge(doc, leftMargin + 24, contentY, flag.severity);
         doc.font('Helvetica').fontSize(9).fillColor(COLORS.text);
+        const flagH = doc.heightOfString(flag.description, { width: contentWidth - 140, lineGap: 2 });
         doc.text(flag.description, leftMargin + 110, contentY, { width: contentWidth - 140, lineGap: 2 });
-        contentY += 22;
+        contentY += Math.max(flagH, 16) + 6;
       });
     }
     
@@ -785,60 +857,66 @@ export async function generatePEDueDiligencePDF(
       contentY += 14;
       
       doc.font('Helvetica').fontSize(9).fillColor(COLORS.text);
-      section.nextSteps.forEach(step => {
+      section.nextSteps.forEach((step: string) => {
+        const sH = doc.heightOfString(`→  ${step}`, { width: contentWidth - 50, lineGap: 2 });
         doc.text(`→  ${step}`, leftMargin + 24, contentY, { width: contentWidth - 50, lineGap: 2 });
-        contentY += 16;
+        contentY += sH + 4;
       });
     }
     
     y += sectionHeight + 16;
-    sectionIndex++;
   }
   
   // ========== WEB RESEARCH SECTIONS ==========
   if (reportData.webResearch) {
-    doc.addPage();
-    
-    // Page header
-    doc.rect(0, 0, pageWidth, 50).fill(COLORS.secondary);
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.white);
-    doc.text('EXTERNAL RESEARCH — LIVE WEB SEARCH', leftMargin, 20);
-    doc.font('Helvetica').fontSize(9).fillColor('#94b8db');
-    doc.text(targetCompany, pageWidth - 200, 20, { width: 144, align: 'right' });
-    
-    y = 70;
-    
     const webSections = [
       { num: 21, title: 'Media Coverage Analysis', content: reportData.webResearch.mediaAnalysis, color: COLORS.success },
       { num: 22, title: 'Litigation Research', content: reportData.webResearch.litigationResearch, color: COLORS.warning },
       { num: 23, title: 'Regulatory Actions & Enforcement', content: reportData.webResearch.regulatoryActions, color: COLORS.danger },
-    ];
+    ].filter(ws => ws.content && ws.content.trim().length > 0);
     
-    for (const webSection of webSections) {
-      const height = 120;
-      
-      if (y + height > doc.page.height - 100) {
-        doc.addPage();
+    if (webSections.length > 0) {
+      // Helper to draw web research page header
+      const drawWebPageHeader = () => {
         doc.rect(0, 0, pageWidth, 50).fill(COLORS.secondary);
         doc.font('Helvetica-Bold').fontSize(11).fillColor(COLORS.white);
         doc.text('EXTERNAL RESEARCH — LIVE WEB SEARCH', leftMargin, 20);
-        y = 70;
+        doc.font('Helvetica').fontSize(9).fillColor('#94b8db');
+        doc.text(targetCompany, pageWidth - 200, 20, { width: 144, align: 'right' });
+      };
+      
+      doc.addPage();
+      drawWebPageHeader();
+      y = 70;
+      
+      for (const webSection of webSections) {
+        doc.font('Helvetica').fontSize(9);
+        const webTextHeight = doc.heightOfString(webSection.content, { 
+          width: contentWidth - 32, 
+          lineGap: 3 
+        });
+        const height = webTextHeight + 50;
+        
+        if (y + height > doc.page.height - 100) {
+          doc.addPage();
+          drawWebPageHeader();
+          y = 70;
+        }
+        
+        drawRoundedRect(doc, leftMargin, y, contentWidth, height, 6, COLORS.white, COLORS.cardBorder);
+        doc.rect(leftMargin, y + 6, 4, height - 12).fill(webSection.color);
+        
+        doc.font('Helvetica-Bold').fontSize(12).fillColor(COLORS.primary);
+        doc.text(`${webSection.num}. ${webSection.title}`, leftMargin + 16, y + 12);
+        
+        doc.font('Helvetica').fontSize(9).fillColor(COLORS.text);
+        doc.text(webSection.content, leftMargin + 16, y + 34, { 
+          width: contentWidth - 32, 
+          lineGap: 3
+        });
+        
+        y += height + 16;
       }
-      
-      drawRoundedRect(doc, leftMargin, y, contentWidth, height, 6, COLORS.white, COLORS.cardBorder);
-      doc.rect(leftMargin, y + 6, 4, height - 12).fill(webSection.color);
-      
-      doc.font('Helvetica-Bold').fontSize(12).fillColor(COLORS.primary);
-      doc.text(`${webSection.num}. ${webSection.title}`, leftMargin + 16, y + 12);
-      
-      doc.font('Helvetica').fontSize(9).fillColor(COLORS.text);
-      doc.text(webSection.content, leftMargin + 16, y + 34, { 
-        width: contentWidth - 32, 
-        lineGap: 3,
-        height: height - 50 
-      });
-      
-      y += height + 16;
     }
   }
   
