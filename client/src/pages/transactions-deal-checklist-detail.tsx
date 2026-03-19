@@ -513,7 +513,18 @@ export default function TransactionsDealChecklistDetail() {
                                 data-testid={`checklist-item-${item.id}`}
                               >
                                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                                  <StatusIcon className={`h-5 w-5 flex-shrink-0 ${statusColor}`} />
+                                  <button
+                                    type="button"
+                                    className="cursor-pointer rounded-full hover:opacity-70 transition-opacity"
+                                    data-testid={`status-toggle-${item.id}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const newStatus = item.status === "pending" ? "complete" : "pending";
+                                      updateItemMutation.mutate({ itemId: item.id, status: newStatus });
+                                    }}
+                                  >
+                                    <StatusIcon className={`h-5 w-5 flex-shrink-0 ${statusColor}`} />
+                                  </button>
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="font-medium text-sm">
@@ -700,7 +711,18 @@ export default function TransactionsDealChecklistDetail() {
                               >
                                 <td className="px-4 py-2.5">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <StatusIcon className={`h-4 w-4 flex-shrink-0 ${statusColor}`} />
+                                    <button
+                                      type="button"
+                                      className="cursor-pointer rounded-full hover:opacity-70 transition-opacity"
+                                      data-testid={`spreadsheet-status-toggle-${item.id}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const newStatus = item.status === "pending" ? "complete" : "pending";
+                                        updateItemMutation.mutate({ itemId: item.id, status: newStatus });
+                                      }}
+                                    >
+                                      <StatusIcon className={`h-4 w-4 flex-shrink-0 ${statusColor}`} />
+                                    </button>
                                     <span className="truncate">{item.templateItem?.name || "Untitled Item"}</span>
                                   </div>
                                   {item.templateItem?.description && (
