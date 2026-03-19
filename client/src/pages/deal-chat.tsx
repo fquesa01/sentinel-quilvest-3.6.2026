@@ -25,6 +25,7 @@ import {
   Check,
   Copy,
   ExternalLink,
+  Mail,
 } from "lucide-react";
 import {
   Dialog,
@@ -130,6 +131,7 @@ export default function DealChat() {
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
   const [copiedWebhook, setCopiedWebhook] = useState<string | null>(null);
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [channelLoading, setChannelLoading] = useState(false);
 
@@ -152,6 +154,11 @@ export default function DealChat() {
     queryKey: ["/api/channels", channelId, "insights"],
     enabled: !!channelId && showInsights,
     refetchInterval: showInsights ? 10000 : false,
+  });
+
+  const { data: dealEmailData } = useQuery<{ emailAddress: string }>({
+    queryKey: ["/api/deals", selectedDealId, "email-address"],
+    enabled: !!selectedDealId && showIntegrations,
   });
 
   const { data: searchUsers = [] } = useQuery<SearchUser[]>({
@@ -240,6 +247,39 @@ export default function DealChat() {
     setCopiedWebhook(type);
     setTimeout(() => setCopiedWebhook(null), 2000);
     toast({ title: "Webhook URL copied" });
+  };
+
+  const copyEmailAddress = () => {
+    if (dealEmailData?.emailAddress) {
+      navigator.clipboard.writeText(dealEmailData.emailAddress);
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2000);
+      toast({ title: "Email address copied" });
+    }
+  };
+
+  const startSlackOAuth = async () => {
+    try {
+      const res = await apiRequest("GET", `/api/integrations/slack/authorize?dealId=${selectedDealId}`);
+      const data = await res.json();
+      if (data.authUrl) {
+        window.open(data.authUrl, '_blank', 'width=600,height=700');
+      }
+    } catch (error: any) {
+      toast({ title: "Slack Setup", description: error.message || "Slack OAuth is not configured yet. Ask your admin to set up SLACK_CLIENT_ID.", variant: "destructive" });
+    }
+  };
+
+  const startTeamsOAuth = async () => {
+    try {
+      const res = await apiRequest("GET", `/api/integrations/teams/authorize?dealId=${selectedDealId}`);
+      const data = await res.json();
+      if (data.authUrl) {
+        window.open(data.authUrl, '_blank', 'width=600,height=700');
+      }
+    } catch (error: any) {
+      toast({ title: "Teams Setup", description: error.message || "Teams OAuth is not configured yet. Ask your admin to set up TEAMS_CLIENT_ID.", variant: "destructive" });
+    }
   };
 
   const handleSend = () => {
@@ -377,6 +417,8 @@ export default function DealChat() {
                         );
                       }
 
+                      const isEmailMessage = msg.metadata?.source === 'email';
+
                       return (
                         <div key={msg.id}>
                           {showDateHeader && (
@@ -389,14 +431,20 @@ export default function DealChat() {
                           <div className="flex items-start gap-3" data-testid={`message-item-${msg.id}`}>
                             <Avatar className="h-8 w-8 shrink-0">
                               <AvatarFallback className="text-xs">
-                                {getInitials(msg.sender_name)}
+                                {isEmailMessage ? <Mail className="h-3.5 w-3.5" /> : getInitials(msg.sender_name)}
                               </AvatarFallback>
                             </Avatar>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-baseline gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-medium" data-testid={`text-sender-${msg.id}`}>
                                   {msg.sender_name || "Unknown"}
                                 </span>
+                                {isEmailMessage && (
+                                  <Badge variant="secondary" className="text-[10px]" data-testid={`badge-email-${msg.id}`}>
+                                    <Mail className="h-2.5 w-2.5 mr-1" />
+                                    via email
+                                  </Badge>
+                                )}
                                 <span className="text-[10px] text-muted-foreground/70" data-testid={`text-time-${msg.id}`}>
                                   {formatMessageTime(msg.created_at)}
                                 </span>
@@ -598,86 +646,127 @@ export default function DealChat() {
           <DialogHeader>
             <DialogTitle>Connect Messaging Platforms</DialogTitle>
             <DialogDescription>
-              Link external messaging services to sync conversations into this deal chat. Messages from connected platforms will be analyzed by Ambient Intelligence.
+              Route messages from external platforms into this deal chat. All incoming messages are analyzed by Ambient Intelligence.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            {[
-              {
-                type: "slack",
-                name: "Slack",
-                icon: SiSlack,
-                color: "text-purple-600 dark:text-purple-400",
-                bgColor: "bg-purple-50 dark:bg-purple-950/30",
-                description: "Connect a Slack channel to sync messages bidirectionally.",
-                steps: ["Create a Slack App at api.slack.com", "Add the webhook URL below to Event Subscriptions", "Subscribe to message.channels events", "Install the app to your workspace"],
-              },
-              {
-                type: "whatsapp",
-                name: "WhatsApp",
-                icon: SiWhatsapp,
-                color: "text-green-600 dark:text-green-400",
-                bgColor: "bg-green-50 dark:bg-green-950/30",
-                description: "Route WhatsApp Business messages into this deal chat.",
-                steps: ["Go to Meta Business Suite", "Configure Webhooks in WhatsApp settings", "Paste the webhook URL below", "Verify and subscribe to messages"],
-              },
-              {
-                type: "teams",
-                name: "Microsoft Teams",
-                icon: Users,
-                color: "text-blue-600 dark:text-blue-400",
-                bgColor: "bg-blue-50 dark:bg-blue-950/30",
-                description: "Sync Microsoft Teams channel messages into this deal.",
-                steps: ["Register a Bot in Azure Bot Service", "Set the messaging endpoint to the webhook URL below", "Add the bot to your Teams channel", "Messages will flow automatically"],
-              },
-            ].map((integration) => (
-              <Card key={integration.type} className="p-4" data-testid={`integration-card-${integration.type}`}>
+          <div className="space-y-4 py-2">
+            <Card className="p-4" data-testid="integration-card-email">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-md bg-amber-50 dark:bg-amber-950/30">
+                  <Mail className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-medium text-sm">Email Forwarding</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    CC or forward emails to this address and they will appear in the deal chat automatically.
+                  </p>
+                  <div className="mt-3 flex items-center gap-1">
+                    <code className="flex-1 text-[11px] bg-muted px-2 py-1.5 rounded-md truncate font-mono" data-testid="text-deal-email-address">
+                      {dealEmailData?.emailAddress || "Loading..."}
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={copyEmailAddress}
+                      disabled={!dealEmailData?.emailAddress}
+                      data-testid="button-copy-email-address"
+                    >
+                      {copiedEmail ? (
+                        <Check className="h-3.5 w-3.5 text-green-500" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">Quick Connect</p>
+              <Card className="p-4" data-testid="integration-card-slack">
                 <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-md ${integration.bgColor}`}>
-                    <integration.icon className={`h-5 w-5 ${integration.color}`} />
+                  <div className="p-2 rounded-md bg-purple-50 dark:bg-purple-950/30">
+                    <SiSlack className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <h4 className="font-medium text-sm">{integration.name}</h4>
+                      <h4 className="font-medium text-sm">Slack</h4>
+                      <Button size="sm" onClick={startSlackOAuth} data-testid="button-connect-slack">
+                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                        Connect Slack
+                      </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{integration.description}</p>
-
-                    <div className="mt-3 space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Setup Steps:</p>
-                      <ol className="space-y-1">
-                        {integration.steps.map((step, i) => (
-                          <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
-                            <span className="font-medium text-muted-foreground/70 shrink-0">{i + 1}.</span>
-                            {step}
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-
-                    <div className="mt-3 space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Webhook URL:</p>
-                      <div className="flex items-center gap-1">
-                        <code className="flex-1 text-[11px] bg-muted px-2 py-1.5 rounded-md truncate font-mono" data-testid={`webhook-url-${integration.type}`}>
-                          {webhookUrl(integration.type)}
-                        </code>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => copyWebhook(integration.type)}
-                          data-testid={`button-copy-webhook-${integration.type}`}
-                        >
-                          {copiedWebhook === integration.type ? (
-                            <Check className="h-3.5 w-3.5 text-green-500" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Authorize your Slack workspace and link a channel in one click.
+                    </p>
                   </div>
                 </div>
               </Card>
-            ))}
+              <Card className="p-4" data-testid="integration-card-teams">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-md bg-blue-50 dark:bg-blue-950/30">
+                    <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h4 className="font-medium text-sm">Microsoft Teams</h4>
+                      <Button size="sm" onClick={startTeamsOAuth} data-testid="button-connect-teams">
+                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                        Connect Teams
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Authorize your Teams organization and link a channel automatically.
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            <Card className="p-4" data-testid="integration-card-whatsapp">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-md bg-green-50 dark:bg-green-950/30">
+                  <SiWhatsapp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-medium text-sm">WhatsApp Business</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Route WhatsApp Business messages into this deal chat.
+                  </p>
+                  <div className="mt-3 space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">Setup:</p>
+                    <ol className="space-y-0.5">
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
+                        <span className="font-medium text-muted-foreground/70 shrink-0">1.</span>
+                        In Meta Business Suite, add this webhook URL to WhatsApp settings
+                      </li>
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
+                        <span className="font-medium text-muted-foreground/70 shrink-0">2.</span>
+                        Subscribe to message events and verify
+                      </li>
+                    </ol>
+                    <div className="flex items-center gap-1 mt-2">
+                      <code className="flex-1 text-[11px] bg-muted px-2 py-1.5 rounded-md truncate font-mono" data-testid="webhook-url-whatsapp">
+                        {webhookUrl("whatsapp")}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => copyWebhook("whatsapp")}
+                        data-testid="button-copy-webhook-whatsapp"
+                      >
+                        {copiedWebhook === "whatsapp" ? (
+                          <Check className="h-3.5 w-3.5 text-green-500" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setShowIntegrations(false)} data-testid="button-close-integrations">

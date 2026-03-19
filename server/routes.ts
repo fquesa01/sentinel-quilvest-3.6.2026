@@ -27757,6 +27757,52 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
     }
   });
 
+  async function triggerAmbientAnalysisForChannel(channelId: string) {
+    try {
+      const unanalyzedResult = await db.execute(sql`
+        SELECT COUNT(*)::int as count FROM deal_channel_messages
+        WHERE channel_id = ${channelId} AND is_analyzed = false AND message_type = 'text'
+      `);
+      const unanalyzedCount = (unanalyzedResult.rows as any[])[0]?.count || 0;
+
+      if (unanalyzedCount >= 5) {
+        const channelResult = await db.execute(sql`
+          SELECT ambient_session_id, deal_id FROM deal_channels WHERE id = ${channelId}
+        `);
+        const channel = (channelResult.rows as any[])[0];
+
+        if (channel?.ambient_session_id) {
+          const recentMsgs = await db.execute(sql`
+            SELECT sender_name, content, created_at FROM deal_channel_messages
+            WHERE channel_id = ${channelId} AND message_type = 'text'
+            ORDER BY created_at DESC LIMIT 20
+          `);
+          const msgs = (recentMsgs.rows as any[]).reverse();
+          const transcriptText = msgs.map((m: any) => `${m.sender_name}: ${m.content}`).join('\n');
+
+          await db.execute(sql`
+            INSERT INTO ambient_transcripts (session_id, timestamp_ms, speaker_label, content, is_final)
+            VALUES (${channel.ambient_session_id}, ${Date.now()}, 'chat', ${transcriptText}, true)
+          `);
+
+          try {
+            const { triggerAnalysisForSession } = await import('./services/ambient-ai-service');
+            await triggerAnalysisForSession(channel.ambient_session_id);
+          } catch (aiErr) {
+            console.log("[DealChat] Ambient analysis skipped:", (aiErr as any).message);
+          }
+
+          await db.execute(sql`
+            UPDATE deal_channel_messages SET is_analyzed = true
+            WHERE channel_id = ${channelId} AND is_analyzed = false
+          `);
+        }
+      }
+    } catch (err) {
+      console.error("[DealChat] Ambient trigger error:", err);
+    }
+  }
+
   app.post("/api/integrations/:type/webhook", async (req, res) => {
     try {
       const { type } = req.params;
@@ -27770,6 +27816,24 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
       let externalMessageId: string | null = null;
 
       if (type === 'slack') {
+        const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
+        if (slackSigningSecret) {
+          const timestamp = req.headers['x-slack-request-timestamp'] as string;
+          const slackSignature = req.headers['x-slack-signature'] as string;
+          if (timestamp && slackSignature) {
+            const fiveMinAgo = Math.floor(Date.now() / 1000) - 300;
+            if (parseInt(timestamp) < fiveMinAgo) {
+              return res.status(403).json({ message: 'Slack request timestamp too old' });
+            }
+            const rawBody = JSON.stringify(payload);
+            const sigBasestring = `v0:${timestamp}:${rawBody}`;
+            const mySignature = 'v0=' + crypto.createHmac('sha256', slackSigningSecret).update(sigBasestring).digest('hex');
+            if (!crypto.timingSafeEqual(Buffer.from(mySignature), Buffer.from(slackSignature))) {
+              return res.status(403).json({ message: 'Invalid Slack signature' });
+            }
+          }
+        }
+
         if (payload.type === 'url_verification') {
           return res.json({ challenge: payload.challenge });
         }
@@ -27798,7 +27862,66 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
           externalMessageId = message.id;
         }
       } else if (type === 'teams') {
-        if (payload.text) {
+        const validationToken = req.query.validationToken || payload.validationToken;
+        if (validationToken) {
+          return res.status(200).type('text/plain').send(validationToken);
+        }
+
+        if (payload.value && Array.isArray(payload.value)) {
+          for (const notification of payload.value) {
+            if (notification.clientState) {
+              const dealCheck = await db.execute(sql`
+                SELECT id FROM deals WHERE id = ${notification.clientState}
+              `);
+              if ((dealCheck.rows as any[]).length === 0) {
+                console.warn("[Teams Webhook] Invalid clientState, skipping notification");
+                continue;
+              }
+            }
+
+            const resource = notification.resource || '';
+            const channelIdMatch = resource.match(/channels\/([^/]+)/);
+            const teamIdMatch = resource.match(/teams\/([^/]+)/);
+            const teamsChannelId = channelIdMatch?.[1];
+            const teamsTeamId = teamIdMatch?.[1];
+
+            if (teamsChannelId) {
+              const channelLookup = await db.execute(sql`
+                SELECT id, metadata FROM deal_channels WHERE external_channel_id = ${teamsChannelId} AND channel_type = 'teams'
+              `);
+              const dealChannel = (channelLookup.rows as any[])[0];
+              if (dealChannel) {
+                const meta = typeof dealChannel.metadata === 'string' ? JSON.parse(dealChannel.metadata) : dealChannel.metadata;
+                const token = meta?.accessToken;
+
+                if (notification.resourceData) {
+                  channelId = dealChannel.id;
+                  const msgData = notification.resourceData;
+                  senderName = msgData.from?.user?.displayName || 'Teams User';
+                  content = msgData.body?.content?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+                  externalMessageId = msgData.id;
+                } else if (token && teamsTeamId) {
+                  try {
+                    const msgRes = await fetch(
+                      `https://graph.microsoft.com/v1.0/teams/${teamsTeamId}/channels/${teamsChannelId}/messages?$top=1&$orderby=createdDateTime desc`,
+                      { headers: { 'Authorization': `Bearer ${token}` } }
+                    );
+                    const msgList = await msgRes.json() as any;
+                    const latestMsg = msgList.value?.[0];
+                    if (latestMsg) {
+                      channelId = dealChannel.id;
+                      senderName = latestMsg.from?.user?.displayName || 'Teams User';
+                      content = latestMsg.body?.content?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+                      externalMessageId = latestMsg.id;
+                    }
+                  } catch (fetchErr) {
+                    console.error("[Teams Webhook] Failed to fetch message via Graph API:", fetchErr);
+                  }
+                }
+              }
+            }
+          }
+        } else if (payload.text) {
           const conversationId = payload.conversation?.id;
           const channelLookup = await db.execute(sql`
             SELECT id FROM deal_channels WHERE external_channel_id = ${conversationId} AND channel_type = 'teams'
@@ -27826,12 +27949,450 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         `);
 
         await db.execute(sql`UPDATE deal_channels SET updated_at = NOW() WHERE id = ${channelId}`);
+
+        triggerAmbientAnalysisForChannel(channelId).catch(() => {});
       }
 
       return res.json({ status: 'ok' });
     } catch (error: any) {
       console.error("[Integration Webhook] Error:", error);
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/deals/:dealId/email-address", isAuthenticated, async (req: any, res) => {
+    try {
+      const { dealId } = req.params;
+      const userId = req.user?.id;
+
+      const hasAccess = await verifyDealAccess(userId, req.user?.role, dealId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "You do not have access to this deal" });
+      }
+
+      const existing = await db.execute(sql`
+        SELECT inbound_email_address FROM deal_channels
+        WHERE deal_id = ${dealId} AND channel_type = 'internal' AND is_archived = false
+        LIMIT 1
+      `);
+
+      let emailAddress = (existing.rows as any[])[0]?.inbound_email_address;
+
+      if (!emailAddress) {
+        const shortId = nanoid(10);
+        const emailDomain = process.env.APP_EMAIL_DOMAIN || process.env.APP_DOMAIN || process.env.REPLIT_DEV_DOMAIN || 'inbound.closepilot.app';
+        emailAddress = `deal-${shortId}@${emailDomain}`;
+
+        await db.execute(sql`
+          UPDATE deal_channels
+          SET inbound_email_address = ${emailAddress}
+          WHERE deal_id = ${dealId} AND channel_type = 'internal' AND is_archived = false
+        `);
+      }
+
+      res.json({ emailAddress });
+    } catch (error: any) {
+      console.error("[Deal Email] Error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/integrations/email/inbound", async (req, res) => {
+    try {
+      const webhookSecret = process.env.EMAIL_INBOUND_WEBHOOK_SECRET;
+      if (!webhookSecret) {
+        return res.status(503).json({ message: "Email inbound webhook not configured. Set EMAIL_INBOUND_WEBHOOK_SECRET." });
+      }
+      const authHeader = (req.headers['authorization'] || req.headers['x-webhook-secret'] || '') as string;
+      if (authHeader !== `Bearer ${webhookSecret}` && authHeader !== webhookSecret) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { to, from, subject, text, html } = req.body;
+
+      if (!to) {
+        return res.status(400).json({ message: "Missing 'to' address" });
+      }
+
+      const targetAddress = Array.isArray(to) ? to[0] : to;
+      const emailAddr = typeof targetAddress === 'string'
+        ? (targetAddress.match(/<([^>]+)>/)?.[1] || targetAddress).toLowerCase().trim()
+        : targetAddress?.address?.toLowerCase().trim() || '';
+
+      const channelResult = await db.execute(sql`
+        SELECT id FROM deal_channels WHERE inbound_email_address = ${emailAddr} AND is_archived = false LIMIT 1
+      `);
+
+      const channelId = (channelResult.rows as any[])[0]?.id;
+      if (!channelId) {
+        return res.status(404).json({ message: "No deal channel found for this email address" });
+      }
+
+      const senderStr = typeof from === 'string' ? from : (from?.text || from?.address || 'Unknown');
+      const senderName = senderStr.match(/^([^<]+)</)?.[1]?.trim() || senderStr.split('@')[0] || 'Email User';
+      const body = text || (html ? html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '');
+      const messageContent = subject ? `**${subject}**\n\n${body}` : body;
+
+      if (messageContent.trim()) {
+        await db.execute(sql`
+          INSERT INTO deal_channel_messages (channel_id, sender_name, content, message_type, metadata)
+          VALUES (${channelId}, ${senderName}, ${messageContent}, 'text', ${JSON.stringify({ source: 'email', emailFrom: senderStr, emailSubject: subject || null })})
+        `);
+
+        await db.execute(sql`UPDATE deal_channels SET updated_at = NOW() WHERE id = ${channelId}`);
+
+        triggerAmbientAnalysisForChannel(channelId).catch(() => {});
+      }
+
+      return res.json({ status: 'ok' });
+    } catch (error: any) {
+      console.error("[Email Inbound] Error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const oauthStateStore = new Map<string, { dealId: string; userId: string; provider: string; expiresAt: number }>();
+
+  function createSignedOAuthState(dealId: string, userId: string, provider: string): string {
+    const nonce = nanoid(16);
+    oauthStateStore.set(nonce, { dealId, userId, provider, expiresAt: Date.now() + 10 * 60 * 1000 });
+    const payload = JSON.stringify({ nonce, dealId });
+    const secret = process.env.SESSION_SECRET || process.env.REPL_ID || 'oauth-state-secret';
+    const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+    return Buffer.from(JSON.stringify({ nonce, sig: signature })).toString('base64');
+  }
+
+  function verifyOAuthState(stateParam: string, provider: string): { dealId: string; userId: string } | null {
+    try {
+      const { nonce, sig } = JSON.parse(Buffer.from(stateParam, 'base64').toString());
+      const stored = oauthStateStore.get(nonce);
+      if (!stored || stored.provider !== provider || stored.expiresAt < Date.now()) {
+        return null;
+      }
+      const payload = JSON.stringify({ nonce, dealId: stored.dealId });
+      const secret = process.env.SESSION_SECRET || process.env.REPL_ID || 'oauth-state-secret';
+      const expectedSig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+      if (sig !== expectedSig) return null;
+      oauthStateStore.delete(nonce);
+      return { dealId: stored.dealId, userId: stored.userId };
+    } catch {
+      return null;
+    }
+  }
+
+  async function verifyDealAccess(userId: string, userRole: string | undefined, dealId: string): Promise<boolean> {
+    const memberCheck = await db.execute(sql`
+      SELECT dc.id FROM deal_channels dc
+      JOIN deal_channel_members dcm ON dcm.channel_id = dc.id
+      WHERE dc.deal_id = ${dealId} AND dcm.user_id = ${userId} AND dc.is_archived = false
+      LIMIT 1
+    `);
+    if ((memberCheck.rows as any[]).length > 0) return true;
+    const dealOwnerCheck = await db.execute(sql`
+      SELECT id FROM deals WHERE id = ${dealId} AND created_by = ${userId}
+    `);
+    if ((dealOwnerCheck.rows as any[]).length > 0) return true;
+    return userRole === 'admin' || userRole === 'compliance_officer';
+  }
+
+  app.get("/api/integrations/slack/authorize", isAuthenticated, async (req: any, res) => {
+    try {
+      const { dealId } = req.query;
+      const clientId = process.env.SLACK_CLIENT_ID;
+
+      if (!dealId) {
+        return res.status(400).json({ message: "dealId is required" });
+      }
+
+      const hasAccess = await verifyDealAccess(req.user?.id, req.user?.role, dealId as string);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "You do not have access to this deal" });
+      }
+
+      if (!clientId) {
+        return res.status(400).json({
+          message: "Slack integration not configured. Set SLACK_CLIENT_ID and SLACK_CLIENT_SECRET environment variables."
+        });
+      }
+
+      const state = createSignedOAuthState(dealId as string, req.user?.id, 'slack');
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/slack/callback`;
+      const scopes = 'channels:history,channels:read,chat:write,incoming-webhook';
+
+      const authUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+
+      res.json({ authUrl });
+    } catch (error: any) {
+      console.error("[Slack OAuth] Error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/integrations/slack/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      const clientId = process.env.SLACK_CLIENT_ID;
+      const clientSecret = process.env.SLACK_CLIENT_SECRET;
+
+      if (!code || !clientId || !clientSecret) {
+        return res.redirect('/?slack_error=missing_credentials');
+      }
+
+      const verified = verifyOAuthState(state as string, 'slack');
+      if (!verified) {
+        return res.redirect('/?slack_error=invalid_state');
+      }
+
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/slack/callback`;
+      const tokenResponse = await fetch('https://slack.com/api/oauth.v2.access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code: code as string,
+          redirect_uri: redirectUri,
+        }),
+      });
+
+      const tokenData = await tokenResponse.json() as any;
+
+      if (!tokenData.ok) {
+        console.error("[Slack OAuth] Token exchange failed:", tokenData.error);
+        return res.redirect('/?slack_error=auth_failed');
+      }
+
+      const accessToken = tokenData.access_token;
+      const teamName = tokenData.team?.name || 'Slack Workspace';
+      const channelName = tokenData.incoming_webhook?.channel || teamName;
+      const channelId_slack = tokenData.incoming_webhook?.channel_id;
+
+      if (!channelId_slack) {
+        console.error("[Slack OAuth] No channel_id returned from OAuth; incoming_webhook scope may not have been granted");
+        return res.redirect('/?slack_error=no_channel');
+      }
+
+      let channelVerified = false;
+      try {
+        const channelInfoRes = await fetch(`https://slack.com/api/conversations.info?channel=${channelId_slack}`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        const channelInfo = await channelInfoRes.json() as any;
+        channelVerified = channelInfo.ok === true;
+        if (!channelVerified) {
+          console.warn("[Slack OAuth] Channel verification failed:", channelInfo.error);
+        }
+      } catch (verifyErr) {
+        console.warn("[Slack OAuth] Channel verification request failed:", verifyErr);
+      }
+
+      if (!channelVerified) {
+        return res.redirect('/?slack_error=channel_access_denied');
+      }
+
+      const existingSlackChannel = await db.execute(sql`
+        SELECT id FROM deal_channels
+        WHERE deal_id = ${verified.dealId} AND channel_type = 'slack' AND external_channel_id = ${channelId_slack} AND is_archived = false
+        LIMIT 1
+      `);
+      if ((existingSlackChannel.rows as any[]).length > 0) {
+        return res.redirect('/?slack_connected=already');
+      }
+
+      try {
+        const joinRes = await fetch('https://slack.com/api/conversations.join', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ channel: channelId_slack }),
+        });
+        const joinData = await joinRes.json() as any;
+        if (!joinData.ok && joinData.error !== 'already_in_channel') {
+          console.warn("[Slack OAuth] Bot could not join channel:", joinData.error);
+        }
+      } catch (joinErr) {
+        console.warn("[Slack OAuth] Channel join request failed:", joinErr);
+      }
+
+      await db.execute(sql`
+        INSERT INTO deal_channels (deal_id, channel_name, channel_type, external_channel_id, created_by, metadata)
+        VALUES (
+          ${verified.dealId},
+          ${`Slack: ${channelName}`},
+          'slack',
+          ${channelId_slack},
+          ${verified.userId},
+          ${JSON.stringify({ accessToken, teamId: tokenData.team?.id, teamName, webhookUrl: tokenData.incoming_webhook?.url, channelVerified: true })}
+        )
+      `);
+
+      return res.redirect('/?slack_connected=true');
+    } catch (error: any) {
+      console.error("[Slack OAuth] Callback error:", error);
+      return res.redirect('/?slack_error=server_error');
+    }
+  });
+
+  app.get("/api/integrations/teams/authorize", isAuthenticated, async (req: any, res) => {
+    try {
+      const { dealId } = req.query;
+      const clientId = process.env.TEAMS_CLIENT_ID;
+
+      if (!dealId) {
+        return res.status(400).json({ message: "dealId is required" });
+      }
+
+      const hasAccess = await verifyDealAccess(req.user?.id, req.user?.role, dealId as string);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "You do not have access to this deal" });
+      }
+
+      if (!clientId) {
+        return res.status(400).json({
+          message: "Microsoft Teams integration not configured. Set TEAMS_CLIENT_ID and TEAMS_CLIENT_SECRET environment variables."
+        });
+      }
+
+      const state = createSignedOAuthState(dealId as string, req.user?.id, 'teams');
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/teams/callback`;
+      const scopes = 'https://graph.microsoft.com/ChannelMessage.Read.All https://graph.microsoft.com/Team.ReadBasic.All';
+
+      const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${state}&response_mode=query`;
+
+      res.json({ authUrl });
+    } catch (error: any) {
+      console.error("[Teams OAuth] Error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/integrations/teams/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      const clientId = process.env.TEAMS_CLIENT_ID;
+      const clientSecret = process.env.TEAMS_CLIENT_SECRET;
+
+      if (!code || !clientId || !clientSecret) {
+        return res.redirect('/?teams_error=missing_credentials');
+      }
+
+      const verified = verifyOAuthState(state as string, 'teams');
+      if (!verified) {
+        return res.redirect('/?teams_error=invalid_state');
+      }
+
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/teams/callback`;
+      const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code: code as string,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+        }),
+      });
+
+      const tokenData = await tokenResponse.json() as any;
+
+      if (tokenData.error) {
+        console.error("[Teams OAuth] Token exchange failed:", tokenData.error);
+        return res.redirect('/?teams_error=auth_failed');
+      }
+
+      const accessToken = tokenData.access_token;
+      let teamName = 'Microsoft Teams';
+      let teamId: string | null = null;
+      let teamChannelId = `teams-${nanoid(8)}`;
+      let subscriptionId: string | null = null;
+
+      if (accessToken) {
+        try {
+          const teamsRes = await fetch('https://graph.microsoft.com/v1.0/me/joinedTeams', {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          const teamsData = await teamsRes.json() as any;
+          const firstTeam = teamsData.value?.[0];
+          if (firstTeam) {
+            teamName = firstTeam.displayName || teamName;
+            teamId = firstTeam.id;
+            const channelsRes = await fetch(`https://graph.microsoft.com/v1.0/teams/${firstTeam.id}/channels`, {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+            const channelsData = await channelsRes.json() as any;
+            const generalChannel = channelsData.value?.find((c: any) => c.displayName === 'General') || channelsData.value?.[0];
+            if (generalChannel) {
+              teamChannelId = generalChannel.id;
+            }
+          }
+
+          if (teamId && teamChannelId) {
+            const webhookUrl = `${req.protocol}://${req.get('host')}/api/integrations/teams/webhook`;
+            const expirationDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+            try {
+              const subRes = await fetch('https://graph.microsoft.com/v1.0/subscriptions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  changeType: 'created',
+                  notificationUrl: webhookUrl,
+                  resource: `/teams/${teamId}/channels/${teamChannelId}/messages`,
+                  expirationDateTime: expirationDate,
+                  clientState: verified.dealId,
+                }),
+              });
+              const subData = await subRes.json() as any;
+              if (subData.id) {
+                subscriptionId = subData.id;
+                console.log(`[Teams OAuth] Subscription created: ${subscriptionId}`);
+              } else {
+                console.error("[Teams OAuth] Subscription creation failed:", subData.error?.message || JSON.stringify(subData));
+                return res.redirect('/?teams_error=subscription_failed');
+              }
+            } catch (subError) {
+              console.error("[Teams OAuth] Could not create change subscription:", subError);
+              return res.redirect('/?teams_error=subscription_failed');
+            }
+          }
+        } catch (graphError) {
+          console.error("[Teams OAuth] Could not fetch Teams/channels via Graph API:", graphError);
+          return res.redirect('/?teams_error=graph_api_failed');
+        }
+      }
+
+      if (teamChannelId) {
+        const existingTeamsChannel = await db.execute(sql`
+          SELECT id FROM deal_channels
+          WHERE deal_id = ${verified.dealId} AND channel_type = 'teams' AND external_channel_id = ${teamChannelId} AND is_archived = false
+          LIMIT 1
+        `);
+        if ((existingTeamsChannel.rows as any[]).length > 0) {
+          return res.redirect('/?teams_connected=already');
+        }
+      }
+
+      await db.execute(sql`
+        INSERT INTO deal_channels (deal_id, channel_name, channel_type, external_channel_id, created_by, metadata)
+        VALUES (
+          ${verified.dealId},
+          ${`Teams: ${teamName}`},
+          'teams',
+          ${teamChannelId},
+          ${verified.userId},
+          ${JSON.stringify({ accessToken, refreshToken: tokenData.refresh_token, teamId, subscriptionId })}
+        )
+      `);
+
+      return res.redirect('/?teams_connected=true');
+    } catch (error: any) {
+      console.error("[Teams OAuth] Callback error:", error);
+      return res.redirect('/?teams_error=server_error');
     }
   });
 

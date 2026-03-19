@@ -13302,6 +13302,7 @@ export const dealChannelTypeEnum = pgEnum("deal_channel_type", [
   "slack",
   "teams",
   "sms",
+  "email",
 ]);
 
 export const dealChannelMemberRoleEnum = pgEnum("deal_channel_member_role", [
@@ -13323,6 +13324,8 @@ export const dealChannels = pgTable("deal_channels", {
   channelType: dealChannelTypeEnum("channel_type").default("internal").notNull(),
   ambientSessionId: varchar("ambient_session_id").references(() => ambientSessions.id, { onDelete: "set null" }),
   externalChannelId: varchar("external_channel_id", { length: 255 }),
+  inboundEmailAddress: varchar("inbound_email_address", { length: 255 }),
+  metadata: jsonb("metadata"),
   isArchived: boolean("is_archived").default(false),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
@@ -13330,6 +13333,7 @@ export const dealChannels = pgTable("deal_channels", {
 }, (table) => ({
   dealIdx: index("idx_deal_channels_deal").on(table.dealId),
   typeIdx: index("idx_deal_channels_type").on(table.channelType),
+  emailIdx: index("idx_deal_channels_email").on(table.inboundEmailAddress),
 }));
 
 export type DealChannel = typeof dealChannels.$inferSelect;
