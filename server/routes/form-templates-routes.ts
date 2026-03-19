@@ -11,12 +11,22 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 const REJECTED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".ico", ".webp", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".zip", ".rar", ".7z", ".tar", ".gz", ".exe", ".dll", ".bin"]);
 const FILE_DATA_MAX_SIZE = 5 * 1024 * 1024;
 
+function stripNullBytes(text: string): string {
+  return text.replace(/\x00/g, "");
+}
+
 async function extractContent(buffer: Buffer, fileName: string, mimeType: string): Promise<string> {
+  const raw = await extractContentRaw(buffer, fileName, mimeType);
+  return stripNullBytes(raw);
+}
+
+async function extractContentRaw(buffer: Buffer, fileName: string, mimeType: string): Promise<string> {
+  const lowerName = fileName.toLowerCase();
   try {
-    if (mimeType === "text/html" || mimeType === "text/plain" || fileName.endsWith(".html") || fileName.endsWith(".txt")) {
+    if (mimeType === "text/html" || mimeType === "text/plain" || lowerName.endsWith(".html") || lowerName.endsWith(".txt")) {
       return buffer.toString("utf-8");
     }
-    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || fileName.endsWith(".docx")) {
+    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || lowerName.endsWith(".docx")) {
       try {
         const mammoth = await import("mammoth");
         const result = await mammoth.default.convertToHtml({ buffer });
@@ -26,7 +36,7 @@ async function extractContent(buffer: Buffer, fileName: string, mimeType: string
         return buffer.toString("utf-8");
       }
     }
-    if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
+    if (mimeType === "application/pdf" || lowerName.endsWith(".pdf")) {
       try {
         const pdfParse = (await import("pdf-parse")).default;
         const parsed = await Promise.race([
@@ -40,7 +50,19 @@ async function extractContent(buffer: Buffer, fileName: string, mimeType: string
         return rawText.length > 0 && !rawText.startsWith("%PDF") ? rawText : "[PDF content - could not extract text]";
       }
     }
-    if (mimeType === "application/rtf" || fileName.endsWith(".rtf")) {
+    if (mimeType === "application/msword" || lowerName.endsWith(".doc")) {
+      try {
+        const WordExtractor = (await import("word-extractor")).default;
+        const extractor = new WordExtractor();
+        const doc = await extractor.extract(buffer);
+        const text = doc.getBody();
+        return text.split("\n").map((l: string) => `<p>${l}</p>`).join("\n");
+      } catch (err: unknown) {
+        console.error(`[FormTemplates] DOC parse error for "${fileName}":`, err);
+        return "[DOC content - could not extract text]";
+      }
+    }
+    if (mimeType === "application/rtf" || lowerName.endsWith(".rtf")) {
       const raw = buffer.toString("utf-8");
       const stripped = raw.replace(/\{\\[^{}]*\}/g, "").replace(/\\[a-z]+\d*\s?/gi, "").replace(/[{}]/g, "").trim();
       return stripped || raw;
