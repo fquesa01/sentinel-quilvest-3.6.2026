@@ -84,9 +84,12 @@ app.get("/api/health", (_req, res) => {
     await addEnumValue('entity_user');
     await addEnumValue('individual_user');
 
-    // Migrate existing users from old roles to new roles
-    await pool.query(`UPDATE users SET role = 'super_admin' WHERE role = 'admin'`);
-    await pool.query(`UPDATE users SET role = 'individual_user' WHERE role NOT IN ('super_admin', 'entity_admin', 'entity_user', 'individual_user')`);
+    // Migrate existing users from old roles to new roles (safe: no-op if old values don't exist)
+    const oldAdminCheck = await pool.query(`SELECT 1 FROM pg_enum WHERE enumlabel = 'admin' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'user_role') LIMIT 1`);
+    if (oldAdminCheck.rows.length > 0) {
+      await pool.query(`UPDATE users SET role = 'super_admin' WHERE role = 'admin'`);
+      await pool.query(`UPDATE users SET role = 'individual_user' WHERE role NOT IN ('super_admin', 'entity_admin', 'entity_user', 'individual_user')`);
+    }
 
     // Update the column default
     await pool.query(`ALTER TABLE users ALTER COLUMN role SET DEFAULT 'individual_user'`);
