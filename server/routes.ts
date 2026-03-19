@@ -29244,6 +29244,26 @@ Guidelines:
   // Pipeline Progress - enriches deals with checklist, document, and memo progress
   app.get("/api/pe/deals/pipeline-progress", isAuthenticated, async (req: any, res) => {
     try {
+      const stageSettings = await db.select().from(schema.peFirmSettings).limit(1);
+      const configuredStages: schema.PipelineStage[] =
+        (stageSettings.length > 0 && stageSettings[0].pipelineStages && (stageSettings[0].pipelineStages as any[]).length > 0)
+          ? (stageSettings[0].pipelineStages as schema.PipelineStage[])
+          : schema.DEFAULT_PIPELINE_STAGES;
+      const configuredStageKeys = new Set(configuredStages.map(s => s.key));
+
+      const mapToConfiguredStage = (internalKey: string): string => {
+        if (configuredStageKeys.has(internalKey)) return internalKey;
+        const fallbackOrder = ["pipeline", "preliminary_review", "management_meeting", "loi_submitted",
+          "loi_signed", "diligence", "exclusivity", "definitive_docs", "closed"];
+        const idx = fallbackOrder.indexOf(internalKey);
+        if (idx >= 0) {
+          for (let i = idx; i >= 0; i--) {
+            if (configuredStageKeys.has(fallbackOrder[i])) return fallbackOrder[i];
+          }
+        }
+        return configuredStages[0]?.key || "pipeline";
+      };
+
       const allDeals = await db.select().from(schema.deals).orderBy(desc(schema.deals.createdAt));
 
       const enrichedDeals = await Promise.all(allDeals.map(async (deal) => {
@@ -29307,6 +29327,8 @@ Guidelines:
           effectiveStage = "closed";
         }
 
+        effectiveStage = mapToConfiguredStage(effectiveStage);
+
         return {
           id: deal.id,
           name: deal.title,
@@ -29368,7 +29390,12 @@ Guidelines:
 
   app.post("/api/pe/deals", isAuthenticated, async (req: any, res) => {
     try {
-      const deal = await storage.createPEDeal(req.body);
+      const body = { ...req.body };
+      if (body.status && !schema.isEnumStageKey(body.status)) {
+        body.customStage = body.status;
+        body.status = "pipeline";
+      }
+      const deal = await storage.createPEDeal(body);
       res.status(201).json(deal);
     } catch (error: any) {
       console.error("Error creating PE deal:", error);
@@ -29378,7 +29405,16 @@ Guidelines:
 
   app.patch("/api/pe/deals/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const deal = await storage.updatePEDeal(req.params.id, req.body);
+      const body = { ...req.body };
+      if (body.status !== undefined) {
+        if (schema.isEnumStageKey(body.status)) {
+          body.customStage = null;
+        } else {
+          body.customStage = body.status;
+          body.status = "pipeline";
+        }
+      }
+      const deal = await storage.updatePEDeal(req.params.id, body);
       res.json(deal);
     } catch (error: any) {
       console.error("Error updating PE deal:", error);
@@ -29813,6 +29849,166 @@ Guidelines:
       res.status(201).json(firm);
     } catch (error: any) {
       console.error("Error creating PE firm:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/pe/pipeline-stages", isAuthenticated, async (req: any, res) => {
+    try {
+      const settings = await db.select().from(schema.peFirmSettings).limit(1);
+      if (settings.length > 0 && settings[0].pipelineStages && (settings[0].pipelineStages as any[]).length > 0) {
+        const stages = settings[0].pipelineStages as schema.PipelineStage[];
+        res.json(stages.sort((a, b) => a.sortOrder - b.sortOrder));
+      } else {
+        res.json(schema.DEFAULT_PIPELINE_STAGES);
+      }
+    } catch (error: any) {
+      console.error("Error fetching pipeline stages:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/pe/pipeline-stages", isAuthenticated, async (req: any, res) => {
+    try {
+      const { stages } = req.body as { stages: schema.PipelineStage[] };
+      if (!stages || !Array.isArray(stages) || stages.length === 0) {
+        return res.status(400).json({ message: "At least one stage is required" });
+      }
+      const seenKeys = new Set<string>();
+      for (const stage of stages) {
+        if (!stage.key || typeof stage.key !== "string" || !stage.key.trim()) {
+          return res.status(400).json({ message: "Each stage must have a valid key" });
+        }
+        if (!stage.label || typeof stage.label !== "string" || !stage.label.trim()) {
+          return res.status(400).json({ message: "Each stage must have a non-empty label" });
+        }
+        if (seenKeys.has(stage.key)) {
+          return res.status(400).json({ message: `Duplicate stage key: ${stage.key}` });
+        }
+        seenKeys.add(stage.key);
+        stage.label = stage.label.trim();
+      }
+      const sorted = stages.map((s, i) => ({ ...s, sortOrder: i }));
+
+      const currentSettings = await db.select().from(schema.peFirmSettings).limit(1);
+      const currentStages: schema.PipelineStage[] =
+        (currentSettings.length > 0 && currentSettings[0].pipelineStages && (currentSettings[0].pipelineStages as any[]).length > 0)
+          ? (currentSettings[0].pipelineStages as schema.PipelineStage[])
+          : schema.DEFAULT_PIPELINE_STAGES;
+      const newKeys = new Set(sorted.map(s => s.key));
+      const removedKeys = currentStages.map(s => s.key).filter(k => !newKeys.has(k));
+      if (removedKeys.length > 0) {
+        for (const removedKey of removedKeys) {
+          let dealCount: number;
+          if (schema.isEnumStageKey(removedKey)) {
+            const countResult = await db.select({ count: sql<number>`count(*)::int` })
+              .from(schema.peDeals)
+              .where(and(
+                eq(schema.peDeals.status, removedKey as any),
+                sql`(${schema.peDeals.customStage} IS NULL OR ${schema.peDeals.customStage} = '')`
+              ));
+            dealCount = countResult[0]?.count || 0;
+          } else {
+            const countResult = await db.select({ count: sql<number>`count(*)::int` })
+              .from(schema.peDeals)
+              .where(eq(schema.peDeals.customStage, removedKey));
+            dealCount = countResult[0]?.count || 0;
+          }
+          if (dealCount > 0) {
+            return res.status(400).json({
+              message: `Cannot remove stage "${removedKey}": ${dealCount} deal(s) are still assigned to it. Reassign them first.`,
+              stageKey: removedKey,
+              dealCount,
+            });
+          }
+        }
+      }
+
+      const existing = currentSettings;
+      if (existing.length > 0) {
+        await db.update(schema.peFirmSettings)
+          .set({ pipelineStages: sorted, updatedAt: new Date() })
+          .where(eq(schema.peFirmSettings.id, existing[0].id));
+      } else {
+        const firms = await db.select().from(schema.peFirms).limit(1);
+        const firmId = firms.length > 0 ? firms[0].id : null;
+        if (firmId) {
+          await db.insert(schema.peFirmSettings).values({
+            firmId,
+            pipelineStages: sorted,
+          });
+        } else {
+          return res.status(400).json({ message: "No firm found to save settings" });
+        }
+      }
+      res.json(sorted);
+    } catch (error: any) {
+      console.error("Error updating pipeline stages:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/pe/pipeline-stages/:stageKey/deal-count", isAuthenticated, async (req: any, res) => {
+    try {
+      const { stageKey } = req.params;
+      let result;
+      if (schema.isEnumStageKey(stageKey)) {
+        result = await db.select({ count: sql<number>`count(*)::int` })
+          .from(schema.peDeals)
+          .where(and(
+            eq(schema.peDeals.status, stageKey as any),
+            sql`(${schema.peDeals.customStage} IS NULL OR ${schema.peDeals.customStage} = '')`
+          ));
+      } else {
+        result = await db.select({ count: sql<number>`count(*)::int` })
+          .from(schema.peDeals)
+          .where(eq(schema.peDeals.customStage, stageKey));
+      }
+      res.json({ count: result[0]?.count || 0 });
+    } catch (error: any) {
+      console.error("Error fetching deal count for stage:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/pe/pipeline-stages/reassign-deals", isAuthenticated, async (req: any, res) => {
+    try {
+      const { fromStage, toStage } = req.body;
+      if (!fromStage || !toStage) {
+        return res.status(400).json({ message: "fromStage and toStage are required" });
+      }
+      const settings = await db.select().from(schema.peFirmSettings).limit(1);
+      const configuredStages = (settings.length > 0 && settings[0].pipelineStages && (settings[0].pipelineStages as any[]).length > 0)
+        ? (settings[0].pipelineStages as schema.PipelineStage[])
+        : schema.DEFAULT_PIPELINE_STAGES;
+      const validKeys = configuredStages.map(s => s.key);
+      if (!validKeys.includes(toStage)) {
+        return res.status(400).json({ message: "Target stage does not exist in current configuration" });
+      }
+      const toIsEnum = schema.isEnumStageKey(toStage);
+      const updateData: any = { updatedAt: new Date() };
+      if (toIsEnum) {
+        updateData.status = toStage;
+        updateData.customStage = null;
+      } else {
+        updateData.status = "pipeline";
+        updateData.customStage = toStage;
+      }
+      if (schema.isEnumStageKey(fromStage)) {
+        await db.update(schema.peDeals)
+          .set(updateData)
+          .where(and(
+            eq(schema.peDeals.status, fromStage as any),
+            sql`(${schema.peDeals.customStage} IS NULL OR ${schema.peDeals.customStage} = '')`
+          ));
+      } else {
+        await db.update(schema.peDeals)
+          .set(updateData)
+          .where(eq(schema.peDeals.customStage, fromStage));
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error reassigning deals:", error);
       res.status(500).json({ message: error.message });
     }
   });

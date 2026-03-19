@@ -10176,6 +10176,43 @@ export const insertPEFirmSchema = createInsertSchema(peFirms).omit({
 });
 export type InsertPEFirm = z.infer<typeof insertPEFirmSchema>;
 
+export interface PipelineStage {
+  key: string;
+  label: string;
+  color: string;
+  sortOrder: number;
+  isDefault?: boolean;
+}
+
+export const PE_DEAL_STATUS_ENUM_VALUES = [
+  "pipeline", "preliminary_review", "management_meeting", "loi_submitted",
+  "loi_signed", "diligence", "exclusivity", "definitive_docs",
+  "closed", "cancelled", "passed", "lost",
+] as const;
+
+export function isEnumStageKey(key: string): boolean {
+  return (PE_DEAL_STATUS_ENUM_VALUES as readonly string[]).includes(key);
+}
+
+export function resolveStageKey(deal: { status: string; customStage?: string | null }): string {
+  return deal.customStage || deal.status;
+}
+
+export const DEFAULT_PIPELINE_STAGES: PipelineStage[] = [
+  { key: "pipeline", label: "Pipeline", color: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300", sortOrder: 0, isDefault: true },
+  { key: "preliminary_review", label: "Preliminary Review", color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300", sortOrder: 1, isDefault: true },
+  { key: "management_meeting", label: "Management Meeting", color: "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300", sortOrder: 2, isDefault: true },
+  { key: "loi_submitted", label: "LOI Submitted", color: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300", sortOrder: 3, isDefault: true },
+  { key: "loi_signed", label: "LOI Signed", color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300", sortOrder: 4, isDefault: true },
+  { key: "diligence", label: "Diligence", color: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300", sortOrder: 5, isDefault: true },
+  { key: "exclusivity", label: "Exclusivity", color: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300", sortOrder: 6, isDefault: true },
+  { key: "definitive_docs", label: "Definitive Docs", color: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300", sortOrder: 7, isDefault: true },
+  { key: "closed", label: "Closed", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300", sortOrder: 8, isDefault: true },
+  { key: "cancelled", label: "Cancelled", color: "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300", sortOrder: 9, isDefault: true },
+  { key: "passed", label: "Passed", color: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300", sortOrder: 10, isDefault: true },
+  { key: "lost", label: "Lost", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300", sortOrder: 11, isDefault: true },
+];
+
 // PE Firm Settings
 export const peFirmSettings = pgTable("pe_firm_settings", {
   id: varchar("id")
@@ -10188,6 +10225,7 @@ export const peFirmSettings = pgTable("pe_firm_settings", {
   defaultWorkstreams: jsonb("default_workstreams").$type<any[]>().default([]),
   riskCategories: jsonb("risk_categories").$type<any[]>().default([]),
   integrations: jsonb("integrations").$type<Record<string, any>>().default({}),
+  pipelineStages: jsonb("pipeline_stages").$type<PipelineStage[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -10239,6 +10277,7 @@ export const peDeals = pgTable("pe_deals", {
   name: varchar("name", { length: 255 }).notNull(),
   codeName: varchar("code_name", { length: 100 }),
   status: peDealStatusEnum("status").default("pipeline").notNull(),
+  customStage: varchar("custom_stage", { length: 100 }),
   dealType: peDealTypeEnum("deal_type").notNull(),
   sector: varchar("sector", { length: 100 }).notNull(),
   subsector: varchar("subsector", { length: 100 }),

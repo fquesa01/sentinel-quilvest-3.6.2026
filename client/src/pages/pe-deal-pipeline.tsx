@@ -64,7 +64,11 @@ import {
   Flag,
   ExternalLink,
   Mail,
+  Settings,
 } from "lucide-react";
+import { PipelineStageSettings } from "@/components/pipeline-stage-settings";
+import type { PipelineStage } from "@shared/schema";
+import { DEFAULT_PIPELINE_STAGES } from "@shared/schema";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -83,6 +87,7 @@ interface PEDeal {
   name: string;
   codeName: string | null;
   status: string;
+  customStage: string | null;
   dealType: string;
   sector: string;
   subsector: string | null;
@@ -153,20 +158,11 @@ interface EnrichedDeal {
   };
 }
 
-const dealStages = [
-  { value: "pipeline", label: "Pipeline", color: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300" },
-  { value: "preliminary_review", label: "Preliminary Review", color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300" },
-  { value: "management_meeting", label: "Management Meeting", color: "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300" },
-  { value: "loi_submitted", label: "LOI Submitted", color: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300" },
-  { value: "loi_signed", label: "LOI Signed", color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300" },
-  { value: "diligence", label: "Diligence", color: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300" },
-  { value: "exclusivity", label: "Exclusivity", color: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300" },
-  { value: "definitive_docs", label: "Definitive Docs", color: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300" },
-  { value: "closed", label: "Closed", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" },
-  { value: "cancelled", label: "Cancelled", color: "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300" },
-  { value: "passed", label: "Passed", color: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300" },
-  { value: "lost", label: "Lost", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300" },
-];
+const fallbackDealStages = DEFAULT_PIPELINE_STAGES.map(s => ({
+  value: s.key,
+  label: s.label,
+  color: s.color,
+}));
 
 const sectors = [
   "Technology", "Healthcare", "Consumer", "Industrials", "Financial Services",
@@ -182,8 +178,6 @@ const dealTypes = [
   { value: "secondary", label: "Secondary" },
 ];
 
-const stageOrder = dealStages.map(s => s.value);
-
 export default function PEDealPipeline() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
@@ -194,12 +188,24 @@ export default function PEDealPipeline() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [dealToDelete, setDealToDelete] = useState<PEDeal | null>(null);
   const [sourcingDetail, setSourcingDetail] = useState<FlaggedAlert | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const { data: customStages } = useQuery<PipelineStage[]>({
+    queryKey: ["/api/pe/pipeline-stages"],
+  });
+
+  const dealStages = customStages
+    ? customStages.map(s => ({ value: s.key, label: s.label, color: s.color }))
+    : fallbackDealStages;
+
+  const stageOrder = dealStages.map(s => s.value);
+  const defaultStageKey = dealStages.length > 0 ? dealStages[0].value : "pipeline";
   const [newDeal, setNewDeal] = useState({
     name: "",
     sector: "Technology",
     subsector: "",
     geography: "North America",
-    status: "pipeline",
+    status: defaultStageKey,
     dealType: "platform",
     enterpriseValue: "",
     targetDescription: "",
@@ -288,7 +294,8 @@ export default function PEDealPipeline() {
     const matchesSearch = 
       deal.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       deal.sector.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStage = stageFilter === "all" || deal.status === stageFilter;
+    const resolvedStage = deal.customStage || deal.status;
+    const matchesStage = stageFilter === "all" || resolvedStage === stageFilter;
     const matchesSector = sectorFilter === "all" || deal.sector === sectorFilter;
     return matchesSearch && matchesStage && matchesSector;
   });
@@ -317,7 +324,7 @@ export default function PEDealPipeline() {
     if (pipelineMode === "intelligent") {
       return filteredEnrichedDeals?.filter(d => d.effectiveStage === stage) || [];
     }
-    return filteredDeals?.filter(d => d.status === stage) || [];
+    return filteredDeals?.filter(d => (d.customStage || d.status) === stage) || [];
   };
 
   const getMemoLabel = (status: string | null) => {
@@ -346,10 +353,10 @@ export default function PEDealPipeline() {
     inDueDiligence: enrichedDeals?.filter(d => d.effectiveStage === "diligence").length || 0,
   } : {
     totalDeals: deals?.length || 0,
-    activeDeals: deals?.filter(d => !["closed", "cancelled", "passed", "lost"].includes(d.status)).length || 0,
-    closedDeals: deals?.filter(d => d.status === "closed").length || 0,
+    activeDeals: deals?.filter(d => !["closed", "cancelled", "passed", "lost"].includes(d.customStage || d.status)).length || 0,
+    closedDeals: deals?.filter(d => (d.customStage || d.status) === "closed").length || 0,
     totalEV: deals?.reduce((sum, d) => sum + (parseFloat(d.enterpriseValue || "0") || 0), 0) || 0,
-    inDueDiligence: deals?.filter(d => d.status === "diligence").length || 0,
+    inDueDiligence: deals?.filter(d => (d.customStage || d.status) === "diligence").length || 0,
   };
 
   if (isLoading) {
@@ -400,6 +407,9 @@ export default function PEDealPipeline() {
               Manual
             </Button>
           </div>
+          <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)} data-testid="button-pipeline-settings">
+            <Settings className="h-4 w-4" />
+          </Button>
           <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-deal">
             <Plus className="h-4 w-4 mr-2" />
             New Deal
@@ -829,7 +839,7 @@ export default function PEDealPipeline() {
               ) : (
                 <>
                   {filteredDeals?.map((deal) => {
-                    const stageInfo = getStageInfo(deal.status);
+                    const stageInfo = getStageInfo(deal.customStage || deal.status);
                     return (
                       <TableRow key={deal.id} data-testid={`row-deal-${deal.id}`}>
                         <TableCell>
@@ -1094,6 +1104,8 @@ export default function PEDealPipeline() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PipelineStageSettings open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
     </div>
   );
 }

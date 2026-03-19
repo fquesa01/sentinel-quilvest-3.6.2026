@@ -60,6 +60,8 @@ import {
   Eye,
 } from "lucide-react";
 import { format } from "date-fns";
+import type { PipelineStage } from "@shared/schema";
+import { DEFAULT_PIPELINE_STAGES } from "@shared/schema";
 
 interface PEDeal {
   id: string;
@@ -67,6 +69,7 @@ interface PEDeal {
   name: string;
   codeName: string | null;
   status: string;
+  customStage: string | null;
   dealType: string;
   sector: string;
   subsector: string | null;
@@ -138,20 +141,10 @@ interface PatternMatch {
   acknowledged: boolean;
 }
 
-const dealStages = [
-  { value: "pipeline", label: "Pipeline" },
-  { value: "preliminary_review", label: "Preliminary Review" },
-  { value: "management_meeting", label: "Management Meeting" },
-  { value: "loi_submitted", label: "LOI Submitted" },
-  { value: "loi_signed", label: "LOI Signed" },
-  { value: "diligence", label: "Diligence" },
-  { value: "exclusivity", label: "Exclusivity" },
-  { value: "definitive_docs", label: "Definitive Docs" },
-  { value: "closed", label: "Closed" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "passed", label: "Passed" },
-  { value: "lost", label: "Lost" },
-];
+const fallbackDealStages = DEFAULT_PIPELINE_STAGES.map(s => ({
+  value: s.key,
+  label: s.label,
+}));
 
 const dealTypes = [
   { value: "platform", label: "Platform" },
@@ -191,6 +184,14 @@ export default function PEDealDetail() {
   const [isAddWorkstreamOpen, setIsAddWorkstreamOpen] = useState(false);
   const [isAddQuestionOpen, setIsAddQuestionOpen] = useState(false);
   const [isAddRiskOpen, setIsAddRiskOpen] = useState(false);
+
+  const { data: customStages } = useQuery<PipelineStage[]>({
+    queryKey: ["/api/pe/pipeline-stages"],
+  });
+
+  const dealStages = customStages
+    ? customStages.map(s => ({ value: s.key, label: s.label }))
+    : fallbackDealStages;
 
   const [newWorkstream, setNewWorkstream] = useState({
     name: "",
@@ -335,7 +336,8 @@ export default function PEDealDetail() {
     );
   }
 
-  const stageInfo = dealStages.find(s => s.value === deal.status);
+  const resolvedStage = deal.customStage || deal.status;
+  const stageInfo = dealStages.find(s => s.value === resolvedStage);
   const overallProgress = workstreams?.length 
     ? Math.round(workstreams.reduce((sum, w) => sum + (w.progress || 0), 0) / workstreams.length)
     : 0;
@@ -397,12 +399,12 @@ export default function PEDealDetail() {
             <Button 
               variant="outline" 
               onClick={() => {
-                setSelectedStage(deal.status);
+                setSelectedStage(resolvedStage);
                 setIsEditingStage(true);
               }}
               data-testid="button-change-stage"
             >
-              {stageInfo?.label || deal.status}
+              {stageInfo?.label || resolvedStage}
               <Edit2 className="h-4 w-4 ml-2" />
             </Button>
           )}
