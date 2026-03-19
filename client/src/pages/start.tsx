@@ -7,18 +7,24 @@ import { executeAvaCommand } from "@/lib/ava-command-router";
 import { Mic, MicOff, ArrowRight, Loader2, LayoutGrid, ChevronRight, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-function applyGreenTheme() {
-  document.documentElement.classList.remove("dark");
-  document.documentElement.classList.add("green");
+function applyDarkTheme() {
+  document.documentElement.classList.remove("dark", "green", "sentinel", "navy", "linear", "orange");
+  document.documentElement.classList.add("dark");
 }
 
 function restoreUserTheme() {
   const stored = localStorage.getItem("theme");
-  document.documentElement.classList.remove("dark", "green");
-  if (stored === "dark") {
+  document.documentElement.classList.remove("dark", "green", "sentinel", "navy", "linear", "orange");
+  if (stored === "light") {
+    // light mode = no class needed
+  } else if (stored === "navy") {
+    document.documentElement.classList.add("navy");
+  } else if (stored === "linear") {
+    document.documentElement.classList.add("linear");
+  } else if (stored === "orange") {
+    document.documentElement.classList.add("orange");
+  } else {
     document.documentElement.classList.add("dark");
-  } else if (stored === "green") {
-    document.documentElement.classList.add("green");
   }
 }
 
@@ -93,7 +99,7 @@ export default function StartPage() {
   const displayTranscript = transcript || interimTranscript;
 
   useEffect(() => {
-    applyGreenTheme();
+    applyDarkTheme();
     return () => {
       restoreUserTheme();
     };

@@ -1,19 +1,19 @@
-import { Moon, Sun, Leaf, Sparkles, Anchor, Layers, Flame } from "lucide-react";
+import { Moon, Sun, Anchor, Layers, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 
-type Theme = "light" | "dark" | "green" | "sentinel" | "navy" | "linear" | "orange";
+type Theme = "light" | "dark" | "navy" | "linear" | "orange";
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("green");
+  const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
     const stored = localStorage.getItem("theme");
     
-    const validThemes = ["dark", "light", "green", "sentinel", "navy", "linear", "orange"];
+    const validThemes = ["dark", "light", "navy", "linear", "orange"];
     const initialTheme: Theme = validThemes.includes(stored || "")
       ? stored as Theme
-      : "green";
+      : "dark";
     
     setTheme(initialTheme);
     applyTheme(initialTheme);
@@ -23,10 +23,6 @@ export function ThemeToggle() {
     document.documentElement.classList.remove("dark", "green", "sentinel", "navy", "linear", "orange");
     if (newTheme === "dark") {
       document.documentElement.classList.add("dark");
-    } else if (newTheme === "green") {
-      document.documentElement.classList.add("green");
-    } else if (newTheme === "sentinel") {
-      document.documentElement.classList.add("sentinel");
     } else if (newTheme === "navy") {
       document.documentElement.classList.add("navy");
     } else if (newTheme === "linear") {
@@ -37,7 +33,7 @@ export function ThemeToggle() {
   };
 
   const cycleTheme = () => {
-    const themeOrder: Theme[] = ["light", "dark", "green", "sentinel", "navy", "linear", "orange"];
+    const themeOrder: Theme[] = ["light", "dark", "navy", "linear", "orange"];
     const currentIndex = themeOrder.indexOf(theme);
     const nextIndex = (currentIndex + 1) % themeOrder.length;
     const newTheme = themeOrder[nextIndex];
@@ -52,10 +48,6 @@ export function ThemeToggle() {
       case "light":
         return "Switch to dark mode";
       case "dark":
-        return "Switch to green mode";
-      case "green":
-        return "Switch to sentinel mode";
-      case "sentinel":
         return "Switch to navy mode";
       case "navy":
         return "Switch to linear mode";
@@ -71,10 +63,6 @@ export function ThemeToggle() {
       case "light":
         return <Moon className="h-5 w-5" />;
       case "dark":
-        return <Leaf className="h-5 w-5" />;
-      case "green":
-        return <Sparkles className="h-5 w-5" />;
-      case "sentinel":
         return <Anchor className="h-5 w-5" />;
       case "navy":
         return <Layers className="h-5 w-5" />;
