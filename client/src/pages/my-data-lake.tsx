@@ -212,6 +212,18 @@ export default function MyDataLakePage() {
     },
   });
 
+  const handleConnect = useCallback((connectorType: string) => {
+    const returnUrl = encodeURIComponent("/my-data-lake");
+    if (connectorType === "outlook") {
+      window.location.href = `/api/email/oauth/microsoft?returnUrl=${returnUrl}`;
+    } else if (connectorType === "gmail") {
+      window.location.href = `/api/email/oauth/google?returnUrl=${returnUrl}`;
+    } else {
+      const name = CONNECTOR_META[connectorType]?.name ?? connectorType;
+      toast({ title: "Coming Soon", description: `${name} integration is not yet available. Stay tuned!` });
+    }
+  }, [toast]);
+
   const handleFileDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -335,7 +347,7 @@ export default function MyDataLakePage() {
                               <CheckCircle className="w-4 h-4 text-green-500" />
                             </div>
                           ) : (
-                            <Button size="sm" data-testid={`button-connect-${c.connectorType}`}>
+                            <Button size="sm" data-testid={`button-connect-${c.connectorType}`} onClick={() => handleConnect(c.connectorType)}>
                               Connect
                             </Button>
                           )}
@@ -499,6 +511,7 @@ export default function MyDataLakePage() {
                         <Button
                           className="flex-1"
                           data-testid={`button-connect-${c.connectorType}`}
+                          onClick={() => handleConnect(c.connectorType)}
                         >
                           <Link className="w-3 h-3 mr-1" /> Connect {meta.name}
                         </Button>
