@@ -28,7 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileStack, Upload, Search, Trash2, Star, FileText, Eye, Download, Share2,
   Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle, XCircle,
-  Table2, List, LayoutGrid, MoreVertical,
+  Table2, List, LayoutGrid, MoreVertical, ArrowUpDown, ChevronUp,
 } from "lucide-react";
 import {
   Tooltip, TooltipContent, TooltipTrigger,
@@ -258,6 +258,20 @@ export default function FormTemplatesPage() {
     setViewMode(mode);
     try { localStorage.setItem("forms-view-mode", mode); } catch {}
   };
+
+  type SortField = "name" | "documentType" | "dealType" | "fileSize" | "createdAt" | "isDefault";
+  const [sortBy, setSortBy] = useState<SortField>("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortDir(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortDir("asc");
+    }
+  };
+
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [shareTemplate, setShareTemplate] = useState<FirmFormTemplate | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<string | null>(null);
@@ -695,6 +709,43 @@ export default function FormTemplatesPage() {
     return matchesSearch && matchesType;
   });
 
+  const sortedTemplates = [...filteredTemplates].sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    switch (sortBy) {
+      case "name":
+        return dir * a.name.localeCompare(b.name);
+      case "documentType":
+        return dir * a.documentType.localeCompare(b.documentType);
+      case "dealType":
+        return dir * (a.dealType || "").localeCompare(b.dealType || "");
+      case "fileSize":
+        return dir * ((a.fileSize || 0) - (b.fileSize || 0));
+      case "createdAt":
+        return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      case "isDefault":
+        return dir * ((a.isDefault ? 1 : 0) - (b.isDefault ? 1 : 0));
+      default:
+        return 0;
+    }
+  });
+
+  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
+    <th
+      className="px-4 py-3 font-medium cursor-pointer select-none hover:text-foreground transition-colors"
+      onClick={() => handleSort(field)}
+      data-testid={`th-sort-${field}`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {sortBy === field ? (
+          sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-40" />
+        )}
+      </span>
+    </th>
+  );
+
   const getDocTypeLabel = (type: string) => {
     return DOCUMENT_TYPES.find(d => d.value === type)?.label || type.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
   };
@@ -1044,17 +1095,17 @@ export default function FormTemplatesPage() {
               <table className="w-full" data-testid="templates-table">
                 <thead>
                   <tr className="border-b text-left text-sm text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-4 py-3 font-medium">Document Type</th>
-                    <th className="px-4 py-3 font-medium">Deal Type</th>
-                    <th className="px-4 py-3 font-medium">File Size</th>
-                    <th className="px-4 py-3 font-medium">Upload Date</th>
-                    <th className="px-4 py-3 font-medium">Default</th>
+                    <SortHeader field="name">Name</SortHeader>
+                    <SortHeader field="documentType">Document Type</SortHeader>
+                    <SortHeader field="dealType">Deal Type</SortHeader>
+                    <SortHeader field="fileSize">File Size</SortHeader>
+                    <SortHeader field="createdAt">Upload Date</SortHeader>
+                    <SortHeader field="isDefault">Default</SortHeader>
                     <th className="px-4 py-3 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredTemplates.map((template) => (
+                  {sortedTemplates.map((template) => (
                     <tr key={template.id} className="border-b last:border-b-0 hover-elevate" data-testid={`template-row-${template.id}`}>
                       <td className="px-4 py-3">
                         <div className="min-w-0">
