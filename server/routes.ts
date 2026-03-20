@@ -30289,16 +30289,18 @@ Guidelines:
           .set({ pipelineStages: sorted, updatedAt: new Date() })
           .where(eq(schema.peFirmSettings.id, existing[0].id));
       } else {
-        const firms = await db.select().from(schema.peFirms).limit(1);
-        const firmId = firms.length > 0 ? firms[0].id : null;
-        if (firmId) {
-          await db.insert(schema.peFirmSettings).values({
-            firmId,
-            pipelineStages: sorted,
-          });
-        } else {
-          return res.status(400).json({ message: "No firm found to save settings" });
+        let firms = await db.select().from(schema.peFirms).limit(1);
+        if (firms.length === 0) {
+          const [newFirm] = await db.insert(schema.peFirms).values({
+            name: "Default Firm",
+          }).returning();
+          firms = [newFirm];
         }
+        const firmId = firms[0].id;
+        await db.insert(schema.peFirmSettings).values({
+          firmId,
+          pipelineStages: sorted,
+        });
       }
       res.json(sorted);
     } catch (error: any) {

@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { regulations, communications, alerts, cases } from "@shared/schema";
+import { regulations, communications, alerts, cases, peFirms } from "@shared/schema";
 
 export async function seedDatabase() {
   console.log("Seeding database with sample data...");
@@ -69,6 +69,18 @@ export async function seedDatabase() {
     console.log(`✓ Seeded ${sampleRegulations.length} regulations`);
   } catch (error) {
     console.error("Error seeding regulations:", error);
+  }
+
+  try {
+    const existingFirms = await db.select().from(peFirms).limit(1);
+    if (existingFirms.length === 0) {
+      await db.insert(peFirms).values({ name: "Default Firm" }).onConflictDoNothing();
+      console.log("✓ Seeded default PE firm");
+    } else {
+      console.log("✓ PE firm already exists, skipping");
+    }
+  } catch (error) {
+    console.error("Error seeding PE firm:", error);
   }
 
   console.log("Database seeding complete!");
