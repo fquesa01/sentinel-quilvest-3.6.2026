@@ -2323,6 +2323,16 @@ export default function TransactionsDealDetail() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1">
+                              {note.ambientSessionId && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={(e) => { e.stopPropagation(); window.open(`/ambient-intelligence/${note.ambientSessionId}`, "_blank"); }}
+                                  data-testid={`button-view-session-${note.id}`}
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                </Button>
+                              )}
                               {note.sourceUrl && (
                                 <Button
                                   size="icon"

@@ -27447,6 +27447,65 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         return res.status(404).json({ message: "Session not found" });
       }
       
+      if (status === "completed" && session.dealId) {
+        try {
+          const existingNote = await db
+            .select({ id: schema.dealMeetingNotes.id })
+            .from(schema.dealMeetingNotes)
+            .where(eq(schema.dealMeetingNotes.ambientSessionId, session.id))
+            .limit(1);
+          
+          if (existingNote.length === 0) {
+            const transcripts = await db
+              .select()
+              .from(schema.ambientTranscripts)
+              .where(eq(schema.ambientTranscripts.sessionId, session.id))
+              .orderBy(schema.ambientTranscripts.timestampMs);
+            
+            const fullTranscript = transcripts.map(t => {
+              const timeLabel = t.speakerLabel ? `[${t.speakerLabel}]` : "";
+              return `${timeLabel} ${t.content}`.trim();
+            }).join("\n");
+            
+            if (fullTranscript.length > 0) {
+              await db.insert(schema.dealMeetingNotes).values({
+                dealId: session.dealId,
+                title: session.sessionName || "Ambient Intelligence Session",
+                meetingDate: session.startedAt || session.createdAt,
+                source: "ambient_intelligence",
+                transcript: fullTranscript,
+                duration: session.durationSeconds ? Math.round(session.durationSeconds / 60) : null,
+                ambientSessionId: session.id,
+                uploadedBy: userId,
+              });
+              console.log(`[AmbientSync] Created deal meeting note for session ${session.id} on deal ${session.dealId}`);
+            }
+          }
+        } catch (syncError) {
+          console.error("[AmbientSync] Failed to create deal meeting note:", syncError);
+        }
+      }
+      
+      if (dealId !== undefined && dealId !== null && status !== "completed") {
+        try {
+          const existingNote = await db
+            .select({ id: schema.dealMeetingNotes.id })
+            .from(schema.dealMeetingNotes)
+            .where(eq(schema.dealMeetingNotes.ambientSessionId, req.params.id))
+            .limit(1);
+          
+          if (existingNote.length > 0) {
+            await db
+              .update(schema.dealMeetingNotes)
+              .set({ dealId: String(dealId), updatedAt: new Date() })
+              .where(eq(schema.dealMeetingNotes.ambientSessionId, req.params.id));
+            console.log(`[AmbientSync] Updated meeting note deal assignment for session ${req.params.id}`);
+          }
+        } catch (syncError) {
+          console.error("[AmbientSync] Failed to update meeting note deal:", syncError);
+        }
+      }
+      
       res.json(session);
     } catch (error: any) {
       console.error("Error updating ambient session:", error);
@@ -27699,6 +27758,36 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
     try {
       const { generateSessionSummary } = await import("./services/ambient-ai-service");
       const summary = await generateSessionSummary(req.params.id);
+      
+      try {
+        const [meetingNote] = await db
+          .select({ id: schema.dealMeetingNotes.id })
+          .from(schema.dealMeetingNotes)
+          .where(eq(schema.dealMeetingNotes.ambientSessionId, req.params.id))
+          .limit(1);
+        
+        if (meetingNote) {
+          const actionItems = summary.actionItems?.map((a: string) => ({
+            description: a,
+            completed: false,
+          })) || [];
+          
+          await db
+            .update(schema.dealMeetingNotes)
+            .set({
+              summary: summary.summary || null,
+              keyPoints: summary.keyTopics || [],
+              actionItems,
+              decisions: summary.documentMentions || [],
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.dealMeetingNotes.id, meetingNote.id));
+          console.log(`[AmbientSync] Updated meeting note ${meetingNote.id} with session summary`);
+        }
+      } catch (syncError) {
+        console.error("[AmbientSync] Failed to update meeting note with summary:", syncError);
+      }
+      
       res.json(summary);
     } catch (error: any) {
       console.error("[AmbientAI] Summary generation failed:", error);
@@ -27771,6 +27860,38 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
             actionItems,
           })
           .returning();
+      }
+      
+      try {
+        const [meetingNote] = await db
+          .select({ id: schema.dealMeetingNotes.id })
+          .from(schema.dealMeetingNotes)
+          .where(eq(schema.dealMeetingNotes.ambientSessionId, req.params.id))
+          .limit(1);
+        
+        if (meetingNote && summaryText) {
+          const mappedActionItems = actionItems?.map((a: any) => ({
+            description: typeof a === "string" ? a : a.description || "",
+            completed: false,
+          })) || [];
+          
+          const topicDecisions = keyMoments?.map((m: any) => 
+            typeof m === "string" ? m : m.description || ""
+          ).filter(Boolean) || [];
+          
+          await db
+            .update(schema.dealMeetingNotes)
+            .set({
+              summary: summaryText,
+              keyPoints: topicDecisions,
+              actionItems: mappedActionItems,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.dealMeetingNotes.id, meetingNote.id));
+          console.log(`[AmbientSync] Updated meeting note ${meetingNote.id} with manual summary`);
+        }
+      } catch (syncError) {
+        console.error("[AmbientSync] Failed to sync manual summary to meeting note:", syncError);
       }
       
       res.json(summary);

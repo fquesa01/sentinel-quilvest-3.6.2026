@@ -6762,11 +6762,13 @@ export const dealMeetingNotes = pgTable("deal_meeting_notes", {
   attendees: jsonb("attendees").$type<{ name: string; role?: string }[]>().default([]),
   duration: integer("duration"),
   tags: text("tags").array(),
+  ambientSessionId: varchar("ambient_session_id"),
   uploadedBy: varchar("uploaded_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   dealIdx: index("idx_deal_meeting_notes_deal").on(table.dealId),
+  ambientSessionIdx: index("idx_deal_meeting_notes_ambient_session").on(table.ambientSessionId),
 }));
 
 export const dealMeetingNotesRelations = relations(dealMeetingNotes, ({ one }) => ({
