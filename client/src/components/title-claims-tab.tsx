@@ -30,11 +30,9 @@ import {
   Loader2,
   DollarSign,
   Clock,
-  AlertTriangle,
   BarChart3,
   ChevronRight,
   FileText,
-  X,
 } from "lucide-react";
 import type { TitleClaim, ClaimActivityLog, TitleCommitment } from "@shared/schema";
 import { format } from "date-fns";
@@ -122,6 +120,8 @@ export function TitleClaimsTab({ dealId }: { dealId: string }) {
   const [detailClaim, setDetailClaim] = useState<TitleClaim | null>(null);
   const [claimForm, setClaimForm] = useState<ClaimFormState>(emptyClaimForm);
   const [noteText, setNoteText] = useState("");
+  const [paidAmountInput, setPaidAmountInput] = useState("");
+  const [resolutionNotesInput, setResolutionNotesInput] = useState("");
 
   const { data: claims = [], isLoading } = useQuery<TitleClaim[]>({
     queryKey: ["/api/deals", dealId, "title", "claims"],
@@ -547,17 +547,17 @@ export function TitleClaimsTab({ dealId }: { dealId: string }) {
                         <Input
                           type="number"
                           placeholder="0.00"
-                          id="paid-amount-input"
+                          value={paidAmountInput}
+                          onChange={(e) => setPaidAmountInput(e.target.value)}
                           data-testid="input-update-paid"
                         />
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            const el = document.getElementById("paid-amount-input") as HTMLInputElement;
-                            if (el?.value) {
-                              updateClaimMutation.mutate({ id: detailClaim.id, data: { paidAmount: el.value } });
-                              el.value = "";
+                            if (paidAmountInput) {
+                              updateClaimMutation.mutate({ id: detailClaim.id, data: { paidAmount: paidAmountInput } });
+                              setPaidAmountInput("");
                             }
                           }}
                           data-testid="button-update-paid"
@@ -571,17 +571,17 @@ export function TitleClaimsTab({ dealId }: { dealId: string }) {
                       <div className="flex gap-2">
                         <Input
                           placeholder="Notes..."
-                          id="resolution-notes-input"
+                          value={resolutionNotesInput}
+                          onChange={(e) => setResolutionNotesInput(e.target.value)}
                           data-testid="input-resolution-notes"
                         />
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            const el = document.getElementById("resolution-notes-input") as HTMLInputElement;
-                            if (el?.value) {
-                              updateClaimMutation.mutate({ id: detailClaim.id, data: { resolutionNotes: el.value } });
-                              el.value = "";
+                            if (resolutionNotesInput) {
+                              updateClaimMutation.mutate({ id: detailClaim.id, data: { resolutionNotes: resolutionNotesInput } });
+                              setResolutionNotesInput("");
                             }
                           }}
                           data-testid="button-update-notes"
