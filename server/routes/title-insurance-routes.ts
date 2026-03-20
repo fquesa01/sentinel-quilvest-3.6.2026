@@ -76,7 +76,7 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
         .select({ count: sql<number>`count(*)::int` })
         .from(schema.titleCommitments);
       const nextNum = (countResult[0]?.count || 0) + 1;
-      const commitmentNumber = `TC-${year}-${String(nextNum).padStart(4, "0")}`;
+      const commitmentNumber = `TC-${year}-${String(nextNum).padStart(3, "0")}`;
 
       const parsed = insertTitleCommitmentSchema.parse({
         ...req.body,
@@ -138,6 +138,41 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Unknown error";
       console.error("Error deleting title commitment:", msg);
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  app.get("/api/deals/:dealId/title/exceptions", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId } = req.params;
+      const { status, type } = req.query;
+
+      const dealCommitments = await db
+        .select({ id: schema.titleCommitments.id })
+        .from(schema.titleCommitments)
+        .where(eq(schema.titleCommitments.transactionId, dealId));
+
+      if (dealCommitments.length === 0) return res.json([]);
+
+      const commitmentIds = dealCommitments.map((c) => c.id);
+
+      let allExceptions = await db
+        .select()
+        .from(schema.titleExceptions)
+        .where(sql`${schema.titleExceptions.commitmentId} = ANY(${commitmentIds})`)
+        .orderBy(schema.titleExceptions.scheduleItem);
+
+      if (status && status !== "all") {
+        allExceptions = allExceptions.filter((e) => e.status === status);
+      }
+      if (type && type !== "all") {
+        allExceptions = allExceptions.filter((e) => e.exceptionType === type);
+      }
+
+      res.json(allExceptions);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Error fetching deal exceptions:", msg);
       res.status(500).json({ message: msg });
     }
   });

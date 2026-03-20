@@ -158,6 +158,38 @@ const dealTypeLabels: Record<string, string> = {
   leasehold_financing: "Leasehold Financing",
 };
 
+const titleApplicableDealTypes = new Set([
+  "real_estate",
+  "residential_financed",
+  "residential_cash",
+  "refinance",
+  "heloc",
+  "reverse_mortgage",
+  "new_construction",
+  "short_sale",
+  "foreclosure_reo",
+  "estate_probate",
+  "commercial_financed",
+  "commercial_cash",
+  "commercial_refinance",
+  "cmbs",
+  "construction_loan",
+  "ground_lease",
+  "exchange_1031",
+  "portfolio_bulk",
+  "sale_leaseback",
+  "distressed_asset",
+  "co_op",
+  "mixed_use",
+  "opportunity_zone",
+  "loan_assumption",
+  "deed_in_lieu",
+  "capital_stack",
+  "reit_contribution",
+  "condo_subdivision",
+  "leasehold_financing",
+]);
+
 const representationRoleLabels: Record<string, string> = {
   buyer: "Representing Buyer",
   seller: "Representing Seller",
@@ -1413,7 +1445,7 @@ export default function TransactionsDealDetail() {
                 <SelectItem value="issues">Issues</SelectItem>
                 <SelectItem value="research">Research</SelectItem>
                 <SelectItem value="title-history">Title History</SelectItem>
-                <SelectItem value="title-survey">Title & Survey</SelectItem>
+                {titleApplicableDealTypes.has(deal.dealType) && <SelectItem value="title-survey">Title & Survey</SelectItem>}
                 <SelectItem value="closing-docs">Closing Docs</SelectItem>
                 <SelectItem value="closing">Closing</SelectItem>
                 <SelectItem value="condo-summary">Condo Summary</SelectItem>
@@ -1433,7 +1465,7 @@ export default function TransactionsDealDetail() {
             <TabsTrigger value="issues" data-testid="tab-issues">Issues</TabsTrigger>
             <TabsTrigger value="research" data-testid="tab-research">Research</TabsTrigger>
             <TabsTrigger value="title-history" data-testid="tab-title-history">Title History</TabsTrigger>
-            <TabsTrigger value="title-survey" data-testid="tab-title-survey">Title & Survey</TabsTrigger>
+            {titleApplicableDealTypes.has(deal.dealType) && <TabsTrigger value="title-survey" data-testid="tab-title-survey">Title & Survey</TabsTrigger>}
             <TabsTrigger value="closing-docs" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
             <TabsTrigger value="closing" data-testid="tab-closing">Closing</TabsTrigger>
             <TabsTrigger value="condo-summary" data-testid="tab-condo-summary">Condo Summary</TabsTrigger>
@@ -3189,9 +3221,11 @@ export default function TransactionsDealDetail() {
             </Dialog>
           </TabsContent>
 
-          <TabsContent value="title-survey" className="mt-6">
-            <TitleInsuranceTab dealId={id!} />
-          </TabsContent>
+          {titleApplicableDealTypes.has(deal.dealType) && (
+            <TabsContent value="title-survey" className="mt-6">
+              <TitleInsuranceTab dealId={id!} />
+            </TabsContent>
+          )}
 
           <TabsContent value="condo-summary" className="mt-6">
             <CondoSummaryTab dealId={id!} />

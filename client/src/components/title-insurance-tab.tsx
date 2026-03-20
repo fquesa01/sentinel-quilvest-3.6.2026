@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -37,25 +36,48 @@ import {
   Plus,
   FileText,
   Shield,
-  Building2,
-  Phone,
-  Mail,
   Calendar,
   DollarSign,
   CheckCircle2,
   AlertTriangle,
-  Clock,
-  X,
   User,
   Loader2,
   ChevronRight,
-  CircleDot,
+  ArrowUp,
+  ArrowDown,
+  UserPlus,
+  Clock,
+  MessageSquare,
 } from "lucide-react";
 import type { TitleCommitment, TitleException, TitleSearchVendor } from "@shared/schema";
 
 interface TitleInsuranceTabProps {
   dealId: string;
 }
+
+interface CommitmentFormState {
+  underwriter: string;
+  effectiveDate: string;
+  policyAmount: string;
+  premium: string;
+  commitmentType: string;
+  legalDescription: string;
+  propertyAddress: string;
+  county: string;
+  state: string;
+}
+
+const defaultCommitmentForm: CommitmentFormState = {
+  underwriter: "",
+  effectiveDate: "",
+  policyAmount: "",
+  premium: "",
+  commitmentType: "owner",
+  legalDescription: "",
+  propertyAddress: "",
+  county: "",
+  state: "FL",
+};
 
 const commitmentStatusLabels: Record<string, string> = {
   ordered: "Ordered",
@@ -148,6 +170,27 @@ const underwriterOptions = [
   "Other",
 ];
 
+type SortField = "scheduleItem" | "exceptionType" | "priority" | "status" | "dueDate";
+type SortDirection = "asc" | "desc";
+
+const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+const statusOrder: Record<string, number> = { open: 0, partially_cleared: 1, waived: 2, cleared: 3 };
+
+function parseNoteEntries(notes: string): Array<{ timestamp: string; text: string }> {
+  if (!notes) return [];
+  const entries: Array<{ timestamp: string; text: string }> = [];
+  const parts = notes.split(/\n\n(?=\[)/);
+  for (const part of parts) {
+    const match = part.match(/^\[(.+?)\]\s*(.*)$/s);
+    if (match) {
+      entries.push({ timestamp: match[1], text: match[2] });
+    } else if (part.trim()) {
+      entries.push({ timestamp: "", text: part.trim() });
+    }
+  }
+  return entries;
+}
+
 export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
   const { toast } = useToast();
   const [createCommitmentOpen, setCreateCommitmentOpen] = useState(false);
@@ -157,18 +200,12 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
   const [selectedExceptionId, setSelectedExceptionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [assignee, setAssignee] = useState("");
+  const [sortField, setSortField] = useState<SortField>("scheduleItem");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
-  const [commitmentForm, setCommitmentForm] = useState({
-    underwriter: "",
-    effectiveDate: "",
-    policyAmount: "",
-    premium: "",
-    commitmentType: "owner" as string,
-    legalDescription: "",
-    propertyAddress: "",
-    county: "",
-    state: "FL",
-  });
+  const [commitmentForm, setCommitmentForm] = useState<CommitmentFormState>({ ...defaultCommitmentForm });
 
   const [exceptionForm, setExceptionForm] = useState({
     scheduleItem: "",
@@ -223,6 +260,46 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
     return true;
   });
 
+  const sortedExceptions = [...filteredExceptions].sort((a, b) => {
+    let cmp = 0;
+    switch (sortField) {
+      case "scheduleItem":
+        cmp = (a.scheduleItem || "").localeCompare(b.scheduleItem || "");
+        break;
+      case "exceptionType":
+        cmp = (a.exceptionType || "").localeCompare(b.exceptionType || "");
+        break;
+      case "priority":
+        cmp = (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99);
+        break;
+      case "status":
+        cmp = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
+        break;
+      case "dueDate":
+        cmp = (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+        break;
+    }
+    return sortDirection === "asc" ? cmp : -cmp;
+  });
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return null;
+    return sortDirection === "asc" ? (
+      <ArrowUp className="inline h-3 w-3 ml-1" />
+    ) : (
+      <ArrowDown className="inline h-3 w-3 ml-1" />
+    );
+  };
+
   const invalidateTitle = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "title"] });
   };
@@ -235,7 +312,7 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
     onSuccess: () => {
       invalidateTitle();
       setCreateCommitmentOpen(false);
-      setCommitmentForm({ underwriter: "", effectiveDate: "", policyAmount: "", premium: "", commitmentType: "owner", legalDescription: "", propertyAddress: "", county: "", state: "FL" });
+      setCommitmentForm({ ...defaultCommitmentForm });
       toast({ title: "Commitment Created", description: "Title commitment has been created." });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -349,6 +426,8 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
       </div>
     );
   }
+
+  const noteEntries = selectedExceptionData ? parseNoteEntries(selectedExceptionData.notes || "") : [];
 
   return (
     <div className="space-y-6 p-4">
@@ -480,7 +559,6 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-xs h-7"
                         onClick={() => updateVendorMutation.mutate({ id: v.id, data: { status: v.status === "ordered" ? "in_progress" : "completed" } })}
                         data-testid={`button-advance-vendor-${v.id}`}
                       >
@@ -500,7 +578,7 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
           <h3 className="text-base font-medium">Schedule B Exceptions</h3>
           <div className="flex items-center gap-2 flex-wrap">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="select-status-filter">
+              <SelectTrigger className="w-[130px]" data-testid="select-status-filter">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -512,7 +590,7 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
               </SelectContent>
             </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="select-type-filter">
+              <SelectTrigger className="w-[130px]" data-testid="select-type-filter">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
@@ -545,17 +623,47 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
               <table className="w-full text-sm" data-testid="table-exceptions">
                 <thead>
                   <tr className="border-b text-left">
-                    <th className="p-3 font-medium text-muted-foreground">Item</th>
-                    <th className="p-3 font-medium text-muted-foreground">Type</th>
+                    <th
+                      className="p-3 font-medium text-muted-foreground cursor-pointer select-none"
+                      onClick={() => handleSort("scheduleItem")}
+                      data-testid="th-sort-item"
+                    >
+                      Item <SortIcon field="scheduleItem" />
+                    </th>
+                    <th
+                      className="p-3 font-medium text-muted-foreground cursor-pointer select-none"
+                      onClick={() => handleSort("exceptionType")}
+                      data-testid="th-sort-type"
+                    >
+                      Type <SortIcon field="exceptionType" />
+                    </th>
                     <th className="p-3 font-medium text-muted-foreground hidden md:table-cell">Description</th>
-                    <th className="p-3 font-medium text-muted-foreground">Priority</th>
-                    <th className="p-3 font-medium text-muted-foreground">Status</th>
-                    <th className="p-3 font-medium text-muted-foreground hidden lg:table-cell">Due Date</th>
+                    <th
+                      className="p-3 font-medium text-muted-foreground cursor-pointer select-none"
+                      onClick={() => handleSort("priority")}
+                      data-testid="th-sort-priority"
+                    >
+                      Priority <SortIcon field="priority" />
+                    </th>
+                    <th
+                      className="p-3 font-medium text-muted-foreground cursor-pointer select-none"
+                      onClick={() => handleSort("status")}
+                      data-testid="th-sort-status"
+                    >
+                      Status <SortIcon field="status" />
+                    </th>
+                    <th
+                      className="p-3 font-medium text-muted-foreground hidden lg:table-cell cursor-pointer select-none"
+                      onClick={() => handleSort("dueDate")}
+                      data-testid="th-sort-due-date"
+                    >
+                      Due Date <SortIcon field="dueDate" />
+                    </th>
                     <th className="p-3 font-medium text-muted-foreground"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredExceptions.map((exc) => (
+                  {sortedExceptions.map((exc) => (
                     <tr
                       key={exc.id}
                       className="border-b hover-elevate cursor-pointer"
@@ -792,16 +900,19 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
                   <p className="text-xs font-medium text-muted-foreground mb-1">Description</p>
                   <p className="text-sm">{selectedExceptionData.description || "No description provided."}</p>
                 </div>
+                {selectedExceptionData.assignedTo && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Assigned To</p>
+                    <p className="text-sm flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      {selectedExceptionData.assignedTo}
+                    </p>
+                  </div>
+                )}
                 {selectedExceptionData.dueDate && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-1">Due Date</p>
                     <p className="text-sm">{selectedExceptionData.dueDate}</p>
-                  </div>
-                )}
-                {selectedExceptionData.notes && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Notes</p>
-                    <p className="text-sm whitespace-pre-wrap">{selectedExceptionData.notes}</p>
                   </div>
                 )}
                 {selectedExceptionData.waiverReason && (
@@ -817,6 +928,27 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
                   </div>
                 )}
               </div>
+
+              {noteEntries.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Activity History
+                  </p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {noteEntries.map((entry, idx) => (
+                      <div key={idx} className="flex gap-2 text-xs border-l-2 border-muted pl-3 py-1" data-testid={`note-entry-${idx}`}>
+                        <div>
+                          {entry.timestamp && (
+                            <p className="text-muted-foreground mb-0.5">{entry.timestamp}</p>
+                          )}
+                          <p className="text-sm">{entry.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Actions</p>
@@ -843,21 +975,47 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
                           setSelectedExceptionId(null);
                         }}
                       />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setAssignee(selectedExceptionData.assignedTo || "");
+                          setAssignDialogOpen(true);
+                        }}
+                        data-testid="button-assign-exception"
+                      >
+                        <UserPlus className="mr-1 h-3 w-3" />
+                        Assign
+                      </Button>
                     </>
                   )}
                   {selectedExceptionData.status === "partially_cleared" && (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        updateExceptionMutation.mutate({ id: selectedExceptionData.id, data: { status: "cleared" } });
-                        setSelectedExceptionId(null);
-                      }}
-                      disabled={updateExceptionMutation.isPending}
-                      data-testid="button-fully-clear-exception"
-                    >
-                      <CheckCircle2 className="mr-1 h-3 w-3" />
-                      Mark Fully Cleared
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          updateExceptionMutation.mutate({ id: selectedExceptionData.id, data: { status: "cleared" } });
+                          setSelectedExceptionId(null);
+                        }}
+                        disabled={updateExceptionMutation.isPending}
+                        data-testid="button-fully-clear-exception"
+                      >
+                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                        Mark Fully Cleared
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setAssignee(selectedExceptionData.assignedTo || "");
+                          setAssignDialogOpen(true);
+                        }}
+                        data-testid="button-assign-exception-partial"
+                      >
+                        <UserPlus className="mr-1 h-3 w-3" />
+                        Assign
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>
@@ -872,6 +1030,43 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
           )}
         </SheetContent>
       </Sheet>
+
+      <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Assign Exception</DialogTitle>
+            <DialogDescription>Enter the name or ID of the person to assign this exception to.</DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label>Assignee</Label>
+            <Input
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              placeholder="Enter assignee name or ID"
+              data-testid="input-assignee"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (selectedExceptionId && assignee.trim()) {
+                  updateExceptionMutation.mutate({
+                    id: selectedExceptionId,
+                    data: { assignedTo: assignee.trim() },
+                  });
+                  setAssignDialogOpen(false);
+                }
+              }}
+              disabled={!assignee.trim() || updateExceptionMutation.isPending}
+              data-testid="button-confirm-assign"
+            >
+              {updateExceptionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Assign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -881,11 +1076,8 @@ function CommitmentFormDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  form: typeof TitleInsuranceTab extends never ? never : {
-    underwriter: string; effectiveDate: string; policyAmount: string; premium: string;
-    commitmentType: string; legalDescription: string; propertyAddress: string; county: string; state: string;
-  };
-  setForm: (f: typeof form) => void;
+  form: CommitmentFormState;
+  setForm: (f: CommitmentFormState) => void;
   onSubmit: () => void;
   isPending: boolean;
   title: string;
@@ -1040,7 +1232,10 @@ function AddNoteToException({ exceptionId, currentNotes, dealId, onDone }: { exc
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">Add Note</p>
+      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+        <MessageSquare className="h-3 w-3" />
+        Add Note
+      </p>
       <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note..." rows={2} data-testid="input-add-note" />
       <Button
         size="sm"
