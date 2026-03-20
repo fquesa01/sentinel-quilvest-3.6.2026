@@ -9,6 +9,13 @@ const commitmentUpdateSchema = insertTitleCommitmentSchema.partial().omit({ tran
 const exceptionUpdateSchema = insertTitleExceptionSchema.partial().omit({ commitmentId: true });
 const vendorUpdateSchema = insertTitleSearchVendorSchema.partial().omit({ commitmentId: true });
 
+const validExceptionTransitions: Record<string, string[]> = {
+  open: ["cleared", "waived", "partially_cleared"],
+  partially_cleared: ["cleared", "waived"],
+  cleared: [],
+  waived: [],
+};
+
 async function verifyCommitmentOwnership(commitmentId: string, dealId: string) {
   const [commitment] = await db
     .select({ id: schema.titleCommitments.id })
@@ -225,7 +232,10 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
       const userId = req.user?.id;
 
       const [exception] = await db
-        .select({ commitmentId: schema.titleExceptions.commitmentId })
+        .select({
+          commitmentId: schema.titleExceptions.commitmentId,
+          status: schema.titleExceptions.status,
+        })
         .from(schema.titleExceptions)
         .where(eq(schema.titleExceptions.id, exceptionId))
         .limit(1);
@@ -235,6 +245,16 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
       if (ownerDealId !== dealId) return res.status(404).json({ message: "Exception not found" });
 
       const parsed = exceptionUpdateSchema.parse(req.body);
+
+      if (parsed.status && parsed.status !== exception.status) {
+        const allowed = validExceptionTransitions[exception.status] || [];
+        if (!allowed.includes(parsed.status)) {
+          return res.status(400).json({
+            message: `Invalid status transition from '${exception.status}' to '${parsed.status}'`,
+          });
+        }
+      }
+
       const updates: Record<string, unknown> = { ...parsed, updatedAt: new Date() };
 
       if (parsed.status === "cleared") {
@@ -278,6 +298,33 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Unknown error";
       console.error("Error deleting title exception:", msg);
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  app.get("/api/deals/:dealId/title/vendors", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId } = req.params;
+
+      const dealCommitments = await db
+        .select({ id: schema.titleCommitments.id })
+        .from(schema.titleCommitments)
+        .where(eq(schema.titleCommitments.transactionId, dealId));
+
+      if (dealCommitments.length === 0) return res.json([]);
+
+      const commitmentIds = dealCommitments.map((c) => c.id);
+
+      const allVendors = await db
+        .select()
+        .from(schema.titleSearchVendors)
+        .where(sql`${schema.titleSearchVendors.commitmentId} = ANY(${commitmentIds})`)
+        .orderBy(desc(schema.titleSearchVendors.createdAt));
+
+      res.json(allVendors);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Error fetching deal vendors:", msg);
       res.status(500).json({ message: msg });
     }
   });
