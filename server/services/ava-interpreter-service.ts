@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { db } from "../db";
 import * as schema from "@shared/schema";
-import { eq, or, and, sql, ilike } from "drizzle-orm";
+import { eq, or, and, sql, ilike, inArray } from "drizzle-orm";
 import * as transactionSearchService from "./transaction-search-service";
 import * as globalKnowledge from "./global-knowledge-service";
 
@@ -41,10 +41,31 @@ function formatCaseStatus(status: string): string {
   return statusMap[status] || status;
 }
 
-// Generate a narrative summary about a case
-async function generateCaseNarrativeSummary(caseId: string): Promise<string | null> {
+async function getAuthorizedUserIdsLocal(userId: string): Promise<string[]> {
+  const [membership] = await db
+    .select({ orgId: schema.organizationMembers.organizationId })
+    .from(schema.organizationMembers)
+    .where(eq(schema.organizationMembers.userId, userId))
+    .limit(1);
+  if (!membership?.orgId) return [userId];
+  const members = await db
+    .select({ userId: schema.organizationMembers.userId })
+    .from(schema.organizationMembers)
+    .where(eq(schema.organizationMembers.organizationId, membership.orgId));
+  return members.map((m) => m.userId);
+}
+
+async function generateCaseNarrativeSummary(caseId: string, userId?: string): Promise<string | null> {
   try {
-    // Fetch full case details
+    if (userId) {
+      const authorizedIds = await getAuthorizedUserIdsLocal(userId);
+      const caseScope = or(
+        inArray(schema.cases.createdBy, authorizedIds),
+        inArray(schema.cases.assignedTo, authorizedIds)
+      );
+      const [check] = await db.select({ id: schema.cases.id }).from(schema.cases).where(and(eq(schema.cases.id, caseId), caseScope));
+      if (!check) return null;
+    }
     const [caseData] = await db.select().from(schema.cases).where(eq(schema.cases.id, caseId)).limit(1);
     if (!caseData) return null;
     
@@ -88,39 +109,46 @@ async function generateCaseNarrativeSummary(caseId: string): Promise<string | nu
 const SEARCH_STOP_WORDS = ['case', 'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at', 'by', 'me', 'my', 'go', 'show', 'take', 'open', 'view', 'see', 'find', 'get', 'transaction', 'deal', 'project'];
 
 // Helper function to search for a case by name and return its ID
-async function findCaseByName(caseName: string): Promise<{ id: string; title: string } | null> {
-  // Strip punctuation and normalize the search term
+async function findCaseByName(caseName: string, userId?: string): Promise<{ id: string; title: string } | null> {
   const searchTerm = String(caseName)
     .trim()
     .toLowerCase()
-    .replace(/["""''.,!?:;()\[\]{}]/g, '') // Remove common punctuation
-    .replace(/\s+/g, ' '); // Normalize multiple spaces to single space
+    .replace(/["""''.,!?:;()\[\]{}]/g, '')
+    .replace(/\s+/g, ' ');
   
-  // Filter out single-char words, common stop words, and strip punctuation from each word
   const searchWords = searchTerm
     .split(/\s+/)
-    .map(w => w.replace(/[^a-z0-9]/g, '')) // Keep only alphanumeric characters
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
     .filter(w => w.length > 1 && !SEARCH_STOP_WORDS.includes(w))
-    .filter((w, i, arr) => arr.indexOf(w) === i); // Remove duplicates
+    .filter((w, i, arr) => arr.indexOf(w) === i);
   
-  // First try exact phrase match on title or description
+  let scopeCondition: any = undefined;
+  if (userId) {
+    const authorizedIds = await getAuthorizedUserIdsLocal(userId);
+    scopeCondition = or(
+      inArray(schema.cases.createdBy, authorizedIds),
+      inArray(schema.cases.assignedTo, authorizedIds)
+    );
+  }
+
   let matchingCases = await db.select({
     id: schema.cases.id,
     title: schema.cases.title,
   })
   .from(schema.cases)
   .where(
-    or(
-      sql`LOWER(${schema.cases.title}) LIKE LOWER(${'%' + searchTerm + '%'})`,
-      sql`LOWER(${schema.cases.caseNumber}) LIKE LOWER(${'%' + searchTerm + '%'})`,
-      sql`LOWER(COALESCE(${schema.cases.description}, '')) LIKE LOWER(${'%' + searchTerm + '%'})`
+    and(
+      or(
+        sql`LOWER(${schema.cases.title}) LIKE LOWER(${'%' + searchTerm + '%'})`,
+        sql`LOWER(${schema.cases.caseNumber}) LIKE LOWER(${'%' + searchTerm + '%'})`,
+        sql`LOWER(COALESCE(${schema.cases.description}, '')) LIKE LOWER(${'%' + searchTerm + '%'})`
+      ),
+      scopeCondition
     )
   )
   .limit(1);
   
-  // If no exact match, try requiring ALL words to match in title+description combined
   if (matchingCases.length === 0 && searchWords.length > 0) {
-    // Build conditions where each word must appear somewhere in title or description
     const allWordsConditions = searchWords.map(word => 
       sql`(LOWER(${schema.cases.title}) LIKE LOWER(${'%' + word + '%'}) OR LOWER(COALESCE(${schema.cases.description}, '')) LIKE LOWER(${'%' + word + '%'}))`
     );
@@ -130,7 +158,7 @@ async function findCaseByName(caseName: string): Promise<{ id: string; title: st
       title: schema.cases.title,
     })
     .from(schema.cases)
-    .where(sql`${sql.join(allWordsConditions, sql` AND `)}`)
+    .where(and(sql`${sql.join(allWordsConditions, sql` AND `)}`, scopeCondition))
     .limit(5);
     
     // Score results by how many words match the title specifically (prefer title matches)
@@ -158,37 +186,47 @@ async function findCaseByName(caseName: string): Promise<{ id: string; title: st
 }
 
 // Helper function to search for a deal/transaction by name and return its ID
-async function findDealByName(dealName: string): Promise<{ id: string; title: string } | null> {
-  // Strip punctuation and normalize the search term
+async function findDealByName(dealName: string, userId?: string): Promise<{ id: string; title: string } | null> {
   const searchTerm = String(dealName)
     .trim()
     .toLowerCase()
-    .replace(/["""''.,!?:;()\[\]{}]/g, '') // Remove common punctuation
-    .replace(/\s+/g, ' '); // Normalize multiple spaces to single space
+    .replace(/["""''.,!?:;()\[\]{}]/g, '')
+    .replace(/\s+/g, ' ');
   
-  // Filter out single-char words, common stop words, and strip punctuation from each word
   const searchWords = searchTerm
     .split(/\s+/)
-    .map(w => w.replace(/[^a-z0-9]/g, '')) // Keep only alphanumeric characters
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
     .filter(w => w.length > 1 && !SEARCH_STOP_WORDS.includes(w))
-    .filter((w, i, arr) => arr.indexOf(w) === i); // Remove duplicates
+    .filter((w, i, arr) => arr.indexOf(w) === i);
   
+  let scopeCondition: any = undefined;
+  if (userId) {
+    const authorizedIds = await getAuthorizedUserIdsLocal(userId);
+    const orgOwned = inArray(schema.deals.createdBy, authorizedIds);
+    const participantDealRows = await db.select({ dealId: schema.dealParticipants.dealId }).from(schema.dealParticipants)
+      .where(and(eq(schema.dealParticipants.userId, userId), eq(schema.dealParticipants.isActive, true)));
+    const participantDealIds = participantDealRows.map(p => p.dealId);
+    scopeCondition = participantDealIds.length > 0
+      ? or(orgOwned, inArray(schema.deals.id, participantDealIds))
+      : orgOwned;
+  }
+
   console.log(`[AvaInterpreter] Searching for deal: "${searchTerm}" (words: ${searchWords.join(', ')})`);
   
-  // First try exact phrase match on title
   let matchingDeals = await db.select({
     id: schema.deals.id,
     title: schema.deals.title,
   })
   .from(schema.deals)
   .where(
-    sql`LOWER(${schema.deals.title}) LIKE LOWER(${'%' + searchTerm + '%'})`
+    and(
+      sql`LOWER(${schema.deals.title}) LIKE LOWER(${'%' + searchTerm + '%'})`,
+      scopeCondition
+    )
   )
   .limit(1);
   
-  // If no exact match, try requiring ALL words to match in title
   if (matchingDeals.length === 0 && searchWords.length > 0) {
-    // Build conditions where each word must appear in title
     const allWordsConditions = searchWords.map(word => 
       sql`LOWER(${schema.deals.title}) LIKE LOWER(${'%' + word + '%'})`
     );
@@ -198,10 +236,9 @@ async function findDealByName(dealName: string): Promise<{ id: string; title: st
       title: schema.deals.title,
     })
     .from(schema.deals)
-    .where(sql`${sql.join(allWordsConditions, sql` AND `)}`)
+    .where(and(sql`${sql.join(allWordsConditions, sql` AND `)}`, scopeCondition))
     .limit(5);
     
-    // Score results by how many words match the title
     if (matchingDeals.length > 1) {
       const scoredDeals = matchingDeals.map(d => {
         const titleLower = d.title.toLowerCase();
@@ -216,7 +253,6 @@ async function findDealByName(dealName: string): Promise<{ id: string; title: st
     }
   }
   
-  // If still no match, try ANY word matching (fallback for partial matches)
   if (matchingDeals.length === 0 && searchWords.length > 0) {
     const anyWordConditions = searchWords.map(word => 
       sql`LOWER(${schema.deals.title}) LIKE LOWER(${'%' + word + '%'})`
@@ -227,10 +263,9 @@ async function findDealByName(dealName: string): Promise<{ id: string; title: st
       title: schema.deals.title,
     })
     .from(schema.deals)
-    .where(sql`${sql.join(anyWordConditions, sql` OR `)}`)
+    .where(and(sql`${sql.join(anyWordConditions, sql` OR `)}`, scopeCondition))
     .limit(5);
     
-    // Score results and pick best match
     if (matchingDeals.length > 1) {
       const scoredDeals = matchingDeals.map(d => {
         const titleLower = d.title.toLowerCase();
@@ -264,8 +299,15 @@ export interface AvaInterpretContext {
   timezone?: string;
 }
 
+export interface AvaToolCallResult {
+  toolName: string;
+  toolCategory: "read" | "write";
+  params: Record<string, any>;
+  result: any;
+}
+
 export interface AvaInterpretResult {
-  mode: "command" | "qa";
+  mode: "command" | "qa" | "tool_response";
   intent?: string;
   parameters?: Record<string, any>;
   assistantMessage: string;
@@ -274,7 +316,65 @@ export interface AvaInterpretResult {
     href: string;
   };
   requiresConfirmation?: boolean;
+  pendingActionId?: string;
   followUpQuestion?: string;
+  toolCalls?: AvaToolCallResult[];
+  structuredData?: Record<string, any>;
+}
+
+interface PendingAction {
+  id: string;
+  userId: string;
+  toolName: string;
+  params: Record<string, any>;
+  createdAt: number;
+  description: string;
+}
+
+const pendingActions = new Map<string, PendingAction>();
+
+const PENDING_ACTION_TTL_MS = 5 * 60 * 1000;
+
+function cleanExpiredPendingActions() {
+  const now = Date.now();
+  for (const [id, action] of pendingActions.entries()) {
+    if (now - action.createdAt > PENDING_ACTION_TTL_MS) {
+      pendingActions.delete(id);
+    }
+  }
+}
+
+export function createPendingAction(userId: string, toolName: string, params: Record<string, any>, description: string): string {
+  cleanExpiredPendingActions();
+  const id = `pa_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  pendingActions.set(id, { id, userId, toolName, params, createdAt: Date.now(), description });
+  return id;
+}
+
+export async function confirmPendingAction(actionId: string, userId: string): Promise<{ success: boolean; result?: any; message?: string; link?: string; error?: string }> {
+  cleanExpiredPendingActions();
+  const action = pendingActions.get(actionId);
+  if (!action) return { success: false, error: "Action not found or expired" };
+  if (action.userId !== userId) return { success: false, error: "Unauthorized" };
+
+  pendingActions.delete(actionId);
+
+  const { executeTool } = await import("./ava-tools");
+  const { result } = await executeTool(action.toolName, action.params, userId);
+  return {
+    success: result?.success !== false,
+    result,
+    message: result?.message || "Action completed successfully.",
+    link: result?.link,
+    error: result?.success === false ? result?.message : undefined,
+  };
+}
+
+export function cancelPendingAction(actionId: string, userId: string): boolean {
+  const action = pendingActions.get(actionId);
+  if (!action || action.userId !== userId) return false;
+  pendingActions.delete(actionId);
+  return true;
 }
 
 const NAVIGATION_INTENTS = [
@@ -966,10 +1066,10 @@ User: "Open due diligence"
 
 export async function interpretUserMessage(
   message: string,
-  context: AvaInterpretContext
+  context: AvaInterpretContext,
+  conversationHistory?: Array<{ role: string; content: string }>
 ): Promise<AvaInterpretResult> {
   try {
-    // First, use global knowledge service to analyze intent and find matches
     const intentAnalysis = await globalKnowledge.analyzeUserIntent(message, {
       userId: context.userId,
       currentCaseId: context.currentCaseId,
@@ -1049,7 +1149,7 @@ export async function interpretUserMessage(
         console.log(`[AvaInterpreter] High confidence match: navigating to case ${useCase.id}`);
         
         // Generate narrative summary about the case
-        const narrative = await generateCaseNarrativeSummary(useCase.id);
+        const narrative = await generateCaseNarrativeSummary(useCase.id, context.userId);
         const assistantMessage = narrative 
           ? `${narrative}\n\nOpening the case for you now.`
           : `Opening the ${useCase.title} case for you.`;
@@ -1260,13 +1360,11 @@ export async function interpretUserMessage(
       console.log(`[AvaInterpreter] Case name extracted: "${parsed.parameters.caseName}" from user message: "${message}"`);
       
       // Try to find the actual case ID to link directly to the case detail page
-      const foundCase = await findCaseByName(parsed.parameters.caseName);
+      const foundCase = await findCaseByName(parsed.parameters.caseName, context.userId);
       if (foundCase) {
-        // Build URL with optional filter parameters
         let href = `/cases/${foundCase.id}`;
         const queryParams: string[] = [];
         
-        // Add filter parameters if present
         if (parsed.parameters.filterPerson) {
           queryParams.push(`filterPerson=${encodeURIComponent(parsed.parameters.filterPerson)}`);
         }
@@ -1302,7 +1400,7 @@ export async function interpretUserMessage(
       console.log(`[AvaInterpreter] Deal name extracted: "${parsed.parameters.dealName}" from user message: "${message}"`);
       
       // Try to find the actual deal ID to link directly to the deal detail page
-      const foundDeal = await findDealByName(parsed.parameters.dealName);
+      const foundDeal = await findDealByName(parsed.parameters.dealName, context.userId);
       if (foundDeal) {
         parsed.actionLink = {
           label: `View ${foundDeal.title}`,
@@ -1334,7 +1432,7 @@ export async function interpretUserMessage(
     if (parsed.mode === "command" && parsed.intent === "navigate_to_case_recordings" && parsed.parameters?.caseName) {
       console.log(`[AvaInterpreter] Case recordings navigation: caseName="${parsed.parameters.caseName}" from message: "${message}"`);
       
-      const foundCase = await findCaseByName(parsed.parameters.caseName);
+      const foundCase = await findCaseByName(parsed.parameters.caseName, context.userId);
       if (foundCase) {
         let href = `/cases/${foundCase.id}?tab=recordings`;
         if (parsed.parameters.searchQuery) {
@@ -1505,7 +1603,17 @@ export async function interpretUserMessage(
       }
     }
 
-    return parsed;
+    if (parsed.mode === "command") {
+      return parsed;
+    }
+
+    console.log(`[AvaInterpreter] Non-command mode (${parsed.mode}), routing to tool-calling agent for richer response`);
+    try {
+      return await interpretWithTools(message, context, conversationHistory);
+    } catch (toolError) {
+      console.error("[AvaInterpreter] Tool-calling fallback failed, using legacy response:", toolError);
+      return parsed;
+    }
   } catch (error) {
     console.error("[AvaInterpreter] Error interpreting message:", error);
     
@@ -1516,11 +1624,206 @@ export async function interpretUserMessage(
   }
 }
 
+const TOOL_CALLING_SYSTEM_PROMPT = `You are Ava, an expert AI assistant for Sentinel — a comprehensive legal technology platform for investigations, compliance, e-discovery, deal management, and real estate closings.
+
+You have deep expertise in:
+- Corporate due diligence and M&A transactions
+- Real estate closings and Remote Online Notarization (RON)
+- Compliance investigations (FCPA, antitrust, SOX, AML/BSA, securities)
+- Legal document review and e-discovery
+- Deal pipeline management and checklist workflows
+- Investor memo generation and financial analysis
+- Risk assessment and mitigation strategies
+
+CAPABILITIES:
+You can retrieve data from the platform using available tools: cases, deals, documents, checklists, interviews, findings, compliance alerts, RON transactions, investor memos, calendar events, and more.
+You can also take actions: update deal statuses, create findings, and modify deal details.
+
+BEHAVIOR GUIDELINES:
+1. When the user asks about specific data (e.g., "What deals are active?", "Show me the checklist for Project Phoenix"), use the appropriate tool to retrieve the data.
+2. When the user asks for strategic advice (e.g., "What should I do next on this deal?", "Are there any risks I should worry about?"), first retrieve relevant data, then provide expert analysis and recommendations.
+3. For write operations, clearly state what you're about to do and confirm the action was completed.
+4. Always cite specific data points from tool results in your response.
+5. If a tool returns no results, explain what was searched and suggest alternatives.
+6. Format responses clearly with structured information when presenting data (use bullet points, not tables).
+7. When the user is viewing a specific case or deal (provided in context), proactively use that context.
+8. Provide actionable next-step recommendations when appropriate.
+
+IMPORTANT: You are an in-app assistant. Users are legal professionals. Be precise, professional, and thorough.`;
+
+export async function interpretWithTools(
+  message: string,
+  context: AvaInterpretContext,
+  conversationHistory?: Array<{ role: string; content: string }>
+): Promise<AvaInterpretResult> {
+  const { getToolDefinitionsForOpenAI, executeTool } = await import("./ava-tools");
+
+  try {
+    const toolDefs = getToolDefinitionsForOpenAI();
+    const contextParts: string[] = [];
+    if (context.currentRoute) contextParts.push(`User is on page: ${context.currentRoute}`);
+    if (context.currentCaseId) contextParts.push(`Currently viewing case ID: ${context.currentCaseId}`);
+    if (context.currentCaseName) contextParts.push(`Current case: ${context.currentCaseName}`);
+    if (context.currentTab) contextParts.push(`Current tab: ${context.currentTab}`);
+    if (context.timezone) contextParts.push(`Timezone: ${context.timezone}`);
+
+    const systemMessage = contextParts.length > 0
+      ? `${TOOL_CALLING_SYSTEM_PROMPT}\n\nCURRENT CONTEXT:\n${contextParts.join("\n")}`
+      : TOOL_CALLING_SYSTEM_PROMPT;
+
+    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+      { role: "system", content: systemMessage },
+    ];
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      const recentHistory = conversationHistory.slice(-6);
+      for (const msg of recentHistory) {
+        messages.push({
+          role: msg.role as "user" | "assistant",
+          content: msg.content,
+        });
+      }
+    }
+
+    messages.push({ role: "user", content: message });
+
+    let response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages,
+      tools: toolDefs,
+      tool_choice: "auto",
+      temperature: 0.3,
+      max_tokens: 4096,
+    });
+
+    const toolCallResults: AvaToolCallResult[] = [];
+    let iterations = 0;
+    const maxIterations = 5;
+    const runningMessages: any[] = [...messages];
+
+    while (
+      response.choices[0]?.message?.tool_calls &&
+      response.choices[0].message.tool_calls.length > 0 &&
+      iterations < maxIterations
+    ) {
+      iterations++;
+      const assistantMessage = response.choices[0].message;
+      runningMessages.push(assistantMessage);
+
+      let hasWriteToolPending = false;
+
+      for (const toolCall of assistantMessage.tool_calls!) {
+        const toolName = toolCall.function.name;
+        let toolParams: Record<string, any> = {};
+        try {
+          toolParams = JSON.parse(toolCall.function.arguments);
+        } catch {
+          toolParams = {};
+        }
+
+        const { getToolByName } = await import("./ava-tools");
+        const toolDef = getToolByName(toolName);
+
+        if (toolDef?.category === "write") {
+          hasWriteToolPending = true;
+          const actionDescription = `${toolName.replace(/_/g, " ")} with params: ${JSON.stringify(toolParams)}`;
+          const pendingId = createPendingAction(context.userId || "", toolName, toolParams, actionDescription);
+          toolCallResults.push({
+            toolName,
+            toolCategory: "write",
+            params: toolParams,
+            result: { pendingConfirmation: true, pendingActionId: pendingId, message: `Action "${toolName.replace(/_/g, " ")}" requires your confirmation before executing.` },
+          });
+          runningMessages.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ status: "pending_confirmation", pendingActionId: pendingId, message: "This write action requires user confirmation before execution. Inform the user what will be changed and ask for confirmation." }),
+          });
+          continue;
+        }
+
+        console.log(`[AvaTools] Executing tool: ${toolName} with params:`, JSON.stringify(toolParams));
+        const userId = context.userId || "";
+        const { result, tool } = await executeTool(toolName, toolParams, userId);
+
+        toolCallResults.push({
+          toolName,
+          toolCategory: tool?.category || "read",
+          params: toolParams,
+          result,
+        });
+
+        runningMessages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(result),
+        });
+      }
+
+      if (hasWriteToolPending) {
+        response = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: runningMessages,
+          temperature: 0.3,
+          max_tokens: 4096,
+        });
+        break;
+      }
+
+      response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: runningMessages,
+        tools: toolDefs,
+        tool_choice: "auto",
+        temperature: 0.3,
+        max_tokens: 4096,
+      });
+    }
+
+    const finalContent = response.choices[0]?.message?.content || "I wasn't able to process that request.";
+
+    const writeToolResults = toolCallResults.filter((tc) => tc.toolCategory === "write");
+    const hasWriteTools = writeToolResults.length > 0;
+    const pendingActionId = writeToolResults.find((tc) => tc.result?.pendingActionId)?.result?.pendingActionId;
+
+    const actionLinks = toolCallResults
+      .filter((tc) => tc.result?.link)
+      .map((tc) => ({
+        label: tc.result.message || `View ${tc.toolName.replace(/_/g, " ")}`,
+        href: tc.result.link,
+      }));
+
+    const structuredData: Record<string, any> = {};
+    for (const tc of toolCallResults) {
+      if (tc.result && !tc.result.error) {
+        structuredData[tc.toolName] = tc.result;
+      }
+    }
+
+    return {
+      mode: "tool_response",
+      assistantMessage: finalContent,
+      toolCalls: toolCallResults.length > 0 ? toolCallResults : undefined,
+      actionLink: actionLinks.length > 0 ? actionLinks[0] : undefined,
+      structuredData: Object.keys(structuredData).length > 0 ? structuredData : undefined,
+      requiresConfirmation: hasWriteTools,
+      pendingActionId,
+    };
+  } catch (error: any) {
+    console.error("[AvaInterpreter] Tool-calling error:", error);
+    return {
+      mode: "qa",
+      assistantMessage:
+        "I encountered an error while processing your request. Please try rephrasing your question.",
+    };
+  }
+}
+
 export interface AvaInteractionLog {
   userId: string;
   timestamp: Date;
   rawMessage: string;
-  mode: "command" | "qa";
+  mode: "command" | "qa" | "tool_response";
   intent?: string;
   parameters?: Record<string, any>;
   outcome: "success" | "error" | "pending";

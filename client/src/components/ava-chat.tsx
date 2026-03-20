@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Bot, Send, MessageSquare, Sparkles, FileText, ExternalLink, Mic, MicOff, Navigation, Calendar, Loader2 } from "lucide-react";
+import { Bot, Send, MessageSquare, Sparkles, FileText, ExternalLink, Mic, MicOff, Navigation, Calendar, Loader2, Database, CheckCircle2, AlertTriangle, XCircle, ShieldCheck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,6 +13,13 @@ import { useLocation } from "wouter";
 import { useVoiceRecognition } from "@/hooks/use-voice-recognition";
 import { cn } from "@/lib/utils";
 import { executeAvaCommand } from "@/lib/ava-command-router";
+
+type ToolCallResult = {
+  toolName: string;
+  toolCategory: "read" | "write";
+  params: Record<string, any>;
+  result: any;
+};
 
 type ChatMessage = {
   id: string;
@@ -21,12 +29,16 @@ type ChatMessage = {
   createdAt: string;
   metadata?: {
     ragUsed?: boolean;
-    mode?: "command" | "qa";
+    mode?: "command" | "qa" | "tool_response";
     intent?: string;
     actionLink?: {
       label: string;
       href: string;
     };
+    toolCalls?: ToolCallResult[];
+    structuredData?: Record<string, any>;
+    requiresConfirmation?: boolean;
+    pendingActionId?: string;
     citations?: Array<{
       chunkIndex?: number;
       retrievedContext?: {
@@ -52,7 +64,7 @@ type ChatSession = {
 };
 
 type AvaInterpretResponse = {
-  mode: "command" | "qa";
+  mode: "command" | "qa" | "tool_response";
   intent?: string;
   parameters?: Record<string, any>;
   assistantMessage: string;
@@ -61,7 +73,10 @@ type AvaInterpretResponse = {
     href: string;
   };
   requiresConfirmation?: boolean;
+  pendingActionId?: string;
   followUpQuestion?: string;
+  toolCalls?: ToolCallResult[];
+  structuredData?: Record<string, any>;
 };
 
 export interface AvaChatContext {
@@ -99,6 +114,7 @@ export function AvaChat({
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [isProcessingCommand, setIsProcessingCommand] = useState(false);
+  const [actionStates, setActionStates] = useState<Record<string, "confirmed" | "cancelled" | "processing">>({});
   const [optimisticMessages, setOptimisticMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -192,6 +208,11 @@ export function AvaChat({
 
   const interpretMutation = useMutation({
     mutationFn: async (message: string): Promise<AvaInterpretResponse> => {
+      const recentMessages = messages.slice(-6).map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
       const response = await apiRequest("POST", "/api/ava/interpret", {
         message,
         context: {
@@ -202,6 +223,7 @@ export function AvaChat({
           currentView: context?.currentView,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         },
+        conversationHistory: recentMessages,
       });
       return await response.json();
     },
@@ -337,7 +359,6 @@ export function AvaChat({
     try {
       const interpretation = await interpretMutation.mutateAsync(trimmedMessage);
 
-      // Execute command and capture any response message
       let commandResponse: { responseMessage?: string; actionLink?: { label: string; href: string } } | undefined;
       if (interpretation.mode === "command" && interpretation.intent) {
         commandResponse = (await executeCommand(interpretation.intent, interpretation.parameters || {})) || undefined;
@@ -348,11 +369,10 @@ export function AvaChat({
         return newSession.id;
       })());
 
-      // If the command returned a response message, use it; otherwise use the interpretation's message
       const preGeneratedResponse = commandResponse?.responseMessage || 
-        (interpretation.mode === "command" ? interpretation.assistantMessage : undefined);
+        (interpretation.mode === "command" ? interpretation.assistantMessage : undefined) ||
+        (interpretation.mode === "tool_response" ? interpretation.assistantMessage : undefined);
       
-      // Use command response's actionLink if available, otherwise use interpretation's
       const finalActionLink = commandResponse?.actionLink || interpretation.actionLink;
 
       await sendMessageMutation.mutateAsync({
@@ -363,6 +383,10 @@ export function AvaChat({
           intent: interpretation.intent,
           actionLink: finalActionLink,
           preGeneratedResponse,
+          toolCalls: interpretation.toolCalls,
+          structuredData: interpretation.structuredData,
+          requiresConfirmation: interpretation.requiresConfirmation,
+          pendingActionId: interpretation.pendingActionId,
         },
       });
 
@@ -374,6 +398,42 @@ export function AvaChat({
       });
     } finally {
       setIsProcessingCommand(false);
+    }
+  };
+
+  const handleConfirmAction = async (actionId: string) => {
+    setActionStates(prev => ({ ...prev, [actionId]: "processing" }));
+    try {
+      const response = await apiRequest("POST", "/api/ava/confirm-action", { actionId, sessionId: currentSessionId });
+      const result = await response.json();
+      if (result.success) {
+        setActionStates(prev => ({ ...prev, [actionId]: "confirmed" }));
+        const confirmMsg: ChatMessage = {
+          id: `confirm-${Date.now()}`,
+          sessionId: currentSessionId || "pending",
+          role: "assistant" as const,
+          content: result.message || "Action completed successfully.",
+          createdAt: new Date().toISOString(),
+          metadata: result.link ? { actionLink: { label: "View", href: result.link } } : undefined,
+        };
+        setOptimisticMessages(prev => [...prev, confirmMsg]);
+      } else {
+        setActionStates(prev => { const s = { ...prev }; delete s[actionId]; return s; });
+        toast({ title: "Action failed", description: result.error || "Could not execute action.", variant: "destructive" });
+      }
+    } catch {
+      setActionStates(prev => { const s = { ...prev }; delete s[actionId]; return s; });
+      toast({ title: "Error", description: "Failed to confirm action.", variant: "destructive" });
+    }
+  };
+
+  const handleCancelAction = async (actionId: string) => {
+    setActionStates(prev => ({ ...prev, [actionId]: "processing" }));
+    try {
+      await apiRequest("POST", "/api/ava/cancel-action", { actionId });
+      setActionStates(prev => ({ ...prev, [actionId]: "cancelled" }));
+    } catch {
+      setActionStates(prev => { const s = { ...prev }; delete s[actionId]; return s; });
     }
   };
 
@@ -484,36 +544,36 @@ export function AvaChat({
 
               <div className="border rounded-lg p-3 bg-muted/30">
                 <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  Create and draft:
+                  <Database className="h-3 w-3" />
+                  Query your data:
                 </p>
                 <div className="space-y-1.5">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                    onClick={() => setMessageInput("Draft a note")}
+                    onClick={() => setMessageInput("What deals are currently in due diligence?")}
                     data-testid="button-suggested-action-1"
                   >
-                    "Draft a note"
+                    "What deals are currently in due diligence?"
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                    onClick={() => setMessageInput("Create a new deal")}
+                    onClick={() => setMessageInput("Show me all open compliance alerts")}
                     data-testid="button-suggested-action-2"
                   >
-                    "Create a new deal"
+                    "Show me all open compliance alerts"
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                    onClick={() => setMessageInput("Scan the news")}
+                    onClick={() => setMessageInput("What's the checklist status for my current case?")}
                     data-testid="button-suggested-action-3"
                   >
-                    "Scan the news"
+                    "What's the checklist status for my current case?"
                   </Button>
                 </div>
               </div>
@@ -521,26 +581,26 @@ export function AvaChat({
               <div className="border rounded-lg p-3 bg-muted/30">
                 <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
                   <Sparkles className="h-3 w-3" />
-                  Research and analyze:
+                  Strategy and analysis:
                 </p>
                 <div className="space-y-1.5">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                    onClick={() => setMessageInput("Start privileged research on antitrust")}
+                    onClick={() => setMessageInput("What are the key risks across my active deals?")}
                     data-testid="button-suggested-question-1"
                   >
-                    "Start privileged research on antitrust"
+                    "What are the key risks across my active deals?"
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-full justify-start text-left h-auto py-1.5 px-2 text-xs"
-                    onClick={() => setMessageInput("Run a background check on John Smith")}
+                    onClick={() => setMessageInput("Summarize findings for my current case")}
                     data-testid="button-suggested-question-2"
                   >
-                    "Run a background check on John Smith"
+                    "Summarize findings for my current case"
                   </Button>
                 </div>
               </div>
@@ -576,7 +636,81 @@ export function AvaChat({
                       <span>Command executed</span>
                     </div>
                   )}
+
+                  {message.role === "assistant" && message.metadata?.mode === "tool_response" && message.metadata?.toolCalls && message.metadata.toolCalls.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border/50" data-testid="section-tool-calls">
+                      <p className="text-xs font-medium flex items-center gap-1 mb-2">
+                        <Database className="h-3 w-3" />
+                        Data retrieved ({message.metadata.toolCalls.length} {message.metadata.toolCalls.length === 1 ? "source" : "sources"})
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {message.metadata.toolCalls.map((tc, idx) => (
+                          <Badge
+                            key={idx}
+                            variant="secondary"
+                            className="text-xs"
+                            data-testid={`badge-tool-${idx}`}
+                          >
+                            {tc.toolCategory === "write" ? (
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                            ) : (
+                              <Database className="h-3 w-3 mr-1" />
+                            )}
+                            {tc.toolName.replace(/_/g, " ")}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   
+                  {message.role === "assistant" && message.metadata?.requiresConfirmation && message.metadata?.pendingActionId && (
+                    <div className="mt-3 pt-3 border-t border-border/50" data-testid="section-action-confirmation">
+                      {actionStates[message.metadata.pendingActionId] === "confirmed" ? (
+                        <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>Action confirmed and executed</span>
+                        </div>
+                      ) : actionStates[message.metadata.pendingActionId] === "cancelled" ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <XCircle className="h-4 w-4" />
+                          <span>Action cancelled</span>
+                        </div>
+                      ) : actionStates[message.metadata.pendingActionId] === "processing" ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Processing...</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                            <ShieldCheck className="h-4 w-4" />
+                            <span>This action requires your confirmation</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleConfirmAction(message.metadata!.pendingActionId!)}
+                              data-testid="button-confirm-action"
+                            >
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Confirm
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCancelAction(message.metadata!.pendingActionId!)}
+                              data-testid="button-cancel-action"
+                            >
+                              <XCircle className="h-3 w-3 mr-1" />
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {message.role === "assistant" && message.metadata?.actionLink && (
                     <Button
                       variant="ghost"

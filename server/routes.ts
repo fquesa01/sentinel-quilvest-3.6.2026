@@ -23982,7 +23982,7 @@ ATTORNEY-CLIENT PRIVILEGED (WORK PRODUCT)
     
     try {
       const userId = req.user?.claims?.sub;
-      const { message, context } = req.body;
+      const { message, context, conversationHistory } = req.body;
 
       if (!message || typeof message !== "string") {
         return res.status(400).json({ message: "Message is required" });
@@ -23998,7 +23998,7 @@ ATTORNEY-CLIENT PRIVILEGED (WORK PRODUCT)
         currentTab: context?.currentTab,
         currentView: context?.currentView,
         timezone: context?.timezone,
-      });
+      }, conversationHistory);
 
       logAvaInteraction({
         userId,
@@ -24022,6 +24022,57 @@ ATTORNEY-CLIENT PRIVILEGED (WORK PRODUCT)
     }
   });
   
+  app.post("/api/ava/confirm-action", isAuthenticated, async (req: any, res) => {
+    const { confirmPendingAction } = await import("./services/ava-interpreter-service");
+    try {
+      const userId = req.user?.claims?.sub;
+      const { actionId, sessionId } = req.body;
+      if (!actionId) return res.status(400).json({ success: false, error: "actionId is required" });
+      const result = await confirmPendingAction(actionId, userId);
+
+      if (result.success && sessionId) {
+        try {
+          const [session] = await db.select({ userId: schema.chatSessions.userId }).from(schema.chatSessions).where(eq(schema.chatSessions.id, sessionId)).limit(1);
+          if (session && session.userId === userId) {
+            await db.insert(schema.chatMessages).values({
+              sessionId,
+              role: "assistant",
+              content: result.message || "Action completed successfully.",
+              metadata: {
+                confirmationResult: true,
+                actionLink: result.link ? { label: "View", href: result.link } : undefined,
+              },
+            });
+            await db.update(schema.chatSessions).set({ lastMessageAt: new Date() }).where(eq(schema.chatSessions.id, sessionId));
+          } else {
+            console.warn("[Ava Confirm] Session ownership mismatch, skipping message persistence");
+          }
+        } catch (persistErr) {
+          console.error("[Ava Confirm] Failed to persist confirmation message:", persistErr);
+        }
+      }
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("[Ava Confirm] Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/ava/cancel-action", isAuthenticated, async (req: any, res) => {
+    const { cancelPendingAction } = await import("./services/ava-interpreter-service");
+    try {
+      const userId = req.user?.claims?.sub;
+      const { actionId } = req.body;
+      if (!actionId) return res.status(400).json({ success: false, error: "actionId is required" });
+      const cancelled = cancelPendingAction(actionId, userId);
+      res.json({ success: cancelled });
+    } catch (error: any) {
+      console.error("[Ava Cancel] Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // POST /api/ava/case-data - Fetch case-specific data for Ava queries
   app.post("/api/ava/case-data", isAuthenticated, async (req: any, res) => {
     try {
@@ -24401,13 +24452,16 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
       let responseMetadata: any = {};
 
       if (metadata.preGeneratedResponse) {
-        // Use the pre-generated response instead of calling OpenAI
         assistantContent = metadata.preGeneratedResponse;
         responseMetadata = {
           preGenerated: true,
           mode: metadata.mode,
           intent: metadata.intent,
           actionLink: metadata.actionLink,
+          toolCalls: metadata.toolCalls,
+          structuredData: metadata.structuredData,
+          requiresConfirmation: metadata.requiresConfirmation,
+          pendingActionId: metadata.pendingActionId,
         };
       } else {
         // Prepare messages for OpenAI
