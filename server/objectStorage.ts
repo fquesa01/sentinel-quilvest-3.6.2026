@@ -415,7 +415,11 @@ export class ObjectStorageService {
     fs.writeFileSync(resolved, buffer);
     const metaPath = resolved + ".meta";
     fs.writeFileSync(metaPath, JSON.stringify({ contentType, size: buffer.length, createdAt: new Date().toISOString() }));
+    const isProduction = process.env.NODE_ENV === "production";
     console.log(`[ObjectStorage] Saved to local filesystem: ${resolved} (${buffer.length} bytes)`);
+    if (isProduction) {
+      console.warn(`[ObjectStorage] WARNING: File stored on local filesystem in production. This storage is ephemeral and may be lost on container restart. Configure PRIVATE_OBJECT_DIR or fix Supabase Storage for persistent storage.`);
+    }
 
     return `/objects/${relativePath}`;
   }
