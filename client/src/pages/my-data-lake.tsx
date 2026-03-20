@@ -179,26 +179,64 @@ export default function MyDataLakePage() {
     enabled: !!searchQueryUrl,
   });
 
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/data-lake/upload", {
+      const CHUNK_SIZE = 4 * 1024 * 1024;
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+      setUploadProgress(0);
+
+      const initRes = await fetch("/api/data-lake/upload/init", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size, totalChunks }),
       });
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
-        try {
-          const body = await res.json();
-          if (body?.message) detail = body.message;
-        } catch {}
-        throw new Error(detail);
+      if (!initRes.ok) {
+        const body = await initRes.json().catch(() => ({}));
+        throw new Error(body.message || `Init failed: HTTP ${initRes.status}`);
       }
-      return res.json();
+      const { sessionId } = await initRes.json();
+
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = file.slice(start, end);
+        const formData = new FormData();
+        formData.append("chunk", chunk);
+        formData.append("sessionId", sessionId);
+        formData.append("chunkIndex", String(i));
+
+        const chunkRes = await fetch("/api/data-lake/upload/chunk", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        if (!chunkRes.ok) {
+          const body = await chunkRes.json().catch(() => ({}));
+          throw new Error(body.message || `Chunk ${i} failed: HTTP ${chunkRes.status}`);
+        }
+        setUploadProgress(Math.round(((i + 1) / totalChunks) * 90));
+      }
+
+      setUploadProgress(95);
+      const finalRes = await fetch("/api/data-lake/upload/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!finalRes.ok) {
+        const body = await finalRes.json().catch(() => ({}));
+        throw new Error(body.message || `Finalize failed: HTTP ${finalRes.status}`);
+      }
+      setUploadProgress(100);
+      return finalRes.json();
     },
     onSuccess: (data) => {
+      setUploadProgress(null);
       queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith("/api/data-lake/") });
       const isEmailArchive = data?.itemType === 'email_archive';
       const isZipArchive = data?.itemType === 'zip_archive';
@@ -220,6 +258,7 @@ export default function MyDataLakePage() {
       }
     },
     onError: (error: Error) => {
+      setUploadProgress(null);
       console.error("[DataLake] Upload error:", error);
       toast({ title: "Upload failed", description: error.message || "Could not upload file. Please try again.", variant: "destructive" });
     },
@@ -486,14 +525,23 @@ export default function MyDataLakePage() {
                     <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
                     <div className="text-sm font-medium mb-1">Drop files here or browse</div>
                     <div className="text-xs text-muted-foreground">PDF, DOCX, XLSX, MSG, EML, PST, MBOX, ZIP supported</div>
-                    <Button
-                      size="sm"
-                      className="mt-3"
-                      disabled={uploadMutation.isPending}
-                      data-testid="button-browse-files"
-                    >
-                      {uploadMutation.isPending ? "Uploading..." : "Browse Files"}
-                    </Button>
+                    {uploadMutation.isPending && uploadProgress !== null ? (
+                      <div className="mt-3 w-full max-w-48 mx-auto" data-testid="upload-progress">
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">{uploadProgress < 95 ? `Uploading... ${uploadProgress}%` : "Processing..."}</div>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="mt-3"
+                        disabled={uploadMutation.isPending}
+                        data-testid="button-browse-files"
+                      >
+                        {uploadMutation.isPending ? "Uploading..." : "Browse Files"}
+                      </Button>
+                    )}
                     <input
                       ref={fileInputRef}
                       type="file"
