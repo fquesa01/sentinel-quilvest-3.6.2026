@@ -15,27 +15,39 @@ if (!rawConnectionString) {
 
 const isSupabase = !!process.env.SUPABASE_DATABASE_URL;
 
-function parseConnectionConfig(connStr: string, supabase: boolean): PoolConfig {
-  const sslConfig = supabase ? { rejectUnauthorized: false } : { rejectUnauthorized: false };
-
-  const match = connStr.match(/^(postgresql?):\/\/([^:]+):(.+)@([^/]+)\/(.+)$/);
-  if (match) {
-    const [, , user, password, hostPort, database] = match;
+function parseConnectionConfig(connStr: string): PoolConfig {
+  try {
+    const parsed = new URL(connStr);
+    return {
+      user: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+      host: parsed.hostname,
+      port: parsed.port ? parseInt(parsed.port, 10) : 5432,
+      database: parsed.pathname.replace(/^\//, ''),
+    };
+  } catch {
+    const match = connStr.match(/^postgresql?:\/\/([^:]+):(.+)@([^@/]+)\/(.+)$/);
+    if (!match) {
+      throw new Error("Unable to parse database connection string");
+    }
+    const [, user, password, hostPort, dbPart] = match;
     const [host, portStr] = hostPort.split(':');
     return {
       user,
       password,
       host,
       port: portStr ? parseInt(portStr, 10) : 5432,
-      database: database.split('?')[0],
-      ssl: sslConfig,
+      database: dbPart.split('?')[0],
     };
   }
-
-  return { connectionString: connStr, ssl: sslConfig };
 }
 
-const poolConfig = parseConnectionConfig(rawConnectionString, isSupabase);
+const poolConfig = parseConnectionConfig(rawConnectionString);
+// Supabase pooler (Supavisor) uses certificates not in Node's default CA bundle;
+// Replit managed PostgreSQL uses self-signed certificates.
+// Both require rejectUnauthorized: false for SSL connections to succeed.
+poolConfig.ssl = { rejectUnauthorized: false };
+
 export const pool = new Pool(poolConfig);
 export const db = drizzle({ client: pool, schema });
 
