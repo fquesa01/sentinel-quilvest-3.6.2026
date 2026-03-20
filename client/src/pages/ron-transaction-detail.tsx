@@ -1020,10 +1020,13 @@ export default function RonTransactionDetail() {
               <Label>File *</Label>
               <Input
                 type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.tiff"
+                accept=".pdf,.png,.jpg,.jpeg,.tiff,.doc,.docx"
                 onChange={(e) => setDocFile(e.target.files?.[0] || null)}
                 data-testid="input-doc-file"
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Accepted: PDF, PNG, JPEG, TIFF, Word (.docx). Legacy .doc files must be re-saved as .docx.
+              </p>
             </div>
             <div>
               <Label>Document Title</Label>

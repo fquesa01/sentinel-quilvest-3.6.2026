@@ -6,6 +6,7 @@ import * as complianceService from "../services/ron-compliance-service";
 import { ObjectStorageService } from "../objectStorage";
 import { storage } from "../storage";
 import type { RonComplianceCheck } from "@shared/schema";
+import { convertWordToPdf } from "../word-to-pdf";
 
 type ComplianceCheckType = RonComplianceCheck["checkType"];
 
@@ -468,6 +469,13 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
     const ALLOWED_DOCUMENT_MIMES = [
       "application/pdf",
       "image/png", "image/jpeg", "image/tiff",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/msword",
+    ];
+
+    const WORD_MIMES = [
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/msword",
     ];
 
     if (file && !ALLOWED_DOCUMENT_MIMES.includes(file.mimetype)) {
@@ -476,13 +484,34 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
       });
     }
 
+    if (file && file.mimetype === "application/msword") {
+      return res.status(400).json({
+        message: "Legacy .doc format is not supported. Please re-save the document as .docx and upload again.",
+      });
+    }
+
     if (file) {
       const objectStorageService = new ObjectStorageService();
-      storageKey = `ron/${req.params.transactionId}/${file.originalname}`;
-      await objectStorageService.uploadBuffer(storageKey, file.buffer, file.mimetype);
-      originalPdfUrl = storageKey;
-      fileSize = file.size;
-      mimeType = file.mimetype;
+      const isWordDoc = WORD_MIMES.includes(file.mimetype);
+
+      if (isWordDoc) {
+        const originalKey = `ron/${req.params.transactionId}/originals/${file.originalname}`;
+        await objectStorageService.uploadBuffer(originalKey, file.buffer, file.mimetype);
+        originalPdfUrl = originalKey;
+
+        const pdfBuffer = await convertWordToPdf(file.buffer);
+        const pdfFileName = file.originalname.replace(/\.docx?$/i, ".pdf");
+        storageKey = `ron/${req.params.transactionId}/${pdfFileName}`;
+        await objectStorageService.uploadBuffer(storageKey, pdfBuffer, "application/pdf");
+        fileSize = pdfBuffer.length;
+        mimeType = "application/pdf";
+      } else {
+        storageKey = `ron/${req.params.transactionId}/${file.originalname}`;
+        await objectStorageService.uploadBuffer(storageKey, file.buffer, file.mimetype);
+        originalPdfUrl = storageKey;
+        fileSize = file.size;
+        mimeType = file.mimetype;
+      }
     }
 
     const body = req.body;

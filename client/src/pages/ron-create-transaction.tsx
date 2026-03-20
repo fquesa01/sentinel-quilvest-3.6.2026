@@ -475,7 +475,7 @@ export default function RonCreateTransaction() {
               <p className="text-sm text-muted-foreground mb-3">Upload documents for notarization</p>
               <Input
                 type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.tiff"
+                accept=".pdf,.png,.jpg,.jpeg,.tiff,.doc,.docx"
                 multiple
                 onChange={(e) => {
                   const files = e.target.files;
@@ -487,6 +487,9 @@ export default function RonCreateTransaction() {
                 data-testid="input-doc-upload"
               />
             </div>
+            <p className="text-xs text-muted-foreground">
+              Accepted formats: PDF, PNG, JPEG, TIFF, and Word (.docx). Legacy .doc files must be re-saved as .docx before uploading.
+            </p>
             <p className="text-xs text-muted-foreground">
               You can also upload documents after creating the transaction.
             </p>
