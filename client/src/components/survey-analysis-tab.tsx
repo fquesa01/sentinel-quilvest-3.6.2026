@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -614,6 +614,35 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragPanStart, setDragPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setDragPanStart({ x: panX, y: panY });
+  }, [panX, panY]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging || !dragStart) return;
+    const dx = (e.clientX - dragStart.x) / zoom;
+    const dy = (e.clientY - dragStart.y) / zoom;
+    setPanX(dragPanStart.x + dx);
+    setPanY(dragPanStart.y + dy);
+  }, [isDragging, dragStart, dragPanStart, zoom]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+    setDragStart(null);
+  }, []);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom(z => Math.min(Math.max(z + delta, 0.4), 3));
+  }, []);
 
   if (!survey || !survey.boundaries || survey.boundaries.length === 0) {
     return <EmptyState icon={Eye} title="No Plat Data" description="Run AI analysis to generate the plat visual from survey boundaries." />;
@@ -685,6 +714,33 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
   const centerX = svgPoints.reduce((s, p) => s + p.x, 0) / svgPoints.length;
   const centerY = svgPoints.reduce((s, p) => s + p.y, 0) / svgPoints.length;
 
+  const setbackLines: Array<{ x1: number; y1: number; x2: number; y2: number; label: string }> = [];
+  for (const imp of improvements) {
+    const setbacks = [
+      { val: imp.setbackFrontFt, side: "front", dir: "top" },
+      { val: imp.setbackRearFt, side: "rear", dir: "bottom" },
+      { val: imp.setbackLeftFt, side: "left", dir: "left" },
+      { val: imp.setbackRightFt, side: "right", dir: "right" },
+    ];
+    for (const sb of setbacks) {
+      if (!sb.val || Number(sb.val) <= 0) continue;
+      const offset = Number(sb.val) * scale * 0.3;
+      if (sb.dir === "top") {
+        const yLine = centerY - 20 / zoom - offset / zoom;
+        setbackLines.push({ x1: svgPoints[0]?.x || padding, y1: yLine, x2: svgPoints[1]?.x || svgWidth - padding, y2: yLine, label: `${sb.val}' ${sb.side}` });
+      } else if (sb.dir === "bottom") {
+        const yLine = centerY + 20 / zoom + offset / zoom;
+        setbackLines.push({ x1: svgPoints[0]?.x || padding, y1: yLine, x2: svgPoints[1]?.x || svgWidth - padding, y2: yLine, label: `${sb.val}' ${sb.side}` });
+      } else if (sb.dir === "left") {
+        const xLine = centerX - 25 / zoom - offset / zoom;
+        setbackLines.push({ x1: xLine, y1: svgPoints[0]?.y || padding, x2: xLine, y2: svgPoints[svgPoints.length - 2]?.y || svgHeight - padding, label: `${sb.val}' ${sb.side}` });
+      } else if (sb.dir === "right") {
+        const xLine = centerX + 25 / zoom + offset / zoom;
+        setbackLines.push({ x1: xLine, y1: svgPoints[0]?.y || padding, x2: xLine, y2: svgPoints[svgPoints.length - 2]?.y || svgHeight - padding, label: `${sb.val}' ${sb.side}` });
+      }
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -706,11 +762,18 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
       <Card>
         <CardContent className="p-2 overflow-auto">
           <svg
+            ref={svgRef}
             width={svgWidth}
             height={svgHeight}
             viewBox={`${-panX} ${-panY} ${svgWidth / zoom} ${svgHeight / zoom}`}
-            className="w-full h-auto border rounded-md bg-background"
+            className="w-full h-auto border rounded-md bg-background select-none"
+            style={{ cursor: isDragging ? "grabbing" : "grab" }}
             data-testid="svg-plat-visual"
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onWheel={handleWheel}
           >
             <path d={pathData} fill="hsl(var(--primary) / 0.05)" stroke="hsl(var(--foreground))" strokeWidth={2 / zoom} />
 
@@ -737,6 +800,16 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
                 </text>
               );
             })}
+
+            {setbackLines.map((sl, i) => (
+              <g key={`setback-${i}`}>
+                <line x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
+                  stroke="hsl(280 80% 60%)" strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${3 / zoom}`} opacity={0.7} />
+                <text x={(sl.x1 + sl.x2) / 2} y={(sl.y1 + sl.y2) / 2 - 3 / zoom} fontSize={7 / zoom} fill="hsl(280 80% 60%)" textAnchor="middle">
+                  {sl.label}
+                </text>
+              </g>
+            ))}
 
             {easements.map((e, i) => {
               const offset = 15 + i * 8;
@@ -781,8 +854,8 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
               );
             })}
 
-            <g transform={`translate(${svgWidth / zoom - 140 / zoom}, ${svgHeight / zoom - 100 / zoom})`}>
-              <rect width={130 / zoom} height={90 / zoom} fill="hsl(var(--background) / 0.9)" stroke="hsl(var(--border))" strokeWidth={1 / zoom} rx={3 / zoom} />
+            <g transform={`translate(${svgWidth / zoom - 150 / zoom}, ${svgHeight / zoom - 115 / zoom})`}>
+              <rect width={140 / zoom} height={105 / zoom} fill="hsl(var(--background) / 0.9)" stroke="hsl(var(--border))" strokeWidth={1 / zoom} rx={3 / zoom} />
               <text x={8 / zoom} y={12 / zoom} fontSize={8 / zoom} fill="hsl(var(--foreground))" fontWeight="bold">Legend</text>
               <line x1={8 / zoom} y1={22 / zoom} x2={24 / zoom} y2={22 / zoom} stroke="hsl(var(--foreground))" strokeWidth={2 / zoom} />
               <text x={28 / zoom} y={25 / zoom} fontSize={7 / zoom} fill="hsl(var(--muted-foreground))">Property Line</text>
@@ -794,6 +867,8 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
               <text x={28 / zoom} y={64 / zoom} fontSize={7 / zoom} fill="hsl(var(--muted-foreground))">Encroachment</text>
               <rect x={8 / zoom} y={72 / zoom} width={12 / zoom} height={8 / zoom} fill="hsl(217 91% 60% / 0.2)" stroke="hsl(217 91% 60%)" strokeWidth={1 / zoom} />
               <text x={28 / zoom} y={79 / zoom} fontSize={7 / zoom} fill="hsl(var(--muted-foreground))">Improvement</text>
+              <line x1={8 / zoom} y1={88 / zoom} x2={24 / zoom} y2={88 / zoom} stroke="hsl(280 80% 60%)" strokeWidth={1.5 / zoom} strokeDasharray={`${4 / zoom} ${2 / zoom}`} />
+              <text x={28 / zoom} y={91 / zoom} fontSize={7 / zoom} fill="hsl(var(--muted-foreground))">Setback Line</text>
             </g>
           </svg>
         </CardContent>
