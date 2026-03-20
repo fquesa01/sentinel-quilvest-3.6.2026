@@ -13310,11 +13310,11 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
               return `${timeLabel} ${t.content}`.trim();
             }).join("\n");
             
-            const noteValues: any = {
+            const noteInsert: typeof schema.dealMeetingNotes.$inferInsert = {
               dealId,
               title: session.sessionName || "Ambient Intelligence Session",
               meetingDate: session.startedAt || session.createdAt,
-              source: "ambient_intelligence" as const,
+              source: "ambient_intelligence",
               transcript: fullTranscript || null,
               duration: session.durationSeconds ? Math.round(session.durationSeconds / 60) : null,
               ambientSessionId: session.id,
@@ -13328,17 +13328,17 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
               .limit(1);
             
             if (summaryData) {
-              noteValues.summary = summaryData.summaryText;
-              noteValues.keyPoints = (summaryData.keyMoments as any[])?.map((m: any) =>
-                typeof m === "string" ? m : m.description || ""
-              ).filter(Boolean) || [];
-              noteValues.actionItems = (summaryData.actionItems as any[])?.map((a: any) => ({
-                description: typeof a === "string" ? a : a.description || "",
+              noteInsert.summary = summaryData.summaryText;
+              const moments = summaryData.keyMoments as Array<{ description?: string; timestamp_ms?: number; type?: string }> | null;
+              noteInsert.keyPoints = moments?.map(m => m.description || "").filter(Boolean) || [];
+              const items = summaryData.actionItems as Array<{ description: string; assignee?: string; dueDate?: string }> | null;
+              noteInsert.actionItems = items?.map(a => ({
+                description: a.description || "",
                 completed: false,
               })) || [];
             }
             
-            await db.insert(schema.dealMeetingNotes).values(noteValues);
+            await db.insert(schema.dealMeetingNotes).values(noteInsert);
             console.log(`[AmbientSync] Backfill: Created meeting note for session ${session.id}`);
           }
         }
@@ -27818,17 +27818,15 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
           .limit(1);
         
         if (meetingNote) {
-          const actionItems = summary.actionItems?.map((a: string) => ({
-            description: a,
-            completed: false,
-          })) || [];
+          const mappedActions: Array<{ description: string; completed: boolean }> = 
+            (summary.actionItems || []).map(a => ({ description: a, completed: false }));
           
           await db
             .update(schema.dealMeetingNotes)
             .set({
               summary: summary.summary || null,
               keyPoints: summary.keyTopics || [],
-              actionItems,
+              actionItems: mappedActions,
               decisions: summary.documentMentions || [],
               updatedAt: new Date(),
             })
@@ -27921,14 +27919,17 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
           .limit(1);
         
         if (meetingNote && summaryText) {
-          const mappedActionItems = actionItems?.map((a: any) => ({
-            description: typeof a === "string" ? a : a.description || "",
-            completed: false,
-          })) || [];
+          interface SummaryActionItem { description: string; assignee?: string | null; dueDate?: string | null }
+          interface SummaryKeyMoment { description: string; timestamp_ms?: number; type?: string }
           
-          const topicDecisions = keyMoments?.map((m: any) => 
-            typeof m === "string" ? m : m.description || ""
-          ).filter(Boolean) || [];
+          const typedActionItems = (actionItems || []) as SummaryActionItem[];
+          const mappedActionItems: Array<{ description: string; completed: boolean }> = 
+            typedActionItems.map(a => ({ description: a.description || "", completed: false }));
+          
+          const typedMoments = (keyMoments || []) as SummaryKeyMoment[];
+          const topicDecisions: string[] = typedMoments
+            .map(m => m.description || "")
+            .filter(Boolean);
           
           await db
             .update(schema.dealMeetingNotes)

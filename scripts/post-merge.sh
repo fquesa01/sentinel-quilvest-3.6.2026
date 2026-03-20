@@ -18,3 +18,4 @@ psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX IF NOT EXISTS idx_org_members_user_
 # Ensure ambient_session_id column exists on deal_meeting_notes for linking ambient sessions
 psql "$DATABASE_URL" -c "ALTER TABLE deal_meeting_notes ADD COLUMN IF NOT EXISTS ambient_session_id VARCHAR;" 2>/dev/null || true
 psql "$DATABASE_URL" -c "CREATE INDEX IF NOT EXISTS idx_deal_meeting_notes_ambient_session ON deal_meeting_notes(ambient_session_id);" 2>/dev/null || true
+psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX IF NOT EXISTS idx_deal_meeting_notes_ambient_session_unique ON deal_meeting_notes(ambient_session_id) WHERE ambient_session_id IS NOT NULL;" 2>/dev/null || true
