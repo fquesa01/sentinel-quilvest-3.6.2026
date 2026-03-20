@@ -20,7 +20,7 @@ import { nanoid } from "nanoid";
 import { insertCommunicationSchema, insertCaseSchema, updateCaseSchema, insertRegulationSchema, insertInterviewSchema, insertInterviewTemplateSchema, insertInterviewInviteSchema, insertRecordedInterviewSchema, insertInterviewNoteSchema, updateInterviewTemplateSchema, updateInterviewInviteSchema, updateRecordedInterviewSchema, updateInterviewNoteSchema, insertRegulatoryChangeSchema, insertGrcRiskSchema, insertGrcControlSchema, insertGrcIncidentSchema, insertDocumentSetSchema, insertDocumentSetMemberSchema, insertDocumentForwardSchema, insertCaseMessageSchema, insertCasePartySchema, insertCaseTimelineEventSchema, updateCaseTimelineEventSchema, insertCustomTimelineColumnSchema, insertCustomTimelineColumnValueSchema } from "@shared/schema";
 import { generateBusinessSummaryPDF, generateDocumentExportPDF } from "./pdf-generator";
 import { ObjectStorageService, objectStorageClient } from "./objectStorage";
-import { uploadFile, downloadFile, deleteFile, FORM_TEMPLATES_BUCKET } from "./supabaseStorage";
+import { uploadFile, downloadFile, deleteFile, FORM_TEMPLATES_BUCKET, DATA_LAKE_BUCKET } from "./supabaseStorage";
 import type { BusinessSummary, EntityInvolvement, EntityInvolvementEntry } from "@shared/business-summary-types";
 import { generateRealtimeToken, transcribeVideoFile } from "./elevenlabs";
 import { emailService } from "./services/email-service";
@@ -30990,12 +30990,12 @@ Guidelines:
       const itemType = typeMap[ext] || "other";
       let filePath: string | null = null;
       try {
-        const objectStorageService = new ObjectStorageService();
         const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
-        const uploadPath = `data-lake/${Date.now()}-${safeName}`;
-        filePath = await objectStorageService.uploadBuffer(uploadPath, file.buffer, file.mimetype);
+        const storageKey = `${nanoid()}_${safeName}`;
+        await uploadFile(DATA_LAKE_BUCKET, storageKey, file.buffer, file.mimetype);
+        filePath = storageKey;
       } catch (storageError) {
-        console.error("Object storage upload failed, continuing without file path:", storageError);
+        console.error("Supabase Storage upload failed, continuing without file path:", storageError);
       }
 
       const isEmailArchive = ext in emailFormats;
@@ -31101,7 +31101,6 @@ Guidelines:
 
             console.log(`[DataLake] ZIP: Extracting ${validEntries.length} files (${Math.round(totalSize / 1024)}KB total)`);
 
-            const objectStorageService = new ObjectStorageService();
             let created = 0;
 
             const extToItemType: Record<string, string> = {
@@ -31111,7 +31110,6 @@ Guidelines:
               html: "other", htm: "other", rtf: "other", json: "other", xml: "other",
             };
             const supportedExtensions = new Set(Object.keys(extToItemType));
-            const { randomUUID } = await import("crypto");
             let skippedUnsupported = 0;
 
             for (const entry of validEntries) {
@@ -31131,9 +31129,9 @@ Guidelines:
                 let extractedFilePath: string | null = null;
                 try {
                   const safeName = extractedFileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
-                  const uniqueId = randomUUID();
-                  const uploadPath = `data-lake/${uniqueId}-${safeName}`;
-                  extractedFilePath = await objectStorageService.uploadBuffer(uploadPath, extractedBuffer, 'application/octet-stream');
+                  const childKey = `${nanoid()}_${safeName}`;
+                  await uploadFile(DATA_LAKE_BUCKET, childKey, extractedBuffer, 'application/octet-stream');
+                  extractedFilePath = childKey;
                 } catch (uploadErr) {
                   console.error(`[DataLake] ZIP: Failed to upload extracted file ${extractedFileName}:`, uploadErr);
                 }
@@ -31311,8 +31309,14 @@ Guidelines:
       if (item && (item.itemType === "email_archive" || item.itemType === "zip_archive")) {
         const children = await storage.getDataLakeItemsByParent(req.params.id, req.user.id);
         for (const child of children) {
+          if (child.filePath && !child.filePath.startsWith("/objects/")) {
+            try { await deleteFile(DATA_LAKE_BUCKET, child.filePath); } catch (_e) { /* best-effort */ }
+          }
           await storage.deleteDataLakeItem(child.id, req.user.id);
         }
+      }
+      if (item?.filePath && !item.filePath.startsWith("/objects/")) {
+        try { await deleteFile(DATA_LAKE_BUCKET, item.filePath); } catch (_e) { /* best-effort */ }
       }
       await storage.deleteDataLakeItem(req.params.id, req.user.id);
       res.json({ success: true });

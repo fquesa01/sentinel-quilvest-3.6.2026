@@ -16,6 +16,7 @@ const supabase: SupabaseClient | null =
 
 const RON_DOCUMENTS_BUCKET = "ron-documents";
 const FORM_TEMPLATES_BUCKET = "form-templates";
+const DATA_LAKE_BUCKET = "data-lake";
 
 async function ensureBucket(name: string) {
   if (!supabase) return;
@@ -31,6 +32,7 @@ async function ensureBucket(name: string) {
 export async function initBuckets() {
   await ensureBucket(RON_DOCUMENTS_BUCKET);
   await ensureBucket(FORM_TEMPLATES_BUCKET);
+  await ensureBucket(DATA_LAKE_BUCKET);
   console.log("[SupabaseStorage] Buckets verified");
 }
 
@@ -88,4 +90,4 @@ export async function fileExists(bucket: string, path: string): Promise<boolean>
   return Array.isArray(data) && data.some((f) => f.name === fileName);
 }
 
-export { RON_DOCUMENTS_BUCKET, FORM_TEMPLATES_BUCKET };
+export { RON_DOCUMENTS_BUCKET, FORM_TEMPLATES_BUCKET, DATA_LAKE_BUCKET };
