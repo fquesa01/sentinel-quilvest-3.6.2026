@@ -328,7 +328,7 @@ export default function AmbientIntelligence() {
         </div>
         
         <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-0">
+          <div className="lg:col-span-2 space-y-0 pl-2">
             {/* Mode Selection Cards */}
             <div className="stagger-2">
               <div className="grid sm:grid-cols-2 gap-4">
