@@ -1,0 +1,124 @@
+I'll research the major Remote Online Notarization (RON) platforms to give you a comprehensive feature analysis for Sentinel RON. Let me search for current information on the leading providers.Now let me pull together a comprehensive feature analysis for you. Let me also look at the Sentinel RON spec you've been working on to cross-reference.Now I have a thorough picture from both the market research and your existing Sentinel RON spec. Here's the comprehensive breakdown, Frank:
+
+---
+
+## How Remote Online Notarization Works (End-to-End Flow)
+
+The process across all major platforms follows the same fundamental sequence:
+
+**1. Document Upload** — The signer (or sending party) uploads PDF documents to the platform. Platforms allow uploading and managing multiple PDFs within a single RON transaction, with the ability to assign different signers to specific documents and control signing order.
+
+**2. Identity Verification (Multi-Layer)** — Before the signer ever connects to a notary, they go through identity proofing:
+
+- **Credential Analysis**: The signer uploads photos of their government-issued ID (front and back), and the platform runs them through third-party software to verify the security components on the ID card. AI and optical recognition tools detect forgery, expiration, and tampering.
+- **Knowledge-Based Authentication (KBA)**: KBA uses questions backed by authentic information from public and private records — things like past addresses, property ownership, and transaction history that only the real person would know. The signer has a limited time window to answer correctly; failure terminates the session.
+- **Biometric Verification (emerging)**: Some platforms now add selfie-match or liveness checks against the uploaded ID. Secured Signing has gone further with AI-powered deepfake detection that analyzes a signer's video and audio during the RON meeting, running both before and during the session.
+
+**3. Live Audio-Visual Session** — The notary and signer meet via secure audio-visual technology with simultaneous sight and sound. The notary confirms identity, reviews the document with the signer via screen-sharing, confirms willingness to sign, and witnesses the electronic signature.
+
+**4. Electronic Signing & Seal** — The signer applies their e-signature using the platform's tools. The notary then applies their electronic signature and digital notary seal. Every signature is cryptographically sealed with legal evidence embedded in the notarized document, making it tamper-evident.
+
+**5. Recording & Journal** — All states require an audiovisual recording that captures the notary and signer interacting throughout the session. An electronic journal auto-populates with transaction metadata. RON platforms must maintain recordings, and all RON states require recording the entire notarization session, typically stored for 5–10 years.
+
+**6. Audit Trail & Download** — The completed, tamper-evident document is available for download along with a certificate of completion.
+
+---
+
+## Universal Features Across All Major RON Platforms
+
+After reviewing Notarize/Proof, NotaryCam, DocuSign Notary, ProNotary, BlueNotary, OneNotary, SIGNiX, Secured Signing, Pactima, Notary.io, OneSpan Notary, eNotary On Call, and Snapdocs, here's what they all share:
+
+### Identity Verification
+- **Government-issued ID credential analysis** (AI-powered document scanning)
+- **Dynamic Knowledge-Based Authentication (KBA)** — "out-of-wallet" questions from credit/public records
+- **Multi-factor authentication** (the combination of credential analysis + KBA + live notary verification creates the standard three-layer check)
+- **Failed-attempt lockout** (retry after 24 hours to prevent brute-force)
+
+### Audio-Visual Session
+- **Live two-way video conferencing** (webcam + mic, browser-based — no app download required)
+- **Full session recording** (audio + video of entire notarial act)
+- **Screen recording** (captures the document interaction, not just faces)
+- **Signer consent capture** (verbal and/or clickthrough consent to recording before session begins)
+
+### Document Handling
+- **PDF document upload** (the standard format)
+- **Multi-document packages** within a single session
+- **Drag-and-drop tag placement** (signature, initials, date, notary seal fields)
+- **Real-time document viewing/screen-sharing** between notary and signer
+- **Annotation tools** for the notary to mark up or guide signers
+
+### Electronic Signature & Seal
+- **Tamper-evident electronic signatures** (cryptographically sealed)
+- **Digital notary seal** (auto-populated from notary profile — commission number, state, expiration)
+- **X.509 digital certificate** support (the industry standard for notary signing credentials)
+- **Notarial certificate/wording** auto-attached to documents
+
+### Record-Keeping & Compliance
+- **Electronic notary journal (eJournal)** — auto-generated per session with transaction name, notarial act type, signer info, ID verification results, date/time
+- **Comprehensive audit trail** — captures signing privileges passed between notary and signers, IP address and geolocation details of participants, and every action during the session
+- **Long-term encrypted storage** of recordings + journals (5–10 years per state requirements)
+- **Certificate of Completion** for each transaction
+- **Tamper-evident document sealing** (any post-notarization modification is detectable)
+
+### Multi-Party Support
+- **Multiple signers per session** (Pactima supports up to 10)
+- **On-demand witness availability** (Notarize/Proof offers this as a premium feature)
+- **Multi-notary sessions** for complex transactions
+- **Signing order control** (sequential or parallel signing workflows)
+- **Credible witness** identification method (when signer cannot pass standard ID verification)
+- **Personal knowledge** identification method (for in-house notaries who know the signer)
+
+### Enterprise & Integration Features
+- **API access** for embedding RON into existing workflows
+- **White-label/branding** customization (logo, colors)
+- **SSO (Single Sign-On)** for enterprise authentication
+- **Notary management/queue system** — assign, route, or let notaries claim transactions
+- **Template/reusable document** support
+- **eSignature-only mode** for documents that don't require notarization
+- **Integration with eSignature platforms** (DocuSign, Adobe Sign)
+- **Integration with document management** and settlement platforms
+- **Stripe/payment integration** for billing per session
+
+### Compliance & Security
+- **SOC 2 Type 2** compliance (the enterprise standard)
+- **MISMO certification** (mortgage industry standard)
+- **HIPAA compliance** (for healthcare use cases)
+- **Multi-state regulatory compliance** engine (rules vary by state)
+- **ESIGN Act, UETA, and state-specific RON law** compliance
+- **End-to-end encryption** of sessions and stored data
+- **Data retention** policies aligned to state mandates
+
+### Notary-Side Tools
+- **Notary profile management** (commission details, seal upload, signature creation)
+- **Commission verification** and multi-state registration tracking
+- **eJournal export** capabilities
+- **Background check/NNA verification** tracking
+- **Scheduling tools** with automated reminders (email/SMS)
+
+---
+
+## Differentiators by Platform Tier
+
+**Consumer/Individual** (Notarize, NotaryLive, eNotary On Call): 24/7 on-demand notary network, flat per-session pricing, minimal setup.
+
+**Enterprise/In-House** (ProNotary, SIGNiX, OneSpan, DocuSign Notary): Designed for organizations using their own commissioned notaries — notary queue management, dedicated servers, advanced API, custom onboarding, Stripe billing integration.
+
+**Real Estate/eClose Specialty** (Snapdocs, Stavvy, NotaryCam, BlueNotary): RON eligibility checks against state/county rules, eNote support, MERS registration, hybrid closing workflows, title company integration, MISMO standards.
+
+**AI/Fraud-Forward** (Secured Signing, Proof): Deepfake detection, device fingerprinting, behavioral analytics, real-time fraud scoring during sessions.
+
+---
+
+## What This Means for Sentinel RON
+
+Your existing 14-section spec already covers a lot of this ground. The key areas I'd flag to make sure you have parity (or competitive advantage) for your PE/institutional closing workflows:
+
+- **Deepfake/liveness detection** during the video session — this is becoming table stakes fast (Secured Signing is leading here)
+- **Device fingerprinting** — Proof is pushing this as a fraud signal that's harder to spoof than identities
+- **RON eligibility checker** — Snapdocs has a one-click tool that checks loan/transaction characteristics against current state, county, and regulatory RON requirements. For PE closings with multi-state entities, this would be very valuable.
+- **Credible witness and personal knowledge** identity verification pathways as alternatives to KBA (Notarize supports both)
+- **Notary queue/routing** — ProNotary's system lets you push transactions to a pool, let notaries claim them, or assign based on state/specialty. Critical for high-volume closing cycles.
+- **Multi-document package management** with per-signer assignment and signing order control
+- **Stripe or integrated billing** so Sentinel can charge per-session or bundle into platform fees
+
+Want me to cross-reference these against your specific 14-section spec and produce a gap analysis, or build out any of these feature areas in more detail?

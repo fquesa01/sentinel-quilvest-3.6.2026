@@ -20,6 +20,7 @@ import { nanoid } from "nanoid";
 import { insertCommunicationSchema, insertCaseSchema, updateCaseSchema, insertRegulationSchema, insertInterviewSchema, insertInterviewTemplateSchema, insertInterviewInviteSchema, insertRecordedInterviewSchema, insertInterviewNoteSchema, updateInterviewTemplateSchema, updateInterviewInviteSchema, updateRecordedInterviewSchema, updateInterviewNoteSchema, insertRegulatoryChangeSchema, insertGrcRiskSchema, insertGrcControlSchema, insertGrcIncidentSchema, insertDocumentSetSchema, insertDocumentSetMemberSchema, insertDocumentForwardSchema, insertCaseMessageSchema, insertCasePartySchema, insertCaseTimelineEventSchema, updateCaseTimelineEventSchema, insertCustomTimelineColumnSchema, insertCustomTimelineColumnValueSchema } from "@shared/schema";
 import { generateBusinessSummaryPDF, generateDocumentExportPDF } from "./pdf-generator";
 import { ObjectStorageService, objectStorageClient } from "./objectStorage";
+import { uploadFile, downloadFile, FORM_TEMPLATES_BUCKET } from "./supabaseStorage";
 import type { BusinessSummary, EntityInvolvement, EntityInvolvementEntry } from "@shared/business-summary-types";
 import { generateRealtimeToken, transcribeVideoFile } from "./elevenlabs";
 import { emailService } from "./services/email-service";
@@ -965,6 +966,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid file type. Allowed: docx, doc, xlsx, xls, pdf" });
       }
 
+      const key = `litigation/${nanoid()}_${req.file.originalname}`;
+      await uploadFile(FORM_TEMPLATES_BUCKET, key, req.file.buffer, req.file.mimetype);
+
       const templateData = {
         name: req.body.name || req.file.originalname.replace(/\.[^/.]+$/, ''),
         description: req.body.description || null,
@@ -975,7 +979,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileName: req.file.originalname,
         fileType: fileType as 'docx' | 'doc' | 'xlsx' | 'xls' | 'pdf',
         fileSize: req.file.size,
-        fileData: req.file.buffer,
+        filePath: key,
         uploadedBy: req.user.id,
       };
 
@@ -1041,9 +1045,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'pdf': 'application/pdf',
       };
 
+      let fileBuffer: Buffer;
+      if (template.filePath) {
+        fileBuffer = await downloadFile(FORM_TEMPLATES_BUCKET, template.filePath);
+      } else {
+        return res.status(404).json({ message: "File data not available" });
+      }
+
       res.setHeader('Content-Type', mimeTypes[template.fileType] || 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${template.fileName}"`);
-      res.send(template.fileData);
+      res.send(fileBuffer);
     } catch (error: any) {
       console.error("Error downloading template:", error);
       res.status(500).json({ message: error.message });

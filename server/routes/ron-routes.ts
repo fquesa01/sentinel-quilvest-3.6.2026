@@ -1,10 +1,11 @@
 import { Router, type Express } from "express";
 import multer from "multer";
 import { randomBytes } from "crypto";
+import { nanoid } from "nanoid";
 import { isAuthenticated, requireRole } from "../replitAuth";
 import * as journalService from "../services/ron-journal-service";
 import * as complianceService from "../services/ron-compliance-service";
-import { ObjectStorageService } from "../objectStorage";
+import { uploadFile, downloadFile, RON_DOCUMENTS_BUCKET } from "../supabaseStorage";
 import { storage } from "../storage";
 import type { RonComplianceCheck } from "@shared/schema";
 import { convertWordToPdf } from "../word-to-pdf";
@@ -575,23 +576,22 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
     }
 
     if (file) {
-      const objectStorageService = new ObjectStorageService();
       const isWordDoc = WORD_MIMES.includes(file.mimetype);
 
       if (isWordDoc) {
         const originalKey = `ron/${req.params.transactionId}/originals/${file.originalname}`;
-        await objectStorageService.uploadBuffer(originalKey, file.buffer, file.mimetype);
+        await uploadFile(RON_DOCUMENTS_BUCKET, originalKey, file.buffer, file.mimetype);
         originalPdfUrl = originalKey;
 
         const pdfBuffer = await convertWordToPdf(file.buffer);
         const pdfFileName = file.originalname.replace(/\.docx?$/i, ".pdf");
         storageKey = `ron/${req.params.transactionId}/${pdfFileName}`;
-        await objectStorageService.uploadBuffer(storageKey, pdfBuffer, "application/pdf");
+        await uploadFile(RON_DOCUMENTS_BUCKET, storageKey, pdfBuffer, "application/pdf");
         fileSize = pdfBuffer.length;
         mimeType = "application/pdf";
       } else {
         storageKey = `ron/${req.params.transactionId}/${file.originalname}`;
-        await objectStorageService.uploadBuffer(storageKey, file.buffer, file.mimetype);
+        await uploadFile(RON_DOCUMENTS_BUCKET, storageKey, file.buffer, file.mimetype);
         originalPdfUrl = storageKey;
         fileSize = file.size;
         mimeType = file.mimetype;
@@ -643,8 +643,7 @@ router.get("/documents/:id/preview", async (req: any, res) => {
 
     if (!doc.storageKey) return res.status(404).json({ message: "No file stored for this document" });
 
-    const objectStorageService = new ObjectStorageService();
-    const buffer = await objectStorageService.downloadAsBuffer(doc.storageKey);
+    const buffer = await downloadFile(RON_DOCUMENTS_BUCKET, doc.storageKey);
     res.setHeader("Content-Type", doc.mimeType || "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${doc.title}"`);
     res.send(buffer);
@@ -2189,7 +2188,6 @@ publicRouter.post("/submit-credentials/:token", publicUpload.fields([
       });
     }
 
-    const objectStorageService = new ObjectStorageService();
     const docTypes = ["commission_cert", "bond_cert", "eo_insurance_cert", "training_cert", "background_check", "seal_image", "signature_image", "other"] as const;
 
     const uploadedDocs: Array<{ docType: string; fileUrl: string; file: Express.Multer.File }> = [];
@@ -2197,9 +2195,9 @@ publicRouter.post("/submit-credentials/:token", publicUpload.fields([
     for (const docType of docTypes) {
       if (filesMap[docType] && filesMap[docType].length > 0) {
         const file = filesMap[docType][0];
-        const storageKey = `notary-documents/${notary.id}/${docType}_${Date.now()}_${file.originalname}`;
-        const fileUrl = await objectStorageService.uploadBuffer(storageKey, file.buffer, file.mimetype);
-        uploadedDocs.push({ docType, fileUrl, file });
+        const key = `notary-documents/${notary.id}/${docType}_${nanoid()}_${file.originalname}`;
+        await uploadFile(RON_DOCUMENTS_BUCKET, key, file.buffer, file.mimetype);
+        uploadedDocs.push({ docType, fileUrl: key, file });
       }
     }
 

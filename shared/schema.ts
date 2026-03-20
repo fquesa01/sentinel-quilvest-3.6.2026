@@ -14424,6 +14424,7 @@ export const firmFormTemplates = pgTable("firm_form_templates", {
   fileSize: integer("file_size"),
   mimeType: varchar("mime_type", { length: 200 }),
   fileData: bytea("file_data"),
+  storageKey: varchar("storage_key", { length: 1000 }),
   isDefault: boolean("is_default").default(false),
   uploadedBy: varchar("uploaded_by").references(() => users.id),
   notes: text("notes"),
@@ -14435,7 +14436,7 @@ export const firmFormTemplates = pgTable("firm_form_templates", {
 }));
 
 export const insertFirmFormTemplateSchema = createInsertSchema(firmFormTemplates).omit({
-  id: true, createdAt: true, updatedAt: true, fileData: true,
+  id: true, createdAt: true, updatedAt: true, fileData: true, storageKey: true,
 });
 export type InsertFirmFormTemplate = z.infer<typeof insertFirmFormTemplateSchema>;
 export type FirmFormTemplate = typeof firmFormTemplates.$inferSelect;

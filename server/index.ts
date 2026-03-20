@@ -6,6 +6,7 @@ import { processPendingGeminiIndexing } from "./services/transaction-search-serv
 import { seedEquityDDTemplate, seedDebtDDTemplate, seedRealEstateTemplate } from "./scripts/seed-deal-templates";
 import { seedAllREClosingTemplates } from "./scripts/seed-re-closing-templates";
 import { pool } from "./db";
+import { initBuckets } from "./supabaseStorage";
 
 const app = express();
 
@@ -88,6 +89,7 @@ app.get("/api/health", (_req, res) => {
     `);
 
     await pool.query(`ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS file_data bytea`);
+    await pool.query(`ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS storage_key varchar(1000)`);
     await pool.query(`ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS notes text`);
     await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS notes text`);
     await pool.query(`ALTER TABLE generated_documents ADD COLUMN IF NOT EXISTS notes text`);
@@ -192,6 +194,13 @@ app.get("/api/health", (_req, res) => {
     console.log("[Startup] Database columns and role migration verified");
   } catch (err) {
     console.error("[Startup] Migration check error:", err);
+  }
+
+  try {
+    await initBuckets();
+    console.log("[Startup] Supabase Storage buckets initialized");
+  } catch (err) {
+    console.error("[Startup] Supabase Storage bucket init error:", err);
   }
 
   const server = await registerRoutes(app);
