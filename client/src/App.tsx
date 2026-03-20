@@ -26,6 +26,7 @@ import WhistleblowerReport from "@/pages/whistleblower-report";
 import WhistleblowerConfirmation from "@/pages/whistleblower-confirmation";
 import WhistleblowerLookup from "@/pages/whistleblower-lookup";
 import TagManagement from "@/pages/tag-management";
+import RoleManagement from "@/pages/role-management";
 import AdminDashboard from "@/pages/admin-dashboard";
 import MonitoringDirectory from "@/pages/monitoring-directory";
 import MonitoringProfile from "@/pages/monitoring-profile";
@@ -145,6 +146,7 @@ function AuthenticatedApp() {
               <Route path="/attorney-queue" component={AttorneyQueue} />
               <Route path="/analytics" component={Analytics} />
               <Route path="/users" component={UserManagement} />
+              <Route path="/roles" component={RoleManagement} />
               <Route path="/admin" component={AdminDashboard} />
               <Route path="/employee/compliance" component={EmployeeDashboard} />
               <Route path="/transactions/dashboard" component={TransactionsDashboard} />
