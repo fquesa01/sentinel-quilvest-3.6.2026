@@ -12,18 +12,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { SignaturePad } from "@/components/ron-signature-pad";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 import {
   ArrowLeft, Play, Pause, Square, Users, FileText, Video,
   CheckCircle2, XCircle, AlertTriangle, Clock, Shield, Pen,
   Stamp, Loader2, Timer, Eye, ChevronRight, ChevronLeft,
-  User, MonitorSmartphone, Circle
+  User, MonitorSmartphone, Circle, Fingerprint, MapPin,
+  ShieldAlert, ShieldCheck, VideoOff, Mic, MicOff, Camera, CameraOff
 } from "lucide-react";
-import type { RonSession, RonTransaction, RonNotary, RonSigner, RonDocument, RonAnnotationPlacement, RonSignature, RonSeal, RonJournalEntry } from "@shared/schema";
+import type { RonSession, RonTransaction, RonNotary, RonSigner, RonDocument, RonAnnotationPlacement, RonSignature, RonSeal, RonJournalEntry, RonVideoRoom, RonRecording, RonFraudDetection } from "@shared/schema";
 
 type EnrichedDocument = RonDocument & {
   annotations: RonAnnotationPlacement[];
   signatures: RonSignature[];
   seals: RonSeal[];
+};
+
+type FraudSummary = {
+  overallScore: number;
+  severity: "low" | "medium" | "high" | "critical";
+  totalDetections: number;
+  unacknowledged: number;
+  detections: RonFraudDetection[];
+  bySeverity: Record<string, number>;
+  byType: Record<string, number>;
 };
 
 type SessionDetail = {
@@ -33,6 +46,9 @@ type SessionDetail = {
   signers: RonSigner[];
   documents: EnrichedDocument[];
   journal: RonJournalEntry[];
+  videoRoom: RonVideoRoom | null;
+  recordings: RonRecording[];
+  fraudSummary: FraudSummary;
 };
 
 type ChecklistData = {
@@ -116,12 +132,19 @@ export default function RonSessionPage() {
     enabled: !!id,
   });
 
+  const [consentDialogOpen, setConsentDialogOpen] = useState(false);
+  const [consentAgreed, setConsentAgreed] = useState(false);
+  const [consentSignerId, setConsentSignerId] = useState<string | null>(null);
+
   const session = detail?.session;
   const transaction = detail?.transaction;
   const notary = detail?.notary ?? null;
   const signers = detail?.signers || [];
   const documents = detail?.documents || [];
   const journal = detail?.journal || [];
+  const videoRoom = detail?.videoRoom || null;
+  const recordings = detail?.recordings || [];
+  const fraudSummary = detail?.fraudSummary || null;
 
   useEffect(() => {
     if (session?.status === "in_progress" && session.actualStart) {
@@ -257,6 +280,34 @@ export default function RonSessionPage() {
     });
   }, [signPadTarget, signPadMode, id, signMutation]);
 
+  const consentMutation = useMutation({
+    mutationFn: async ({ signerId, consentType }: { signerId: string; consentType: string }) => {
+      const res = await apiRequest("POST", `/api/ron/signers/${signerId}/consent`, { consentType });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ron/sessions", id, "detail"] });
+      setConsentDialogOpen(false);
+      setConsentAgreed(false);
+      setConsentSignerId(null);
+      toast({ title: "Consent Recorded", description: "Recording consent has been captured." });
+    },
+    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+  });
+
+  const fraudAnalysisMutation = useMutation({
+    mutationFn: async (signerId?: string) => {
+      const res = await apiRequest("POST", `/api/ron/sessions/${id}/fraud-analysis`, {
+        signerId,
+        frameTimestamp: Math.floor(Date.now() / 1000),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ron/sessions", id, "detail"] });
+    },
+  });
+
   const handleSealConfirm = useCallback(() => {
     if (!sealTarget || !notary) return;
     sealMutation.mutate({
@@ -268,6 +319,21 @@ export default function RonSessionPage() {
       yPosition: 50,
     });
   }, [sealTarget, notary, id, sealMutation]);
+
+  const handleConsentSubmit = useCallback((signerId: string) => {
+    consentMutation.mutate({ signerId, consentType: "clickthrough" });
+  }, [consentMutation]);
+
+  useEffect(() => {
+    if (session?.status === "in_progress" && !fraudAnalysisMutation.isPending) {
+      const interval = setInterval(() => {
+        if (signers.length > 0) {
+          fraudAnalysisMutation.mutate(signers[0].id);
+        }
+      }, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [session?.status, signers.length]);
 
   if (isLoading) {
     return (
@@ -378,7 +444,7 @@ export default function RonSessionPage() {
               </TabsContent>
 
               <TabsContent value="participants" className="p-3 mt-0 space-y-3">
-                <ParticipantsPanel notary={notary} signers={signers} session={session} />
+                <ParticipantsPanel notary={notary} signers={signers} session={session} onRequestConsent={(signerId) => { setConsentSignerId(signerId); setConsentDialogOpen(true); }} />
               </TabsContent>
 
               <TabsContent value="documents" className="p-3 mt-0 space-y-2">
@@ -445,7 +511,18 @@ export default function RonSessionPage() {
           )}
 
           <div className="border-t p-3">
-            <VideoPlaceholder session={session} />
+            <VideoSessionPanel
+              session={session}
+              videoRoom={videoRoom}
+              recordings={recordings}
+              fraudSummary={fraudSummary}
+              signers={signers}
+              sessionId={id || ""}
+              onRequestConsent={(signerId) => {
+                setConsentSignerId(signerId);
+                setConsentDialogOpen(true);
+              }}
+            />
           </div>
         </div>
       </div>
@@ -504,7 +581,7 @@ export default function RonSessionPage() {
           <DialogHeader>
             <DialogTitle>Complete Session</DialogTitle>
             <DialogDescription>
-              Are you sure you want to end this notarization session? This will finalize all journal entries and update document statuses.
+              Are you sure you want to end this notarization session? This will finalize all journal entries, stop recording, and update document statuses.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 text-sm">
@@ -516,12 +593,66 @@ export default function RonSessionPage() {
               {allDocsNotarized ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <AlertTriangle className="h-4 w-4 text-yellow-500" />}
               <span>{allDocsNotarized ? "All documents notarized" : "Some documents are not notarized"}</span>
             </div>
+            {recordings.some(r => r.status === "recording") && (
+              <div className="flex items-center gap-2">
+                <Video className="h-4 w-4 text-red-500" />
+                <span>Recording will be stopped and saved</span>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCompleteConfirmOpen(false)}>Cancel</Button>
             <Button onClick={() => completeMutation.mutate()} disabled={completeMutation.isPending} data-testid="button-confirm-complete">
               {completeMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Complete Session
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={consentDialogOpen} onOpenChange={setConsentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Recording Consent Required</DialogTitle>
+            <DialogDescription>
+              This notarization session will be recorded (audio and video). Your consent is required before joining.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="pt-4 space-y-3 text-sm">
+                <p>By checking the box below and clicking &quot;I Consent,&quot; you acknowledge and agree to the following:</p>
+                <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                  <li>This session will be recorded in its entirety, including audio and video</li>
+                  <li>The recording will be securely stored and encrypted</li>
+                  <li>The recording will be retained according to applicable state retention requirements</li>
+                  <li>The recording may be used as evidence of the notarization</li>
+                </ul>
+              </CardContent>
+            </Card>
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="consent-checkbox"
+                checked={consentAgreed}
+                onCheckedChange={(checked) => setConsentAgreed(checked === true)}
+                data-testid="checkbox-consent"
+              />
+              <label htmlFor="consent-checkbox" className="text-sm leading-tight cursor-pointer">
+                I understand and consent to the recording of this notarization session
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setConsentDialogOpen(false); setConsentAgreed(false); }}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!consentAgreed || consentMutation.isPending}
+              onClick={() => consentSignerId && handleConsentSubmit(consentSignerId)}
+              data-testid="button-submit-consent"
+            >
+              {consentMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              I Consent
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -582,7 +713,7 @@ function ChecklistPanel({ checklist }: { checklist?: ChecklistData }) {
   );
 }
 
-function ParticipantsPanel({ notary, signers, session }: { notary: RonNotary | null; signers: RonSigner[]; session: RonSession }) {
+function ParticipantsPanel({ notary, signers, session, onRequestConsent }: { notary: RonNotary | null; signers: RonSigner[]; session: RonSession; onRequestConsent?: (signerId: string) => void }) {
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold">Participants</h3>
@@ -598,24 +729,73 @@ function ParticipantsPanel({ notary, signers, session }: { notary: RonNotary | n
           <Circle className="h-3 w-3 fill-green-500 text-green-500" />
         </div>
       )}
-      {signers.map((signer) => (
-        <div key={signer.id} className="flex items-center gap-2 p-2 border rounded-md" data-testid={`participant-signer-${signer.id}`}>
-          <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
-            <User className="h-4 w-4" />
+      {signers.map((signer) => {
+        const geo = signer.geolocationData as Record<string, unknown> | null;
+        return (
+          <div key={signer.id} className="space-y-1" data-testid={`participant-signer-${signer.id}`}>
+            <div className="flex items-center gap-2 p-2 border rounded-md">
+              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                <User className="h-4 w-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{signer.firstName} {signer.lastName}</p>
+                <p className="text-[10px] text-muted-foreground">{signer.role} — {signer.email}</p>
+              </div>
+              {signer.signingCompleted ? (
+                <CheckCircle2 className="h-3 w-3 text-green-500" />
+              ) : signer.joinedSessionAt ? (
+                <Circle className="h-3 w-3 fill-green-500 text-green-500" />
+              ) : (
+                <Circle className="h-3 w-3 text-muted-foreground" />
+              )}
+            </div>
+
+            <div className="ml-10 space-y-0.5 text-[10px] text-muted-foreground">
+              {signer.consentRecordedAt ? (
+                <div className="flex items-center gap-1" data-testid={`consent-status-${signer.id}`}>
+                  <ShieldCheck className="h-3 w-3 text-green-500" />
+                  <span>Consent: {signer.consentType} ({new Date(signer.consentRecordedAt).toLocaleTimeString()})</span>
+                </div>
+              ) : session.status === "in_progress" && onRequestConsent ? (
+                <button
+                  className="flex items-center gap-1 text-yellow-500 hover:underline"
+                  onClick={() => onRequestConsent(signer.id)}
+                  data-testid={`button-request-consent-${signer.id}`}
+                >
+                  <ShieldAlert className="h-3 w-3" />
+                  <span>Consent not recorded — click to capture</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <ShieldAlert className="h-3 w-3 text-yellow-500" />
+                  <span>Consent pending</span>
+                </div>
+              )}
+
+              {signer.deviceFingerprint && (
+                <div className="flex items-center gap-1" data-testid={`device-fingerprint-${signer.id}`}>
+                  <Fingerprint className="h-3 w-3" />
+                  <span>Device: {signer.deviceFingerprint.substring(0, 12)}...</span>
+                </div>
+              )}
+
+              {signer.ipAddress && (
+                <div className="flex items-center gap-1" data-testid={`ip-address-${signer.id}`}>
+                  <MonitorSmartphone className="h-3 w-3" />
+                  <span>IP: {signer.ipAddress}</span>
+                </div>
+              )}
+
+              {geo && (geo as any).city && (
+                <div className="flex items-center gap-1" data-testid={`geolocation-${signer.id}`}>
+                  <MapPin className="h-3 w-3" />
+                  <span>{(geo as any).city}{(geo as any).region ? `, ${(geo as any).region}` : ""}{(geo as any).country ? ` (${(geo as any).country})` : ""}</span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{signer.firstName} {signer.lastName}</p>
-            <p className="text-[10px] text-muted-foreground">{signer.role} — {signer.email}</p>
-          </div>
-          {signer.signingCompleted ? (
-            <CheckCircle2 className="h-3 w-3 text-green-500" />
-          ) : signer.joinedSessionAt ? (
-            <Circle className="h-3 w-3 fill-green-500 text-green-500" />
-          ) : (
-            <Circle className="h-3 w-3 text-muted-foreground" />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -777,34 +957,167 @@ function DocumentViewer({
   );
 }
 
-function VideoPlaceholder({ session }: { session: RonSession }) {
+function FraudIndicator({ fraudSummary }: { fraudSummary: FraudSummary | null }) {
+  if (!fraudSummary || fraudSummary.totalDetections === 0) {
+    return (
+      <div className="flex items-center gap-1.5" data-testid="fraud-indicator-clean">
+        <ShieldCheck className="h-4 w-4 text-green-500" />
+        <span className="text-xs text-green-600 dark:text-green-400">No fraud signals</span>
+      </div>
+    );
+  }
+
+  const severityColors: Record<string, string> = {
+    low: "text-yellow-500",
+    medium: "text-orange-500",
+    high: "text-red-500",
+    critical: "text-red-600",
+  };
+
+  const severityBgColors: Record<string, string> = {
+    low: "bg-yellow-500/10",
+    medium: "bg-orange-500/10",
+    high: "bg-red-500/10",
+    critical: "bg-red-500/20",
+  };
+
+  const color = severityColors[fraudSummary.severity] || "text-yellow-500";
+  const bgColor = severityBgColors[fraudSummary.severity] || "bg-yellow-500/10";
+
+  return (
+    <div className={`flex items-center gap-2 px-2 py-1 rounded-md ${bgColor}`} data-testid="fraud-indicator-alert">
+      <ShieldAlert className={`h-4 w-4 ${color}`} />
+      <div className="flex flex-col">
+        <span className={`text-xs font-medium ${color}`}>
+          Fraud Score: {fraudSummary.overallScore}/100
+        </span>
+        <span className="text-[10px] text-muted-foreground">
+          {fraudSummary.unacknowledged} unreviewed / {fraudSummary.totalDetections} total
+        </span>
+      </div>
+      <Progress value={fraudSummary.overallScore} className="w-16 h-1.5" />
+    </div>
+  );
+}
+
+function VideoSessionPanel({
+  session, videoRoom, recordings, fraudSummary, signers, sessionId, onRequestConsent,
+}: {
+  session: RonSession;
+  videoRoom: RonVideoRoom | null;
+  recordings: RonRecording[];
+  fraudSummary: FraudSummary | null;
+  signers: RonSigner[];
+  sessionId: string;
+  onRequestConsent: (signerId: string) => void;
+}) {
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [videoEnabled, setVideoEnabled] = useState(true);
+  const isActive = session.status === "in_progress";
+  const isRecording = recordings.some(r => r.status === "recording");
+
   return (
     <Card className="bg-muted/50">
-      <CardContent className="py-3">
+      <CardContent className="py-3 space-y-3">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Video className="h-5 w-5 text-muted-foreground" />
             <span className="text-sm font-medium">Video Session</span>
           </div>
           <Separator orientation="vertical" className="h-5" />
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <MonitorSmartphone className="h-4 w-4" />
-            {session.status === "in_progress" ? (
-              <span className="flex items-center gap-1">
-                <Circle className="h-2 w-2 fill-red-500 text-red-500 animate-pulse" />
-                Recording in progress
-              </span>
-            ) : session.status === "completed" ? (
-              <span>Recording saved</span>
-            ) : (
-              <span>Waiting for session to start</span>
-            )}
-          </div>
+
+          {isActive ? (
+            <div className="flex items-center gap-2 text-sm">
+              <Circle className="h-2 w-2 fill-red-500 text-red-500 animate-pulse" />
+              <span className="text-red-500 font-medium text-xs">LIVE</span>
+              {isRecording && (
+                <Badge variant="destructive" className="text-[10px]">
+                  Recording
+                </Badge>
+              )}
+            </div>
+          ) : session.status === "completed" ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <VideoOff className="h-4 w-4" />
+              <span className="text-xs">Session ended</span>
+              {recordings.length > 0 && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {recordings.length} recording{recordings.length > 1 ? "s" : ""} saved
+                </Badge>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <MonitorSmartphone className="h-4 w-4" />
+              <span className="text-xs">Waiting to start</span>
+            </div>
+          )}
+
           <div className="flex-1" />
+
+          <FraudIndicator fraudSummary={fraudSummary} />
+
           <Badge variant="secondary" className="text-xs">
-            {session.videoProvider || "WebRTC"} — Placeholder
+            {session.videoProvider || "Daily.co"}
           </Badge>
         </div>
+
+        {isActive && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex-1 flex items-center gap-4 bg-background/50 rounded-md p-2 min-h-[120px] justify-center" data-testid="video-feed-area">
+              <div className="text-center space-y-2">
+                <div className="h-16 w-24 bg-muted rounded-md flex items-center justify-center mx-auto border" data-testid="video-feed-notary">
+                  <Camera className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <p className="text-[10px] text-muted-foreground">Notary</p>
+              </div>
+              {signers.map((signer) => (
+                <div key={signer.id} className="text-center space-y-2" data-testid={`video-feed-signer-${signer.id}`}>
+                  <div className="h-16 w-24 bg-muted rounded-md flex items-center justify-center mx-auto border relative">
+                    <User className="h-6 w-6 text-muted-foreground" />
+                    {!signer.consentRecordedAt && (
+                      <div className="absolute -top-1 -right-1">
+                        <ShieldAlert className="h-3 w-3 text-yellow-500" />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground truncate max-w-[96px]">{signer.firstName} {signer.lastName}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isActive && (
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              size="icon"
+              variant={audioEnabled ? "secondary" : "destructive"}
+              onClick={() => setAudioEnabled(!audioEnabled)}
+              data-testid="button-toggle-audio"
+            >
+              {audioEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+            </Button>
+            <Button
+              size="icon"
+              variant={videoEnabled ? "secondary" : "destructive"}
+              onClick={() => setVideoEnabled(!videoEnabled)}
+              data-testid="button-toggle-video"
+            >
+              {videoEnabled ? <Camera className="h-4 w-4" /> : <CameraOff className="h-4 w-4" />}
+            </Button>
+          </div>
+        )}
+
+        {videoRoom && (
+          <div className="text-[10px] text-muted-foreground flex items-center gap-3 flex-wrap">
+            <span>Room: {videoRoom.roomName}</span>
+            <span>Status: {videoRoom.status}</span>
+            {videoRoom.participantCount !== null && videoRoom.participantCount !== undefined && (
+              <span>Participants: {videoRoom.participantCount}/{videoRoom.maxParticipants || 10}</span>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

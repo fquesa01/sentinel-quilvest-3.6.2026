@@ -14202,6 +14202,10 @@ export const ronSigners = pgTable("ron_signers", {
   ipAddress: varchar("ip_address", { length: 100 }),
   userAgent: text("user_agent"),
   deviceFingerprint: varchar("device_fingerprint", { length: 500 }),
+  geolocationData: jsonb("geolocation_data").default({}),
+  consentRecordedAt: timestamp("consent_recorded_at"),
+  consentType: varchar("consent_type", { length: 50 }),
+  consentIp: varchar("consent_ip", { length: 100 }),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -14389,6 +14393,8 @@ export const ronRecordings = pgTable("ron_recordings", {
   startedAt: timestamp("started_at"),
   endedAt: timestamp("ended_at"),
   archivedAt: timestamp("archived_at"),
+  encryptionKeyId: varchar("encryption_key_id", { length: 500 }),
+  encryptionAlgorithm: varchar("encryption_algorithm", { length: 100 }).default("AES-256-GCM"),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
@@ -14401,6 +14407,68 @@ export const insertRonRecordingSchema = createInsertSchema(ronRecordings).omit({
 });
 export type InsertRonRecording = z.infer<typeof insertRonRecordingSchema>;
 export type RonRecording = typeof ronRecordings.$inferSelect;
+
+// RON Video Rooms
+export const ronVideoRoomStatusEnum = pgEnum("ron_video_room_status", [
+  "creating", "ready", "active", "closed", "failed"
+]);
+
+export const ronVideoRooms = pgTable("ron_video_rooms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => ronSessions.id, { onDelete: "cascade" }).notNull(),
+  providerRoomId: varchar("provider_room_id", { length: 500 }),
+  providerRoomUrl: varchar("provider_room_url", { length: 1000 }),
+  provider: varchar("provider", { length: 100 }).default("daily").notNull(),
+  status: ronVideoRoomStatusEnum("status").default("creating").notNull(),
+  recordingEnabled: boolean("recording_enabled").default(true),
+  recordingId: varchar("recording_id", { length: 500 }),
+  maxParticipants: integer("max_participants").default(10),
+  expiresAt: timestamp("expires_at"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  sessionIdx: index("idx_ron_video_rooms_session").on(table.sessionId),
+  statusIdx: index("idx_ron_video_rooms_status").on(table.status),
+}));
+
+export const insertRonVideoRoomSchema = createInsertSchema(ronVideoRooms).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonVideoRoom = z.infer<typeof insertRonVideoRoomSchema>;
+export type RonVideoRoom = typeof ronVideoRooms.$inferSelect;
+
+// RON Fraud Detections
+export const ronFraudSeverityEnum = pgEnum("ron_fraud_severity", [
+  "low", "medium", "high", "critical"
+]);
+
+export const ronFraudDetections = pgTable("ron_fraud_detections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => ronSessions.id, { onDelete: "cascade" }).notNull(),
+  signerId: varchar("signer_id").references(() => ronSigners.id, { onDelete: "set null" }),
+  detectionType: varchar("detection_type", { length: 100 }).notNull(),
+  severity: ronFraudSeverityEnum("severity").default("low").notNull(),
+  confidenceScore: numeric("confidence_score"),
+  description: text("description"),
+  frameTimestamp: integer("frame_timestamp"),
+  analysisData: jsonb("analysis_data").default({}),
+  acknowledged: boolean("acknowledged").default(false),
+  acknowledgedBy: varchar("acknowledged_by").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  sessionIdx: index("idx_ron_fraud_detections_session").on(table.sessionId),
+  signerIdx: index("idx_ron_fraud_detections_signer").on(table.signerId),
+  severityIdx: index("idx_ron_fraud_detections_severity").on(table.severity),
+}));
+
+export const insertRonFraudDetectionSchema = createInsertSchema(ronFraudDetections).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonFraudDetection = z.infer<typeof insertRonFraudDetectionSchema>;
+export type RonFraudDetection = typeof ronFraudDetections.$inferSelect;
 
 // RON Compliance Checks
 export const ronComplianceChecks = pgTable("ron_compliance_checks", {

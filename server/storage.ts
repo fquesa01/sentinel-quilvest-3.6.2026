@@ -373,6 +373,8 @@ import {
   ronComplianceChecks,
   ronNotaryDocuments,
   ronNotaryInvitations,
+  ronVideoRooms,
+  ronFraudDetections,
   type RonTransaction,
   type InsertRonTransaction,
   type RonNotary,
@@ -399,6 +401,10 @@ import {
   type InsertRonRecording,
   type RonComplianceCheck,
   type InsertRonComplianceCheck,
+  type RonVideoRoom,
+  type InsertRonVideoRoom,
+  type RonFraudDetection,
+  type InsertRonFraudDetection,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -1096,6 +1102,18 @@ export interface IStorage {
   // RON Recording operations
   getRonRecordings(sessionId: string): Promise<RonRecording[]>;
   createRonRecording(recording: InsertRonRecording): Promise<RonRecording>;
+  updateRonRecording(id: string, updates: Partial<RonRecording>): Promise<RonRecording>;
+
+  // RON Video Room operations
+  getRonVideoRoom(sessionId: string): Promise<RonVideoRoom | undefined>;
+  createRonVideoRoom(room: InsertRonVideoRoom): Promise<RonVideoRoom>;
+  updateRonVideoRoom(id: string, updates: Partial<RonVideoRoom>): Promise<RonVideoRoom>;
+
+  // RON Fraud Detection operations
+  getRonFraudDetection(id: string): Promise<RonFraudDetection | undefined>;
+  getRonFraudDetections(sessionId: string): Promise<RonFraudDetection[]>;
+  createRonFraudDetection(detection: InsertRonFraudDetection): Promise<RonFraudDetection>;
+  updateRonFraudDetection(id: string, updates: Partial<RonFraudDetection>): Promise<RonFraudDetection>;
 
   // RON Compliance Check operations
   getRonComplianceChecks(transactionId: string): Promise<RonComplianceCheck[]>;
@@ -6990,6 +7008,47 @@ export class DatabaseStorage implements IStorage {
   async createRonRecording(recording: InsertRonRecording): Promise<RonRecording> {
     const [created] = await db.insert(ronRecordings).values(recording).returning();
     return created;
+  }
+
+  async updateRonRecording(id: string, updates: Partial<RonRecording>): Promise<RonRecording> {
+    const [updated] = await db.update(ronRecordings).set(updates).where(eq(ronRecordings.id, id)).returning();
+    return updated;
+  }
+
+  // RON Video Room operations
+  async getRonVideoRoom(sessionId: string): Promise<RonVideoRoom | undefined> {
+    const [room] = await db.select().from(ronVideoRooms).where(eq(ronVideoRooms.sessionId, sessionId));
+    return room;
+  }
+
+  async createRonVideoRoom(room: InsertRonVideoRoom): Promise<RonVideoRoom> {
+    const [created] = await db.insert(ronVideoRooms).values(room).returning();
+    return created;
+  }
+
+  async updateRonVideoRoom(id: string, updates: Partial<RonVideoRoom>): Promise<RonVideoRoom> {
+    const [updated] = await db.update(ronVideoRooms).set(updates).where(eq(ronVideoRooms.id, id)).returning();
+    return updated;
+  }
+
+  // RON Fraud Detection operations
+  async getRonFraudDetection(id: string): Promise<RonFraudDetection | undefined> {
+    const [detection] = await db.select().from(ronFraudDetections).where(eq(ronFraudDetections.id, id)).limit(1);
+    return detection;
+  }
+
+  async getRonFraudDetections(sessionId: string): Promise<RonFraudDetection[]> {
+    return db.select().from(ronFraudDetections).where(eq(ronFraudDetections.sessionId, sessionId)).orderBy(desc(ronFraudDetections.createdAt));
+  }
+
+  async createRonFraudDetection(detection: InsertRonFraudDetection): Promise<RonFraudDetection> {
+    const [created] = await db.insert(ronFraudDetections).values(detection).returning();
+    return created;
+  }
+
+  async updateRonFraudDetection(id: string, updates: Partial<RonFraudDetection>): Promise<RonFraudDetection> {
+    const [updated] = await db.update(ronFraudDetections).set(updates).where(eq(ronFraudDetections.id, id)).returning();
+    return updated;
   }
 
   // RON Compliance Check operations

@@ -6,6 +6,8 @@ import { isAuthenticated, requireRole } from "../replitAuth";
 import * as journalService from "../services/ron-journal-service";
 import * as complianceService from "../services/ron-compliance-service";
 import * as queueService from "../services/ron-queue-service";
+import * as videoService from "../services/ron-video-service";
+import * as fraudService from "../services/ron-fraud-detection-service";
 import { uploadFile, downloadFile, deleteFile, RON_DOCUMENTS_BUCKET } from "../supabaseStorage";
 import { storage } from "../storage";
 import type { RonComplianceCheck } from "@shared/schema";
@@ -1055,6 +1057,21 @@ router.post("/sessions/:id/start", async (req: any, res) => {
 
     await storage.updateRonTransaction(session.transactionId, { status: "in_progress" });
 
+    if (session.status === "scheduled") {
+      try {
+        await videoService.createVideoRoom(req.params.id);
+      } catch (e) {
+        console.warn("[RON] Video room creation warning:", e);
+      }
+
+      try {
+        const jurisdiction = txn?.jurisdiction || undefined;
+        await videoService.startRecording(req.params.id, jurisdiction);
+      } catch (e) {
+        console.warn("[RON] Recording start warning:", e);
+      }
+    }
+
     const eventDesc = session.status === "paused" ? "Notarization session resumed" : "Notarization session started";
     await journalService.createJournalEntry({
       transactionId: session.transactionId,
@@ -1111,6 +1128,18 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
     const duration = session.actualStart
       ? Math.round((now.getTime() - session.actualStart.getTime()) / 1000)
       : 0;
+
+    try {
+      await videoService.stopRecording(req.params.id);
+    } catch (e) {
+      console.warn("[RON] Recording stop warning:", e);
+    }
+
+    try {
+      await videoService.closeVideoRoom(req.params.id);
+    } catch (e) {
+      console.warn("[RON] Video room close warning:", e);
+    }
 
     const updated = await storage.updateRonSession(req.params.id, {
       status: "completed",
@@ -1810,6 +1839,10 @@ router.get("/sessions/:id/detail", async (req: any, res) => {
       return { ...doc, annotations, signatures, seals };
     }));
 
+    const videoRoom = await storage.getRonVideoRoom(session.id);
+    const recordings = await storage.getRonRecordings(session.id);
+    const fraudSummary = await fraudService.getSessionFraudSummary(session.id);
+
     res.json({
       session,
       transaction: txn,
@@ -1817,6 +1850,9 @@ router.get("/sessions/:id/detail", async (req: any, res) => {
       signers,
       documents: docsWithAnnotations,
       journal: journal.slice(-20),
+      videoRoom: videoRoom || null,
+      recordings,
+      fraudSummary,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
@@ -2081,6 +2117,249 @@ router.post("/sessions/:sessionId/recordings", async (req: any, res) => {
     });
 
     res.status(201).json(recording);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// VIDEO ROOM MANAGEMENT
+// ============================================================================
+
+router.get("/sessions/:sessionId/video-room", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.sessionId);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const status = await videoService.getVideoRoomStatus(req.params.sessionId);
+    res.json(status);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/sessions/:sessionId/video-room", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.sessionId);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const result = await videoService.createVideoRoom(req.params.sessionId);
+    res.status(201).json(result);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/sessions/:sessionId/video-room/join", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.sessionId);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { participantId, participantType } = req.body;
+    if (!participantId || !participantType) {
+      return res.status(400).json({ message: "participantId and participantType are required" });
+    }
+
+    const result = await videoService.joinVideoRoom(
+      req.params.sessionId,
+      participantId,
+      participantType
+    );
+
+    res.json(result);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/sessions/:sessionId/video-room/close", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.sessionId);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const room = await videoService.closeVideoRoom(req.params.sessionId);
+    res.json(room);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// SIGNER CONSENT CAPTURE
+// ============================================================================
+
+router.post("/signers/:id/consent", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { consentType } = req.body;
+    if (!consentType || !["clickthrough", "verbal", "both"].includes(consentType)) {
+      return res.status(400).json({ message: "consentType must be 'clickthrough', 'verbal', or 'both'" });
+    }
+
+    const updated = await storage.updateRonSigner(req.params.id, {
+      consentRecordedAt: new Date(),
+      consentType,
+      consentIp: req.ip,
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: signer.transactionId,
+      eventType: "signer_verified",
+      actorType: "signer",
+      actorId: signer.id,
+      description: `Recording consent captured (${consentType}) for "${signer.firstName} ${signer.lastName}"`,
+      signerId: signer.id,
+      eventData: { consentType, consentIp: req.ip, consentTimestamp: new Date().toISOString() },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, consentRecordedAt: updated.consentRecordedAt, consentType });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// REAL-TIME FRAUD DETECTION
+// ============================================================================
+
+router.post("/sessions/:sessionId/fraud-analysis", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.sessionId);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { signerId, frameData, frameTimestamp } = req.body;
+
+    const result = await fraudService.analyzeVideoFrame({
+      sessionId: req.params.sessionId,
+      signerId,
+      frameData,
+      frameTimestamp,
+    });
+
+    res.json(result);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/sessions/:sessionId/fraud-summary", async (req: any, res) => {
+  try {
+    const session = await storage.getRonSession(req.params.sessionId);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const summary = await fraudService.getSessionFraudSummary(req.params.sessionId);
+    res.json(summary);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/fraud-detections/:id/acknowledge", async (req: any, res) => {
+  try {
+    const detection = await storage.getRonFraudDetection(req.params.id);
+    if (!detection) return res.status(404).json({ message: "Detection not found" });
+
+    const session = await storage.getRonSession(detection.sessionId);
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const { txn, error } = await verifyTransactionAccess(session.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const acknowledged = await fraudService.acknowledgeDetection(req.params.id, req.user.id);
+    res.json(acknowledged);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// DEVICE FINGERPRINT VALIDATION
+// ============================================================================
+
+router.get("/signers/:id/device-validation", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const validation = fraudService.validateDeviceFingerprint({
+      deviceFingerprint: signer.deviceFingerprint,
+      ipAddress: signer.ipAddress,
+      userAgent: signer.userAgent,
+      geolocationData: signer.geolocationData,
+    });
+
+    res.json({
+      signerId: signer.id,
+      signerName: `${signer.firstName} ${signer.lastName}`,
+      ...validation,
+      deviceFingerprint: signer.deviceFingerprint ? `${signer.deviceFingerprint.substring(0, 8)}...` : null,
+      ipAddress: signer.ipAddress,
+      geolocationData: signer.geolocationData,
+      consentRecorded: !!signer.consentRecordedAt,
+      consentType: signer.consentType,
+      consentRecordedAt: signer.consentRecordedAt,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/signers/:id/device-fingerprint", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.id);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const { fingerprint, geolocation } = req.body;
+
+    const updates: Record<string, unknown> = {
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    };
+    if (fingerprint) updates.deviceFingerprint = fingerprint;
+    if (geolocation) updates.geolocationData = geolocation;
+
+    const updated = await storage.updateRonSigner(req.params.id, updates);
+    res.json({ success: true, deviceFingerprint: updated.deviceFingerprint ? `${updated.deviceFingerprint.substring(0, 8)}...` : null });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });

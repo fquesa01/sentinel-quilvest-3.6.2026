@@ -361,6 +361,74 @@ CREATE TABLE IF NOT EXISTS ron_recordings (
 CREATE INDEX IF NOT EXISTS idx_ron_recordings_session ON ron_recordings(session_id);
 CREATE INDEX IF NOT EXISTS idx_ron_recordings_status ON ron_recordings(status);
 
+-- RON Signer consent columns (ALTER TABLE to add new columns)
+DO $$ BEGIN
+  ALTER TABLE ron_signers ADD COLUMN IF NOT EXISTS geolocation_data JSONB DEFAULT '{}';
+  ALTER TABLE ron_signers ADD COLUMN IF NOT EXISTS consent_recorded_at TIMESTAMP;
+  ALTER TABLE ron_signers ADD COLUMN IF NOT EXISTS consent_type VARCHAR(50);
+  ALTER TABLE ron_signers ADD COLUMN IF NOT EXISTS consent_ip VARCHAR(100);
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- RON Recording encryption columns
+DO $$ BEGIN
+  ALTER TABLE ron_recordings ADD COLUMN IF NOT EXISTS encryption_key_id VARCHAR(500);
+  ALTER TABLE ron_recordings ADD COLUMN IF NOT EXISTS encryption_algorithm VARCHAR(100) DEFAULT 'AES-256-GCM';
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- RON Video Room Status Enum
+DO $$ BEGIN
+  CREATE TYPE ron_video_room_status AS ENUM ('creating', 'ready', 'active', 'closed', 'failed');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- RON Video Rooms
+CREATE TABLE IF NOT EXISTS ron_video_rooms (
+  id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id VARCHAR NOT NULL REFERENCES ron_sessions(id) ON DELETE CASCADE,
+  provider_room_id VARCHAR(500),
+  provider_room_url VARCHAR(1000),
+  provider VARCHAR(100) NOT NULL DEFAULT 'daily',
+  status ron_video_room_status NOT NULL DEFAULT 'creating',
+  recording_enabled BOOLEAN DEFAULT TRUE,
+  recording_id VARCHAR(500),
+  max_participants INTEGER DEFAULT 10,
+  expires_at TIMESTAMP,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ron_video_rooms_session ON ron_video_rooms(session_id);
+CREATE INDEX IF NOT EXISTS idx_ron_video_rooms_status ON ron_video_rooms(status);
+
+-- RON Fraud Severity Enum
+DO $$ BEGIN
+  CREATE TYPE ron_fraud_severity AS ENUM ('low', 'medium', 'high', 'critical');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- RON Fraud Detections
+CREATE TABLE IF NOT EXISTS ron_fraud_detections (
+  id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id VARCHAR NOT NULL REFERENCES ron_sessions(id) ON DELETE CASCADE,
+  signer_id VARCHAR REFERENCES ron_signers(id) ON DELETE SET NULL,
+  detection_type VARCHAR(100) NOT NULL,
+  severity ron_fraud_severity NOT NULL DEFAULT 'low',
+  confidence_score NUMERIC,
+  description TEXT,
+  frame_timestamp INTEGER,
+  analysis_data JSONB DEFAULT '{}',
+  acknowledged BOOLEAN DEFAULT FALSE,
+  acknowledged_by VARCHAR REFERENCES users(id),
+  acknowledged_at TIMESTAMP,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ron_fraud_detections_session ON ron_fraud_detections(session_id);
+CREATE INDEX IF NOT EXISTS idx_ron_fraud_detections_signer ON ron_fraud_detections(signer_id);
+CREATE INDEX IF NOT EXISTS idx_ron_fraud_detections_severity ON ron_fraud_detections(severity);
+
 -- RON Compliance Checks
 CREATE TABLE IF NOT EXISTS ron_compliance_checks (
   id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
