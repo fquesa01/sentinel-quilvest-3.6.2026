@@ -7,12 +7,17 @@ if (!rawUrl) {
 }
 
 function buildSafeUrl(connStr: string): string {
-  const match = connStr.match(/^(postgresql?):\/\/([^:]+):(.+)@([^/]+)\/(.+)$/);
-  if (match) {
-    const [, scheme, user, password, hostPort, database] = match;
-    return `${scheme}://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${hostPort}/${database}`;
+  try {
+    const parsed = new URL(connStr);
+    return `${parsed.protocol}//${encodeURIComponent(decodeURIComponent(parsed.username))}:${encodeURIComponent(decodeURIComponent(parsed.password))}@${parsed.host}${parsed.pathname}${parsed.search}`;
+  } catch {
+    const match = connStr.match(/^(postgresql?):\/\/([^:]+):(.+)@([^@/]+)\/(.+)$/);
+    if (match) {
+      const [, scheme, user, password, hostPort, database] = match;
+      return `${scheme}://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${hostPort}/${database}`;
+    }
+    return connStr;
   }
-  return connStr;
 }
 
 export default defineConfig({

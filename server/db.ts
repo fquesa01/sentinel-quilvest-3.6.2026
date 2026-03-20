@@ -43,10 +43,19 @@ function parseConnectionConfig(connStr: string): PoolConfig {
 }
 
 const poolConfig = parseConnectionConfig(rawConnectionString);
-// Supabase pooler (Supavisor) uses certificates not in Node's default CA bundle;
-// Replit managed PostgreSQL uses self-signed certificates.
-// Both require rejectUnauthorized: false for SSL connections to succeed.
-poolConfig.ssl = { rejectUnauthorized: false };
+
+function getSslConfig(): PoolConfig['ssl'] {
+  const envOverride = process.env.DB_SSL_REJECT_UNAUTHORIZED;
+  if (envOverride !== undefined) {
+    return { rejectUnauthorized: envOverride === 'true' };
+  }
+  if (isSupabase) {
+    return { rejectUnauthorized: false };
+  }
+  return { rejectUnauthorized: false };
+}
+
+poolConfig.ssl = getSslConfig();
 
 export const pool = new Pool(poolConfig);
 export const db = drizzle({ client: pool, schema });
