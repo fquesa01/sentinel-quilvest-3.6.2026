@@ -4,6 +4,8 @@ import { useLocation, useParams, Link } from "wouter";
 import { ClosingDocumentsTab } from "@/components/closing-documents-tab";
 import { CondoSummaryTab } from "@/components/condo-summary-tab";
 import { TitleInsuranceTab } from "@/components/title-insurance-tab";
+import { TitleClaimsTab } from "@/components/title-claims-tab";
+import { TitleUnderwriterDashboard } from "@/components/title-underwriter-dashboard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1446,6 +1448,8 @@ export default function TransactionsDealDetail() {
                 <SelectItem value="research">Research</SelectItem>
                 <SelectItem value="title-history">Title History</SelectItem>
                 {titleApplicableDealTypes.has(deal.dealType) && <SelectItem value="title-survey">Title & Survey</SelectItem>}
+                {titleApplicableDealTypes.has(deal.dealType) && <SelectItem value="title-claims">Claims</SelectItem>}
+                {titleApplicableDealTypes.has(deal.dealType) && <SelectItem value="underwriter-dashboard">Underwriter</SelectItem>}
                 <SelectItem value="closing-docs">Closing Docs</SelectItem>
                 <SelectItem value="closing">Closing</SelectItem>
                 <SelectItem value="condo-summary">Condo Summary</SelectItem>
@@ -1466,6 +1470,8 @@ export default function TransactionsDealDetail() {
             <TabsTrigger value="research" data-testid="tab-research">Research</TabsTrigger>
             <TabsTrigger value="title-history" data-testid="tab-title-history">Title History</TabsTrigger>
             {titleApplicableDealTypes.has(deal.dealType) && <TabsTrigger value="title-survey" data-testid="tab-title-survey">Title & Survey</TabsTrigger>}
+            {titleApplicableDealTypes.has(deal.dealType) && <TabsTrigger value="title-claims" data-testid="tab-title-claims">Claims</TabsTrigger>}
+            {titleApplicableDealTypes.has(deal.dealType) && <TabsTrigger value="underwriter-dashboard" data-testid="tab-underwriter-dashboard">Underwriter</TabsTrigger>}
             <TabsTrigger value="closing-docs" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
             <TabsTrigger value="closing" data-testid="tab-closing">Closing</TabsTrigger>
             <TabsTrigger value="condo-summary" data-testid="tab-condo-summary">Condo Summary</TabsTrigger>
@@ -3224,6 +3230,18 @@ export default function TransactionsDealDetail() {
           {titleApplicableDealTypes.has(deal.dealType) && (
             <TabsContent value="title-survey" className="mt-6">
               <TitleInsuranceTab dealId={id!} />
+            </TabsContent>
+          )}
+
+          {titleApplicableDealTypes.has(deal.dealType) && (
+            <TabsContent value="title-claims" className="mt-6">
+              <TitleClaimsTab dealId={id!} />
+            </TabsContent>
+          )}
+
+          {titleApplicableDealTypes.has(deal.dealType) && (
+            <TabsContent value="underwriter-dashboard" className="mt-6">
+              <TitleUnderwriterDashboard />
             </TabsContent>
           )}
 
