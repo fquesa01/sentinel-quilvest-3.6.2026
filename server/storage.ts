@@ -405,6 +405,9 @@ import {
   type InsertRonVideoRoom,
   type RonFraudDetection,
   type InsertRonFraudDetection,
+  ronBillingRecords,
+  type RonBillingRecord,
+  type InsertRonBillingRecord,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -1128,6 +1131,12 @@ export interface IStorage {
   getRonSignersBySession(sessionId: string): Promise<RonSigner[]>;
   getAllRonSessions(filters?: { status?: string }): Promise<RonSession[]>;
   incrementRonNotarySessions(notaryId: string): Promise<void>;
+
+  getRonBillingRecords(organizationId: string): Promise<RonBillingRecord[]>;
+  getRonBillingRecord(id: string): Promise<RonBillingRecord | undefined>;
+  createRonBillingRecord(record: InsertRonBillingRecord): Promise<RonBillingRecord>;
+  updateRonBillingRecord(id: string, updates: Partial<RonBillingRecord>): Promise<RonBillingRecord>;
+  getRonBillingRecordsByTransaction(transactionId: string): Promise<RonBillingRecord[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -7105,6 +7114,29 @@ export class DatabaseStorage implements IStorage {
         updatedAt: new Date(),
       })
       .where(eq(ronNotaries.id, notaryId));
+  }
+
+  async getRonBillingRecords(organizationId: string): Promise<RonBillingRecord[]> {
+    return db.select().from(ronBillingRecords).where(eq(ronBillingRecords.organizationId, organizationId)).orderBy(desc(ronBillingRecords.createdAt));
+  }
+
+  async getRonBillingRecord(id: string): Promise<RonBillingRecord | undefined> {
+    const [record] = await db.select().from(ronBillingRecords).where(eq(ronBillingRecords.id, id));
+    return record;
+  }
+
+  async createRonBillingRecord(record: InsertRonBillingRecord): Promise<RonBillingRecord> {
+    const [created] = await db.insert(ronBillingRecords).values(record).returning();
+    return created;
+  }
+
+  async updateRonBillingRecord(id: string, updates: Partial<RonBillingRecord>): Promise<RonBillingRecord> {
+    const [updated] = await db.update(ronBillingRecords).set({ ...updates, updatedAt: new Date() }).where(eq(ronBillingRecords.id, id)).returning();
+    return updated;
+  }
+
+  async getRonBillingRecordsByTransaction(transactionId: string): Promise<RonBillingRecord[]> {
+    return db.select().from(ronBillingRecords).where(eq(ronBillingRecords.transactionId, transactionId)).orderBy(desc(ronBillingRecords.createdAt));
   }
 }
 

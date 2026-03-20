@@ -21,9 +21,13 @@ import {
   Hand,
   UserCheck,
   Zap,
+  CreditCard,
+  DollarSign,
+  Palette,
+  Receipt,
 } from "lucide-react";
 import { format } from "date-fns";
-import type { RonTransaction, RonJournalEntry } from "@shared/schema";
+import type { RonTransaction, RonJournalEntry, Organization, RonBillingRecord } from "@shared/schema";
 
 type EnrichedTransaction = RonTransaction & {
   signerCount: number;
@@ -86,6 +90,18 @@ const journalEventLabels: Record<string, string> = {
   notary_assigned: "Notary Assigned",
 };
 
+interface BillingSummary {
+  records: RonBillingRecord[];
+  summary: {
+    totalAmount: number;
+    totalSessions: number;
+    pendingAmount: number;
+    billingPlan: string;
+    perSessionRate: number;
+    currency: string;
+  };
+}
+
 export default function RonDashboard() {
   const { data: stats, isLoading: statsLoading, isError: statsError } = useQuery<DashboardStats>({
     queryKey: ["/api/ron/dashboard/stats"],
@@ -97,6 +113,15 @@ export default function RonDashboard() {
 
   const { data: queueStats } = useQuery<QueueStats>({
     queryKey: ["/api/ron/queue/stats"],
+  });
+
+  const { data: myOrg } = useQuery<Organization | null>({
+    queryKey: ["/api/my-organization"],
+  });
+
+  const { data: billing } = useQuery<BillingSummary>({
+    queryKey: ["/api/ron/billing", myOrg?.id],
+    enabled: !!myOrg?.id,
   });
 
   const recentTransactions = transactions
@@ -405,10 +430,108 @@ export default function RonDashboard() {
                   Notary Queue
                 </Button>
               </Link>
+              <Link href="/ron/branding">
+                <Button variant="outline" className="w-full justify-start" data-testid="button-quick-branding">
+                  <Palette className="h-4 w-4 mr-2" />
+                  Branding & Billing
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {billing && (
+        <div className="space-y-4" data-testid="billing-summary-section">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <CreditCard className="h-5 w-5" /> Billing Summary
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Billed</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="stat-total-billed">
+                  ${(billing.summary.totalAmount / 100).toFixed(2)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {billing.summary.totalSessions} completed session{billing.summary.totalSessions !== 1 ? "s" : ""}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Pending Charges</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="stat-pending-charges">
+                  ${(billing.summary.pendingAmount / 100).toFixed(2)}
+                </div>
+                <p className="text-xs text-muted-foreground">Awaiting processing</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Per-Session Rate</CardTitle>
+                <Receipt className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="stat-session-rate">
+                  ${(billing.summary.perSessionRate / 100).toFixed(2)}
+                </div>
+                <p className="text-xs text-muted-foreground capitalize">
+                  {billing.summary.billingPlan?.replace(/_/g, " ") || "Per session"} plan
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {billing.records.length > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
+                <CardTitle>Recent Charges</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {billing.records.slice(0, 5).map((record) => (
+                    <div
+                      key={record.id}
+                      className="flex items-center justify-between p-3 rounded-md border border-border"
+                      data-testid={`billing-record-${record.id}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Receipt className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{record.description || "RON Session Charge"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {record.invoiceNumber || "N/A"} &middot; {record.createdAt ? format(new Date(record.createdAt), "MMM d, yyyy") : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="font-medium">${(record.amount / 100).toFixed(2)}</span>
+                        <Badge className={
+                          record.status === "succeeded" ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" :
+                          record.status === "pending" ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300" :
+                          record.status === "failed" ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300" :
+                          "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
+                        }>
+                          {record.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -21,7 +21,7 @@ import {
   User, MonitorSmartphone, Circle, Fingerprint, MapPin,
   ShieldAlert, ShieldCheck, VideoOff, Mic, MicOff, Camera, CameraOff
 } from "lucide-react";
-import type { RonSession, RonTransaction, RonNotary, RonSigner, RonDocument, RonAnnotationPlacement, RonSignature, RonSeal, RonJournalEntry, RonVideoRoom, RonRecording, RonFraudDetection } from "@shared/schema";
+import type { RonSession, RonTransaction, RonNotary, RonSigner, RonDocument, RonAnnotationPlacement, RonSignature, RonSeal, RonJournalEntry, RonVideoRoom, RonRecording, RonFraudDetection, Organization } from "@shared/schema";
 
 type EnrichedDocument = RonDocument & {
   annotations: RonAnnotationPlacement[];
@@ -125,6 +125,10 @@ export default function RonSessionPage() {
   const { data: detail, isLoading } = useQuery<SessionDetail>({
     queryKey: ["/api/ron/sessions", id, "detail"],
     refetchInterval: 5000,
+  });
+
+  const { data: myOrg } = useQuery<Organization | null>({
+    queryKey: ["/api/my-organization"],
   });
 
   const { data: checklist, refetch: refetchChecklist } = useQuery<ChecklistData>({
@@ -361,6 +365,25 @@ export default function RonSessionPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {myOrg && (myOrg.logoUrl || myOrg.companyName) && (
+        <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/30" data-testid="branded-session-header">
+          {myOrg.logoUrl && (
+            <img
+              src={myOrg.logoUrl}
+              alt={`${myOrg.companyName || myOrg.name} logo`}
+              className="h-6 max-w-[120px] object-contain"
+              data-testid="img-session-org-logo"
+            />
+          )}
+          <span
+            className="text-sm font-medium"
+            style={myOrg.primaryColor ? { color: myOrg.primaryColor } : undefined}
+            data-testid="text-session-org-name"
+          >
+            {myOrg.companyName || myOrg.name}
+          </span>
+        </div>
+      )}
       <div className="flex items-center gap-3 p-4 border-b flex-wrap">
         <Link href={`/ron/transactions/${transaction.id}`}>
           <Button variant="ghost" size="icon" data-testid="button-back-to-transaction">

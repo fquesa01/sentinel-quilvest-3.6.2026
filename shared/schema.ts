@@ -438,6 +438,13 @@ export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 255 }).notNull().unique(),
   description: text("description"),
+  logoUrl: varchar("logo_url", { length: 1000 }),
+  primaryColor: varchar("primary_color", { length: 50 }),
+  companyName: varchar("company_name", { length: 500 }),
+  footerText: text("footer_text"),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+  billingPlan: varchar("billing_plan", { length: 100 }).default("per_session"),
+  perSessionRate: integer("per_session_rate").default(2500),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -14662,3 +14669,34 @@ export const insertRonNotaryInvitationSchema = createInsertSchema(ronNotaryInvit
 });
 export type InsertRonNotaryInvitation = z.infer<typeof insertRonNotaryInvitationSchema>;
 export type RonNotaryInvitation = typeof ronNotaryInvitations.$inferSelect;
+
+export const ronBillingStatusEnum = pgEnum("ron_billing_status", [
+  "pending", "processing", "succeeded", "failed", "refunded"
+]);
+
+export const ronBillingRecords = pgTable("ron_billing_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  transactionId: varchar("transaction_id").references(() => ronTransactions.id, { onDelete: "set null" }),
+  sessionId: varchar("session_id").references(() => ronSessions.id, { onDelete: "set null" }),
+  stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  stripeInvoiceId: varchar("stripe_invoice_id", { length: 255 }),
+  amount: integer("amount").notNull(),
+  currency: varchar("currency", { length: 10 }).default("usd").notNull(),
+  status: ronBillingStatusEnum("status").default("pending").notNull(),
+  description: text("description"),
+  invoiceNumber: varchar("invoice_number", { length: 100 }),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  orgIdx: index("idx_ron_billing_org").on(table.organizationId),
+  txnIdx: index("idx_ron_billing_txn").on(table.transactionId),
+  statusIdx: index("idx_ron_billing_status").on(table.status),
+}));
+
+export const insertRonBillingRecordSchema = createInsertSchema(ronBillingRecords).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonBillingRecord = z.infer<typeof insertRonBillingRecordSchema>;
+export type RonBillingRecord = typeof ronBillingRecords.$inferSelect;

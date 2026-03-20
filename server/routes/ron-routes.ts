@@ -1183,6 +1183,33 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
       await storage.incrementRonNotarySessions(session.notaryId);
     }
 
+    try {
+      const txn = await storage.getRonTransaction(session.transactionId);
+      if (txn?.createdBy) {
+        const userOrg = await storage.getUserOrganization(txn.createdBy);
+        if (userOrg && userOrg.perSessionRate && userOrg.perSessionRate > 0) {
+          const existingRecords = await storage.getRonBillingRecordsByTransaction(session.transactionId);
+          const alreadyBilled = existingRecords.some(r => r.sessionId === session.id && ["succeeded", "pending", "processing"].includes(r.status));
+          if (!alreadyBilled) {
+            const invoiceNumber = `RON-${Date.now().toString(36).toUpperCase()}-${session.id.slice(0, 6).toUpperCase()}`;
+            await storage.createRonBillingRecord({
+              organizationId: userOrg.id,
+              transactionId: session.transactionId,
+              sessionId: session.id,
+              amount: userOrg.perSessionRate,
+              currency: "usd",
+              status: "succeeded",
+              description: `RON session for "${txn.title}"`,
+              invoiceNumber,
+              metadata: { durationSeconds: duration, notaryId: session.notaryId },
+            });
+          }
+        }
+      }
+    } catch (billingErr) {
+      console.error("[RON] Billing record creation error (non-fatal):", billingErr);
+    }
+
     res.json(updated);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
@@ -3122,6 +3149,135 @@ router.get("/notaries/:id/workload", requireRole("super_admin"), async (req: any
   try {
     const workload = await queueService.getNotaryWorkload(req.params.id);
     res.json(workload);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// ORGANIZATION BRANDING
+// ============================================================================
+
+router.get("/branding/:organizationId", async (req: any, res) => {
+  try {
+    const org = await storage.getOrganization(req.params.organizationId);
+    if (!org) return res.status(404).json({ message: "Organization not found" });
+
+    const userOrg = await storage.getUserOrganization(req.user.id);
+    if (req.user.role !== "super_admin" && (!userOrg || userOrg.id !== org.id)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    res.json({
+      id: org.id,
+      name: org.name,
+      logoUrl: org.logoUrl,
+      primaryColor: org.primaryColor,
+      companyName: org.companyName,
+      footerText: org.footerText,
+      billingPlan: org.billingPlan,
+      perSessionRate: org.perSessionRate,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.patch("/branding/:organizationId", async (req: any, res) => {
+  try {
+    const org = await storage.getOrganization(req.params.organizationId);
+    if (!org) return res.status(404).json({ message: "Organization not found" });
+
+    const userOrg = await storage.getUserOrganization(req.user.id);
+    if (req.user.role !== "super_admin" && (!userOrg || userOrg.id !== org.id)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const { logoUrl, primaryColor, companyName, footerText, billingPlan, perSessionRate } = req.body;
+    const validPlans = ["per_session", "monthly", "enterprise"];
+    if (billingPlan !== undefined && !validPlans.includes(billingPlan)) {
+      return res.status(400).json({ message: `Invalid billing plan. Must be one of: ${validPlans.join(", ")}` });
+    }
+    if (perSessionRate !== undefined && (typeof perSessionRate !== "number" || perSessionRate < 0 || perSessionRate > 100000)) {
+      return res.status(400).json({ message: "Per-session rate must be between 0 and 100000 cents" });
+    }
+    if (logoUrl !== undefined && logoUrl !== null && typeof logoUrl === "string" && logoUrl.length > 1000) {
+      return res.status(400).json({ message: "Logo URL is too long (max 1000 characters)" });
+    }
+    if (companyName !== undefined && companyName !== null && typeof companyName === "string" && companyName.length > 500) {
+      return res.status(400).json({ message: "Company name is too long (max 500 characters)" });
+    }
+    if (primaryColor !== undefined && primaryColor !== null && typeof primaryColor === "string" && !/^#[0-9a-fA-F]{3,8}$/.test(primaryColor)) {
+      return res.status(400).json({ message: "Primary color must be a valid hex color (e.g., #3b82f6)" });
+    }
+
+    const updates: Partial<typeof org> = {};
+    if (logoUrl !== undefined) updates.logoUrl = logoUrl;
+    if (primaryColor !== undefined) updates.primaryColor = primaryColor;
+    if (companyName !== undefined) updates.companyName = companyName;
+    if (footerText !== undefined) updates.footerText = footerText;
+    if (billingPlan !== undefined) updates.billingPlan = billingPlan;
+    if (perSessionRate !== undefined) updates.perSessionRate = perSessionRate;
+
+    const updated = await storage.updateOrganization(org.id, updates);
+    res.json(updated);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// BILLING
+// ============================================================================
+
+router.get("/billing/:organizationId", async (req: any, res) => {
+  try {
+    const org = await storage.getOrganization(req.params.organizationId);
+    if (!org) return res.status(404).json({ message: "Organization not found" });
+
+    const userOrg = await storage.getUserOrganization(req.user.id);
+    if (req.user.role !== "super_admin" && (!userOrg || userOrg.id !== org.id)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const records = await storage.getRonBillingRecords(org.id);
+
+    const totalAmount = records.reduce((sum, r) => sum + (r.status === "succeeded" ? r.amount : 0), 0);
+    const totalSessions = records.filter(r => r.status === "succeeded").length;
+    const pendingAmount = records.reduce((sum, r) => sum + (r.status === "pending" ? r.amount : 0), 0);
+
+    res.json({
+      records,
+      summary: {
+        totalAmount,
+        totalSessions,
+        pendingAmount,
+        billingPlan: org.billingPlan,
+        perSessionRate: org.perSessionRate,
+        currency: "usd",
+      },
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/billing/:organizationId/records", async (req: any, res) => {
+  try {
+    const org = await storage.getOrganization(req.params.organizationId);
+    if (!org) return res.status(404).json({ message: "Organization not found" });
+
+    const userOrg = await storage.getUserOrganization(req.user.id);
+    if (req.user.role !== "super_admin" && (!userOrg || userOrg.id !== org.id)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const records = await storage.getRonBillingRecords(org.id);
+    res.json(records);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });

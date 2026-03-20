@@ -18,7 +18,8 @@ import {
   XCircle, AlertTriangle, Loader2, ChevronRight, Upload, ScanFace, FileCheck,
   UserCheck, Eye, Users
 } from "lucide-react";
-import type { RonSigner, RonTransaction } from "@shared/schema";
+import type { RonSigner, RonTransaction, Organization } from "@shared/schema";
+import { BrandedHeader, BrandedFooter } from "@/contexts/branding-context";
 
 type KBAQuestion = { id: number; question: string; options: string[] };
 type KBAResult = { score: number; total: number; passed: boolean; results: Array<{ questionId: number; correct: boolean }>; idvStatus: string };
@@ -109,6 +110,10 @@ export default function RonIdvPage() {
 
   const { data: transaction } = useQuery<RonTransaction & { eligibilityCheck?: any }>({
     queryKey: ["/api/ron/transactions", transactionId],
+  });
+
+  const { data: myOrg } = useQuery<Organization | null>({
+    queryKey: ["/api/my-organization"],
   });
 
   const { data: kbaData } = useQuery<{ signerId: string; questions: KBAQuestion[] }>({
@@ -301,6 +306,25 @@ export default function RonIdvPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
+      {myOrg && (myOrg.logoUrl || myOrg.companyName) && (
+        <div className="flex items-center gap-3 pb-2 border-b" data-testid="branded-header">
+          {myOrg.logoUrl && (
+            <img
+              src={myOrg.logoUrl}
+              alt={`${myOrg.companyName || myOrg.name} logo`}
+              className="h-8 max-w-[160px] object-contain"
+              data-testid="img-org-logo"
+            />
+          )}
+          <span
+            className="font-semibold text-lg"
+            style={myOrg.primaryColor ? { color: myOrg.primaryColor } : undefined}
+            data-testid="text-org-name"
+          >
+            {myOrg.companyName || myOrg.name}
+          </span>
+        </div>
+      )}
       <div className="flex items-center gap-3 flex-wrap">
         <Link href={`/ron/transactions/${transactionId}`}>
           <Button variant="ghost" size="icon" data-testid="button-back-to-transaction">
@@ -856,6 +880,12 @@ export default function RonIdvPage() {
             </Link>
           </CardContent>
         </Card>
+      )}
+
+      {myOrg && (myOrg.footerText || myOrg.companyName) && (
+        <div className="text-xs text-muted-foreground text-center py-2 border-t" data-testid="branded-footer">
+          {myOrg.footerText || `Powered by ${myOrg.companyName || myOrg.name}`}
+        </div>
       )}
     </div>
   );

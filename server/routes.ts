@@ -778,6 +778,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/my-organization", isAuthenticated, async (req: any, res) => {
+    try {
+      const org = await storage.getUserOrganization(req.user.id);
+      res.json(org || null);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/user-org-map", isAuthenticated, requireRole("super_admin"), async (req, res) => {
     try {
       const members = await db.select({
