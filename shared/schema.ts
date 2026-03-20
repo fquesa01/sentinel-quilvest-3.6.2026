@@ -15012,7 +15012,7 @@ export const titleExceptions = pgTable("title_exceptions", {
   description: text("description"),
   status: exceptionStatusEnum("status").default("open").notNull(),
   priority: exceptionPriorityEnum("priority").default("medium").notNull(),
-  assignedTo: varchar("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  assignedTo: text("assigned_to"),
   dueDate: date("due_date"),
   clearedDate: date("cleared_date"),
   clearedBy: varchar("cleared_by").references(() => users.id, { onDelete: "set null" }),
