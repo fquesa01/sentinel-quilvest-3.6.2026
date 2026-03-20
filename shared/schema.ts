@@ -14961,6 +14961,7 @@ export const discrepancyTypeEnum = pgEnum("discrepancy_type", [
   "exception_mismatch",
   "legal_description_mismatch",
   "boundary_conflict",
+  "boundary_monument_missing",
   "easement_missing",
   "encroachment_unaddressed",
   "setback_violation",

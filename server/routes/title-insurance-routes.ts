@@ -1159,6 +1159,13 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
   // ===== AI SURVEY ANALYSIS ENDPOINTS =====
 
   async function runSurveyAnalysis(dealId: string, surveyText: string, commitmentId: string | null) {
+    if (commitmentId) {
+      const [commitment] = await db.select({ id: schema.titleCommitments.id })
+        .from(schema.titleCommitments)
+        .where(and(eq(schema.titleCommitments.id, commitmentId), eq(schema.titleCommitments.transactionId, dealId)));
+      if (!commitment) throw new Error("Commitment does not belong to this deal");
+    }
+
     const extracted = await extractSurveyData(surveyText);
 
     const surveyData: Record<string, unknown> = {
@@ -1260,7 +1267,7 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
         setbackRearFt: imp.setbackRearFt,
         setbackLeftFt: imp.setbackLeftFt,
         setbackRightFt: imp.setbackRightFt,
-        zoningCompliance: imp.zoningCompliant ? "compliant" : "non_compliant",
+        zoningCompliance: imp.zoningCompliant === true ? "compliant" : imp.zoningCompliant === false ? "non_compliant" : null,
         zoningDistrict: imp.notes,
       })),
       { totalAreaSqft: survey.totalAreaSqft, totalAreaAcres: survey.totalAreaAcres, legalDescription: survey.legalDescription },
@@ -1352,7 +1359,7 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
 
       const analysis = await analyzeException(
         {
-          type: exception.type || "unknown",
+          type: exception.exceptionType || "unknown",
           scheduleSection: exception.scheduleSection || "unknown",
           description: exception.description || "",
           status: exception.status || "open",
