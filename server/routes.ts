@@ -30988,15 +30988,10 @@ Guidelines:
         pst: "pst", msg: "msg", eml: "eml",
       };
       const itemType = typeMap[ext] || "other";
-      let filePath: string | null = null;
-      try {
-        const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
-        const storageKey = `${nanoid()}_${safeName}`;
-        await uploadFile(DATA_LAKE_BUCKET, storageKey, file.buffer, file.mimetype);
-        filePath = storageKey;
-      } catch (storageError) {
-        console.error("Supabase Storage upload failed, continuing without file path:", storageError);
-      }
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+      const storageKey = `${nanoid()}_${safeName}`;
+      await uploadFile(DATA_LAKE_BUCKET, storageKey, file.buffer, file.mimetype);
+      const filePath = storageKey;
 
       const isEmailArchive = ext in emailFormats;
       const isZipArchive = ext === "zip";
@@ -31283,6 +31278,45 @@ Guidelines:
     } catch (error: any) {
       console.error("Error fetching data lake item:", error);
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/data-lake/items/:id/file", isAuthenticated, async (req: any, res) => {
+    try {
+      const item = await storage.getDataLakeItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      if (item.userId !== req.user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (!item.filePath) {
+        return res.status(404).json({ message: "No file associated with this item" });
+      }
+      if (item.filePath.startsWith("/objects/")) {
+        const objectStorageService = new ObjectStorageService();
+        if (objectStorageService.localFileExists(item.filePath)) {
+          objectStorageService.downloadLocalObject(item.filePath, res);
+          return;
+        }
+        const objectFile = await objectStorageService.getObjectEntityFile(item.filePath);
+        await objectStorageService.downloadObject(objectFile, res);
+        return;
+      }
+      const fileBuffer = await downloadFile(DATA_LAKE_BUCKET, item.filePath);
+      const meta = (item.metadata as Record<string, unknown>) || {};
+      const contentType = (meta.mimetype as string) || "application/octet-stream";
+      res.set({
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${encodeURIComponent(item.name || "file")}"`,
+        "Content-Length": fileBuffer.length.toString(),
+      });
+      res.send(fileBuffer);
+    } catch (error: unknown) {
+      console.error("Error downloading data lake file:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Failed to download file" });
+      }
     }
   });
 
