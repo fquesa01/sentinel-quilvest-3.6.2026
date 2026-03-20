@@ -108,6 +108,7 @@ const discrepancyTypeLabels: Record<string, string> = {
   exception_mismatch: "Exception Mismatch",
   legal_description_mismatch: "Legal Desc. Mismatch",
   boundary_conflict: "Boundary Conflict",
+  boundary_monument_missing: "Monument Missing",
   easement_missing: "Easement Missing",
   encroachment_unaddressed: "Encroachment Unaddressed",
   setback_violation: "Setback Violation",
@@ -128,6 +129,7 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
   const [analyzeDialogOpen, setAnalyzeDialogOpen] = useState(false);
   const [surveyText, setSurveyText] = useState("");
   const [commitmentIdForAnalysis, setCommitmentIdForAnalysis] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: surveys = [], isLoading } = useQuery<Survey[]>({
     queryKey: ["/api/deals", dealId, "title", "survey"],
@@ -153,6 +155,34 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
     },
     onError: (err: Error) => {
       toast({ title: "Analysis Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const pdfUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("surveyPdf", file);
+      if (commitmentIdForAnalysis) formData.append("commitmentId", commitmentIdForAnalysis);
+      const res = await fetch(`/api/deals/${dealId}/title/survey/upload-analyze`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ message: "Upload failed" }));
+        throw new Error(errBody.message || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "title", "survey"] });
+      toast({ title: "Survey PDF Analyzed", description: "AI has extracted data from the uploaded PDF and cross-referenced against title exceptions." });
+      setAnalyzeDialogOpen(false);
+      setSurveyText("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+    onError: (err: Error) => {
+      toast({ title: "PDF Analysis Failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -241,7 +271,7 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>AI Survey Analysis</DialogTitle>
-            <DialogDescription>Paste the survey text below. AI will extract boundaries, easements, encroachments, improvements, and cross-reference against title exceptions.</DialogDescription>
+            <DialogDescription>Upload a survey PDF or paste the survey text below. AI will extract boundaries, easements, encroachments, improvements, and cross-reference against title exceptions.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -254,12 +284,37 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
               />
             </div>
             <div>
+              <Label className="text-xs">Upload Survey PDF</Label>
+              <Input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                data-testid="input-survey-pdf"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) pdfUploadMutation.mutate(file);
+                }}
+                disabled={pdfUploadMutation.isPending || analyzeMutation.isPending}
+              />
+              {pdfUploadMutation.isPending && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Extracting and analyzing PDF...
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 border-t" />
+              <span className="text-xs text-muted-foreground">or paste text</span>
+              <div className="flex-1 border-t" />
+            </div>
+            <div>
               <Label className="text-xs">Survey Text</Label>
               <Textarea
                 placeholder="Paste full survey document text here..."
                 value={surveyText}
                 onChange={e => setSurveyText(e.target.value)}
-                className="min-h-[240px]"
+                className="min-h-[200px]"
                 data-testid="input-survey-text"
               />
             </div>
@@ -268,11 +323,11 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
             <Button variant="outline" onClick={() => setAnalyzeDialogOpen(false)} data-testid="button-cancel-analysis">Cancel</Button>
             <Button
               onClick={() => analyzeMutation.mutate({ surveyText, commitmentId: commitmentIdForAnalysis || undefined })}
-              disabled={!surveyText.trim() || analyzeMutation.isPending}
+              disabled={!surveyText.trim() || analyzeMutation.isPending || pdfUploadMutation.isPending}
               data-testid="button-run-analysis"
             >
               {analyzeMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1" />}
-              Analyze
+              Analyze Text
             </Button>
           </DialogFooter>
         </DialogContent>

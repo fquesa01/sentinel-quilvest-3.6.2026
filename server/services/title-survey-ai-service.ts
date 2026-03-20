@@ -1,13 +1,27 @@
-import { GoogleGenAI } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 
-const apiKey = process.env.GOOGLE_API_KEY;
-let ai: GoogleGenAI | null = null;
-function getAI(): GoogleGenAI {
-  if (!ai) {
-    if (!apiKey) throw new Error("GOOGLE_API_KEY not configured");
-    ai = new GoogleGenAI({ apiKey });
+let client: Anthropic | null = null;
+function getClient(): Anthropic {
+  if (!client) {
+    const apiKey = process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY;
+    const baseURL = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL;
+    if (!apiKey) throw new Error("AI_INTEGRATIONS_ANTHROPIC_API_KEY not configured");
+    client = new Anthropic({ apiKey, baseURL: baseURL || undefined });
   }
-  return ai;
+  return client;
+}
+
+async function claudeGenerate(systemPrompt: string, userPrompt: string): Promise<string> {
+  const anthropic = getClient();
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+  const block = message.content[0];
+  if (block.type === "text") return block.text.trim();
+  return "{}";
 }
 
 export interface ExtractedSurveyData {
@@ -63,8 +77,7 @@ export interface ExtractedSurveyData {
 }
 
 export async function extractSurveyData(surveyText: string): Promise<ExtractedSurveyData> {
-  const genai = getAI();
-  const prompt = `You are a title insurance specialist analyzing a property survey document. Extract ALL structured data from the following survey text and return a JSON object with these fields:
+  const prompt = `Extract ALL structured data from the following survey text and return a JSON object with these fields:
 
 {
   "surveyInfo": {
@@ -131,13 +144,8 @@ Return ONLY valid JSON, no markdown formatting. If a field has no data, use null
 SURVEY TEXT:
 ${surveyText}`;
 
-  const response = await genai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: prompt,
-    config: { temperature: 0.1 },
-  });
-
-  const text = response.text?.trim() || "{}";
+  const systemPrompt = "You are an expert land surveyor and title insurance analyst. Extract structured data from survey documents and return valid JSON only, with no markdown formatting.";
+  const text = await claudeGenerate(systemPrompt, prompt);
   const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
   return JSON.parse(cleaned) as ExtractedSurveyData;
 }
@@ -151,10 +159,9 @@ export interface ExceptionAnalysis {
 }
 
 export async function analyzeException(
-  exceptionData: { type: string; scheduleType: string; description: string; status: string },
-  surveyContext?: { easements: any[]; encroachments: any[]; boundaries: any[] },
+  exceptionData: { type: string; scheduleSection: string; description: string; status: string },
+  surveyContext?: { easements: unknown[]; encroachments: unknown[]; boundaries: unknown[] },
 ): Promise<ExceptionAnalysis> {
-  const genai = getAI();
   let surveySection = "";
   if (surveyContext) {
     surveySection = `\n\nSURVEY DATA FOR CROSS-REFERENCE:
@@ -163,11 +170,12 @@ Encroachments found on survey: ${JSON.stringify(surveyContext.encroachments)}
 Boundary lines: ${JSON.stringify(surveyContext.boundaries)}`;
   }
 
-  const prompt = `You are a title insurance underwriter analyzing a title exception. Provide a risk assessment and recommended clearance actions.
+  const systemPrompt = "You are a title insurance underwriter. Analyze exceptions and provide risk assessments. Return valid JSON only, no markdown formatting.";
+  const userPrompt = `Analyze this title exception and provide a risk assessment with recommended clearance actions.
 
 EXCEPTION DETAILS:
 - Type: ${exceptionData.type}
-- Schedule: ${exceptionData.scheduleType}
+- Schedule Section: ${exceptionData.scheduleSection}
 - Description: ${exceptionData.description}
 - Current Status: ${exceptionData.status}${surveySection}
 
@@ -182,13 +190,7 @@ Return a JSON object with:
 
 Return ONLY valid JSON, no markdown formatting.`;
 
-  const response = await genai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: prompt,
-    config: { temperature: 0.2 },
-  });
-
-  const text = response.text?.trim() || "{}";
+  const text = await claudeGenerate(systemPrompt, userPrompt);
   const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
   return JSON.parse(cleaned) as ExceptionAnalysis;
 }
@@ -230,13 +232,13 @@ export interface SurveyAreaData {
 
 export function detectDiscrepancies(
   surveyEasements: Array<{ id: string; easementType: string | null; locationDescription: string | null; holder: string | null; recordingReference: string | null }>,
-  exceptions: Array<{ id: string; type: string | null; scheduleType: string | null; description: string | null; status: string | null }>,
+  exceptions: Array<{ id: string; type: string | null; scheduleSection: string | null; description: string | null; status: string | null }>,
   boundaries?: SurveyBoundaryData[],
   improvements?: SurveyImprovementData[],
   surveyArea?: SurveyAreaData,
 ): DiscrepancyResult[] {
   const discrepancies: DiscrepancyResult[] = [];
-  const schedBExceptions = exceptions.filter(e => e.scheduleType === "schedule_b");
+  const schedBExceptions = exceptions.filter(e => e.scheduleSection === "b2_exceptions" || e.scheduleSection === "b1_requirements");
 
   for (const easement of surveyEasements) {
     const holder = (easement.holder || "").toLowerCase();
