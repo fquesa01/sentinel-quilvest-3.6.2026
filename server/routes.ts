@@ -31062,7 +31062,8 @@ Guidelines:
       if (!VALID_SESSION_ID.test(sessionId)) {
         return res.status(400).json({ message: "Invalid session ID" });
       }
-      const { existsSync, readFileSync, unlinkSync, readdirSync, rmdirSync } = await import('fs');
+      const fsModule = await import('fs');
+      const { existsSync, readFileSync, unlinkSync, readdirSync, rmdirSync, createWriteStream, createReadStream, statSync } = fsModule;
       const metaPath = `${CHUNK_DIR}/${sessionId}/meta.json`;
       if (!existsSync(metaPath)) {
         return res.status(404).json({ message: "Upload session not found" });
@@ -31074,30 +31075,34 @@ Guidelines:
       if (meta.uploadedChunks.length !== meta.totalChunks) {
         return res.status(400).json({ message: `Missing chunks: uploaded ${meta.uploadedChunks.length}/${meta.totalChunks}` });
       }
-      console.log(`[DataLake] Reassembling ${meta.totalChunks} chunks for "${meta.fileName}"`);
-      const chunks: Buffer[] = [];
+
+      // Assemble chunks to a temp file on disk with backpressure (no full-file buffer)
+      const assembledPath = `${CHUNK_DIR}/${sessionId}/assembled`;
+      console.log(`[DataLake] Assembling ${meta.totalChunks} chunks to disk for "${meta.fileName}"`);
+      const writeStream = createWriteStream(assembledPath);
       for (let i = 0; i < meta.totalChunks; i++) {
         const chunkPath = `${CHUNK_DIR}/${sessionId}/chunk_${i}`;
         if (!existsSync(chunkPath)) {
+          writeStream.destroy();
           return res.status(400).json({ message: `Missing chunk ${i}` });
         }
-        chunks.push(readFileSync(chunkPath));
+        const chunkReadStream = createReadStream(chunkPath);
+        await new Promise<void>((resolve, reject) => {
+          chunkReadStream.on('error', reject);
+          chunkReadStream.pipe(writeStream, { end: false });
+          chunkReadStream.on('end', resolve);
+        });
       }
-      const fileBuffer = Buffer.concat(chunks);
-      console.log(`[DataLake] Reassembled file: "${meta.fileName}" (${fileBuffer.length} bytes)`);
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+        writeStream.end();
+      });
+      const fileStats = statSync(assembledPath);
+      console.log(`[DataLake] Assembled file on disk: "${meta.fileName}" (${fileStats.size} bytes)`);
 
-      // Clean up temp files
-      try {
-        const sessionDir = `${CHUNK_DIR}/${sessionId}`;
-        for (const f of readdirSync(sessionDir)) {
-          unlinkSync(`${sessionDir}/${f}`);
-        }
-        rmdirSync(sessionDir);
-      } catch {}
-
-      // Now process exactly like the single-upload route
-      const file = { originalname: meta.fileName, buffer: fileBuffer, size: fileBuffer.length, mimetype: 'application/octet-stream' };
-      const ext = file.originalname.split(".").pop()?.toLowerCase() || "other";
+      // Upload assembled file to storage (from disk, no full buffer)
+      const ext = meta.fileName.split(".").pop()?.toLowerCase() || "other";
       const typeMap: Record<string, string> = {
         pdf: "pdf", docx: "docx", doc: "docx", xlsx: "xlsx", xls: "xlsx",
         msg: "email", eml: "email", pst: "email", mbox: "email",
@@ -31106,16 +31111,22 @@ Guidelines:
         pst: "pst", msg: "msg", eml: "eml", mbox: "mbox",
       };
       const itemType = typeMap[ext] || "other";
-      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+      const safeName = meta.fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
       const storageKey = `${nanoid()}_${safeName}`;
       let filePath: string;
       try {
-        await uploadFile(DATA_LAKE_BUCKET, storageKey, file.buffer, file.mimetype);
-        filePath = storageKey;
+        const smallEnoughForSupabase = fileStats.size < 50 * 1024 * 1024;
+        if (smallEnoughForSupabase) {
+          const buf = readFileSync(assembledPath);
+          await uploadFile(DATA_LAKE_BUCKET, storageKey, buf, 'application/octet-stream');
+          filePath = storageKey;
+        } else {
+          throw new Error("File too large for Supabase, using Object Storage");
+        }
       } catch (supaErr: any) {
-        console.warn(`[DataLake] Supabase upload failed for "${file.originalname}", falling back to Object Storage:`, supaErr.message);
+        console.warn(`[DataLake] Supabase skipped for "${meta.fileName}" (${Math.round(fileStats.size / 1024 / 1024)}MB), using Object Storage:`, supaErr.message);
         const objectStorageService = new ObjectStorageService();
-        filePath = await objectStorageService.uploadBuffer(`data-lake/${storageKey}`, file.buffer, file.mimetype);
+        filePath = await objectStorageService.uploadFromFile(`data-lake/${storageKey}`, assembledPath, 'application/octet-stream');
       }
 
       const isEmailArchive = ext in emailFormats;
@@ -31125,43 +31136,40 @@ Guidelines:
         userId: req.user.id,
         source: "upload",
         itemType: isEmailArchive ? "email_archive" : isZipArchive ? "zip_archive" : itemType,
-        name: file.originalname,
+        name: meta.fileName,
         filePath,
-        fileSize: file.size,
+        fileSize: fileStats.size,
         geminiIndexed: false,
         metadata: {
-          mimetype: file.mimetype,
+          mimetype: 'application/octet-stream',
           uploadedAt: new Date().toISOString(),
           chunkedUpload: true,
           ...((isEmailArchive || isZipArchive) ? { processingStatus: "processing", childCount: 0 } : {}),
         },
       });
 
-      // Process ZIP archives in background
+      // Process ZIP archives in background (from disk)
       if (isZipArchive) {
+        const zipPath = assembledPath;
         (async () => {
           try {
-            console.log(`[DataLake] Extracting ZIP file: ${file.originalname}`);
+            console.log(`[DataLake] Extracting ZIP file from disk: ${meta.fileName}`);
             const AdmZip = (await import("adm-zip")).default;
             const pathModule = await import("path");
-            const zip = new AdmZip(file.buffer);
+            const zip = new AdmZip(zipPath);
             const zipEntries = zip.getEntries();
-            const MAX_FILES = 10000;
-            const MAX_TOTAL_SIZE = 2 * 1024 * 1024 * 1024;
-            const MAX_SINGLE_FILE_SIZE = 500 * 1024 * 1024;
-            const MAX_COMPRESSION_RATIO = 100;
             const validEntries = zipEntries.filter(entry => {
               if (entry.isDirectory) return false;
               const entryPath = entry.entryName;
               if (entryPath.startsWith('.') || entryPath.includes('/.') || entryPath.includes('\\.')) return false;
               if (entryPath.includes('__MACOSX')) return false;
               if (entryPath.toLowerCase().endsWith('.zip')) return false;
-              if (entry.header.size > MAX_SINGLE_FILE_SIZE) return false;
+              if (entry.header.size > 500 * 1024 * 1024) return false;
               const compressedSize = entry.header.compressedSize || 1;
-              if (entry.header.size / compressedSize > MAX_COMPRESSION_RATIO) return false;
+              if (entry.header.size / compressedSize > 100) return false;
               return true;
             });
-            if (validEntries.length > MAX_FILES || validEntries.reduce((s, e) => s + e.header.size, 0) > MAX_TOTAL_SIZE) {
+            if (validEntries.length > 10000 || validEntries.reduce((s, e) => s + e.header.size, 0) > 2 * 1024 * 1024 * 1024) {
               await db.update(schema.dataLakeItems).set({ metadata: { ...(parentItem.metadata as any || {}), processingStatus: "failed", error: "Archive too large or too many files" } }).where(eq(schema.dataLakeItems.id, parentItem.id));
               return;
             }
@@ -31183,42 +31191,91 @@ Guidelines:
               } catch (e: any) { console.error(`[DataLake] ZIP extract error: ${e.message}`); }
             }
             await db.update(schema.dataLakeItems).set({ metadata: { ...(parentItem.metadata as any || {}), processingStatus: "completed", childCount: created } }).where(eq(schema.dataLakeItems.id, parentItem.id));
-            console.log(`[DataLake] Extracted ${created} files from ${file.originalname}`);
+            console.log(`[DataLake] Extracted ${created} files from ${meta.fileName}`);
           } catch (e: any) {
             console.error(`[DataLake] ZIP error: ${e.message}`);
             await db.update(schema.dataLakeItems).set({ metadata: { ...(parentItem.metadata as any || {}), processingStatus: "failed", error: e.message } }).where(eq(schema.dataLakeItems.id, parentItem.id)).catch(() => {});
+          } finally {
+            try { unlinkSync(zipPath); } catch {}
+            try { rmdirSync(`${CHUNK_DIR}/${sessionId}`); } catch {}
           }
         })();
       }
 
-      // Process email archives in background
+      // Process email archives in background (streaming for large MBOX)
       if (isEmailArchive) {
         const format = emailFormats[ext];
+        const emailFilePath = assembledPath;
         (async () => {
           try {
-            console.log(`[DataLake] Parsing ${ext} file: ${file.originalname}`);
-            const emails = await parseFile(file.buffer, file.originalname, format);
-            console.log(`[DataLake] Extracted ${emails.length} emails from ${file.originalname}`);
+            console.log(`[DataLake] Parsing ${ext} file: ${meta.fileName} (${Math.round(fileStats.size / 1024 / 1024)}MB)`);
             let created = 0;
-            for (const email of emails) {
-              try {
-                const bodyPreview = email.bodyText ? email.bodyText.substring(0, 500) : email.bodyHtml ? email.bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500) : "";
-                await storage.createDataLakeItem({ userId: req.user.id, source: "upload", itemType: "email", name: email.subject || "(No Subject)", filePath: null, fileSize: null, geminiIndexed: false, metadata: { parentItemId: parentItem.id, parentFileName: file.originalname, subject: email.subject, sender: email.from ? `${email.from.name || ""} <${email.from.address}>`.trim() : null, senderAddress: email.from?.address || null, recipients: email.to.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), cc: email.cc.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), date: email.sentAt?.toISOString() || email.receivedAt?.toISOString() || null, bodyText: email.bodyText || "", bodyHtml: email.bodyHtml || "", bodyPreview, hasAttachments: email.hasAttachments, attachments: email.attachments, messageId: email.messageId } });
-                created++;
-              } catch (e: any) { console.error(`[DataLake] Email item error: ${e.message}`); }
+
+            if (format === 'mbox' && fileStats.size > 100 * 1024 * 1024) {
+              console.log(`[DataLake] Using streaming MBOX parser for large file`);
+              const { streamParseMBOXFile } = await import('./ingestion/emailParsers');
+              const mboxStream = createReadStream(emailFilePath);
+              const result = await streamParseMBOXFile(mboxStream, meta.fileName, async (email) => {
+                try {
+                  const bodyPreview = email.bodyText ? email.bodyText.substring(0, 500) : email.bodyHtml ? email.bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500) : "";
+                  await storage.createDataLakeItem({ userId: req.user.id, source: "upload", itemType: "email", name: email.subject || "(No Subject)", filePath: null, fileSize: null, geminiIndexed: false, metadata: { parentItemId: parentItem.id, parentFileName: meta.fileName, subject: email.subject, sender: email.from ? `${email.from.name || ""} <${email.from.address}>`.trim() : null, senderAddress: email.from?.address || null, recipients: email.to.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), cc: email.cc.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), date: email.sentAt?.toISOString() || email.receivedAt?.toISOString() || null, bodyText: email.bodyText || "", bodyHtml: email.bodyHtml || "", bodyPreview, hasAttachments: email.hasAttachments, attachments: email.attachments, messageId: email.messageId } });
+                  created++;
+                } catch (e: any) { console.error(`[DataLake] Email item error: ${e.message}`); }
+              });
+              console.log(`[DataLake] Stream parsed: ${result.parsed} parsed, ${result.skipped} skipped, ${result.errors} errors`);
+            } else {
+              const fileBuffer = readFileSync(emailFilePath);
+              const emails = await parseFile(fileBuffer, meta.fileName, format);
+              console.log(`[DataLake] Extracted ${emails.length} emails from ${meta.fileName}`);
+              for (const email of emails) {
+                try {
+                  const bodyPreview = email.bodyText ? email.bodyText.substring(0, 500) : email.bodyHtml ? email.bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500) : "";
+                  await storage.createDataLakeItem({ userId: req.user.id, source: "upload", itemType: "email", name: email.subject || "(No Subject)", filePath: null, fileSize: null, geminiIndexed: false, metadata: { parentItemId: parentItem.id, parentFileName: meta.fileName, subject: email.subject, sender: email.from ? `${email.from.name || ""} <${email.from.address}>`.trim() : null, senderAddress: email.from?.address || null, recipients: email.to.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), cc: email.cc.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), date: email.sentAt?.toISOString() || email.receivedAt?.toISOString() || null, bodyText: email.bodyText || "", bodyHtml: email.bodyHtml || "", bodyPreview, hasAttachments: email.hasAttachments, attachments: email.attachments, messageId: email.messageId } });
+                  created++;
+                } catch (e: any) { console.error(`[DataLake] Email item error: ${e.message}`); }
+              }
             }
+
             await db.update(schema.dataLakeItems).set({ metadata: { ...(parentItem.metadata as any || {}), processingStatus: "completed", childCount: created } }).where(eq(schema.dataLakeItems.id, parentItem.id));
-            console.log(`[DataLake] Processed ${created} emails from ${file.originalname}`);
+            console.log(`[DataLake] Processed ${created} emails from ${meta.fileName}`);
           } catch (e: any) {
             console.error(`[DataLake] Email parse error: ${e.message}`);
             await db.update(schema.dataLakeItems).set({ metadata: { ...(parentItem.metadata as any || {}), processingStatus: "failed", error: e.message } }).where(eq(schema.dataLakeItems.id, parentItem.id)).catch(() => {});
+          } finally {
+            try { unlinkSync(emailFilePath); } catch {}
+            try { rmdirSync(`${CHUNK_DIR}/${sessionId}`); } catch {}
           }
         })();
+      }
+
+      // Clean up chunk files (keep assembled for background processing if needed)
+      if (!isEmailArchive && !isZipArchive) {
+        try {
+          const sessionDir = `${CHUNK_DIR}/${sessionId}`;
+          for (const f of readdirSync(sessionDir)) { unlinkSync(`${sessionDir}/${f}`); }
+          rmdirSync(sessionDir);
+        } catch {}
+      } else {
+        // Clean up chunk files but keep assembled for background processing
+        try {
+          for (let i = 0; i < meta.totalChunks; i++) {
+            try { unlinkSync(`${CHUNK_DIR}/${sessionId}/chunk_${i}`); } catch {}
+          }
+          try { unlinkSync(metaPath); } catch {}
+        } catch {}
       }
 
       res.json(parentItem);
     } catch (error: any) {
       console.error("[DataLake] Chunked finalize error:", error);
+      // Clean up assembled file and session dir on error
+      try {
+        const sessionDir = `${CHUNK_DIR}/${sessionId}`;
+        if (existsSync(sessionDir)) {
+          for (const f of readdirSync(sessionDir)) { try { unlinkSync(`${sessionDir}/${f}`); } catch {} }
+          try { rmdirSync(sessionDir); } catch {}
+        }
+      } catch {}
       res.status(500).json({ message: error.message });
     }
   });

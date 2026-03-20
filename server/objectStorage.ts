@@ -423,6 +423,66 @@ export class ObjectStorageService {
 
     return `/objects/${relativePath}`;
   }
+
+  async uploadFromFile(targetPath: string, filePath: string, contentType: string = 'application/octet-stream'): Promise<string> {
+    let relativePath = targetPath;
+    if (targetPath.startsWith('/objects/')) {
+      relativePath = targetPath.slice('/objects/'.length);
+    }
+
+    const privateObjectDir = process.env.PRIVATE_OBJECT_DIR || "";
+
+    if (privateObjectDir) {
+      try {
+        const fullPath = `${privateObjectDir}/${relativePath}`;
+        const { bucketName, objectName } = parseObjectPath(fullPath);
+        const fileStats = fs.statSync(filePath);
+
+        const signedUrl = await signObjectURL({
+          bucketName,
+          objectName,
+          method: "PUT",
+          ttlSec: 900,
+        });
+
+        const fileStream = fs.createReadStream(filePath);
+        const response = await fetch(signedUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': fileStats.size.toString(),
+          },
+          body: fileStream as any,
+          duplex: 'half' as any,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Signed URL upload failed: ${response.status}`);
+        }
+        console.log(`[ObjectStorage] Streamed file via signed URL: ${relativePath} (${fileStats.size} bytes)`);
+        return `/objects/${relativePath}`;
+      } catch (signedErr: unknown) {
+        const errMsg = signedErr instanceof Error ? signedErr.message : String(signedErr);
+        console.warn(`[ObjectStorage] Signed URL upload failed (${errMsg}), falling back to local filesystem`);
+      }
+    } else {
+      console.warn(`[ObjectStorage] PRIVATE_OBJECT_DIR not set, using local filesystem storage`);
+    }
+
+    const resolved = path.resolve(LOCAL_STORAGE_ROOT, relativePath);
+    const root = path.resolve(LOCAL_STORAGE_ROOT);
+    if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+      throw new Error("Invalid upload path");
+    }
+    const localDir = path.dirname(resolved);
+    fs.mkdirSync(localDir, { recursive: true });
+    fs.copyFileSync(filePath, resolved);
+    const fileStats = fs.statSync(filePath);
+    const metaPath = resolved + ".meta";
+    fs.writeFileSync(metaPath, JSON.stringify({ contentType, size: fileStats.size, createdAt: new Date().toISOString() }));
+    console.log(`[ObjectStorage] Copied file to local filesystem: ${resolved} (${fileStats.size} bytes)`);
+    return `/objects/${relativePath}`;
+  }
 }
 
 function parseObjectPath(path: string): {
