@@ -62,6 +62,16 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+DO $$ BEGIN
+  CREATE TYPE ron_notary_availability AS ENUM ('available', 'busy', 'offline');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE ron_queue_status AS ENUM ('unassigned', 'queued', 'claimed', 'assigned');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- RON Transactions
 CREATE TABLE IF NOT EXISTS ron_transactions (
   id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -78,12 +88,18 @@ CREATE TABLE IF NOT EXISTS ron_transactions (
   notes TEXT,
   metadata JSONB DEFAULT '{}',
   created_by VARCHAR REFERENCES users(id),
+  queue_status ron_queue_status DEFAULT 'unassigned',
+  assigned_notary_id VARCHAR,
+  claimed_by VARCHAR,
+  claimed_at TIMESTAMP,
+  queue_priority INTEGER DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_ron_transactions_status ON ron_transactions(status);
 CREATE INDEX IF NOT EXISTS idx_ron_transactions_deal ON ron_transactions(deal_id);
 CREATE INDEX IF NOT EXISTS idx_ron_transactions_created ON ron_transactions(created_at);
+CREATE INDEX IF NOT EXISTS idx_ron_transactions_queue_status ON ron_transactions(queue_status);
 
 -- RON Notaries
 CREATE TABLE IF NOT EXISTS ron_notaries (
@@ -116,6 +132,9 @@ CREATE TABLE IF NOT EXISTS ron_notaries (
   compliance_score INTEGER DEFAULT 100,
   background_check_date TIMESTAMP,
   background_check_status VARCHAR(50),
+  availability_status ron_notary_availability DEFAULT 'offline',
+  availability_updated_at TIMESTAMP,
+  max_concurrent_sessions INTEGER DEFAULT 3,
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -123,6 +142,7 @@ CREATE TABLE IF NOT EXISTS ron_notaries (
 CREATE INDEX IF NOT EXISTS idx_ron_notaries_state ON ron_notaries(commission_state);
 CREATE INDEX IF NOT EXISTS idx_ron_notaries_status ON ron_notaries(status);
 CREATE INDEX IF NOT EXISTS idx_ron_notaries_email ON ron_notaries(email);
+CREATE INDEX IF NOT EXISTS idx_ron_notaries_availability ON ron_notaries(availability_status);
 
 -- RON Sessions
 CREATE TABLE IF NOT EXISTS ron_sessions (
@@ -362,3 +382,40 @@ CREATE TABLE IF NOT EXISTS ron_compliance_checks (
 CREATE INDEX IF NOT EXISTS idx_ron_compliance_transaction ON ron_compliance_checks(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_ron_compliance_signer ON ron_compliance_checks(signer_id);
 CREATE INDEX IF NOT EXISTS idx_ron_compliance_type ON ron_compliance_checks(check_type);
+
+-- Queue & Availability columns (ALTER TABLE for existing databases)
+DO $$ BEGIN
+  ALTER TABLE ron_transactions ADD COLUMN IF NOT EXISTS queue_status ron_queue_status DEFAULT 'unassigned';
+EXCEPTION WHEN undefined_column THEN NULL; WHEN others THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE ron_transactions ADD COLUMN IF NOT EXISTS assigned_notary_id VARCHAR;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE ron_transactions ADD COLUMN IF NOT EXISTS claimed_by VARCHAR;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE ron_transactions ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMP;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE ron_transactions ADD COLUMN IF NOT EXISTS queue_priority INTEGER DEFAULT 0;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_ron_transactions_queue_status ON ron_transactions(queue_status);
+
+DO $$ BEGIN
+  ALTER TABLE ron_notaries ADD COLUMN IF NOT EXISTS availability_status ron_notary_availability DEFAULT 'offline';
+EXCEPTION WHEN others THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE ron_notaries ADD COLUMN IF NOT EXISTS availability_updated_at TIMESTAMP;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE ron_notaries ADD COLUMN IF NOT EXISTS max_concurrent_sessions INTEGER DEFAULT 3;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_ron_notaries_availability ON ron_notaries(availability_status);

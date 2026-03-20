@@ -17,6 +17,10 @@ import {
   Shield,
   AlertCircle,
   Hash,
+  ListTodo,
+  Hand,
+  UserCheck,
+  Zap,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { RonTransaction, RonJournalEntry } from "@shared/schema";
@@ -32,6 +36,14 @@ interface DashboardStats {
   pendingSessions: number;
   totalTransactions: number;
   activeNotaries?: number;
+}
+
+interface QueueStats {
+  unassigned: number;
+  queued: number;
+  claimed: number;
+  assigned: number;
+  inProgress: number;
 }
 
 const statusColors: Record<string, string> = {
@@ -81,6 +93,10 @@ export default function RonDashboard() {
 
   const { data: transactions, isLoading: txnLoading, isError: txnError } = useQuery<EnrichedTransaction[]>({
     queryKey: ["/api/ron/transactions"],
+  });
+
+  const { data: queueStats } = useQuery<QueueStats>({
+    queryKey: ["/api/ron/queue/stats"],
   });
 
   const recentTransactions = transactions
@@ -200,6 +216,41 @@ export default function RonDashboard() {
           </Card>
         )}
       </div>
+
+      {queueStats && (queueStats.unassigned > 0 || queueStats.queued > 0 || queueStats.claimed > 0) && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <ListTodo className="h-4 w-4" /> Queue Status
+            </CardTitle>
+            <Link href="/ron/queue">
+              <Button variant="ghost" size="sm">
+                Manage Queue <ArrowRight className="h-4 w-4 ml-1" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-6 flex-wrap">
+              <div className="flex items-center gap-2" data-testid="stat-dash-unassigned">
+                <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{queueStats.unassigned} Unassigned</span>
+              </div>
+              <div className="flex items-center gap-2" data-testid="stat-dash-queued">
+                <ListTodo className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{queueStats.queued} In Queue</span>
+              </div>
+              <div className="flex items-center gap-2" data-testid="stat-dash-claimed">
+                <Hand className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{queueStats.claimed} Claimed</span>
+              </div>
+              <div className="flex items-center gap-2" data-testid="stat-dash-assigned">
+                <UserCheck className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{queueStats.assigned} Assigned</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
@@ -346,6 +397,12 @@ export default function RonDashboard() {
                 <Button variant="outline" className="w-full justify-start" data-testid="button-quick-notaries">
                   <Users className="h-4 w-4 mr-2" />
                   Notary Directory
+                </Button>
+              </Link>
+              <Link href="/ron/queue">
+                <Button variant="outline" className="w-full justify-start" data-testid="button-quick-queue">
+                  <ListTodo className="h-4 w-4 mr-2" />
+                  Notary Queue
                 </Button>
               </Link>
             </CardContent>

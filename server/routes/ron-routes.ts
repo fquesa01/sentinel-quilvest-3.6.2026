@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { isAuthenticated, requireRole } from "../replitAuth";
 import * as journalService from "../services/ron-journal-service";
 import * as complianceService from "../services/ron-compliance-service";
+import * as queueService from "../services/ron-queue-service";
 import { uploadFile, downloadFile, deleteFile, RON_DOCUMENTS_BUCKET } from "../supabaseStorage";
 import { storage } from "../storage";
 import type { RonComplianceCheck } from "@shared/schema";
@@ -2238,6 +2239,205 @@ publicRouter.post("/submit-credentials/:token", publicUpload.fields([
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[RON] Credential submission error:", error);
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// QUEUE & ROUTING ENGINE
+// ============================================================================
+
+router.get("/queue/stats", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const stats = await queueService.getQueueStats();
+    res.json(stats);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/queue/transactions", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const transactions = await queueService.getQueuedTransactions();
+    const enriched = await Promise.all(
+      transactions.map(async (txn) => {
+        const signers = await storage.getRonSigners(txn.id);
+        return { ...txn, signerCount: signers.length };
+      })
+    );
+    res.json(enriched);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/queue/my-queue/:notaryId", async (req: any, res) => {
+  try {
+    const notary = await storage.getRonNotary(req.params.notaryId);
+    if (!notary) return res.status(404).json({ message: "Notary not found" });
+    if (req.user.role !== "super_admin" && notary.userId !== req.user.id) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const eligible = await queueService.getEligibleTransactionsForNotary(req.params.notaryId);
+    const enriched = await Promise.all(
+      eligible.map(async (txn) => {
+        const signers = await storage.getRonSigners(txn.id);
+        return { ...txn, signerCount: signers.length };
+      })
+    );
+    res.json(enriched);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/queue/claim/:transactionId", async (req: any, res) => {
+  try {
+    const { notaryId } = req.body;
+    if (!notaryId) return res.status(400).json({ message: "notaryId is required" });
+
+    const notary = await storage.getRonNotary(notaryId);
+    if (!notary) return res.status(404).json({ message: "Notary not found" });
+    if (req.user.role !== "super_admin" && notary.userId !== req.user.id) {
+      return res.status(403).json({ message: "You can only claim transactions for your own notary profile" });
+    }
+
+    const txn = await queueService.claimTransaction(req.params.transactionId, notaryId);
+    if (!txn) return res.status(400).json({ message: "Transaction cannot be claimed. It may already be claimed or assigned, or you may not be eligible." });
+
+    await journalService.createJournalEntry({
+      transactionId: txn.id,
+      eventType: "notary_assigned",
+      actorType: "user",
+      actorId: req.user.id,
+      actorName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
+      description: `Transaction claimed by notary`,
+      eventData: { notaryId, action: "claimed" },
+      ipAddress: req.ip,
+    });
+
+    res.json(txn);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/queue/release/:transactionId", async (req: any, res) => {
+  try {
+    const { notaryId } = req.body;
+    if (!notaryId) return res.status(400).json({ message: "notaryId is required" });
+
+    const notary = await storage.getRonNotary(notaryId);
+    if (!notary) return res.status(404).json({ message: "Notary not found" });
+    if (req.user.role !== "super_admin" && notary.userId !== req.user.id) {
+      return res.status(403).json({ message: "You can only release your own claimed transactions" });
+    }
+
+    const txn = await queueService.releaseClaimedTransaction(req.params.transactionId, notaryId);
+    if (!txn) return res.status(400).json({ message: "Cannot release this transaction" });
+
+    res.json(txn);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/queue/assign/:transactionId", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const { notaryId } = req.body;
+    if (!notaryId) return res.status(400).json({ message: "notaryId is required" });
+
+    const txn = await queueService.forceAssignTransaction(req.params.transactionId, notaryId, req.user.id);
+    if (!txn) return res.status(400).json({ message: "Could not assign transaction" });
+
+    await journalService.createJournalEntry({
+      transactionId: txn.id,
+      eventType: "notary_assigned",
+      actorType: "user",
+      actorId: req.user.id,
+      actorName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
+      description: `Transaction force-assigned to notary`,
+      eventData: { notaryId, action: "force_assigned" },
+      ipAddress: req.ip,
+    });
+
+    res.json(txn);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/queue/auto-assign/:transactionId", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const result = await queueService.autoAssignTransaction(req.params.transactionId);
+    if (!result) return res.status(400).json({ message: "No eligible notaries available for auto-assignment" });
+
+    await journalService.createJournalEntry({
+      transactionId: result.transaction.id,
+      eventType: "notary_assigned",
+      actorType: "system",
+      actorId: "queue_engine",
+      description: `Transaction auto-assigned to ${result.notary.firstName} ${result.notary.lastName}`,
+      eventData: { notaryId: result.notary.id, action: "auto_assigned" },
+      ipAddress: req.ip,
+    });
+
+    res.json(result);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/queue/push/:transactionId", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const { priority } = req.body;
+    const txn = await queueService.pushToQueue(req.params.transactionId, priority);
+    if (!txn) return res.status(404).json({ message: "Transaction not found" });
+
+    res.json(txn);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.patch("/notaries/:id/availability", async (req: any, res) => {
+  try {
+    const { availabilityStatus } = req.body;
+    if (!["available", "busy", "offline"].includes(availabilityStatus)) {
+      return res.status(400).json({ message: "availabilityStatus must be 'available', 'busy', or 'offline'" });
+    }
+
+    const existing = await storage.getRonNotary(req.params.id);
+    if (!existing) return res.status(404).json({ message: "Notary not found" });
+    if (req.user.role !== "super_admin" && existing.userId !== req.user.id) {
+      return res.status(403).json({ message: "You can only update your own availability" });
+    }
+
+    const notary = await queueService.updateNotaryAvailability(req.params.id, availabilityStatus);
+    if (!notary) return res.status(404).json({ message: "Notary not found" });
+
+    res.json(notary);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/notaries/:id/workload", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const workload = await queueService.getNotaryWorkload(req.params.id);
+    res.json(workload);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });
   }
 });

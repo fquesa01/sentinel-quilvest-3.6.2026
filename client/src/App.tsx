@@ -86,6 +86,7 @@ import RonNotaries from "@/pages/ron-notaries";
 import RonSession from "@/pages/ron-session";
 import RonIdv from "@/pages/ron-idv";
 import RonCompliance from "@/pages/ron-compliance";
+import RonQueue from "@/pages/ron-queue";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
@@ -202,6 +203,7 @@ function AuthenticatedApp() {
               <Route path="/ron/notaries" component={RonNotaries} />
               <Route path="/ron/sessions/:id" component={RonSession} />
               <Route path="/ron/idv/:transactionId/:signerId" component={RonIdv} />
+              <Route path="/ron/queue" component={RonQueue} />
               <Route path="/ron/compliance" component={RonCompliance} />
               <Route component={NotFound} />
             </Switch>

@@ -14035,6 +14035,14 @@ export const ronRecordingStatusEnum = pgEnum("ron_recording_status", [
   "not_started", "recording", "processing", "completed", "archived", "failed"
 ]);
 
+export const ronNotaryAvailabilityEnum = pgEnum("ron_notary_availability", [
+  "available", "busy", "offline"
+]);
+
+export const ronQueueStatusEnum = pgEnum("ron_queue_status", [
+  "unassigned", "queued", "claimed", "assigned"
+]);
+
 // RON Transactions
 export const ronTransactions = pgTable("ron_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -14051,12 +14059,18 @@ export const ronTransactions = pgTable("ron_transactions", {
   notes: text("notes"),
   metadata: jsonb("metadata").default({}),
   createdBy: varchar("created_by").references(() => users.id),
+  queueStatus: ronQueueStatusEnum("queue_status").default("unassigned"),
+  assignedNotaryId: varchar("assigned_notary_id").references(() => ronNotaries.id),
+  claimedBy: varchar("claimed_by").references(() => ronNotaries.id),
+  claimedAt: timestamp("claimed_at"),
+  queuePriority: integer("queue_priority").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   statusIdx: index("idx_ron_transactions_status").on(table.status),
   dealIdx: index("idx_ron_transactions_deal").on(table.dealId),
   createdIdx: index("idx_ron_transactions_created").on(table.createdAt),
+  queueStatusIdx: index("idx_ron_transactions_queue_status").on(table.queueStatus),
 }));
 
 export const insertRonTransactionSchema = createInsertSchema(ronTransactions).omit({
@@ -14096,6 +14110,9 @@ export const ronNotaries = pgTable("ron_notaries", {
   complianceScore: integer("compliance_score").default(100),
   backgroundCheckDate: timestamp("background_check_date"),
   backgroundCheckStatus: varchar("background_check_status", { length: 50 }),
+  availabilityStatus: ronNotaryAvailabilityEnum("availability_status").default("offline"),
+  availabilityUpdatedAt: timestamp("availability_updated_at"),
+  maxConcurrentSessions: integer("max_concurrent_sessions").default(3),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -14103,6 +14120,7 @@ export const ronNotaries = pgTable("ron_notaries", {
   stateIdx: index("idx_ron_notaries_state").on(table.commissionState),
   statusIdx: index("idx_ron_notaries_status").on(table.status),
   emailIdx: index("idx_ron_notaries_email").on(table.email),
+  availabilityIdx: index("idx_ron_notaries_availability").on(table.availabilityStatus),
 }));
 
 export const insertRonNotarySchema = createInsertSchema(ronNotaries).omit({

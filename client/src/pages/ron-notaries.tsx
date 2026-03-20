@@ -41,6 +41,9 @@ import {
   XCircle,
   Loader2,
   Link2,
+  Wifi,
+  WifiOff,
+  CircleDot,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -367,13 +370,21 @@ export default function RonNotaries() {
                         )}
                       </div>
                     </div>
-                    <Badge className={
-                      isActive
-                        ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                        : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
-                    }>
-                      {isExpired ? "Expired" : notary.status || "Active"}
-                    </Badge>
+                    <div className="flex items-center gap-1 flex-shrink-0 flex-wrap">
+                      {(() => {
+                        const avail = (notary as any).availabilityStatus || "offline";
+                        const AvailIcon = avail === "available" ? Wifi : avail === "busy" ? CircleDot : WifiOff;
+                        const availColor = avail === "available" ? "text-green-500" : avail === "busy" ? "text-yellow-500" : "text-gray-400";
+                        return <AvailIcon className={`h-3 w-3 ${availColor}`} />;
+                      })()}
+                      <Badge className={
+                        isActive
+                          ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                          : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
+                      }>
+                        {isExpired ? "Expired" : notary.status || "Active"}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                     {notary.commissionExpiration && (
@@ -445,6 +456,20 @@ export default function RonNotaries() {
                   }>
                     {selectedNotary.status || "Active"}
                   </Badge>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Availability</p>
+                  {(() => {
+                    const avail = (selectedNotary as any).availabilityStatus || "offline";
+                    const AvailIcon = avail === "available" ? Wifi : avail === "busy" ? CircleDot : WifiOff;
+                    const availColor = avail === "available" ? "text-green-500" : avail === "busy" ? "text-yellow-500" : "text-gray-400";
+                    const label = avail === "available" ? "Available" : avail === "busy" ? "Busy" : "Offline";
+                    return (
+                      <span className="flex items-center gap-1 font-medium">
+                        <AvailIcon className={`h-3 w-3 ${availColor}`} /> {label}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div>
                   <p className="text-muted-foreground">Commission State</p>
