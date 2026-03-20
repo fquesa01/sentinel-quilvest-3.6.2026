@@ -20,7 +20,7 @@ import { nanoid } from "nanoid";
 import { insertCommunicationSchema, insertCaseSchema, updateCaseSchema, insertRegulationSchema, insertInterviewSchema, insertInterviewTemplateSchema, insertInterviewInviteSchema, insertRecordedInterviewSchema, insertInterviewNoteSchema, updateInterviewTemplateSchema, updateInterviewInviteSchema, updateRecordedInterviewSchema, updateInterviewNoteSchema, insertRegulatoryChangeSchema, insertGrcRiskSchema, insertGrcControlSchema, insertGrcIncidentSchema, insertDocumentSetSchema, insertDocumentSetMemberSchema, insertDocumentForwardSchema, insertCaseMessageSchema, insertCasePartySchema, insertCaseTimelineEventSchema, updateCaseTimelineEventSchema, insertCustomTimelineColumnSchema, insertCustomTimelineColumnValueSchema } from "@shared/schema";
 import { generateBusinessSummaryPDF, generateDocumentExportPDF } from "./pdf-generator";
 import { ObjectStorageService, objectStorageClient } from "./objectStorage";
-import { uploadFile, downloadFile, FORM_TEMPLATES_BUCKET } from "./supabaseStorage";
+import { uploadFile, downloadFile, deleteFile, FORM_TEMPLATES_BUCKET } from "./supabaseStorage";
 import type { BusinessSummary, EntityInvolvement, EntityInvolvementEntry } from "@shared/business-summary-types";
 import { generateRealtimeToken, transcribeVideoFile } from "./elevenlabs";
 import { emailService } from "./services/email-service";
@@ -1015,6 +1015,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete template
   app.delete("/api/litigation-templates/:id", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {
+      const template = await storage.getLitigationTemplate(req.params.id);
+      if (template?.filePath) {
+        try {
+          await deleteFile(FORM_TEMPLATES_BUCKET, template.filePath);
+        } catch (storageErr) {
+          console.error(`[LitigationTemplates] Failed to delete storage object ${template.filePath}:`, storageErr);
+        }
+      }
       await storage.deleteLitigationTemplate(req.params.id);
       await logAction(req, "delete", "litigation_template", req.params.id, {});
       res.json({ success: true });

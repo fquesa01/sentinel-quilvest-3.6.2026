@@ -8,7 +8,7 @@ import multer from "multer";
 import { emailService } from "../services/email-service";
 import { storage } from "../storage";
 import { buildTermsContext, generateDocumentContent, exportDocumentToDocx } from "../services/closing-document-service";
-import { uploadFile, downloadFile, FORM_TEMPLATES_BUCKET } from "../supabaseStorage";
+import { uploadFile, downloadFile, deleteFile, FORM_TEMPLATES_BUCKET } from "../supabaseStorage";
 import { nanoid } from "nanoid";
 
 const router = Router();
@@ -526,6 +526,15 @@ router.delete("/form-templates/:id", isAuthenticated, async (req: any, res) => {
       .where(eq(firmFormTemplates.id, req.params.id))
       .returning();
     if (!deleted) return res.status(404).json({ error: "Template not found" });
+
+    if (deleted.storageKey) {
+      try {
+        await deleteFile(FORM_TEMPLATES_BUCKET, deleted.storageKey);
+      } catch (storageErr) {
+        console.error(`[FormTemplates] Failed to delete storage object ${deleted.storageKey}:`, storageErr);
+      }
+    }
+
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

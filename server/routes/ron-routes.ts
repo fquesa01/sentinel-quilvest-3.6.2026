@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { isAuthenticated, requireRole } from "../replitAuth";
 import * as journalService from "../services/ron-journal-service";
 import * as complianceService from "../services/ron-compliance-service";
-import { uploadFile, downloadFile, RON_DOCUMENTS_BUCKET } from "../supabaseStorage";
+import { uploadFile, downloadFile, deleteFile, RON_DOCUMENTS_BUCKET } from "../supabaseStorage";
 import { storage } from "../storage";
 import type { RonComplianceCheck } from "@shared/schema";
 import { convertWordToPdf } from "../word-to-pdf";
@@ -307,6 +307,14 @@ router.patch("/notary-documents/:id/verify", requireRole("super_admin"), async (
 
 router.delete("/notary-documents/:id", requireRole("super_admin"), async (req: any, res) => {
   try {
+    const doc = await storage.getRonNotaryDocument(req.params.id);
+    if (doc?.fileUrl) {
+      try {
+        await deleteFile(RON_DOCUMENTS_BUCKET, doc.fileUrl);
+      } catch (storageErr) {
+        console.error(`[RON] Failed to delete notary document storage object ${doc.fileUrl}:`, storageErr);
+      }
+    }
     await storage.deleteRonNotaryDocument(req.params.id);
     res.json({ success: true });
   } catch (error: unknown) {
@@ -679,6 +687,14 @@ router.delete("/documents/:id", async (req: any, res) => {
 
     const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
+
+    if (doc.storageKey) {
+      try {
+        await deleteFile(RON_DOCUMENTS_BUCKET, doc.storageKey);
+      } catch (storageErr) {
+        console.error(`[RON] Failed to delete storage object ${doc.storageKey}:`, storageErr);
+      }
+    }
 
     await storage.deleteRonDocument(req.params.id);
     res.json({ success: true });
