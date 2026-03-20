@@ -6744,7 +6744,7 @@ export class DatabaseStorage implements IStorage {
     const conditions = [eq(dataLakeItems.userId, userId)];
     if (filters?.source) conditions.push(eq(dataLakeItems.source, filters.source));
     if (filters?.itemType === "file") {
-      conditions.push(sql`${dataLakeItems.itemType} NOT IN ('email', 'email_archive')`);
+      conditions.push(sql`${dataLakeItems.itemType} NOT IN ('email', 'email_archive', 'zip_archive')`);
     } else if (filters?.itemType === "email") {
       conditions.push(sql`${dataLakeItems.itemType} IN ('email', 'email_archive')`);
       conditions.push(sql`(${dataLakeItems.metadata}->>'parentItemId') IS NULL`);
@@ -6790,7 +6790,7 @@ export class DatabaseStorage implements IStorage {
     const connectors = await db.select().from(dataLakeConnectors).where(eq(dataLakeConnectors.userId, userId));
     const emailTypes = ['email'];
     const fileTypes = ['pdf', 'docx', 'xlsx', 'other'];
-    const archiveTypes = ['email_archive'];
+    const archiveTypes = ['email_archive', 'zip_archive'];
     const nonArchiveItems = items.filter(i => !archiveTypes.includes(i.itemType));
     return {
       totalItems: nonArchiveItems.length,

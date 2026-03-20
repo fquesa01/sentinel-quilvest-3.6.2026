@@ -30999,11 +30999,12 @@ Guidelines:
       }
 
       const isEmailArchive = ext in emailFormats;
+      const isZipArchive = ext === "zip";
 
       const parentItem = await storage.createDataLakeItem({
         userId: req.user.id,
         source: "upload",
-        itemType: isEmailArchive ? "email_archive" : itemType,
+        itemType: isEmailArchive ? "email_archive" : isZipArchive ? "zip_archive" : itemType,
         name: file.originalname,
         filePath,
         fileSize: file.size,
@@ -31011,9 +31012,184 @@ Guidelines:
         metadata: {
           mimetype: file.mimetype,
           uploadedAt: new Date().toISOString(),
-          ...(isEmailArchive ? { processingStatus: "processing", childCount: 0 } : {}),
+          ...((isEmailArchive || isZipArchive) ? { processingStatus: "processing", childCount: 0 } : {}),
         },
       });
+
+      if (isZipArchive) {
+        (async () => {
+          try {
+            console.log(`[DataLake] Extracting ZIP file: ${file.originalname}`);
+            const AdmZip = (await import("adm-zip")).default;
+            const pathModule = await import("path");
+
+            const zip = new AdmZip(file.buffer);
+            const zipEntries = zip.getEntries();
+
+            const MAX_FILES = 10000;
+            const MAX_TOTAL_SIZE = 2 * 1024 * 1024 * 1024;
+            const MAX_SINGLE_FILE_SIZE = 500 * 1024 * 1024;
+            const MAX_COMPRESSION_RATIO = 100;
+
+            const validEntries = zipEntries.filter(entry => {
+              if (entry.isDirectory) return false;
+
+              const entryPath = entry.entryName;
+              let decodedPath: string;
+              try {
+                decodedPath = decodeURIComponent(entryPath);
+              } catch {
+                decodedPath = entryPath;
+              }
+
+              const virtualRoot = '/safe_root';
+              const resolvedPath = pathModule.resolve(virtualRoot, decodedPath);
+              if (!resolvedPath.startsWith(virtualRoot + '/') && resolvedPath !== virtualRoot) {
+                console.warn(`[DataLake] ZIP: Blocking path traversal attempt: ${entryPath}`);
+                return false;
+              }
+              if (entryPath.includes('..') || decodedPath.includes('..')) {
+                console.warn(`[DataLake] ZIP: Blocking path with parent reference: ${entryPath}`);
+                return false;
+              }
+
+              if (entryPath.startsWith('.') || entryPath.includes('/.') || entryPath.includes('\\.')) return false;
+              if (entryPath.includes('__MACOSX')) return false;
+
+              if (entryPath.toLowerCase().endsWith('.zip')) {
+                console.warn(`[DataLake] ZIP: Skipping nested archive: ${entryPath}`);
+                return false;
+              }
+
+              if (entry.header.size > MAX_SINGLE_FILE_SIZE) {
+                console.warn(`[DataLake] ZIP: Skipping large file (${entry.header.size} bytes): ${entryPath}`);
+                return false;
+              }
+
+              const compressedSize = entry.header.compressedSize || 1;
+              const uncompressedSize = entry.header.size || 0;
+              if (uncompressedSize / compressedSize > MAX_COMPRESSION_RATIO) {
+                console.warn(`[DataLake] ZIP: Suspicious compression ratio: ${entryPath}`);
+                return false;
+              }
+
+              return true;
+            });
+
+            if (validEntries.length > MAX_FILES) {
+              console.error(`[DataLake] ZIP contains too many files: ${validEntries.length}`);
+              const existingItem = await storage.getDataLakeItem(parentItem.id);
+              if (existingItem) {
+                await db.update(schema.dataLakeItems)
+                  .set({ metadata: { ...(existingItem.metadata as any || {}), processingStatus: "failed", error: `Too many files (${validEntries.length}). Maximum is ${MAX_FILES}.` } })
+                  .where(eq(schema.dataLakeItems.id, parentItem.id));
+              }
+              return;
+            }
+
+            const totalSize = validEntries.reduce((sum, e) => sum + e.header.size, 0);
+            if (totalSize > MAX_TOTAL_SIZE) {
+              console.error(`[DataLake] ZIP too large when extracted: ${Math.round(totalSize / 1024 / 1024)}MB`);
+              const existingItem = await storage.getDataLakeItem(parentItem.id);
+              if (existingItem) {
+                await db.update(schema.dataLakeItems)
+                  .set({ metadata: { ...(existingItem.metadata as any || {}), processingStatus: "failed", error: `Extracted size too large (${Math.round(totalSize / 1024 / 1024)}MB).` } })
+                  .where(eq(schema.dataLakeItems.id, parentItem.id));
+              }
+              return;
+            }
+
+            console.log(`[DataLake] ZIP: Extracting ${validEntries.length} files (${Math.round(totalSize / 1024)}KB total)`);
+
+            const objectStorageService = new ObjectStorageService();
+            let created = 0;
+
+            const extToItemType: Record<string, string> = {
+              pdf: "pdf", docx: "docx", doc: "docx", xlsx: "xlsx", xls: "xlsx",
+              msg: "email", eml: "email", pst: "email", txt: "other", csv: "other",
+              png: "other", jpg: "other", jpeg: "other", gif: "other", bmp: "other",
+              html: "other", htm: "other", rtf: "other", json: "other", xml: "other",
+            };
+            const supportedExtensions = new Set(Object.keys(extToItemType));
+            const { randomUUID } = await import("crypto");
+            let skippedUnsupported = 0;
+
+            for (const entry of validEntries) {
+              const extractedFileName = pathModule.basename(entry.entryName);
+              const extractedExt = extractedFileName.split('.').pop()?.toLowerCase() || '';
+
+              if (!supportedExtensions.has(extractedExt)) {
+                skippedUnsupported++;
+                console.log(`[DataLake] ZIP: Skipping unsupported extension: ${entry.entryName}`);
+                continue;
+              }
+
+              try {
+                const extractedBuffer = entry.getData();
+                console.log(`[DataLake] ZIP: Processing: ${extractedFileName} (${extractedBuffer.length} bytes)`);
+
+                let extractedFilePath: string | null = null;
+                try {
+                  const safeName = extractedFileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+                  const uniqueId = randomUUID();
+                  const uploadPath = `data-lake/${uniqueId}-${safeName}`;
+                  extractedFilePath = await objectStorageService.uploadBuffer(uploadPath, extractedBuffer, 'application/octet-stream');
+                } catch (uploadErr) {
+                  console.error(`[DataLake] ZIP: Failed to upload extracted file ${extractedFileName}:`, uploadErr);
+                }
+
+                const childItemType = extToItemType[extractedExt] || "other";
+
+                await storage.createDataLakeItem({
+                  userId: req.user.id,
+                  source: "upload",
+                  itemType: childItemType,
+                  name: extractedFileName,
+                  filePath: extractedFilePath,
+                  fileSize: extractedBuffer.length,
+                  geminiIndexed: false,
+                  metadata: {
+                    parentItemId: parentItem.id,
+                    parentFileName: file.originalname,
+                    originalPath: entry.entryName,
+                    extractedFromZip: true,
+                  },
+                });
+                created++;
+              } catch (entryErr: any) {
+                console.error(`[DataLake] ZIP: Error extracting ${entry.entryName}:`, entryErr);
+              }
+            }
+
+            const existingItem = await storage.getDataLakeItem(parentItem.id);
+            if (existingItem) {
+              const updatedMeta = {
+                ...(existingItem.metadata as any || {}),
+                processingStatus: "completed",
+                childCount: created,
+                ...(skippedUnsupported > 0 ? { skippedUnsupported } : {}),
+              };
+              await db.update(schema.dataLakeItems)
+                .set({ metadata: updatedMeta })
+                .where(eq(schema.dataLakeItems.id, parentItem.id));
+            }
+            console.log(`[DataLake] Successfully extracted ${created} files from ${file.originalname} (${skippedUnsupported} skipped)`);
+          } catch (parseErr) {
+            console.error(`[DataLake] Error extracting ZIP file ${file.originalname}:`, parseErr);
+            try {
+              const existingItem = await storage.getDataLakeItem(parentItem.id);
+              if (existingItem) {
+                const updatedMeta = { ...(existingItem.metadata as Record<string, unknown> || {}), processingStatus: "failed", error: String(parseErr) };
+                await db.update(schema.dataLakeItems)
+                  .set({ metadata: updatedMeta })
+                  .where(eq(schema.dataLakeItems.id, parentItem.id));
+              }
+            } catch (metaErr: unknown) {
+              console.error("[DataLake] Failed to update parent item metadata:", metaErr instanceof Error ? metaErr.message : "Unknown error");
+            }
+          }
+        })();
+      }
 
       if (isEmailArchive) {
         const format = emailFormats[ext];
@@ -31132,7 +31308,7 @@ Guidelines:
   app.delete("/api/data-lake/items/:id", isAuthenticated, async (req: any, res) => {
     try {
       const item = await storage.getDataLakeItem(req.params.id);
-      if (item && item.itemType === "email_archive") {
+      if (item && (item.itemType === "email_archive" || item.itemType === "zip_archive")) {
         const children = await storage.getDataLakeItemsByParent(req.params.id, req.user.id);
         for (const child of children) {
           await storage.deleteDataLakeItem(child.id, req.user.id);

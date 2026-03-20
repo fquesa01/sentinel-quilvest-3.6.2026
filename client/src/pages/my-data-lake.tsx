@@ -27,6 +27,7 @@ import {
   Cloud,
   Eye,
   Loader2,
+  Archive,
 } from "lucide-react";
 import { SiGmail, SiGoogledrive } from "react-icons/si";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -44,6 +45,7 @@ const TYPE_BADGE_VARIANT: Record<string, string> = {
   pdf: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   email: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   email_archive: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  zip_archive: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   docx: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   xlsx: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
   other: "bg-gray-100 text-gray-700 dark:bg-gray-800/30 dark:text-gray-400",
@@ -96,6 +98,7 @@ function getItemTypeIcon(type: string) {
   switch (type) {
     case "email": return Mail;
     case "email_archive": return Database;
+    case "zip_archive": return Archive;
     case "pdf": return FileText;
     case "docx": return File;
     case "xlsx": return Table2;
@@ -187,18 +190,23 @@ export default function MyDataLakePage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith("/api/data-lake/") });
-      const isArchive = data?.itemType === 'email_archive';
+      const isEmailArchive = data?.itemType === 'email_archive';
+      const isZipArchive = data?.itemType === 'zip_archive';
+      const isArchive = isEmailArchive || isZipArchive;
       toast({
         title: "File uploaded",
-        description: isArchive
+        description: isEmailArchive
           ? "Your email archive is being processed. Emails will appear shortly."
-          : "Your file has been added to the data lake.",
+          : isZipArchive
+            ? "Your ZIP archive is being extracted. Files will appear shortly."
+            : "Your file has been added to the data lake.",
       });
       if (isArchive) {
+        const maxPollDuration = isZipArchive ? 300000 : 60000;
         const pollInterval = setInterval(() => {
           queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith("/api/data-lake/") });
         }, 3000);
-        setTimeout(() => clearInterval(pollInterval), 60000);
+        setTimeout(() => clearInterval(pollInterval), maxPollDuration);
       }
     },
     onError: () => {
@@ -392,7 +400,7 @@ export default function MyDataLakePage() {
                   >
                     <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
                     <div className="text-sm font-medium mb-1">Drop files here or browse</div>
-                    <div className="text-xs text-muted-foreground">PDF, DOCX, XLSX, MSG, EML, PST supported</div>
+                    <div className="text-xs text-muted-foreground">PDF, DOCX, XLSX, MSG, EML, PST, ZIP supported</div>
                     <Button
                       size="sm"
                       className="mt-3"
@@ -599,19 +607,19 @@ export default function MyDataLakePage() {
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${TYPE_BADGE_VARIANT[item.itemType] || TYPE_BADGE_VARIANT.other}`}>
-                                  {item.itemType === 'email_archive' ? 'EMAIL ARCHIVE' : item.itemType.toUpperCase()}
+                                  {item.itemType === 'email_archive' ? 'EMAIL ARCHIVE' : item.itemType === 'zip_archive' ? 'ZIP ARCHIVE' : item.itemType.toUpperCase()}
                                 </span>
-                                {item.itemType === 'email_archive' && (item.metadata as any)?.processingStatus === 'processing' && (
+                                {(item.itemType === 'email_archive' || item.itemType === 'zip_archive') && (item.metadata as any)?.processingStatus === 'processing' && (
                                   <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
                                     <Loader2 className="w-3 h-3 animate-spin" /> Processing...
                                   </span>
                                 )}
-                                {item.itemType === 'email_archive' && (item.metadata as any)?.processingStatus === 'completed' && (
+                                {(item.itemType === 'email_archive' || item.itemType === 'zip_archive') && (item.metadata as any)?.processingStatus === 'completed' && (
                                   <span className="text-xs text-muted-foreground">
-                                    {(item.metadata as any)?.childCount || 0} emails
+                                    {(item.metadata as any)?.childCount || 0} {item.itemType === 'zip_archive' ? 'files' : 'emails'}
                                   </span>
                                 )}
-                                {item.itemType === 'email_archive' && (item.metadata as any)?.processingStatus === 'failed' && (
+                                {(item.itemType === 'email_archive' || item.itemType === 'zip_archive') && (item.metadata as any)?.processingStatus === 'failed' && (
                                   <span className="text-xs text-destructive">Failed</span>
                                 )}
                               </div>
@@ -621,7 +629,7 @@ export default function MyDataLakePage() {
                             <td className="px-4 py-3 text-muted-foreground">{formatFileSize(item.fileSize)}</td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-1">
-                                {item.itemType === 'email_archive' && (item.metadata as any)?.processingStatus === 'completed' && (
+                                {(item.itemType === 'email_archive' || item.itemType === 'zip_archive') && (item.metadata as any)?.processingStatus === 'completed' && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
