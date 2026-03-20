@@ -57,6 +57,36 @@ app.get("/api/health", (_req, res) => {
 
 (async () => {
   try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS organizations (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) NOT NULL UNIQUE,
+        description TEXT,
+        metadata JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS organization_members (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        organization_id VARCHAR NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        joined_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_org_members_org ON organization_members(organization_id)`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_org_members_user_unique ON organization_members(user_id)`);
+    await pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'unique_org_member'
+        ) THEN
+          ALTER TABLE organization_members ADD CONSTRAINT unique_org_member UNIQUE (organization_id, user_id);
+        END IF;
+      END $$
+    `);
+
     await pool.query(`ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS file_data bytea`);
     await pool.query(`ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS notes text`);
     await pool.query(`ALTER TABLE closing_documents ADD COLUMN IF NOT EXISTS notes text`);
