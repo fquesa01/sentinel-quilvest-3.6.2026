@@ -88,11 +88,7 @@ app.get("/api/health", (_req, res) => {
     const enumClient = await pool.connect();
     try {
       for (const val of ['super_admin', 'entity_admin', 'entity_user', 'individual_user']) {
-        try {
-          await enumClient.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS '${val}'`);
-        } catch (e: any) {
-          // Value already exists — safe to ignore
-        }
+        await enumClient.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS '${val}'`);
       }
     } finally {
       enumClient.release();
