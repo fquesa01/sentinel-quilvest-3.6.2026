@@ -1,0 +1,445 @@
+# Replit Prompt — Sentinel Counsel LLP: Title Insurance, Search & Survey Module
+
+## Project Overview
+
+Build a production-grade **Title Insurance, Search & Survey** module for the **Sentinel Counsel LLP** legal technology platform. This is a React + Tailwind application that integrates into an existing legal transaction management system. The module adds title insurance workflow management, title search/exception tracking, underwriter analytics, claims management, and AI-powered survey analysis to every applicable real estate and corporate closing transaction.
+
+Tech stack: **React 18+, Tailwind CSS, Recharts (for charts), React Router, Supabase (backend/auth/DB), and Anthropic Claude API (AI features)**. Use shadcn/ui components where appropriate.
+
+---
+
+## Database Schema (Supabase/PostgreSQL)
+
+Create the following tables with proper foreign keys, RLS policies, and indexes:
+
+### `title_commitments`
+- `id` UUID PK
+- `transaction_id` UUID FK → transactions table
+- `commitment_number` TEXT UNIQUE
+- `underwriter` TEXT (e.g., "Fidelity National Title", "First American", "Old Republic", "Stewart Title", "Chicago Title")
+- `effective_date` DATE
+- `policy_amount` DECIMAL(14,2)
+- `premium` DECIMAL(10,2)
+- `commitment_type` ENUM ('owner', 'lender', 'simultaneous')
+- `status` ENUM ('ordered', 'received', 'under_review', 'exceptions_clearing', 'ready_to_close', 'policy_issued', 'cancelled')
+- `legal_description` TEXT
+- `property_address` TEXT
+- `county` TEXT
+- `state` TEXT (default 'FL')
+- `closer_id` UUID FK → users
+- `created_at`, `updated_at` TIMESTAMPTZ
+
+### `title_exceptions`
+- `id` UUID PK
+- `commitment_id` UUID FK → title_commitments
+- `schedule_item` TEXT (e.g., "B-1", "B-2")
+- `schedule_section` ENUM ('b1_requirements', 'b2_exceptions')
+- `exception_type` ENUM ('requirement', 'lien', 'easement', 'judgment', 'encumbrance', 'restriction', 'tax', 'survey', 'mortgage', 'covenant', 'other')
+- `description` TEXT
+- `status` ENUM ('open', 'cleared', 'waived', 'partially_cleared')
+- `priority` ENUM ('critical', 'high', 'medium', 'low')
+- `assigned_to` UUID FK → users
+- `due_date` DATE
+- `cleared_date` DATE NULL
+- `cleared_by` UUID FK → users NULL
+- `waiver_reason` TEXT NULL
+- `notes` TEXT
+- `related_document_ids` UUID[] (references to uploaded docs)
+- `ai_analysis` JSONB (stores Emma's analysis)
+- `created_at`, `updated_at` TIMESTAMPTZ
+
+### `title_search_vendors`
+- `id` UUID PK
+- `commitment_id` UUID FK → title_commitments
+- `vendor_name` TEXT
+- `vendor_type` ENUM ('abstract_company', 'title_agent', 'tax_search', 'surveyor', 'municipal_search', 'judgment_search')
+- `task_description` TEXT
+- `status` ENUM ('ordered', 'in_progress', 'completed', 'delayed', 'cancelled')
+- `ordered_date` DATE
+- `completed_date` DATE NULL
+- `cost` DECIMAL(10,2)
+- `contact_name` TEXT
+- `contact_email` TEXT
+- `contact_phone` TEXT
+- `notes` TEXT
+- `created_at`, `updated_at` TIMESTAMPTZ
+
+### `title_claims`
+- `id` UUID PK
+- `claim_number` TEXT UNIQUE (auto-generated: CLM-YYYY-NNN)
+- `commitment_id` UUID FK → title_commitments NULL
+- `policy_number` TEXT
+- `claim_type` ENUM ('lien_priority', 'boundary_dispute', 'easement_encroachment', 'forgery_fraud', 'missing_heir', 'mechanics_lien', 'tax_lien', 'judgment_lien', 'survey_defect', 'recording_error')
+- `status` ENUM ('filed', 'acknowledged', 'investigating', 'negotiating', 'litigating', 'resolved', 'closed')
+- `property_address` TEXT
+- `insured_name` TEXT
+- `claimant_name` TEXT
+- `claim_amount` DECIMAL(14,2)
+- `reserve_amount` DECIMAL(14,2)
+- `paid_amount` DECIMAL(14,2) DEFAULT 0
+- `filed_date` DATE
+- `acknowledged_date` DATE NULL
+- `resolved_date` DATE NULL
+- `closed_date` DATE NULL
+- `adjuster_id` UUID FK → users
+- `description` TEXT
+- `resolution_notes` TEXT
+- `created_at`, `updated_at` TIMESTAMPTZ
+
+### `claim_activity_log`
+- `id` UUID PK
+- `claim_id` UUID FK → title_claims
+- `action` TEXT
+- `details` TEXT
+- `performed_by` UUID FK → users
+- `created_at` TIMESTAMPTZ
+
+### `surveys`
+- `id` UUID PK
+- `commitment_id` UUID FK → title_commitments
+- `transaction_id` UUID FK → transactions
+- `survey_number` TEXT
+- `surveyor_company` TEXT
+- `surveyor_name` TEXT
+- `surveyor_license` TEXT
+- `certification_date` DATE
+- `property_address` TEXT
+- `legal_description` TEXT
+- `total_area_sqft` DECIMAL(12,2)
+- `total_area_acres` DECIMAL(10,4)
+- `flood_zone` TEXT
+- `flood_map_number` TEXT
+- `ai_analysis_summary` TEXT
+- `ai_analysis_json` JSONB (full structured AI extraction)
+- `source_document_id` UUID FK → documents (the uploaded survey PDF)
+- `status` ENUM ('uploaded', 'processing', 'analyzed', 'reviewed', 'approved')
+- `reviewed_by` UUID FK → users NULL
+- `reviewed_date` DATE NULL
+- `created_at`, `updated_at` TIMESTAMPTZ
+
+### `survey_boundaries`
+- `id` UUID PK
+- `survey_id` UUID FK → surveys
+- `direction` TEXT (e.g., "North", "East", "South", "West", "NE", etc.)
+- `bearing` TEXT (e.g., "N 89°42'18\" E")
+- `distance_ft` DECIMAL(10,2)
+- `adjoins_description` TEXT
+- `monument_type` TEXT (e.g., "Iron Rod Found", "Concrete Monument", "Iron Pipe Found", "Cap Set")
+- `monument_found` BOOLEAN DEFAULT true
+- `order_index` INT
+- `created_at` TIMESTAMPTZ
+
+### `survey_easements`
+- `id` UUID PK
+- `survey_id` UUID FK → surveys
+- `easement_type` ENUM ('utility', 'drainage', 'access', 'conservation', 'sidewalk', 'ingress_egress', 'other')
+- `location_description` TEXT (e.g., "Northerly 10.0 ft")
+- `holder` TEXT
+- `recording_reference` TEXT
+- `width_ft` DECIMAL(6,2) NULL
+- `matched_exception_id` UUID FK → title_exceptions NULL
+- `match_status` ENUM ('matched', 'unmatched', 'partial_match', 'pending_review')
+- `notes` TEXT
+- `created_at` TIMESTAMPTZ
+
+### `survey_encroachments`
+- `id` UUID PK
+- `survey_id` UUID FK → surveys
+- `description` TEXT
+- `severity` ENUM ('minor', 'moderate', 'major', 'critical')
+- `encroachment_distance_ft` DECIMAL(6,2) NULL
+- `encroachment_direction` TEXT
+- `encroaching_element` TEXT (e.g., "fence", "driveway", "roof overhang", "wall")
+- `affected_boundary` TEXT
+- `matched_exception_id` UUID FK → title_exceptions NULL
+- `recommended_action` TEXT
+- `status` ENUM ('identified', 'under_review', 'resolved', 'accepted', 'exception_added')
+- `created_at` TIMESTAMPTZ
+
+### `survey_improvements`
+- `id` UUID PK
+- `survey_id` UUID FK → surveys
+- `improvement_type` TEXT (e.g., "Single-Family Residence", "Detached Garage", "Pool", "Shed")
+- `approx_sqft` DECIMAL(10,2)
+- `setback_front_ft` DECIMAL(6,2) NULL
+- `setback_rear_ft` DECIMAL(6,2) NULL
+- `setback_left_ft` DECIMAL(6,2) NULL
+- `setback_right_ft` DECIMAL(6,2) NULL
+- `zoning_compliant` BOOLEAN NULL
+- `notes` TEXT
+- `created_at` TIMESTAMPTZ
+
+### `survey_discrepancies`
+- `id` UUID PK
+- `survey_id` UUID FK → surveys
+- `issue_description` TEXT
+- `severity` ENUM ('low', 'medium', 'high', 'critical')
+- `discrepancy_type` ENUM ('exception_mismatch', 'legal_description_mismatch', 'boundary_conflict', 'easement_missing', 'encroachment_unaddressed', 'setback_violation', 'area_discrepancy', 'other')
+- `related_exception_ids` UUID[]
+- `recommended_action` TEXT
+- `status` ENUM ('identified', 'under_review', 'resolved', 'accepted_risk')
+- `resolved_by` UUID FK → users NULL
+- `resolved_date` DATE NULL
+- `resolution_notes` TEXT
+- `created_at`, `updated_at` TIMESTAMPTZ
+
+---
+
+## Module Features & Pages
+
+### 1. Title Search & Exceptions Tab (`/transactions/:id/title/search`)
+
+**Commitment Summary Card:**
+- Display commitment number, underwriter name, effective date, policy amount
+- Show exception status counts: open / cleared / waived / total
+- Clearance progress bar (percentage of exceptions cleared or waived)
+- Quick action buttons: "Order Update", "Request Endorsement", "Issue Policy"
+
+**Vendor Tracking Section:**
+- Card grid showing each vendor in the title search chain
+- Each card shows: vendor name, task type, status (with colored dot), date ordered, date completed
+- Ability to add new vendors, update status, log communications
+- Timeline view option showing the search process chronologically
+
+**Schedule B Exceptions Table:**
+- Filterable by status (all/open/cleared/waived) and type
+- Sortable columns: Schedule Item, Type, Description, Priority, Status, Assigned To, Due Date
+- Priority indicators: critical (red), high (amber), medium (blue), low (gray)
+- Status badges: open (amber), cleared (green), waived (purple), partially_cleared (blue)
+- Click row or "View" button to open detail drawer
+
+**Exception Detail Drawer (slide-in from right):**
+- Full exception details with all fields
+- AI Analysis section: call Claude API to analyze the exception and provide:
+  - Risk assessment
+  - Recommended clearance actions
+  - Related case law or standard practices
+  - Cross-reference with survey findings if survey exists
+- Action buttons: "Mark Cleared", "Waive", "Add Note", "Upload Document", "Assign"
+- Activity history for the exception
+- Linked documents viewer
+
+### 2. Underwriter Dashboard Tab (`/transactions/:id/title/underwriter`)
+
+**Metrics Row (4 cards):**
+- Active Policies (count + month-over-month change)
+- Premium Volume YTD (dollar amount + % vs prior year)
+- Open Claims (count + number critical)
+- Loss Ratio (percentage + target comparison)
+
+**Transaction Pipeline:**
+- Horizontal stacked bar or progress bars showing counts at each stage:
+  - Title Search Ordered → Commitment Issued → Exceptions Clearing → Ready to Close → Policy Issued
+- Clickable to filter the transactions list
+
+**Compliance Alerts Panel:**
+- Real-time alert cards with severity levels (critical/warning/info)
+- Types: TRID deadlines, rate filing updates, ALTA Best Practices audits, escrow reconciliation
+- Timestamps and dismissal/acknowledgment functionality
+
+**Recent Claims Table:**
+- Show 5-10 most recent claims with: ID, type, property, amount, reserve, status
+- Click through to Claims Management tab
+
+**Charts (use Recharts):**
+- Policy volume trend (line chart, 12 months)
+- Claims by type (donut/pie chart)
+- Exception clearance rate (bar chart, by month)
+- Premium by underwriter (horizontal bar chart)
+
+### 3. Claims Management Tab (`/transactions/:id/title/claims`)
+
+**Workflow Pipeline Visualization:**
+- 7-stage horizontal pipeline: Filed → Acknowledged → Investigating → Negotiating → Litigating → Resolved → Closed
+- Each stage shows count of claims currently in that status
+- Color-coded per status
+- Arrow flow between stages
+
+**Financial Summary Cards:**
+- Total Exposure (sum of all open reserves)
+- Paid to Date (sum of all paid amounts on resolved/closed claims)
+- Average Resolution Time (days)
+- Claim Type Count (unique types out of 10 total)
+
+**Claims Table:**
+- Full CRUD: Create new claim (modal form), view details, update status, close
+- All 10 claim types available in dropdown
+- Columns: Claim ID, Type, Status, Property, Insured, Amount, Reserve, Filed Date, Adjuster
+- Row click opens detail modal
+
+**Claim Detail Modal:**
+- All claim fields displayed in organized grid
+- Status transition buttons (can only advance to valid next statuses)
+- Financial tracking: claim amount, reserve, paid, remaining
+- Activity log: chronological list of all actions taken on the claim
+- Document attachments section
+- Notes/comments section
+
+### 4. Survey Analysis Tab (`/transactions/:id/title/survey`)
+
+This is the most complex and innovative tab. It should have sub-navigation for these sections:
+
+**Sub-sections: Overview | Boundaries | Easements | Encroachments | Improvements | Discrepancies | Plat Visual**
+
+#### Overview
+- Survey identification: number, surveyor, certification date, license info
+- Property details: address, legal description (monospace formatted), plat reference
+- Area: square footage and acreage
+- Flood zone designation with FEMA map reference
+- AI Summary: Call Claude API with the survey data and get a comprehensive analysis paragraph covering key findings, risks, and action items
+
+#### Boundaries
+- Table of all boundary lines with: Direction, Bearing, Distance, Adjoining property, Monument type, Monument found (boolean)
+- Each boundary should show if it matches the legal description
+
+#### Easements
+- Card layout for each easement found on survey
+- Cross-reference indicator: green badge "Matches B-X" if the easement matches a Schedule B exception, amber badge "No Exception Found" if it doesn't
+- Fields: type, location, holder, recording reference, width
+
+#### Encroachments
+- Card layout with severity color coding (minor=gray, moderate=amber, major=red, critical=dark red)
+- Each card shows: description, distance/measurement, affected boundary, matched exception (if any)
+- Recommended action from AI
+- Status tracking for resolution
+
+#### Improvements
+- Card grid for each structure/improvement on the property
+- Setback measurements displayed in a 4-quadrant mini-layout (front/rear/left/right)
+- Square footage
+- Zoning compliance indicator
+
+#### Discrepancies
+- List of all discrepancies found between survey ↔ title exceptions ↔ legal description
+- Severity badges (high=red, medium=amber, low=blue)
+- Related exception references
+- AI Recommended Actions panel: numbered list of specific steps to resolve each discrepancy
+- Resolution tracking per discrepancy
+
+#### Interactive Plat Visual
+- SVG-based property boundary visualization generated from survey data
+- Show: property lines (blue solid), easements (amber dashed), encroachments (red dashed), monuments (green dots), improvements (blue filled), setback lines (green dashed), street/ROW labels
+- Legend explaining all symbols
+- Bearing and distance labels on each boundary
+- Note that this is AI-generated from survey data for review purposes
+- Zoom and pan controls
+
+---
+
+## AI Integration (Claude API via Anthropic)
+
+Implement the following AI features using the Anthropic Claude API (model: claude-sonnet-4-20250514):
+
+### Emma — Title Analysis AI
+- **Exception Analysis**: When viewing an exception detail, call Claude with the exception description, type, and context to get risk assessment, recommended clearance steps, and related considerations
+- **Survey Extraction**: When a survey PDF is uploaded, use Claude to extract structured data (boundaries, easements, encroachments, measurements, legal description) into the database tables
+- **Discrepancy Detection**: After survey analysis, compare extracted survey data against Schedule B exceptions and flag mismatches automatically
+- **Summary Generation**: Generate natural language summaries for the underwriter dashboard, survey overview, and claim analysis
+
+### AI Processing Flow for Survey Upload:
+1. User uploads survey PDF to the transaction
+2. System detects it's a survey document (by file name, metadata, or user tag)
+3. Call Claude API with the PDF to extract structured survey data
+4. Populate all survey_* tables with extracted data
+5. Run cross-reference against title_exceptions to find matches/mismatches
+6. Generate discrepancies automatically
+7. Generate AI summary
+8. Update survey status to "analyzed"
+9. Notify the closer/reviewer
+
+---
+
+## Transaction Integration
+
+This module must integrate with the existing transaction/closing workflow:
+
+- Add a "Title & Survey" section to every transaction detail page
+- Auto-populate when a title commitment is ordered or uploaded
+- Show status indicators on the transaction list: title clearance %, survey status, open claims
+- Include title/survey status in closing readiness checklist
+- Block closing if critical exceptions are unresolved (configurable)
+
+---
+
+## UI/UX Requirements
+
+- **Theme**: Dark mode primary (background #0a0e1a, cards #111827, borders #1e293b)
+- **Typography**: JetBrains Mono for data/numbers, system sans-serif for body text
+- **Colors**: Blue (#3b82f6) primary accent, green (#10b981) success/cleared, amber (#f59e0b) warning/open, red (#ef4444) critical/danger, purple (#8b5cf6) secondary
+- **Components**: Consistent card system with subtle borders, status badges (pill-shaped), progress bars, data tables with hover states, slide-in drawers for details, modals for forms
+- **Responsive**: Must work on desktop (primary), tablet, and mobile
+- **Animations**: Subtle transitions on hover, tab changes, drawer open/close. Nothing flashy.
+- **Empty states**: Proper empty state messaging and illustrations when no data exists
+
+---
+
+## Role-Based Access
+
+- **Super Admin / Entity Admin**: Full access to all features
+- **Closing Attorney**: Full access to title search, exceptions, survey analysis. Read access to claims and underwriter dashboard
+- **Title Agent**: Full access to commitments, exceptions, vendor tracking. Can update exception status
+- **Underwriter**: Full access to underwriter dashboard and claims. Can approve waivers
+- **Investigator**: Read-only access to title data within assigned cases
+- **Paralegal**: Can create/update exceptions, upload documents, manage vendors. Cannot waive or close
+
+---
+
+## File Structure
+
+```
+src/
+  modules/
+    title-insurance/
+      components/
+        TitleSearchTab.jsx
+        UnderwriterDashboard.jsx
+        ClaimsManagement.jsx
+        SurveyAnalysis/
+          SurveyOverview.jsx
+          SurveyBoundaries.jsx
+          SurveyEasements.jsx
+          SurveyEncroachments.jsx
+          SurveyImprovements.jsx
+          SurveyDiscrepancies.jsx
+          SurveyPlatVisual.jsx
+        shared/
+          ExceptionDetailDrawer.jsx
+          ClaimDetailModal.jsx
+          VendorCard.jsx
+          StatusBadge.jsx
+          MetricCard.jsx
+          ProgressBar.jsx
+      hooks/
+        useTitleCommitment.js
+        useExceptions.js
+        useClaims.js
+        useSurvey.js
+        useSurveyAI.js
+      services/
+        titleService.js
+        claimService.js
+        surveyService.js
+        aiAnalysisService.js
+      utils/
+        titleConstants.js
+        surveyParser.js
+        exceptionMatcher.js
+      pages/
+        TitleInsurancePage.jsx
+      types/
+        title.types.js
+```
+
+---
+
+## Priority Implementation Order
+
+1. Database schema and Supabase setup (migrations, RLS)
+2. Title Search & Exceptions tab (core workflow)
+3. Survey Analysis tab with AI extraction
+4. Claims Management tab
+5. Underwriter Dashboard with charts
+6. AI integration (Emma analysis features)
+7. Transaction integration and closing readiness
+8. Role-based access control
+9. Polish, animations, responsive design
