@@ -1256,6 +1256,39 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
       ? await db.select().from(schema.titleExceptions).where(sql`${schema.titleExceptions.commitmentId} = ANY(${commitmentIds})`)
       : [];
 
+    const schedBExceptions = allExceptions.filter(e => e.scheduleSection === "b2_exceptions" || e.scheduleSection === "b1_requirements");
+    const typeKeywords: Record<string, string[]> = {
+      utility: ["utility", "electric", "power", "gas", "water", "sewer", "telephone"],
+      drainage: ["drainage", "storm", "stormwater"],
+      access: ["access", "right of way", "right-of-way", "roadway"],
+      conservation: ["conservation", "preservation", "environmental"],
+      sidewalk: ["sidewalk", "pedestrian"],
+      ingress_egress: ["ingress", "egress", "access"],
+    };
+
+    for (const easement of allEasements) {
+      const holder = (easement.holder || "").toLowerCase();
+      const ref = (easement.recordingReference || "").toLowerCase();
+
+      const matchedExc = schedBExceptions.find(exc => {
+        const excDesc = (exc.description || "").toLowerCase();
+        if (ref && excDesc.includes(ref)) return true;
+        if (holder && excDesc.includes(holder)) return true;
+        const keywords = typeKeywords[easement.easementType || ""] || [];
+        return keywords.some(kw => excDesc.includes(kw));
+      });
+
+      if (matchedExc) {
+        await db.update(schema.surveyEasements)
+          .set({ matchedExceptionId: matchedExc.id, matchStatus: "matched" })
+          .where(eq(schema.surveyEasements.id, easement.id));
+      } else if (schedBExceptions.length > 0) {
+        await db.update(schema.surveyEasements)
+          .set({ matchStatus: "unmatched" })
+          .where(eq(schema.surveyEasements.id, easement.id));
+      }
+    }
+
     const detected = detectDiscrepancies(
       allEasements,
       allExceptions,

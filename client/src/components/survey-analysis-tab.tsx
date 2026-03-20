@@ -88,7 +88,7 @@ const matchStatusColors: Record<string, string> = {
 };
 
 const matchStatusLabels: Record<string, string> = {
-  matched: "Matches B-X",
+  matched: "Matched Exception",
   unmatched: "No Exception Found",
   partial_match: "Partial Match",
   pending_review: "Pending Review",
@@ -500,7 +500,9 @@ function EasementsSection({ easements }: { easements: SurveyEasement[] }) {
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <Badge variant="outline">{easementTypeLabels[e.easementType || ""] || e.easementType || "Unknown"}</Badge>
                 <Badge className={matchStatusColors[e.matchStatus || "pending_review"]}>
-                  {matchStatusLabels[e.matchStatus || "pending_review"]}
+                  {e.matchStatus === "matched" && e.matchedExceptionId
+                    ? `Matches B-${e.matchedExceptionId.slice(-4).toUpperCase()}`
+                    : matchStatusLabels[e.matchStatus || "pending_review"]}
                 </Badge>
               </div>
               <p className="text-sm">{e.locationDescription || "No location specified"}</p>
@@ -859,8 +861,8 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
             {setbackLines.map((sl, i) => (
               <g key={`setback-${i}`}>
                 <line x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
-                  stroke="hsl(280 80% 60%)" strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${3 / zoom}`} opacity={0.7} />
-                <text x={(sl.x1 + sl.x2) / 2} y={(sl.y1 + sl.y2) / 2 - 3 / zoom} fontSize={7 / zoom} fill="hsl(280 80% 60%)" textAnchor="middle">
+                  stroke="hsl(142 71% 45%)" strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${3 / zoom}`} opacity={0.7} />
+                <text x={(sl.x1 + sl.x2) / 2} y={(sl.y1 + sl.y2) / 2 - 3 / zoom} fontSize={7 / zoom} fill="hsl(142 71% 45%)" textAnchor="middle">
                   {sl.label}
                 </text>
               </g>
@@ -922,7 +924,7 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
               <text x={28 / zoom} y={64 / zoom} fontSize={7 / zoom} fill="hsl(var(--muted-foreground))">Encroachment</text>
               <rect x={8 / zoom} y={72 / zoom} width={12 / zoom} height={8 / zoom} fill="hsl(217 91% 60% / 0.2)" stroke="hsl(217 91% 60%)" strokeWidth={1 / zoom} />
               <text x={28 / zoom} y={79 / zoom} fontSize={7 / zoom} fill="hsl(var(--muted-foreground))">Improvement</text>
-              <line x1={8 / zoom} y1={88 / zoom} x2={24 / zoom} y2={88 / zoom} stroke="hsl(280 80% 60%)" strokeWidth={1.5 / zoom} strokeDasharray={`${4 / zoom} ${2 / zoom}`} />
+              <line x1={8 / zoom} y1={88 / zoom} x2={24 / zoom} y2={88 / zoom} stroke="hsl(142 71% 45%)" strokeWidth={1.5 / zoom} strokeDasharray={`${4 / zoom} ${2 / zoom}`} />
               <text x={28 / zoom} y={91 / zoom} fontSize={7 / zoom} fill="hsl(var(--muted-foreground))">Setback Line</text>
             </g>
           </svg>
