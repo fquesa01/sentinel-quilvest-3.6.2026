@@ -14431,6 +14431,81 @@ export const insertRonComplianceCheckSchema = createInsertSchema(ronComplianceCh
 export type InsertRonComplianceCheck = z.infer<typeof insertRonComplianceCheckSchema>;
 export type RonComplianceCheck = typeof ronComplianceChecks.$inferSelect;
 
+export const ronEligibilityResultEnum = pgEnum("ron_eligibility_result", [
+  "eligible", "ineligible", "conditional", "manual_review"
+]);
+
+export const ronAltIdvMethodEnum = pgEnum("ron_alt_idv_method", [
+  "credible_witness", "personal_knowledge"
+]);
+
+export const ronAltIdvStatusEnum = pgEnum("ron_alt_idv_status", [
+  "initiated", "witness_idv_pending", "witness_idv_complete", "attestation_pending",
+  "completed", "rejected", "expired"
+]);
+
+export const ronEligibilityChecks = pgTable("ron_eligibility_checks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: varchar("transaction_id").references(() => ronTransactions.id, { onDelete: "cascade" }).notNull(),
+  result: ronEligibilityResultEnum("result").notNull(),
+  jurisdiction: varchar("jurisdiction", { length: 100 }).notNull(),
+  transactionType: varchar("transaction_type", { length: 100 }),
+  documentTypes: jsonb("document_types").default([]),
+  reasons: jsonb("reasons").default([]),
+  warnings: jsonb("warnings").default([]),
+  countyOverride: varchar("county_override", { length: 200 }),
+  checkedBy: varchar("checked_by").references(() => users.id),
+  checkedAt: timestamp("checked_at").defaultNow().notNull(),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  transactionIdx: index("idx_ron_eligibility_transaction").on(table.transactionId),
+  resultIdx: index("idx_ron_eligibility_result").on(table.result),
+}));
+
+export const insertRonEligibilityCheckSchema = createInsertSchema(ronEligibilityChecks).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonEligibilityCheck = z.infer<typeof insertRonEligibilityCheckSchema>;
+export type RonEligibilityCheck = typeof ronEligibilityChecks.$inferSelect;
+
+export const ronAltIdvRecords = pgTable("ron_alt_idv_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: varchar("transaction_id").references(() => ronTransactions.id, { onDelete: "cascade" }).notNull(),
+  signerId: varchar("signer_id").references(() => ronSigners.id, { onDelete: "cascade" }).notNull(),
+  method: ronAltIdvMethodEnum("method").notNull(),
+  status: ronAltIdvStatusEnum("status").default("initiated").notNull(),
+  witnessFirstName: varchar("witness_first_name", { length: 200 }),
+  witnessLastName: varchar("witness_last_name", { length: 200 }),
+  witnessEmail: varchar("witness_email", { length: 300 }),
+  witnessPhone: varchar("witness_phone", { length: 50 }),
+  witnessRelationship: varchar("witness_relationship", { length: 200 }),
+  witnessCredentialType: varchar("witness_credential_type", { length: 100 }),
+  witnessCredentialNumber: varchar("witness_credential_number", { length: 200 }),
+  witnessIdvPassed: boolean("witness_idv_passed").default(false),
+  witnessKbaScore: integer("witness_kba_score"),
+  notaryId: varchar("notary_id").references(() => ronNotaries.id),
+  notaryAttestation: text("notary_attestation"),
+  notarySignature: text("notary_signature"),
+  attestationDate: timestamp("attestation_date"),
+  reason: text("reason"),
+  details: jsonb("details").default({}),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  transactionIdx: index("idx_ron_alt_idv_transaction").on(table.transactionId),
+  signerIdx: index("idx_ron_alt_idv_signer").on(table.signerId),
+  methodIdx: index("idx_ron_alt_idv_method").on(table.method),
+}));
+
+export const insertRonAltIdvRecordSchema = createInsertSchema(ronAltIdvRecords).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonAltIdvRecord = z.infer<typeof insertRonAltIdvRecordSchema>;
+export type RonAltIdvRecord = typeof ronAltIdvRecords.$inferSelect;
+
 export const firmFormTemplates = pgTable("firm_form_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 500 }).notNull(),

@@ -419,3 +419,71 @@ DO $$ BEGIN
 EXCEPTION WHEN others THEN NULL;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_ron_notaries_availability ON ron_notaries(availability_status);
+
+-- RON Eligibility Result Enum
+DO $$ BEGIN
+  CREATE TYPE ron_eligibility_result AS ENUM ('eligible', 'ineligible', 'conditional', 'manual_review');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- RON Alternative IDV Method Enum
+DO $$ BEGIN
+  CREATE TYPE ron_alt_idv_method AS ENUM ('credible_witness', 'personal_knowledge');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- RON Alternative IDV Status Enum
+DO $$ BEGIN
+  CREATE TYPE ron_alt_idv_status AS ENUM ('initiated', 'witness_idv_pending', 'witness_idv_complete', 'attestation_pending', 'completed', 'rejected', 'expired');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- RON Eligibility Checks
+CREATE TABLE IF NOT EXISTS ron_eligibility_checks (
+  id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+  transaction_id VARCHAR NOT NULL REFERENCES ron_transactions(id) ON DELETE CASCADE,
+  result ron_eligibility_result NOT NULL,
+  jurisdiction VARCHAR(100) NOT NULL,
+  transaction_type VARCHAR(100),
+  document_types JSONB DEFAULT '[]',
+  reasons JSONB DEFAULT '[]',
+  warnings JSONB DEFAULT '[]',
+  county_override VARCHAR(200),
+  checked_by VARCHAR REFERENCES users(id),
+  checked_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ron_eligibility_transaction ON ron_eligibility_checks(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_ron_eligibility_result ON ron_eligibility_checks(result);
+
+-- RON Alternative IDV Records
+CREATE TABLE IF NOT EXISTS ron_alt_idv_records (
+  id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+  transaction_id VARCHAR NOT NULL REFERENCES ron_transactions(id) ON DELETE CASCADE,
+  signer_id VARCHAR NOT NULL REFERENCES ron_signers(id) ON DELETE CASCADE,
+  method ron_alt_idv_method NOT NULL,
+  status ron_alt_idv_status NOT NULL DEFAULT 'initiated',
+  witness_first_name VARCHAR(200),
+  witness_last_name VARCHAR(200),
+  witness_email VARCHAR(300),
+  witness_phone VARCHAR(50),
+  witness_relationship VARCHAR(200),
+  witness_credential_type VARCHAR(100),
+  witness_credential_number VARCHAR(200),
+  witness_idv_passed BOOLEAN DEFAULT FALSE,
+  witness_kba_score INTEGER,
+  notary_id VARCHAR REFERENCES ron_notaries(id),
+  notary_attestation TEXT,
+  notary_signature TEXT,
+  attestation_date TIMESTAMP,
+  reason TEXT,
+  details JSONB DEFAULT '{}',
+  completed_at TIMESTAMP,
+  completed_by VARCHAR REFERENCES users(id),
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ron_alt_idv_transaction ON ron_alt_idv_records(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_ron_alt_idv_signer ON ron_alt_idv_records(signer_id);
+CREATE INDEX IF NOT EXISTS idx_ron_alt_idv_method ON ron_alt_idv_records(method);

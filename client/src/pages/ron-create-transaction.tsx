@@ -28,6 +28,10 @@ import {
   Plus,
   Trash2,
   Upload,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Shield,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Deal } from "@shared/schema";
@@ -101,9 +105,37 @@ export default function RonCreateTransaction() {
     transactionType: "general_notarization",
     dealId: prefillDealId,
     jurisdiction: "FL",
+    county: "",
     notes: "",
     signingOrderMode: "parallel" as "parallel" | "sequential",
   });
+
+  const [eligibilityPreview, setEligibilityPreview] = useState<{
+    result: string;
+    reasons: string[];
+    warnings: string[];
+    alternativeIdvMethods: { credibleWitness: boolean; personalKnowledge: boolean };
+  } | null>(null);
+  const [eligibilityLoading, setEligibilityLoading] = useState(false);
+
+  const checkEligibility = async () => {
+    setEligibilityLoading(true);
+    try {
+      const docTypes = documents.map(d => d.documentType).filter(Boolean);
+      const res = await apiRequest("POST", "/api/ron/eligibility/preview", {
+        jurisdiction: form.jurisdiction,
+        transactionType: form.transactionType,
+        documentTypes: docTypes,
+        county: form.county || undefined,
+      });
+      const data = await res.json();
+      setEligibilityPreview(data);
+    } catch {
+      toast({ title: "Error", description: "Failed to check eligibility", variant: "destructive" });
+    } finally {
+      setEligibilityLoading(false);
+    }
+  };
 
   const [signers, setSigners] = useState<SignerEntry[]>([]);
   const [signerDraft, setSignerDraft] = useState<SignerEntry>({
@@ -125,6 +157,8 @@ export default function RonCreateTransaction() {
         signingOrder: form.signingOrderMode,
         dealId: form.dealId && form.dealId !== "none" ? form.dealId : undefined,
         notes: form.notes,
+        county: form.county || undefined,
+        documentTypes: documents.map(d => d.documentType).filter(Boolean),
       });
       const txn: { id: string } = await res.json();
 
@@ -302,7 +336,7 @@ export default function RonCreateTransaction() {
           <CardContent className="space-y-4">
             <div>
               <Label>Jurisdiction (State) *</Label>
-              <Select value={form.jurisdiction} onValueChange={(v) => setForm({ ...form, jurisdiction: v })}>
+              <Select value={form.jurisdiction} onValueChange={(v) => { setForm({ ...form, jurisdiction: v }); setEligibilityPreview(null); }}>
                 <SelectTrigger data-testid="select-jurisdiction">
                   <SelectValue />
                 </SelectTrigger>
@@ -312,6 +346,16 @@ export default function RonCreateTransaction() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label>County (Optional)</Label>
+              <Input
+                value={form.county}
+                onChange={(e) => { setForm({ ...form, county: e.target.value }); setEligibilityPreview(null); }}
+                placeholder="e.g., Miami-Dade, Los Angeles"
+                data-testid="input-county"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Some counties have additional RON restrictions</p>
             </div>
             <div>
               <Label>Signing Order Mode</Label>
@@ -328,6 +372,63 @@ export default function RonCreateTransaction() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="pt-2">
+              <Button
+                variant="outline"
+                onClick={checkEligibility}
+                disabled={eligibilityLoading}
+                data-testid="button-check-eligibility"
+              >
+                {eligibilityLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
+                Check RON Eligibility
+              </Button>
+            </div>
+
+            {eligibilityPreview && (
+              <div className={`rounded-md border p-4 space-y-3 ${
+                eligibilityPreview.result === "eligible" ? "border-green-500/30 bg-green-500/5" :
+                eligibilityPreview.result === "conditional" ? "border-yellow-500/30 bg-yellow-500/5" :
+                "border-red-500/30 bg-red-500/5"
+              }`} data-testid="eligibility-result">
+                <div className="flex items-center gap-2">
+                  {eligibilityPreview.result === "eligible" ? (
+                    <><CheckCircle2 className="h-5 w-5 text-green-500" /><span className="font-medium text-green-500">Eligible for RON</span></>
+                  ) : eligibilityPreview.result === "conditional" ? (
+                    <><AlertTriangle className="h-5 w-5 text-yellow-500" /><span className="font-medium text-yellow-500">Conditionally Eligible</span></>
+                  ) : (
+                    <><XCircle className="h-5 w-5 text-red-500" /><span className="font-medium text-red-500">Not Eligible for RON</span></>
+                  )}
+                </div>
+                {eligibilityPreview.reasons.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-red-500">Issues:</p>
+                    {eligibilityPreview.reasons.map((r, i) => (
+                      <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
+                        <XCircle className="h-3 w-3 text-red-500 mt-0.5 shrink-0" /> {r}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {eligibilityPreview.warnings.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-yellow-500">Warnings:</p>
+                    {eligibilityPreview.warnings.map((w, i) => (
+                      <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
+                        <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" /> {w}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {(eligibilityPreview.alternativeIdvMethods.credibleWitness || eligibilityPreview.alternativeIdvMethods.personalKnowledge) && (
+                  <div className="text-xs text-muted-foreground pt-1 border-t border-border">
+                    <p className="font-medium text-foreground">Alternative IDV Methods Available:</p>
+                    {eligibilityPreview.alternativeIdvMethods.credibleWitness && <p>Credible Witness</p>}
+                    {eligibilityPreview.alternativeIdvMethods.personalKnowledge && <p>Personal Knowledge</p>}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -518,7 +619,7 @@ export default function RonCreateTransaction() {
               </div>
               <div>
                 <p className="text-muted-foreground">Jurisdiction</p>
-                <p className="font-medium">{form.jurisdiction}</p>
+                <p className="font-medium">{form.jurisdiction}{form.county ? ` — ${form.county} County` : ""}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Signing Order</p>
@@ -570,6 +671,31 @@ export default function RonCreateTransaction() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {eligibilityPreview && (
+              <div className={`rounded-md border p-3 space-y-2 ${
+                eligibilityPreview.result === "eligible" ? "border-green-500/30 bg-green-500/5" :
+                eligibilityPreview.result === "conditional" ? "border-yellow-500/30 bg-yellow-500/5" :
+                "border-red-500/30 bg-red-500/5"
+              }`} data-testid="review-eligibility-result">
+                <div className="flex items-center gap-2 text-sm">
+                  {eligibilityPreview.result === "eligible" ? (
+                    <><CheckCircle2 className="h-4 w-4 text-green-500" /><span className="font-medium text-green-500">RON Eligible</span></>
+                  ) : eligibilityPreview.result === "conditional" ? (
+                    <><AlertTriangle className="h-4 w-4 text-yellow-500" /><span className="font-medium text-yellow-500">Conditionally Eligible</span></>
+                  ) : (
+                    <><XCircle className="h-4 w-4 text-red-500" /><span className="font-medium text-red-500">Not Eligible for RON</span></>
+                  )}
+                </div>
+                {eligibilityPreview.warnings.length > 0 && (
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    {eligibilityPreview.warnings.map((w, i) => (
+                      <p key={i}>{w}</p>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

@@ -1,7 +1,7 @@
 import { db } from "../db";
-import { eq, and } from "drizzle-orm";
-import { ronComplianceChecks, ronSigners } from "@shared/schema";
-import type { InsertRonComplianceCheck, RonComplianceCheck } from "@shared/schema";
+import { eq, and, sql } from "drizzle-orm";
+import { ronComplianceChecks, ronSigners, ronEligibilityChecks, ronAltIdvRecords } from "@shared/schema";
+import type { InsertRonComplianceCheck, RonComplianceCheck, InsertRonEligibilityCheck, RonEligibilityCheck, InsertRonAltIdvRecord, RonAltIdvRecord } from "@shared/schema";
 
 type ComplianceCheckType = RonComplianceCheck["checkType"];
 type ComplianceResult = RonComplianceCheck["result"];
@@ -31,6 +31,23 @@ interface StateComplianceRule {
     ronTrainingHours: number;
     ronExamPassScore: number;
   };
+  ronPermittedDocumentTypes: string[];
+  ronRestrictedDocumentTypes: string[];
+  countyOverrides: Record<string, { restricted: boolean; restrictedDocTypes?: string[]; note: string }>;
+  alternativeIdvMethods: {
+    credibleWitness: boolean;
+    personalKnowledge: boolean;
+    credibleWitnessRequirements?: {
+      witnessCount: number;
+      witnessIdvRequired: boolean;
+      witnessKbaRequired: boolean;
+    };
+    personalKnowledgeRequirements?: {
+      notaryMustBeCommissioned: boolean;
+      formalAttestationRequired: boolean;
+      priorRelationshipRequired: boolean;
+    };
+  };
 }
 
 const stateComplianceRules: Record<string, StateComplianceRule> = {
@@ -59,6 +76,29 @@ const stateComplianceRules: Record<string, StateComplianceRule> = {
       ronTrainingHours: 2,
       ronExamPassScore: 70,
     },
+    ronPermittedDocumentTypes: [
+      "general", "deed", "mortgage", "power_of_attorney", "affidavit",
+      "trust", "closing_disclosure", "note", "corporate_documents",
+    ],
+    ronRestrictedDocumentTypes: [],
+    countyOverrides: {
+      "Miami-Dade": { restricted: false, note: "Full RON permitted" },
+      "Broward": { restricted: false, note: "Full RON permitted" },
+    },
+    alternativeIdvMethods: {
+      credibleWitness: true,
+      personalKnowledge: true,
+      credibleWitnessRequirements: {
+        witnessCount: 1,
+        witnessIdvRequired: true,
+        witnessKbaRequired: false,
+      },
+      personalKnowledgeRequirements: {
+        notaryMustBeCommissioned: true,
+        formalAttestationRequired: true,
+        priorRelationshipRequired: true,
+      },
+    },
   },
   TX: {
     state: "TX",
@@ -84,6 +124,29 @@ const stateComplianceRules: Record<string, StateComplianceRule> = {
       eoInsuranceAmount: 25000,
       ronTrainingHours: 4,
       ronExamPassScore: 80,
+    },
+    ronPermittedDocumentTypes: [
+      "general", "deed", "mortgage", "power_of_attorney", "affidavit",
+      "trust", "closing_disclosure", "note", "corporate_documents",
+    ],
+    ronRestrictedDocumentTypes: ["will"],
+    countyOverrides: {
+      "Harris": { restricted: false, note: "Full RON permitted" },
+      "Travis": { restricted: false, note: "Full RON permitted" },
+    },
+    alternativeIdvMethods: {
+      credibleWitness: true,
+      personalKnowledge: true,
+      credibleWitnessRequirements: {
+        witnessCount: 2,
+        witnessIdvRequired: true,
+        witnessKbaRequired: true,
+      },
+      personalKnowledgeRequirements: {
+        notaryMustBeCommissioned: true,
+        formalAttestationRequired: true,
+        priorRelationshipRequired: true,
+      },
     },
   },
   VA: {
@@ -111,6 +174,26 @@ const stateComplianceRules: Record<string, StateComplianceRule> = {
       ronTrainingHours: 2,
       ronExamPassScore: 70,
     },
+    ronPermittedDocumentTypes: [
+      "general", "deed", "mortgage", "power_of_attorney", "affidavit",
+      "trust", "closing_disclosure", "note",
+    ],
+    ronRestrictedDocumentTypes: [],
+    countyOverrides: {},
+    alternativeIdvMethods: {
+      credibleWitness: true,
+      personalKnowledge: true,
+      credibleWitnessRequirements: {
+        witnessCount: 1,
+        witnessIdvRequired: true,
+        witnessKbaRequired: false,
+      },
+      personalKnowledgeRequirements: {
+        notaryMustBeCommissioned: true,
+        formalAttestationRequired: true,
+        priorRelationshipRequired: false,
+      },
+    },
   },
   CA: {
     state: "CA",
@@ -136,6 +219,23 @@ const stateComplianceRules: Record<string, StateComplianceRule> = {
       eoInsuranceAmount: 25000,
       ronTrainingHours: 6,
       ronExamPassScore: 70,
+    },
+    ronPermittedDocumentTypes: [
+      "general", "power_of_attorney", "affidavit", "trust", "corporate_documents",
+    ],
+    ronRestrictedDocumentTypes: ["deed", "mortgage", "note"],
+    countyOverrides: {
+      "Los Angeles": { restricted: true, restrictedDocTypes: ["deed"], note: "LA County restricts RON for deed transfers" },
+      "San Francisco": { restricted: false, note: "Full RON permitted for allowed document types" },
+    },
+    alternativeIdvMethods: {
+      credibleWitness: true,
+      personalKnowledge: false,
+      credibleWitnessRequirements: {
+        witnessCount: 1,
+        witnessIdvRequired: true,
+        witnessKbaRequired: true,
+      },
     },
   },
   NY: {
@@ -163,6 +263,28 @@ const stateComplianceRules: Record<string, StateComplianceRule> = {
       ronTrainingHours: 3,
       ronExamPassScore: 70,
     },
+    ronPermittedDocumentTypes: [
+      "general", "deed", "mortgage", "power_of_attorney", "affidavit",
+      "trust", "closing_disclosure", "note",
+    ],
+    ronRestrictedDocumentTypes: ["will"],
+    countyOverrides: {
+      "New York": { restricted: true, restrictedDocTypes: ["deed"], note: "NYC requires in-person notarization for deed transfers" },
+    },
+    alternativeIdvMethods: {
+      credibleWitness: true,
+      personalKnowledge: true,
+      credibleWitnessRequirements: {
+        witnessCount: 1,
+        witnessIdvRequired: true,
+        witnessKbaRequired: true,
+      },
+      personalKnowledgeRequirements: {
+        notaryMustBeCommissioned: true,
+        formalAttestationRequired: true,
+        priorRelationshipRequired: true,
+      },
+    },
   },
 };
 
@@ -172,6 +294,158 @@ export function getComplianceRules(state: string): StateComplianceRule | null {
 
 export function getAllSupportedStates(): StateComplianceRule[] {
   return Object.values(stateComplianceRules);
+}
+
+export interface EligibilityCheckParams {
+  jurisdiction: string;
+  transactionType?: string;
+  documentTypes?: string[];
+  county?: string;
+}
+
+export interface EligibilityResult {
+  result: "eligible" | "ineligible" | "conditional" | "manual_review";
+  reasons: string[];
+  warnings: string[];
+  alternativeIdvMethods: {
+    credibleWitness: boolean;
+    personalKnowledge: boolean;
+  };
+}
+
+export function checkRonEligibility(params: EligibilityCheckParams): EligibilityResult {
+  const rules = getComplianceRules(params.jurisdiction);
+  const reasons: string[] = [];
+  const warnings: string[] = [];
+
+  if (!rules) {
+    return {
+      result: "ineligible",
+      reasons: [`State "${params.jurisdiction}" does not have RON authorization or is not yet supported in this system`],
+      warnings: [],
+      alternativeIdvMethods: { credibleWitness: false, personalKnowledge: false },
+    };
+  }
+
+  const docTypes = params.documentTypes || [];
+  for (const docType of docTypes) {
+    if (rules.ronRestrictedDocumentTypes.includes(docType)) {
+      reasons.push(`Document type "${docType}" is explicitly restricted for RON in ${rules.stateName}`);
+    } else if (rules.ronPermittedDocumentTypes.length > 0 && !rules.ronPermittedDocumentTypes.includes(docType)) {
+      reasons.push(`Document type "${docType}" is not in the list of permitted RON document types for ${rules.stateName}`);
+    }
+  }
+
+  if (params.county && rules.countyOverrides[params.county]) {
+    const override = rules.countyOverrides[params.county];
+    if (override.restricted) {
+      const restrictedInCounty = docTypes.filter(dt =>
+        override.restrictedDocTypes?.includes(dt)
+      );
+      if (restrictedInCounty.length > 0) {
+        reasons.push(`County "${params.county}" does not accept RON for: ${restrictedInCounty.join(", ")}. ${override.note}`);
+      } else if (override.restrictedDocTypes && override.restrictedDocTypes.length > 0) {
+        warnings.push(`County "${params.county}" has restrictions: ${override.note}`);
+      }
+    } else {
+      warnings.push(`County "${params.county}": ${override.note}`);
+    }
+  }
+
+  if (rules.requirements.biometricMatchRequired) {
+    warnings.push(`${rules.stateName} requires biometric matching — ensure your IDV provider supports this`);
+  }
+
+  if (rules.requirements.notaryMustBeInState) {
+    warnings.push(`Notary must be physically located in ${rules.stateName} during the session`);
+  }
+
+  if (rules.requirements.amlRequired) {
+    warnings.push(`${rules.stateName} requires AML screening for signers`);
+  }
+
+  let result: EligibilityResult["result"];
+  if (reasons.length > 0) {
+    result = "ineligible";
+  } else if (warnings.length > 0) {
+    result = "conditional";
+  } else {
+    result = "eligible";
+  }
+
+  return {
+    result,
+    reasons,
+    warnings,
+    alternativeIdvMethods: {
+      credibleWitness: rules.alternativeIdvMethods.credibleWitness,
+      personalKnowledge: rules.alternativeIdvMethods.personalKnowledge,
+    },
+  };
+}
+
+export async function saveEligibilityCheck(
+  params: InsertRonEligibilityCheck
+): Promise<RonEligibilityCheck> {
+  const [check] = await db
+    .insert(ronEligibilityChecks)
+    .values(params)
+    .returning();
+  return check;
+}
+
+export async function getEligibilityChecks(transactionId: string): Promise<RonEligibilityCheck[]> {
+  return db
+    .select()
+    .from(ronEligibilityChecks)
+    .where(eq(ronEligibilityChecks.transactionId, transactionId));
+}
+
+export async function getLatestEligibilityCheck(transactionId: string): Promise<RonEligibilityCheck | null> {
+  const checks = await db
+    .select()
+    .from(ronEligibilityChecks)
+    .where(eq(ronEligibilityChecks.transactionId, transactionId))
+    .orderBy(sql`checked_at DESC`)
+    .limit(1);
+  return checks.length > 0 ? checks[0] : null;
+}
+
+export async function createAltIdvRecord(
+  params: InsertRonAltIdvRecord
+): Promise<RonAltIdvRecord> {
+  const [record] = await db
+    .insert(ronAltIdvRecords)
+    .values(params)
+    .returning();
+  return record;
+}
+
+export async function getAltIdvRecords(signerId: string): Promise<RonAltIdvRecord[]> {
+  return db
+    .select()
+    .from(ronAltIdvRecords)
+    .where(eq(ronAltIdvRecords.signerId, signerId));
+}
+
+export async function getAltIdvRecord(id: string): Promise<RonAltIdvRecord | null> {
+  const [record] = await db
+    .select()
+    .from(ronAltIdvRecords)
+    .where(eq(ronAltIdvRecords.id, id));
+  return record || null;
+}
+
+export async function updateAltIdvRecord(
+  id: string,
+  updates: Partial<RonAltIdvRecord>
+): Promise<RonAltIdvRecord> {
+  const [updated] = await db
+    .update(ronAltIdvRecords)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(ronAltIdvRecords.id, id))
+    .returning();
+  return updated;
 }
 
 export async function runComplianceCheck(params: {
@@ -329,10 +603,16 @@ export async function updateComplianceCheck(
 export async function checkSignerReadiness(
   signerId: string,
   jurisdiction: string
-): Promise<{ ready: boolean; missing: string[]; checks: any[] }> {
+): Promise<{ ready: boolean; missing: string[]; checks: any[]; alternativeIdvAvailable: boolean; alternativeIdvMethods: { credibleWitness: boolean; personalKnowledge: boolean } }> {
   const rules = getComplianceRules(jurisdiction);
   if (!rules) {
-    return { ready: false, missing: [`Unsupported jurisdiction: ${jurisdiction}`], checks: [] };
+    return {
+      ready: false,
+      missing: [`Unsupported jurisdiction: ${jurisdiction}`],
+      checks: [],
+      alternativeIdvAvailable: false,
+      alternativeIdvMethods: { credibleWitness: false, personalKnowledge: false },
+    };
   }
 
   const checks = await getSignerComplianceChecks(signerId);
@@ -357,9 +637,19 @@ export async function checkSignerReadiness(
     missing.push("AML screening not completed");
   }
 
+  const altIdvRecords = await getAltIdvRecords(signerId);
+  const hasCompletedAltIdv = altIdvRecords.some(r => r.status === "completed");
+
+  const altAvailable = rules.alternativeIdvMethods.credibleWitness || rules.alternativeIdvMethods.personalKnowledge;
+
   return {
-    ready: missing.length === 0,
+    ready: missing.length === 0 || hasCompletedAltIdv,
     missing,
     checks,
+    alternativeIdvAvailable: altAvailable,
+    alternativeIdvMethods: {
+      credibleWitness: rules.alternativeIdvMethods.credibleWitness,
+      personalKnowledge: rules.alternativeIdvMethods.personalKnowledge,
+    },
   };
 }

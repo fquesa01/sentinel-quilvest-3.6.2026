@@ -78,8 +78,9 @@ router.get("/transactions/:id", async (req: any, res) => {
     const signers = await storage.getRonSigners(req.params.id);
     const documents = await storage.getRonDocuments(req.params.id);
     const sessions = await storage.getRonSessions(req.params.id);
+    const latestEligibility = await complianceService.getLatestEligibilityCheck(req.params.id);
 
-    res.json({ ...txn, signers, documents, sessions });
+    res.json({ ...txn, signers, documents, sessions, eligibilityCheck: latestEligibility });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });
@@ -115,7 +116,29 @@ router.post("/transactions", async (req: any, res) => {
       ipAddress: req.ip,
     });
 
-    res.status(201).json(txn);
+    let eligibilityResult = null;
+    if (txn.jurisdiction) {
+      const eligibility = complianceService.checkRonEligibility({
+        jurisdiction: txn.jurisdiction,
+        transactionType: txn.transactionType || undefined,
+        documentTypes: body.documentTypes || [],
+        county: body.county,
+      });
+      eligibilityResult = await complianceService.saveEligibilityCheck({
+        transactionId: txn.id,
+        result: eligibility.result,
+        jurisdiction: txn.jurisdiction,
+        transactionType: txn.transactionType,
+        documentTypes: body.documentTypes || [],
+        reasons: eligibility.reasons,
+        warnings: eligibility.warnings,
+        countyOverride: body.county,
+        checkedBy: req.user.id,
+        checkedAt: new Date(),
+      });
+    }
+
+    res.status(201).json({ ...txn, eligibilityCheck: eligibilityResult });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });
@@ -1640,16 +1663,11 @@ router.post("/signers/:id/complete-idv", async (req: any, res) => {
     const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
     if (error) return res.status(403).json({ message: error });
 
-    if (signer.idvStatus !== "ofac_cleared") {
-      return res.status(400).json({ message: `Cannot complete IDV: all prior steps (credential, liveness, KBA, OFAC) must be completed first (current status: ${signer.idvStatus})` });
-    }
+    const altIdvRecords = await complianceService.getAltIdvRecords(signer.id);
+    const hasCompletedAltIdv = altIdvRecords.some(r => r.status === "completed");
 
     if (!signer.livenessCheckPassed) {
       return res.status(400).json({ message: "Cannot complete IDV: liveness check not passed" });
-    }
-
-    if (signer.kbaScore === null || signer.kbaScore === undefined || signer.kbaScore < 4) {
-      return res.status(400).json({ message: `Cannot complete IDV: KBA score insufficient (${signer.kbaScore ?? 0}/5, need 4)` });
     }
 
     const compliance = await storage.getRonComplianceChecks(signer.transactionId);
@@ -1659,21 +1677,35 @@ router.post("/signers/:id/complete-idv", async (req: any, res) => {
       return res.status(400).json({ message: "Cannot complete IDV: OFAC screening not cleared" });
     }
 
+    if (!hasCompletedAltIdv) {
+      if (signer.idvStatus !== "ofac_cleared") {
+        return res.status(400).json({ message: `Cannot complete IDV: all prior steps (credential, liveness, KBA, OFAC) must be completed first (current status: ${signer.idvStatus})` });
+      }
+
+      if (signer.kbaScore === null || signer.kbaScore === undefined || signer.kbaScore < 4) {
+        return res.status(400).json({ message: `Cannot complete IDV: KBA score insufficient (${signer.kbaScore ?? 0}/5, need 4)` });
+      }
+    }
+
     await storage.updateRonSigner(req.params.id, {
       idvStatus: "fully_verified",
     });
+
+    const verificationMethod = hasCompletedAltIdv
+      ? `alternative IDV (${altIdvRecords.find(r => r.status === "completed")?.method})`
+      : "standard IDV";
 
     await journalService.createJournalEntry({
       transactionId: signer.transactionId,
       eventType: "signer_verified",
       actorType: "system",
       actorId: "idv_system",
-      description: `Signer "${signer.firstName} ${signer.lastName}" identity fully verified`,
+      description: `Signer "${signer.firstName} ${signer.lastName}" identity fully verified via ${verificationMethod}`,
       signerId: signer.id,
       ipAddress: req.ip,
     });
 
-    res.json({ success: true, idvStatus: "fully_verified" });
+    res.json({ success: true, idvStatus: "fully_verified", method: verificationMethod });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });
@@ -2096,6 +2128,381 @@ router.get("/dashboard/stats", async (req: any, res) => {
       pendingSessions: pendingSessionCount,
       totalTransactions: allTxns.length,
       ...(req.user.role === "super_admin" ? { activeNotaries: activeNotaryCount } : {}),
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// RON ELIGIBILITY CHECKING
+// ============================================================================
+
+router.post("/transactions/:transactionId/eligibility-check", async (req: any, res) => {
+  try {
+    const { txn, error } = await verifyTransactionAccess(req.params.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
+
+    const documents = await storage.getRonDocuments(req.params.transactionId);
+    const documentTypes = documents.map(d => d.documentType).filter(Boolean) as string[];
+
+    const eligibility = complianceService.checkRonEligibility({
+      jurisdiction: txn!.jurisdiction || req.body.jurisdiction || "FL",
+      transactionType: txn!.transactionType || req.body.transactionType,
+      documentTypes: req.body.documentTypes || documentTypes,
+      county: req.body.county,
+    });
+
+    const saved = await complianceService.saveEligibilityCheck({
+      transactionId: req.params.transactionId,
+      result: eligibility.result,
+      jurisdiction: txn!.jurisdiction || req.body.jurisdiction || "FL",
+      transactionType: txn!.transactionType || req.body.transactionType,
+      documentTypes: req.body.documentTypes || documentTypes,
+      reasons: eligibility.reasons,
+      warnings: eligibility.warnings,
+      countyOverride: req.body.county,
+      checkedBy: req.user.id,
+      checkedAt: new Date(),
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: req.params.transactionId,
+      eventType: "compliance_check",
+      actorType: "system",
+      actorId: "eligibility_engine",
+      description: `RON eligibility check: ${eligibility.result}`,
+      eventData: { result: eligibility.result, reasons: eligibility.reasons, warnings: eligibility.warnings },
+      ipAddress: req.ip,
+    });
+
+    res.json({ ...saved, alternativeIdvMethods: eligibility.alternativeIdvMethods });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/transactions/:transactionId/eligibility", async (req: any, res) => {
+  try {
+    const { txn, error } = await verifyTransactionAccess(req.params.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
+
+    const checks = await complianceService.getEligibilityChecks(req.params.transactionId);
+    const latest = checks.length > 0 ? checks[checks.length - 1] : null;
+    res.json({ checks, latest });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/eligibility/preview", async (req: any, res) => {
+  try {
+    const { jurisdiction, transactionType, documentTypes, county } = req.body;
+    if (!jurisdiction) return res.status(400).json({ message: "jurisdiction is required" });
+
+    const eligibility = complianceService.checkRonEligibility({
+      jurisdiction,
+      transactionType,
+      documentTypes: documentTypes || [],
+      county,
+    });
+
+    res.json(eligibility);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// ALTERNATIVE IDV PATHWAYS
+// ============================================================================
+
+router.post("/signers/:signerId/alt-idv/credible-witness", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.signerId);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const jurisdiction = txn?.jurisdiction || "FL";
+    const rules = complianceService.getComplianceRules(jurisdiction);
+    if (!rules || !rules.alternativeIdvMethods.credibleWitness) {
+      return res.status(400).json({ message: `Credible witness IDV is not permitted in ${jurisdiction}` });
+    }
+
+    if (signer.idvStatus !== "kba_failed") {
+      return res.status(400).json({ message: `Alternative IDV can only be initiated when KBA has failed (current status: ${signer.idvStatus})` });
+    }
+
+    const { witnessFirstName, witnessLastName, witnessEmail, witnessPhone, witnessRelationship, reason } = req.body;
+    if (!witnessFirstName || !witnessLastName || !witnessEmail) {
+      return res.status(400).json({ message: "Witness first name, last name, and email are required" });
+    }
+
+    const record = await complianceService.createAltIdvRecord({
+      transactionId: signer.transactionId,
+      signerId: signer.id,
+      method: "credible_witness",
+      status: "witness_idv_pending",
+      witnessFirstName,
+      witnessLastName,
+      witnessEmail,
+      witnessPhone: witnessPhone || null,
+      witnessRelationship: witnessRelationship || null,
+      reason: reason || "KBA failed — using credible witness alternative",
+      details: {
+        jurisdictionRules: rules.alternativeIdvMethods.credibleWitnessRequirements,
+        initiatedAt: new Date().toISOString(),
+      },
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: signer.transactionId,
+      eventType: "compliance_check",
+      actorType: "user",
+      actorId: req.user.id,
+      actorName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
+      description: `Credible witness IDV initiated for "${signer.firstName} ${signer.lastName}" — witness: ${witnessFirstName} ${witnessLastName}`,
+      signerId: signer.id,
+      eventData: { method: "credible_witness", witnessEmail, altIdvRecordId: record.id },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json(record);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/alt-idv/:recordId/witness-verify", async (req: any, res) => {
+  try {
+    const record = await complianceService.getAltIdvRecord(req.params.recordId);
+    if (!record) return res.status(404).json({ message: "Alt IDV record not found" });
+
+    const { txn, error } = await verifyTransactionAccess(record.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (record.method !== "credible_witness") {
+      return res.status(400).json({ message: "This record is not a credible witness pathway" });
+    }
+
+    const { credentialType, credentialNumber, kbaScore } = req.body;
+
+    const updated = await complianceService.updateAltIdvRecord(record.id, {
+      witnessCredentialType: credentialType || "drivers_license",
+      witnessCredentialNumber: credentialNumber || `WIT-${Date.now()}`,
+      witnessIdvPassed: true,
+      witnessKbaScore: kbaScore ?? 5,
+      status: "witness_idv_complete",
+    });
+
+    await complianceService.runComplianceCheck({
+      transactionId: record.transactionId,
+      signerId: record.signerId,
+      checkType: "credential_analysis",
+      performedBy: req.user.id,
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: record.transactionId,
+      eventType: "compliance_check",
+      actorType: "system",
+      actorId: "alt_idv_system",
+      description: `Credible witness "${record.witnessFirstName} ${record.witnessLastName}" identity verified`,
+      signerId: record.signerId,
+      eventData: { method: "credible_witness", witnessVerified: true, altIdvRecordId: record.id },
+      ipAddress: req.ip,
+    });
+
+    res.json(updated);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/alt-idv/:recordId/complete", async (req: any, res) => {
+  try {
+    const record = await complianceService.getAltIdvRecord(req.params.recordId);
+    if (!record) return res.status(404).json({ message: "Alt IDV record not found" });
+
+    const { txn, error } = await verifyTransactionAccess(record.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (record.method === "credible_witness" && !record.witnessIdvPassed) {
+      return res.status(400).json({ message: "Witness must complete IDV before this pathway can be completed" });
+    }
+
+    const updated = await complianceService.updateAltIdvRecord(record.id, {
+      status: "completed",
+      completedAt: new Date(),
+      completedBy: req.user.id,
+    });
+
+    const signer = await storage.getRonSigner(record.signerId);
+
+    await journalService.createJournalEntry({
+      transactionId: record.transactionId,
+      eventType: "signer_verified",
+      actorType: "system",
+      actorId: "alt_idv_system",
+      description: `Signer "${signer?.firstName} ${signer?.lastName}" identity verified via ${record.method === "credible_witness" ? "credible witness" : "personal knowledge"}`,
+      signerId: record.signerId,
+      eventData: { method: record.method, altIdvRecordId: record.id },
+      ipAddress: req.ip,
+    });
+
+    res.json(updated);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/signers/:signerId/alt-idv/personal-knowledge", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.signerId);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const jurisdiction = txn?.jurisdiction || "FL";
+    const rules = complianceService.getComplianceRules(jurisdiction);
+    if (!rules || !rules.alternativeIdvMethods.personalKnowledge) {
+      return res.status(400).json({ message: `Personal knowledge IDV is not permitted in ${jurisdiction}` });
+    }
+
+    if (signer.idvStatus !== "kba_failed") {
+      return res.status(400).json({ message: `Alternative IDV can only be initiated when KBA has failed (current status: ${signer.idvStatus})` });
+    }
+
+    const { notaryId, notaryAttestation, reason } = req.body;
+    if (!notaryId) return res.status(400).json({ message: "notaryId is required" });
+    if (!notaryAttestation) return res.status(400).json({ message: "Notary attestation is required" });
+
+    const notary = await storage.getRonNotary(notaryId);
+    if (!notary) return res.status(404).json({ message: "Notary not found" });
+    if (notary.status !== "active") return res.status(400).json({ message: "Notary must be active" });
+
+    const record = await complianceService.createAltIdvRecord({
+      transactionId: signer.transactionId,
+      signerId: signer.id,
+      method: "personal_knowledge",
+      status: "attestation_pending",
+      notaryId,
+      notaryAttestation,
+      reason: reason || "KBA failed — using personal knowledge alternative",
+      details: {
+        jurisdictionRules: rules.alternativeIdvMethods.personalKnowledgeRequirements,
+        notaryName: `${notary.firstName} ${notary.lastName}`,
+        notaryCommissionState: notary.commissionState,
+        notaryCommissionNumber: notary.commissionNumber,
+        initiatedAt: new Date().toISOString(),
+      },
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: signer.transactionId,
+      eventType: "compliance_check",
+      actorType: "notary",
+      actorId: notaryId,
+      actorName: `${notary.firstName} ${notary.lastName}`,
+      description: `Personal knowledge IDV initiated for "${signer.firstName} ${signer.lastName}" by notary ${notary.firstName} ${notary.lastName}`,
+      signerId: signer.id,
+      eventData: { method: "personal_knowledge", notaryId, altIdvRecordId: record.id },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json(record);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/alt-idv/:recordId/sign-attestation", async (req: any, res) => {
+  try {
+    const record = await complianceService.getAltIdvRecord(req.params.recordId);
+    if (!record) return res.status(404).json({ message: "Alt IDV record not found" });
+
+    const { txn, error } = await verifyTransactionAccess(record.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (record.method !== "personal_knowledge") {
+      return res.status(400).json({ message: "This endpoint is for personal knowledge attestations only" });
+    }
+
+    if (record.notaryId) {
+      const notary = await storage.getRonNotary(record.notaryId);
+      if (notary) {
+        const notaryUser = await storage.getUserByEmail(notary.email);
+        if (notaryUser && notaryUser.id !== req.user.id && req.user.role !== "super_admin") {
+          return res.status(403).json({ message: "Only the designated notary can sign this attestation" });
+        }
+      }
+    }
+
+    const { notarySignature } = req.body;
+    if (!notarySignature) return res.status(400).json({ message: "Notary signature is required" });
+
+    const updated = await complianceService.updateAltIdvRecord(record.id, {
+      notarySignature,
+      attestationDate: new Date(),
+      status: "completed",
+      completedAt: new Date(),
+      completedBy: req.user.id,
+    });
+
+    const signer = await storage.getRonSigner(record.signerId);
+
+    await journalService.createJournalEntry({
+      transactionId: record.transactionId,
+      eventType: "compliance_check",
+      actorType: "notary",
+      actorId: record.notaryId || "unknown",
+      description: `Personal knowledge attestation signed for signer "${signer?.firstName} ${signer?.lastName}" — use complete-idv to finalize verification`,
+      signerId: record.signerId,
+      eventData: { method: "personal_knowledge", attestationSigned: true, altIdvRecordId: record.id },
+      ipAddress: req.ip,
+    });
+
+    res.json(updated);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/signers/:signerId/alt-idv", async (req: any, res) => {
+  try {
+    const signer = await storage.getRonSigner(req.params.signerId);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    const { txn, error } = await verifyTransactionAccess(signer.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    const records = await complianceService.getAltIdvRecords(req.params.signerId);
+
+    const jurisdiction = txn?.jurisdiction || "FL";
+    const rules = complianceService.getComplianceRules(jurisdiction);
+
+    res.json({
+      records,
+      availableMethods: {
+        credibleWitness: rules?.alternativeIdvMethods.credibleWitness || false,
+        personalKnowledge: rules?.alternativeIdvMethods.personalKnowledge || false,
+      },
+      requirements: {
+        credibleWitness: rules?.alternativeIdvMethods.credibleWitnessRequirements || null,
+        personalKnowledge: rules?.alternativeIdvMethods.personalKnowledgeRequirements || null,
+      },
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
