@@ -81,27 +81,29 @@ app.get("/api/health", (_req, res) => {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS user_type user_type NOT NULL DEFAULT 'individual'`);
 
     // Migrate old role enum values to new 4-role model
-    // First, add new enum values if they don't exist
-    const addEnumValue = async (val: string) => {
-      try {
-        await pool.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS '${val}'`);
-      } catch (e: any) {
-        // Value already exists — safe to ignore
+    // Phase 1: Add new enum values using a dedicated client connection.
+    // PostgreSQL forbids using a newly added enum value in the same transaction,
+    // so we must commit the ADD VALUE statements and release the client before
+    // any statements that reference the new values.
+    const enumClient = await pool.connect();
+    try {
+      for (const val of ['super_admin', 'entity_admin', 'entity_user', 'individual_user']) {
+        try {
+          await enumClient.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS '${val}'`);
+        } catch (e: any) {
+          // Value already exists — safe to ignore
+        }
       }
-    };
-    await addEnumValue('super_admin');
-    await addEnumValue('entity_admin');
-    await addEnumValue('entity_user');
-    await addEnumValue('individual_user');
+    } finally {
+      enumClient.release();
+    }
 
-    // Migrate existing users from old roles to new roles (safe: no-op if old values don't exist)
+    // Phase 2: Now safe to reference the new enum values from a fresh connection.
     const oldAdminCheck = await pool.query(`SELECT 1 FROM pg_enum WHERE enumlabel = 'admin' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'user_role') LIMIT 1`);
     if (oldAdminCheck.rows.length > 0) {
       await pool.query(`UPDATE users SET role = 'super_admin' WHERE role = 'admin'`);
       await pool.query(`UPDATE users SET role = 'individual_user' WHERE role NOT IN ('super_admin', 'entity_admin', 'entity_user', 'individual_user')`);
     }
-
-    // Update the column default
     await pool.query(`ALTER TABLE users ALTER COLUMN role SET DEFAULT 'individual_user'`);
 
     console.log("[Startup] Database columns and role migration verified");
