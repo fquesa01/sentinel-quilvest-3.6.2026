@@ -31303,7 +31303,21 @@ Guidelines:
         await objectStorageService.downloadObject(objectFile, res);
         return;
       }
-      const fileBuffer = await downloadFile(DATA_LAKE_BUCKET, item.filePath);
+      let fileBuffer: Buffer;
+      try {
+        fileBuffer = await downloadFile(DATA_LAKE_BUCKET, item.filePath);
+      } catch (supaErr) {
+        console.warn(`[DataLake] Supabase download failed for key "${item.filePath}", attempting Object Storage fallback:`, supaErr);
+        const objectStorageService = new ObjectStorageService();
+        const legacyPath = `/objects/data-lake/${item.filePath}`;
+        if (objectStorageService.localFileExists(legacyPath)) {
+          objectStorageService.downloadLocalObject(legacyPath, res);
+          return;
+        }
+        const objectFile = await objectStorageService.getObjectEntityFile(legacyPath);
+        await objectStorageService.downloadObject(objectFile, res);
+        return;
+      }
       const meta = (item.metadata as Record<string, unknown>) || {};
       const contentType = (meta.mimetype as string) || "application/octet-stream";
       res.set({
