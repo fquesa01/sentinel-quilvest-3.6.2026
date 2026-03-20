@@ -436,6 +436,12 @@ export default function RonDashboard() {
                   Branding & Billing
                 </Button>
               </Link>
+              <Link href="/ron/templates">
+                <Button variant="outline" className="w-full justify-start" data-testid="button-quick-templates">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Document Templates
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         </div>

@@ -14031,7 +14031,9 @@ export const ronJournalEventTypeEnum = pgEnum("ron_journal_event_type", [
   "signer_joined", "signer_left", "signature_applied", "initial_applied",
   "seal_applied", "session_completed", "session_cancelled", "document_notarized",
   "compliance_check", "recording_started", "recording_stopped",
-  "notary_assigned", "signing_order_changed"
+  "notary_assigned", "signing_order_changed",
+  "esign_link_generated", "enote_generated", "mers_registered",
+  "async_esign_completed", "async_esign_declined"
 ]);
 
 export const ronAnnotationTypeEnum = pgEnum("ron_annotation_type", [
@@ -14229,6 +14231,14 @@ export const insertRonSignerSchema = createInsertSchema(ronSigners).omit({
 export type InsertRonSigner = z.infer<typeof insertRonSignerSchema>;
 export type RonSigner = typeof ronSigners.$inferSelect;
 
+export const ronEsignStatusEnum = pgEnum("ron_esign_status", [
+  "pending", "sent", "viewed", "signed", "expired", "declined"
+]);
+
+export const ronEnoteStatusEnum = pgEnum("ron_enote_status", [
+  "draft", "generated", "signed", "registered", "transferred", "paid_off"
+]);
+
 // RON Documents
 export const ronDocuments = pgTable("ron_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -14245,6 +14255,18 @@ export const ronDocuments = pgTable("ron_documents", {
   signingOrder: integer("signing_order").default(0),
   requiresNotarization: boolean("requires_notarization").default(true),
   notarizationType: varchar("notarization_type", { length: 100 }),
+  esignOnly: boolean("esign_only").default(false),
+  asyncSigningEnabled: boolean("async_signing_enabled").default(false),
+  asyncSigningToken: varchar("async_signing_token", { length: 200 }),
+  asyncSigningExpiry: timestamp("async_signing_expiry"),
+  asyncSigningStatus: ronEsignStatusEnum("async_signing_status"),
+  mismoCompliant: boolean("mismo_compliant").default(false),
+  eNoteStatus: ronEnoteStatusEnum("e_note_status"),
+  mersRegistrationNumber: varchar("mers_registration_number", { length: 200 }),
+  mersRegistrationDate: timestamp("mers_registration_date"),
+  smartDocMarkers: jsonb("smart_doc_markers").default({}),
+  tamperSealHash: varchar("tamper_seal_hash", { length: 512 }),
+  templateId: varchar("template_id"),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -14700,3 +14722,36 @@ export const insertRonBillingRecordSchema = createInsertSchema(ronBillingRecords
 });
 export type InsertRonBillingRecord = z.infer<typeof insertRonBillingRecordSchema>;
 export type RonBillingRecord = typeof ronBillingRecords.$inferSelect;
+
+// RON Document Templates
+export const ronDocumentTemplates = pgTable("ron_document_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 500 }).notNull(),
+  description: text("description"),
+  documentType: varchar("document_type", { length: 100 }).notNull(),
+  jurisdiction: varchar("jurisdiction", { length: 100 }),
+  category: varchar("category", { length: 200 }),
+  annotationPlacements: jsonb("annotation_placements").default([]),
+  sourceTemplateId: varchar("source_template_id"),
+  storageKey: varchar("storage_key", { length: 1000 }),
+  fileName: varchar("file_name", { length: 500 }),
+  fileSize: integer("file_size"),
+  mimeType: varchar("mime_type", { length: 200 }),
+  pageCount: integer("page_count"),
+  isActive: boolean("is_active").default(true),
+  usageCount: integer("usage_count").default(0),
+  metadata: jsonb("metadata").default({}),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  docTypeIdx: index("idx_ron_doc_templates_doc_type").on(table.documentType),
+  jurisdictionIdx: index("idx_ron_doc_templates_jurisdiction").on(table.jurisdiction),
+  activeIdx: index("idx_ron_doc_templates_active").on(table.isActive),
+}));
+
+export const insertRonDocumentTemplateSchema = createInsertSchema(ronDocumentTemplates).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertRonDocumentTemplate = z.infer<typeof insertRonDocumentTemplateSchema>;
+export type RonDocumentTemplate = typeof ronDocumentTemplates.$inferSelect;

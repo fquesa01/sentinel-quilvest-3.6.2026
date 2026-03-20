@@ -408,6 +408,9 @@ import {
   ronBillingRecords,
   type RonBillingRecord,
   type InsertRonBillingRecord,
+  ronDocumentTemplates,
+  type RonDocumentTemplate,
+  type InsertRonDocumentTemplate,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -1137,6 +1140,15 @@ export interface IStorage {
   createRonBillingRecord(record: InsertRonBillingRecord): Promise<RonBillingRecord>;
   updateRonBillingRecord(id: string, updates: Partial<RonBillingRecord>): Promise<RonBillingRecord>;
   getRonBillingRecordsByTransaction(transactionId: string): Promise<RonBillingRecord[]>;
+
+  getRonDocumentTemplates(filters?: { documentType?: string; jurisdiction?: string; isActive?: boolean }): Promise<RonDocumentTemplate[]>;
+  getRonDocumentTemplate(id: string): Promise<RonDocumentTemplate | undefined>;
+  createRonDocumentTemplate(template: InsertRonDocumentTemplate): Promise<RonDocumentTemplate>;
+  updateRonDocumentTemplate(id: string, updates: Partial<RonDocumentTemplate>): Promise<RonDocumentTemplate>;
+  deleteRonDocumentTemplate(id: string): Promise<void>;
+  incrementRonTemplateUsage(id: string): Promise<void>;
+
+  getRonDocumentByAsyncToken(token: string): Promise<RonDocument | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -7137,6 +7149,47 @@ export class DatabaseStorage implements IStorage {
 
   async getRonBillingRecordsByTransaction(transactionId: string): Promise<RonBillingRecord[]> {
     return db.select().from(ronBillingRecords).where(eq(ronBillingRecords.transactionId, transactionId)).orderBy(desc(ronBillingRecords.createdAt));
+  }
+
+  async getRonDocumentTemplates(filters?: { documentType?: string; jurisdiction?: string; isActive?: boolean }): Promise<RonDocumentTemplate[]> {
+    const conditions = [];
+    if (filters?.documentType) conditions.push(eq(ronDocumentTemplates.documentType, filters.documentType));
+    if (filters?.jurisdiction) conditions.push(eq(ronDocumentTemplates.jurisdiction, filters.jurisdiction));
+    if (filters?.isActive !== undefined) conditions.push(eq(ronDocumentTemplates.isActive, filters.isActive));
+    if (conditions.length > 0) {
+      return db.select().from(ronDocumentTemplates).where(and(...conditions)).orderBy(desc(ronDocumentTemplates.updatedAt));
+    }
+    return db.select().from(ronDocumentTemplates).orderBy(desc(ronDocumentTemplates.updatedAt));
+  }
+
+  async getRonDocumentTemplate(id: string): Promise<RonDocumentTemplate | undefined> {
+    const [template] = await db.select().from(ronDocumentTemplates).where(eq(ronDocumentTemplates.id, id));
+    return template;
+  }
+
+  async createRonDocumentTemplate(template: InsertRonDocumentTemplate): Promise<RonDocumentTemplate> {
+    const [created] = await db.insert(ronDocumentTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateRonDocumentTemplate(id: string, updates: Partial<RonDocumentTemplate>): Promise<RonDocumentTemplate> {
+    const [updated] = await db.update(ronDocumentTemplates).set({ ...updates, updatedAt: new Date() }).where(eq(ronDocumentTemplates.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRonDocumentTemplate(id: string): Promise<void> {
+    await db.delete(ronDocumentTemplates).where(eq(ronDocumentTemplates.id, id));
+  }
+
+  async incrementRonTemplateUsage(id: string): Promise<void> {
+    await db.update(ronDocumentTemplates)
+      .set({ usageCount: sql`COALESCE(${ronDocumentTemplates.usageCount}, 0) + 1`, updatedAt: new Date() })
+      .where(eq(ronDocumentTemplates.id, id));
+  }
+
+  async getRonDocumentByAsyncToken(token: string): Promise<RonDocument | undefined> {
+    const [doc] = await db.select().from(ronDocuments).where(eq(ronDocuments.asyncSigningToken, token));
+    return doc;
   }
 }
 

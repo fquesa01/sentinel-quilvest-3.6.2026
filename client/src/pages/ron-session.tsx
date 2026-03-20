@@ -361,7 +361,8 @@ export default function RonSessionPage() {
   const isPaused = session.status === "paused";
   const isCompleted = session.status === "completed";
   const allDocsSigned = documents.length > 0 && documents.every(d => ["fully_signed", "notarized"].includes(d.status));
-  const allDocsNotarized = documents.length > 0 && documents.every(d => d.status === "notarized");
+  const notarizableDocs = documents.filter(d => !d.esignOnly);
+  const allDocsNotarized = documents.length > 0 && documents.every(d => d.status === "notarized" || d.esignOnly);
 
   return (
     <div className="flex flex-col h-full">
@@ -482,10 +483,20 @@ export default function RonSessionPage() {
                       <FileText className="h-4 w-4 flex-shrink-0" />
                       <span className="truncate flex-1">{doc.title}</span>
                     </div>
-                    <div className="mt-1 flex items-center gap-1">
+                    <div className="mt-1 flex items-center gap-1 flex-wrap">
                       <Badge variant={docStatusColors[doc.status] || "default"} className="text-[10px]">
                         {doc.status.replace(/_/g, " ")}
                       </Badge>
+                      {doc.esignOnly && (
+                        <Badge variant="outline" className="text-[10px]" data-testid={`badge-esign-only-${doc.id}`}>
+                          <Pen className="h-2.5 w-2.5 mr-0.5" /> eSign
+                        </Badge>
+                      )}
+                      {doc.mismoCompliant && (
+                        <Badge variant="outline" className="text-[10px]" data-testid={`badge-mismo-${doc.id}`}>
+                          eNote
+                        </Badge>
+                      )}
                       <span className="text-[10px] text-muted-foreground">
                         {doc.annotations.filter(a => a.completed).length}/{doc.annotations.length} signed
                       </span>
@@ -866,7 +877,17 @@ function DocumentViewer({
         <Button variant="ghost" size="icon" onClick={onNext} disabled={currentIndex === totalDocs - 1} data-testid="button-next-doc">
           <ChevronRight className="h-4 w-4" />
         </Button>
-        {isActive && notary && doc.status === "fully_signed" && (
+        {doc.esignOnly && (
+          <Badge variant="outline" className="text-xs" data-testid="badge-doc-esign-mode">
+            <Pen className="h-3 w-3 mr-1" /> eSign Only
+          </Badge>
+        )}
+        {doc.mismoCompliant && doc.eNoteStatus && (
+          <Badge variant="secondary" className="text-xs" data-testid="badge-doc-enote-status">
+            eNote: {doc.eNoteStatus}
+          </Badge>
+        )}
+        {isActive && notary && doc.status === "fully_signed" && !doc.esignOnly && (
           <Button size="sm" onClick={() => onSealClick(doc, 1)} data-testid="button-apply-seal">
             <Stamp className="h-4 w-4 mr-1" /> Apply Seal
           </Button>

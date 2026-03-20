@@ -555,3 +555,61 @@ CREATE TABLE IF NOT EXISTS ron_alt_idv_records (
 CREATE INDEX IF NOT EXISTS idx_ron_alt_idv_transaction ON ron_alt_idv_records(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_ron_alt_idv_signer ON ron_alt_idv_records(signer_id);
 CREATE INDEX IF NOT EXISTS idx_ron_alt_idv_method ON ron_alt_idv_records(method);
+
+-- eSign-only and eNote enums
+DO $$ BEGIN
+  CREATE TYPE ron_esign_status AS ENUM ('pending', 'sent', 'viewed', 'signed', 'expired', 'declined');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE ron_enote_status AS ENUM ('draft', 'generated', 'signed', 'registered', 'transferred', 'paid_off');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Add eSign-only and eNote columns to ron_documents
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS esign_only BOOLEAN DEFAULT FALSE;
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS async_signing_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS async_signing_token VARCHAR(200);
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS async_signing_expiry TIMESTAMP;
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS async_signing_status ron_esign_status;
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS mismo_compliant BOOLEAN DEFAULT FALSE;
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS e_note_status ron_enote_status;
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS mers_registration_number VARCHAR(200);
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS mers_registration_date TIMESTAMP;
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS smart_doc_markers JSONB DEFAULT '{}';
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS tamper_seal_hash VARCHAR(512);
+ALTER TABLE ron_documents ADD COLUMN IF NOT EXISTS template_id VARCHAR;
+
+-- RON Document Templates
+CREATE TABLE IF NOT EXISTS ron_document_templates (
+  id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(500) NOT NULL,
+  description TEXT,
+  document_type VARCHAR(100) NOT NULL,
+  jurisdiction VARCHAR(100),
+  category VARCHAR(200),
+  annotation_placements JSONB DEFAULT '[]',
+  source_template_id VARCHAR,
+  storage_key VARCHAR(1000),
+  file_name VARCHAR(500),
+  file_size INTEGER,
+  mime_type VARCHAR(200),
+  page_count INTEGER,
+  is_active BOOLEAN DEFAULT TRUE,
+  usage_count INTEGER DEFAULT 0,
+  metadata JSONB DEFAULT '{}',
+  created_by VARCHAR REFERENCES users(id),
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ron_doc_templates_doc_type ON ron_document_templates(document_type);
+CREATE INDEX IF NOT EXISTS idx_ron_doc_templates_jurisdiction ON ron_document_templates(jurisdiction);
+CREATE INDEX IF NOT EXISTS idx_ron_doc_templates_active ON ron_document_templates(is_active);
+
+-- Add new journal event types for eSign/eNote flows
+DO $$ BEGIN ALTER TYPE ron_journal_event_type ADD VALUE IF NOT EXISTS 'esign_link_generated'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE ron_journal_event_type ADD VALUE IF NOT EXISTS 'enote_generated'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE ron_journal_event_type ADD VALUE IF NOT EXISTS 'mers_registered'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE ron_journal_event_type ADD VALUE IF NOT EXISTS 'async_esign_completed'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE ron_journal_event_type ADD VALUE IF NOT EXISTS 'async_esign_declined'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

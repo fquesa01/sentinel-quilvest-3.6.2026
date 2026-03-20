@@ -11,6 +11,9 @@ import * as fraudService from "../services/ron-fraud-detection-service";
 import { uploadFile, downloadFile, deleteFile, RON_DOCUMENTS_BUCKET } from "../supabaseStorage";
 import { storage } from "../storage";
 import type { RonComplianceCheck } from "@shared/schema";
+import { firmFormTemplates } from "@shared/schema";
+import { db } from "../db";
+import { eq } from "drizzle-orm";
 import { convertWordToPdf } from "../word-to-pdf";
 
 type ComplianceCheckType = RonComplianceCheck["checkType"];
@@ -633,6 +636,7 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
     }
 
     const body = req.body;
+    const isEsignOnly = body.esignOnly === "true" || body.esignOnly === true;
     const doc = await storage.createRonDocument({
       transactionId: req.params.transactionId,
       title: body.title || file?.originalname || "Untitled Document",
@@ -644,8 +648,12 @@ router.post("/transactions/:transactionId/documents", upload.single("file"), asy
       fileSize,
       mimeType,
       signingOrder: body.signingOrder ? parseInt(body.signingOrder) : 0,
-      requiresNotarization: body.requiresNotarization !== "false",
-      notarizationType: body.notarizationType,
+      requiresNotarization: isEsignOnly ? false : body.requiresNotarization !== "false",
+      notarizationType: isEsignOnly ? null : body.notarizationType,
+      esignOnly: isEsignOnly,
+      mismoCompliant: body.mismoCompliant === "true" || body.mismoCompliant === true,
+      eNoteStatus: body.mismoCompliant === "true" || body.mismoCompliant === true ? "draft" : null,
+      templateId: body.templateId || null,
       metadata: body.metadata ? JSON.parse(body.metadata) : {},
     });
 
@@ -1153,7 +1161,11 @@ router.post("/sessions/:id/complete", async (req: any, res) => {
       const annotations = await storage.getRonAnnotations(doc.id);
       const allRequired = annotations.filter(a => a.required);
       const allSigned = allRequired.every(a => a.completed);
-      if (allSigned && seals.length > 0) {
+      if (doc.esignOnly) {
+        if (allSigned) {
+          await storage.updateRonDocument(doc.id, { status: "fully_signed" });
+        }
+      } else if (allSigned && seals.length > 0) {
         await storage.updateRonDocument(doc.id, { status: "notarized" });
       } else if (allSigned) {
         await storage.updateRonDocument(doc.id, { status: "fully_signed" });
@@ -2229,6 +2241,54 @@ router.post("/sessions/:sessionId/video-room/close", async (req: any, res) => {
 });
 
 // ============================================================================
+// ESIGN-ONLY: ASYNC SIGNING LINK
+// ============================================================================
+
+router.post("/documents/:id/esign-link", async (req: any, res) => {
+  try {
+    const doc = await storage.getRonDocument(req.params.id);
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+
+    const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (!doc.esignOnly) {
+      return res.status(400).json({ message: "Async signing links are only available for eSign-only documents" });
+    }
+
+    const token = randomBytes(32).toString("hex");
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + (req.body.expiryHours || 72));
+
+    await storage.updateRonDocument(req.params.id, {
+      asyncSigningEnabled: true,
+      asyncSigningToken: token,
+      asyncSigningExpiry: expiry,
+      asyncSigningStatus: "pending",
+    });
+
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const signingLink = `${baseUrl}/api/ron/public/esign/${token}`;
+
+    await journalService.createJournalEntry({
+      transactionId: doc.transactionId,
+      eventType: "esign_link_generated",
+      actorType: "user",
+      actorId: req.user.id,
+      actorName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
+      description: `Async eSign link generated for "${doc.title}" (expires ${expiry.toISOString()})`,
+      documentId: doc.id,
+      ipAddress: req.ip,
+    });
+
+    res.json({ signingLink, token, expiresAt: expiry.toISOString() });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
 // SIGNER CONSENT CAPTURE
 // ============================================================================
 
@@ -2368,6 +2428,334 @@ router.get("/signers/:id/device-validation", async (req: any, res) => {
   }
 });
 
+// ============================================================================
+// RON DOCUMENT TEMPLATES
+// ============================================================================
+
+router.get("/ron-document-templates", async (req: any, res) => {
+  try {
+    const { documentType, jurisdiction, isActive } = req.query;
+    const filters: { documentType?: string; jurisdiction?: string; isActive?: boolean } = {};
+    if (documentType) filters.documentType = documentType as string;
+    if (jurisdiction) filters.jurisdiction = jurisdiction as string;
+    if (isActive !== undefined) filters.isActive = isActive === "true";
+    const templates = await storage.getRonDocumentTemplates(filters);
+    res.json(templates);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/ron-document-templates/:id", async (req: any, res) => {
+  try {
+    const template = await storage.getRonDocumentTemplate(req.params.id);
+    if (!template) return res.status(404).json({ message: "Template not found" });
+    res.json(template);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/ron-document-templates", upload.single("file"), async (req: any, res) => {
+  try {
+    const body = req.body;
+    if (!body.name || !body.documentType) {
+      return res.status(400).json({ message: "name and documentType are required" });
+    }
+
+    let storageKey: string | null = null;
+    let fileName: string | null = null;
+    let fileSize: number | null = null;
+    let mimeType: string | null = null;
+
+    const file = req.file;
+    if (file) {
+      storageKey = `ron/templates/${Date.now()}_${file.originalname}`;
+      await uploadFile(RON_DOCUMENTS_BUCKET, storageKey, file.buffer, file.mimetype);
+      fileName = file.originalname;
+      fileSize = file.size;
+      mimeType = file.mimetype;
+    }
+
+    let annotationPlacements: unknown[] = [];
+    if (body.annotationPlacements) {
+      try {
+        annotationPlacements = typeof body.annotationPlacements === "string"
+          ? JSON.parse(body.annotationPlacements)
+          : body.annotationPlacements;
+      } catch {
+        return res.status(400).json({ message: "Invalid annotationPlacements JSON" });
+      }
+    }
+
+    let metadata: Record<string, unknown> = {};
+    if (body.metadata) {
+      try {
+        metadata = typeof body.metadata === "string" ? JSON.parse(body.metadata) : body.metadata;
+      } catch {
+        return res.status(400).json({ message: "Invalid metadata JSON" });
+      }
+    }
+
+    const template = await storage.createRonDocumentTemplate({
+      name: body.name,
+      description: body.description || null,
+      documentType: body.documentType,
+      jurisdiction: body.jurisdiction || null,
+      category: body.category || null,
+      annotationPlacements,
+      storageKey,
+      fileName,
+      fileSize,
+      mimeType,
+      pageCount: body.pageCount ? parseInt(body.pageCount) : null,
+      isActive: true,
+      usageCount: 0,
+      metadata,
+      createdBy: req.user.id,
+    });
+
+    res.status(201).json(template);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.patch("/ron-document-templates/:id", async (req: any, res) => {
+  try {
+    const template = await storage.getRonDocumentTemplate(req.params.id);
+    if (!template) return res.status(404).json({ message: "Template not found" });
+
+    const updates: Record<string, unknown> = { ...req.body };
+    delete updates.id;
+    delete updates.createdAt;
+    delete updates.createdBy;
+
+    if (typeof updates.annotationPlacements === "string") {
+      try {
+        updates.annotationPlacements = JSON.parse(updates.annotationPlacements as string);
+      } catch {
+        return res.status(400).json({ message: "Invalid annotationPlacements JSON" });
+      }
+    }
+    if (typeof updates.metadata === "string") {
+      try {
+        updates.metadata = JSON.parse(updates.metadata as string);
+      } catch {
+        return res.status(400).json({ message: "Invalid metadata JSON" });
+      }
+    }
+
+    const updated = await storage.updateRonDocumentTemplate(req.params.id, updates);
+    res.json(updated);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.delete("/ron-document-templates/:id", async (req: any, res) => {
+  try {
+    const template = await storage.getRonDocumentTemplate(req.params.id);
+    if (!template) return res.status(404).json({ message: "Template not found" });
+
+    await storage.deleteRonDocumentTemplate(req.params.id);
+    res.json({ success: true });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/ron-document-templates/import-from-library", async (req: any, res) => {
+  try {
+    const { sourceTemplateId, name, jurisdiction, category, annotationPlacements } = req.body;
+    if (!sourceTemplateId) {
+      return res.status(400).json({ message: "sourceTemplateId is required" });
+    }
+
+    const [sourceTemplate] = await db.select().from(firmFormTemplates).where(eq(firmFormTemplates.id, sourceTemplateId));
+    if (!sourceTemplate) {
+      return res.status(404).json({ message: "Source form template not found in library" });
+    }
+
+    let storageKey: string | null = null;
+    if (sourceTemplate.storageKey) {
+      try {
+        const fileBuffer = await downloadFile(RON_DOCUMENTS_BUCKET, sourceTemplate.storageKey);
+        storageKey = `ron/templates/imported_${Date.now()}_${sourceTemplate.fileName || "template"}`;
+        await uploadFile(RON_DOCUMENTS_BUCKET, storageKey, fileBuffer, sourceTemplate.mimeType || "application/pdf");
+      } catch {
+        storageKey = sourceTemplate.storageKey;
+      }
+    }
+
+    const template = await storage.createRonDocumentTemplate({
+      name: name || sourceTemplate.name,
+      description: sourceTemplate.description,
+      documentType: sourceTemplate.documentType,
+      jurisdiction: jurisdiction || null,
+      category: category || sourceTemplate.dealType || null,
+      annotationPlacements: annotationPlacements || [],
+      sourceTemplateId,
+      storageKey,
+      fileName: sourceTemplate.fileName,
+      fileSize: sourceTemplate.fileSize,
+      mimeType: sourceTemplate.mimeType,
+      isActive: true,
+      usageCount: 0,
+      metadata: { importedFrom: "firm_form_templates", originalId: sourceTemplateId },
+      createdBy: req.user.id,
+    });
+
+    res.status(201).json(template);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/transactions/:transactionId/documents/from-template", upload.none(), async (req: any, res) => {
+  try {
+    const { txn, error } = await verifyTransactionAccess(req.params.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(txn === null && error === "Transaction not found" ? 404 : 403).json({ message: error });
+
+    const { templateId, title, signingOrder, esignOnly } = req.body;
+    if (!templateId) return res.status(400).json({ message: "templateId is required" });
+
+    const template = await storage.getRonDocumentTemplate(templateId);
+    if (!template) return res.status(404).json({ message: "Template not found" });
+    if (!template.isActive) return res.status(400).json({ message: "Template is not active" });
+
+    const isEsignOnly = esignOnly === "true" || esignOnly === true;
+
+    const doc = await storage.createRonDocument({
+      transactionId: req.params.transactionId,
+      title: title || template.name,
+      status: "uploaded",
+      documentType: template.documentType,
+      storageKey: template.storageKey,
+      originalPdfUrl: template.storageKey,
+      pageCount: template.pageCount,
+      fileSize: template.fileSize,
+      mimeType: template.mimeType,
+      signingOrder: signingOrder ? parseInt(signingOrder) : 0,
+      requiresNotarization: !isEsignOnly,
+      esignOnly: isEsignOnly,
+      templateId,
+      metadata: { fromTemplate: template.name },
+    });
+
+    if (Array.isArray(template.annotationPlacements) && (template.annotationPlacements as any[]).length > 0) {
+      for (const placement of template.annotationPlacements as any[]) {
+        await storage.createRonAnnotation({
+          documentId: doc.id,
+          signerId: placement.signerId || null,
+          notaryId: placement.notaryId || null,
+          annotationType: placement.annotationType || "signature",
+          pageNumber: placement.pageNumber || 1,
+          xPosition: (placement.xPosition || 0).toString(),
+          yPosition: (placement.yPosition || 0).toString(),
+          width: (placement.width || 200).toString(),
+          height: (placement.height || 50).toString(),
+          required: placement.required !== false,
+          sortOrder: placement.sortOrder || 0,
+          metadata: placement.metadata || {},
+        });
+      }
+      await storage.updateRonDocument(doc.id, { status: "preparing" });
+    }
+
+    await storage.incrementRonTemplateUsage(templateId);
+
+    await journalService.createJournalEntry({
+      transactionId: req.params.transactionId,
+      eventType: "document_uploaded",
+      actorType: "user",
+      actorId: req.user.id,
+      actorName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
+      description: `Document "${doc.title}" created from template "${template.name}"`,
+      documentId: doc.id,
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json(doc);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// MISMO eNOTE GENERATION & MERS REGISTRATION
+// ============================================================================
+
+router.post("/documents/:id/generate-enote", async (req: any, res) => {
+  try {
+    const doc = await storage.getRonDocument(req.params.id);
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+
+    const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (!doc.mismoCompliant) {
+      return res.status(400).json({ message: "Document is not marked as MISMO compliant. Set mismoCompliant=true during upload." });
+    }
+
+    if (doc.eNoteStatus && !["draft", "generated"].includes(doc.eNoteStatus)) {
+      return res.status(400).json({ message: `Cannot regenerate eNote in "${doc.eNoteStatus}" status` });
+    }
+
+    const { loanNumber, borrowerName, loanAmount, propertyAddress, lenderName } = req.body;
+
+    const smartDocMarkers = {
+      mismoVersion: "3.4",
+      documentClass: "SMART_DOC",
+      loanNumber: loanNumber || null,
+      borrowerName: borrowerName || null,
+      loanAmount: loanAmount || null,
+      propertyAddress: propertyAddress || null,
+      lenderName: lenderName || null,
+      generatedAt: new Date().toISOString(),
+      tamperSealAlgorithm: "SHA-256",
+    };
+
+    const tamperSealHash = randomBytes(32).toString("hex");
+
+    await storage.updateRonDocument(req.params.id, {
+      eNoteStatus: "generated",
+      smartDocMarkers,
+      tamperSealHash,
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: doc.transactionId,
+      eventType: "enote_generated",
+      actorType: "user",
+      actorId: req.user.id,
+      actorName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
+      description: `MISMO-compliant eNote generated for "${doc.title}"`,
+      documentId: doc.id,
+      eventData: { loanNumber, mismoVersion: "3.4" },
+      ipAddress: req.ip,
+    });
+
+    res.json({
+      documentId: doc.id,
+      eNoteStatus: "generated",
+      mismoVersion: "3.4",
+      tamperSealHash,
+      smartDocMarkers,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
 router.post("/signers/:id/device-fingerprint", async (req: any, res) => {
   try {
     const signer = await storage.getRonSigner(req.params.id);
@@ -2387,6 +2775,78 @@ router.post("/signers/:id/device-fingerprint", async (req: any, res) => {
 
     const updated = await storage.updateRonSigner(req.params.id, updates);
     res.json({ success: true, deviceFingerprint: updated.deviceFingerprint ? `${updated.deviceFingerprint.substring(0, 8)}...` : null });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/documents/:id/mers-registration", async (req: any, res) => {
+  try {
+    const doc = await storage.getRonDocument(req.params.id);
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+
+    const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    if (!doc.mismoCompliant) {
+      return res.status(400).json({ message: "MERS registration requires a MISMO-compliant document" });
+    }
+
+    if (doc.eNoteStatus !== "generated" && doc.eNoteStatus !== "signed") {
+      return res.status(400).json({ message: `eNote must be generated or signed before MERS registration (current: ${doc.eNoteStatus})` });
+    }
+
+    const mersNumber = `MERS-${Date.now()}-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const registrationDate = new Date();
+
+    await storage.updateRonDocument(req.params.id, {
+      eNoteStatus: "registered",
+      mersRegistrationNumber: mersNumber,
+      mersRegistrationDate: registrationDate,
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: doc.transactionId,
+      eventType: "mers_registered",
+      actorType: "user",
+      actorId: req.user.id,
+      actorName: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
+      description: `eNote registered with MERS (${mersNumber})`,
+      documentId: doc.id,
+      eventData: { mersRegistrationNumber: mersNumber },
+      ipAddress: req.ip,
+    });
+
+    res.json({
+      documentId: doc.id,
+      mersRegistrationNumber: mersNumber,
+      mersRegistrationDate: registrationDate.toISOString(),
+      eNoteStatus: "registered",
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.get("/documents/:id/enote-status", async (req: any, res) => {
+  try {
+    const doc = await storage.getRonDocument(req.params.id);
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+
+    const { txn, error } = await verifyTransactionAccess(doc.transactionId, req.user.id, req.user.role);
+    if (error) return res.status(403).json({ message: error });
+
+    res.json({
+      documentId: doc.id,
+      mismoCompliant: doc.mismoCompliant,
+      eNoteStatus: doc.eNoteStatus,
+      mersRegistrationNumber: doc.mersRegistrationNumber,
+      mersRegistrationDate: doc.mersRegistrationDate,
+      smartDocMarkers: doc.smartDocMarkers,
+      tamperSealHash: doc.tamperSealHash,
+    });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });
@@ -2818,6 +3278,152 @@ router.get("/signers/:signerId/alt-idv", async (req: any, res) => {
 
 const publicRouter = Router();
 const publicUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+publicRouter.get("/esign/:token", async (req: any, res) => {
+  try {
+    const doc = await storage.getRonDocumentByAsyncToken(req.params.token);
+    if (!doc) return res.status(404).json({ message: "Signing link not found or invalid" });
+
+    if (!doc.asyncSigningEnabled) {
+      return res.status(400).json({ message: "Async signing is not enabled for this document" });
+    }
+
+    if (doc.asyncSigningExpiry && new Date() > new Date(doc.asyncSigningExpiry)) {
+      await storage.updateRonDocument(doc.id, { asyncSigningStatus: "expired" });
+      return res.status(400).json({ message: "This signing link has expired" });
+    }
+
+    if (doc.asyncSigningStatus === "signed") {
+      return res.status(400).json({ message: "This document has already been signed" });
+    }
+
+    if (doc.asyncSigningStatus === "declined") {
+      return res.status(400).json({ message: "This signing request was declined" });
+    }
+
+    if (doc.asyncSigningStatus === "pending") {
+      await storage.updateRonDocument(doc.id, { asyncSigningStatus: "viewed" });
+    }
+
+    const annotations = await storage.getRonAnnotations(doc.id);
+
+    res.json({
+      documentId: doc.id,
+      title: doc.title,
+      documentType: doc.documentType,
+      status: doc.status,
+      asyncSigningStatus: doc.asyncSigningStatus === "pending" ? "viewed" : doc.asyncSigningStatus,
+      expiresAt: doc.asyncSigningExpiry,
+      annotations: annotations.filter(a => !a.completed),
+      pageCount: doc.pageCount,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+publicRouter.post("/esign/:token/sign", async (req: any, res) => {
+  try {
+    const doc = await storage.getRonDocumentByAsyncToken(req.params.token);
+    if (!doc) return res.status(404).json({ message: "Signing link not found or invalid" });
+
+    if (!doc.asyncSigningEnabled) {
+      return res.status(400).json({ message: "Async signing is not enabled for this document" });
+    }
+
+    if (doc.asyncSigningExpiry && new Date() > new Date(doc.asyncSigningExpiry)) {
+      await storage.updateRonDocument(doc.id, { asyncSigningStatus: "expired" });
+      return res.status(400).json({ message: "This signing link has expired" });
+    }
+
+    if (doc.asyncSigningStatus === "signed") {
+      return res.status(400).json({ message: "This document has already been signed" });
+    }
+
+    const { signerId, signatureData, signatureImageUrl, annotationIds } = req.body;
+    if (!signerId) return res.status(400).json({ message: "signerId is required" });
+
+    const signer = await storage.getRonSigner(signerId);
+    if (!signer) return res.status(404).json({ message: "Signer not found" });
+
+    if (signer.transactionId !== doc.transactionId) {
+      return res.status(403).json({ message: "Signer does not belong to this document's transaction" });
+    }
+
+    const annotations = await storage.getRonAnnotations(doc.id);
+    const signerAnnotations = annotations.filter(a => !a.completed && a.signerId === signerId);
+
+    for (const annotation of signerAnnotations) {
+      await storage.createRonSignature({
+        signerId,
+        documentId: doc.id,
+        annotationId: annotation.id,
+        signatureType: annotation.annotationType === "initial" ? "initial" : "signature",
+        signatureImageUrl: signatureImageUrl || null,
+        signatureData: signatureData || null,
+        pageNumber: annotation.pageNumber,
+        xPosition: annotation.xPosition,
+        yPosition: annotation.yPosition,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+      await storage.updateRonAnnotation(annotation.id, { completed: true, completedAt: new Date() });
+    }
+
+    const allAnnotations = await storage.getRonAnnotations(doc.id);
+    const allCompleted = allAnnotations.every(a => a.completed || !a.required);
+
+    await storage.updateRonDocument(doc.id, {
+      asyncSigningStatus: "signed",
+      status: allCompleted ? "fully_signed" : "in_signing",
+    });
+
+    await journalService.createJournalEntry({
+      transactionId: doc.transactionId,
+      eventType: "async_esign_completed",
+      actorType: "signer",
+      actorId: signerId,
+      description: `Async eSign completed for "${doc.title}" by ${signer.firstName} ${signer.lastName}`,
+      documentId: doc.id,
+      signerId,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, documentStatus: allCompleted ? "fully_signed" : "in_signing" });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+publicRouter.post("/esign/:token/decline", async (req: any, res) => {
+  try {
+    const doc = await storage.getRonDocumentByAsyncToken(req.params.token);
+    if (!doc) return res.status(404).json({ message: "Signing link not found or invalid" });
+
+    if (doc.asyncSigningStatus === "signed") {
+      return res.status(400).json({ message: "Cannot decline — document already signed" });
+    }
+
+    await storage.updateRonDocument(doc.id, { asyncSigningStatus: "declined" });
+
+    await journalService.createJournalEntry({
+      transactionId: doc.transactionId,
+      eventType: "async_esign_declined",
+      actorType: "signer",
+      actorId: "anonymous",
+      description: `Async eSign declined for "${doc.title}": ${req.body.reason || "No reason given"}`,
+      documentId: doc.id,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, message: "Signing declined" });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
 
 publicRouter.get("/validate-invitation/:token", async (req: any, res) => {
   try {

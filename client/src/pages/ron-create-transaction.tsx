@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Switch } from "@/components/ui/switch";
 import {
   ArrowLeft,
   ArrowRight,
@@ -32,6 +33,7 @@ import {
   XCircle,
   AlertTriangle,
   Shield,
+  Pen,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Deal } from "@shared/schema";
@@ -88,6 +90,8 @@ interface DocEntry {
   file: File;
   title: string;
   documentType: string;
+  esignOnly: boolean;
+  mismoCompliant: boolean;
 }
 
 const steps = ["Details", "Jurisdiction", "Signers", "Documents", "Review"];
@@ -172,6 +176,8 @@ export default function RonCreateTransaction() {
         formData.append("file", doc.file);
         formData.append("title", doc.title || doc.file.name);
         formData.append("documentType", doc.documentType);
+        if (doc.esignOnly) formData.append("esignOnly", "true");
+        if (doc.mismoCompliant) formData.append("mismoCompliant", "true");
         const uploadRes = await fetch(`/api/ron/transactions/${txn.id}/documents`, {
           method: "POST",
           body: formData,
@@ -210,7 +216,7 @@ export default function RonCreateTransaction() {
   };
 
   const addDocument = (file: File) => {
-    setDocuments([...documents, { file, title: file.name.replace(/\.[^.]+$/, ""), documentType: "general" }]);
+    setDocuments([...documents, { file, title: file.name.replace(/\.[^.]+$/, ""), documentType: "general", esignOnly: false, mismoCompliant: false }]);
   };
 
   const removeDocument = (idx: number) => {
@@ -540,32 +546,61 @@ export default function RonCreateTransaction() {
             {documents.length > 0 && (
               <div className="space-y-2">
                 {documents.map((doc, idx) => (
-                  <div key={idx} className="flex items-center gap-3 p-3 rounded-md border border-border">
-                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <Input
-                        value={doc.title}
-                        onChange={(e) => updateDocTitle(idx, e.target.value)}
-                        className="text-sm"
-                        data-testid={`input-doc-title-${idx}`}
-                      />
-                      <div className="flex items-center gap-2">
-                        <Select value={doc.documentType} onValueChange={(v) => updateDocType(idx, v)}>
-                          <SelectTrigger className="w-[180px]" data-testid={`select-doc-type-${idx}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {docTypes.map((dt) => (
-                              <SelectItem key={dt.value} value={dt.value}>{dt.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <span className="text-xs text-muted-foreground truncate">{doc.file.name}</span>
+                  <div key={idx} className="p-3 rounded-md border border-border space-y-2">
+                    <div className="flex items-center gap-3">
+                      <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <Input
+                          value={doc.title}
+                          onChange={(e) => updateDocTitle(idx, e.target.value)}
+                          className="text-sm"
+                          data-testid={`input-doc-title-${idx}`}
+                        />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Select value={doc.documentType} onValueChange={(v) => updateDocType(idx, v)}>
+                            <SelectTrigger className="w-[180px]" data-testid={`select-doc-type-${idx}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {docTypes.map((dt) => (
+                                <SelectItem key={dt.value} value={dt.value}>{dt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <span className="text-xs text-muted-foreground truncate">{doc.file.name}</span>
+                        </div>
                       </div>
+                      <Button variant="ghost" size="icon" onClick={() => removeDocument(idx)} data-testid={`button-remove-doc-${idx}`}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => removeDocument(idx)} data-testid={`button-remove-doc-${idx}`}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-4 pl-7 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`esign-only-${idx}`}
+                          checked={doc.esignOnly}
+                          onCheckedChange={(checked) => setDocuments(documents.map((d, i) => i === idx ? { ...d, esignOnly: checked } : d))}
+                          data-testid={`switch-esign-only-${idx}`}
+                        />
+                        <Label htmlFor={`esign-only-${idx}`} className="text-xs flex items-center gap-1 cursor-pointer">
+                          <Pen className="h-3 w-3" /> eSign Only
+                        </Label>
+                      </div>
+                      {(doc.documentType === "note" || doc.documentType === "mortgage") && (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id={`mismo-${idx}`}
+                            checked={doc.mismoCompliant}
+                            onCheckedChange={(checked) => setDocuments(documents.map((d, i) => i === idx ? { ...d, mismoCompliant: checked } : d))}
+                            data-testid={`switch-mismo-${idx}`}
+                          />
+                          <Label htmlFor={`mismo-${idx}`} className="text-xs cursor-pointer">MISMO eNote</Label>
+                        </div>
+                      )}
+                      {doc.esignOnly && (
+                        <Badge variant="outline" className="text-[10px]">No notary seal required</Badge>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -662,12 +697,22 @@ export default function RonCreateTransaction() {
                 <p className="text-muted-foreground text-sm mb-2">Documents ({documents.length})</p>
                 <div className="space-y-1">
                   {documents.map((doc, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-sm p-2 rounded-md border border-border">
+                    <div key={idx} className="flex items-center gap-2 text-sm p-2 rounded-md border border-border flex-wrap">
                       <FileText className="h-3 w-3 text-muted-foreground" />
                       <span className="font-medium">{doc.title}</span>
-                      <Badge variant="outline" className="text-xs ml-auto">
-                        {docTypes.find(dt => dt.value === doc.documentType)?.label || doc.documentType}
-                      </Badge>
+                      <div className="flex items-center gap-1 ml-auto flex-wrap">
+                        {doc.esignOnly && (
+                          <Badge variant="outline" className="text-xs">
+                            <Pen className="h-2.5 w-2.5 mr-0.5" /> eSign
+                          </Badge>
+                        )}
+                        {doc.mismoCompliant && (
+                          <Badge variant="outline" className="text-xs">eNote</Badge>
+                        )}
+                        <Badge variant="outline" className="text-xs">
+                          {docTypes.find(dt => dt.value === doc.documentType)?.label || doc.documentType}
+                        </Badge>
+                      </div>
                     </div>
                   ))}
                 </div>
