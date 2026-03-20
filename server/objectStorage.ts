@@ -364,56 +364,58 @@ export class ObjectStorageService {
 
   // Upload a buffer directly to object storage at a specified path
   async uploadBuffer(targetPath: string, buffer: Buffer, contentType: string = 'application/octet-stream'): Promise<string> {
-    const privateObjectDir = this.getPrivateObjectDir();
-    if (!privateObjectDir) {
-      throw new Error(
-        "PRIVATE_OBJECT_DIR not set. Create a bucket in 'Object Storage' " +
-          "tool and set PRIVATE_OBJECT_DIR env var."
-      );
-    }
-
     let relativePath = targetPath;
     if (targetPath.startsWith('/objects/')) {
       relativePath = targetPath.slice('/objects/'.length);
     }
 
-    try {
-      const fullPath = `${privateObjectDir}/${relativePath}`;
-      const { bucketName, objectName } = parseObjectPath(fullPath);
+    const privateObjectDir = process.env.PRIVATE_OBJECT_DIR || "";
 
-      const signedUrl = await signObjectURL({
-        bucketName,
-        objectName,
-        method: "PUT",
-        ttlSec: 900,
-      });
+    if (privateObjectDir) {
+      try {
+        const fullPath = `${privateObjectDir}/${relativePath}`;
+        const { bucketName, objectName } = parseObjectPath(fullPath);
 
-      const response = await fetch(signedUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': buffer.length.toString(),
-        },
-        body: buffer,
-      });
+        const signedUrl = await signObjectURL({
+          bucketName,
+          objectName,
+          method: "PUT",
+          ttlSec: 900,
+        });
 
-      if (!response.ok) {
-        throw new Error(`Signed URL upload failed: ${response.status}`);
+        const response = await fetch(signedUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': buffer.length.toString(),
+          },
+          body: buffer,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Signed URL upload failed: ${response.status}`);
+        }
+        console.log(`[ObjectStorage] Uploaded via signed URL: ${relativePath} (${buffer.length} bytes)`);
+        return `/objects/${relativePath}`;
+      } catch (signedErr: unknown) {
+        const errMsg = signedErr instanceof Error ? signedErr.message : String(signedErr);
+        console.warn(`[ObjectStorage] Signed URL upload failed (${errMsg}), falling back to local filesystem`);
       }
-    } catch (signedErr: any) {
-      console.log(`[ObjectStorage] Signed URL upload failed (${signedErr.message}), using local filesystem fallback`);
-      const resolved = path.resolve(LOCAL_STORAGE_ROOT, relativePath);
-      const root = path.resolve(LOCAL_STORAGE_ROOT);
-      if (!resolved.startsWith(root + path.sep) && resolved !== root) {
-        throw new Error("Invalid upload path");
-      }
-      const localDir = path.dirname(resolved);
-      fs.mkdirSync(localDir, { recursive: true });
-      fs.writeFileSync(resolved, buffer);
-      const metaPath = resolved + ".meta";
-      fs.writeFileSync(metaPath, JSON.stringify({ contentType, size: buffer.length, createdAt: new Date().toISOString() }));
-      console.log(`[ObjectStorage] Saved to local filesystem: ${resolved} (${buffer.length} bytes)`);
+    } else {
+      console.warn(`[ObjectStorage] PRIVATE_OBJECT_DIR not set, using local filesystem storage`);
     }
+
+    const resolved = path.resolve(LOCAL_STORAGE_ROOT, relativePath);
+    const root = path.resolve(LOCAL_STORAGE_ROOT);
+    if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+      throw new Error("Invalid upload path");
+    }
+    const localDir = path.dirname(resolved);
+    fs.mkdirSync(localDir, { recursive: true });
+    fs.writeFileSync(resolved, buffer);
+    const metaPath = resolved + ".meta";
+    fs.writeFileSync(metaPath, JSON.stringify({ contentType, size: buffer.length, createdAt: new Date().toISOString() }));
+    console.log(`[ObjectStorage] Saved to local filesystem: ${resolved} (${buffer.length} bytes)`);
 
     return `/objects/${relativePath}`;
   }
