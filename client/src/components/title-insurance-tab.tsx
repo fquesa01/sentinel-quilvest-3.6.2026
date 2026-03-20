@@ -48,6 +48,7 @@ import {
   UserPlus,
   Clock,
   MessageSquare,
+  Sparkles,
 } from "lucide-react";
 import type { TitleCommitment, TitleException, TitleSearchVendor } from "@shared/schema";
 
@@ -983,6 +984,8 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
                 </div>
               )}
 
+              <ExceptionAIAnalysis dealId={dealId} exceptionId={selectedExceptionData.id} />
+
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Actions</p>
                 <div className="flex gap-2 flex-wrap">
@@ -1358,6 +1361,105 @@ function AddNoteToException({ exceptionId, currentNotes, dealId, onDone }: { exc
         {addNoteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Add Note
       </Button>
+    </div>
+  );
+}
+
+interface AIAnalysisResult {
+  riskLevel: string;
+  riskAssessment: string;
+  recommendedActions: string[];
+  relatedConsiderations: string[];
+  surveyFindings?: string;
+}
+
+function ExceptionAIAnalysis({ dealId, exceptionId }: { dealId: string; exceptionId: string }) {
+  const { toast } = useToast();
+  const [analysis, setAnalysis] = useState<AIAnalysisResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const riskColors: Record<string, string> = {
+    low: "bg-green-500/20 text-green-400 border-green-500/30",
+    medium: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    high: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    critical: "bg-red-500/20 text-red-400 border-red-500/30",
+  };
+
+  const runAnalysis = async () => {
+    setLoading(true);
+    try {
+      const res = await apiRequest("POST", `/api/deals/${dealId}/title/exceptions/${exceptionId}/ai-analysis`);
+      const data = await res.json();
+      setAnalysis(data);
+    } catch (err) {
+      toast({ title: "AI Analysis Failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!analysis) {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+          <Sparkles className="h-3 w-3" />
+          AI Analysis
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={runAnalysis}
+          disabled={loading}
+          data-testid="button-ai-analyze-exception"
+        >
+          {loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+          {loading ? "Analyzing..." : "Run AI Analysis"}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 border rounded-md p-3 border-primary/30">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs font-medium flex items-center gap-1">
+          <Sparkles className="h-3 w-3 text-primary" />
+          AI Risk Assessment
+        </p>
+        <Badge className={riskColors[analysis.riskLevel] || ""} data-testid="badge-risk-level">
+          {analysis.riskLevel?.toUpperCase()}
+        </Badge>
+      </div>
+      <p className="text-sm leading-relaxed" data-testid="text-risk-assessment">{analysis.riskAssessment}</p>
+
+      {analysis.recommendedActions.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-1">Recommended Actions</p>
+          <ol className="list-decimal list-inside space-y-0.5">
+            {analysis.recommendedActions.map((a, i) => (
+              <li key={i} className="text-xs" data-testid={`text-action-${i}`}>{a}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {analysis.relatedConsiderations.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-1">Related Considerations</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {analysis.relatedConsiderations.map((c, i) => (
+              <li key={i} className="text-xs" data-testid={`text-consideration-${i}`}>{c}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {analysis.surveyFindings && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-1">Survey Cross-Reference</p>
+          <p className="text-xs" data-testid="text-survey-findings">{analysis.surveyFindings}</p>
+        </div>
+      )}
     </div>
   );
 }

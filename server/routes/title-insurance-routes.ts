@@ -2,8 +2,9 @@ import type { Express } from "express";
 import { db } from "../db";
 import * as schema from "@shared/schema";
 import { eq, and, desc, sql, count, sum, inArray } from "drizzle-orm";
-import { insertTitleCommitmentSchema, insertTitleExceptionSchema, insertTitleSearchVendorSchema, insertTitleClaimSchema, insertClaimActivityLogSchema } from "@shared/schema";
+import { insertTitleCommitmentSchema, insertTitleExceptionSchema, insertTitleSearchVendorSchema, insertTitleClaimSchema, insertClaimActivityLogSchema, insertSurveySchema, insertSurveyBoundarySchema, insertSurveyEasementSchema, insertSurveyEncroachmentSchema, insertSurveyImprovementSchema, insertSurveyDiscrepancySchema } from "@shared/schema";
 import { z } from "zod";
+import { extractSurveyData, analyzeException, detectDiscrepancies } from "../services/title-survey-ai-service";
 
 const commitmentUpdateSchema = insertTitleCommitmentSchema.partial().omit({ transactionId: true, commitmentNumber: true });
 const exceptionUpdateSchema = insertTitleExceptionSchema.partial().omit({ commitmentId: true });
@@ -836,6 +837,372 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Unknown error";
       console.error("Error fetching dashboard:", msg);
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  // ===== SURVEY CRUD ROUTES =====
+
+  app.get("/api/deals/:dealId/title/survey", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId } = req.params;
+      const surveyRows = await db
+        .select()
+        .from(schema.surveys)
+        .where(eq(schema.surveys.transactionId, dealId))
+        .orderBy(desc(schema.surveys.createdAt));
+      res.json(surveyRows);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  app.get("/api/deals/:dealId/title/survey/:surveyId", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId, surveyId } = req.params;
+      const [survey] = await db
+        .select()
+        .from(schema.surveys)
+        .where(and(eq(schema.surveys.id, surveyId), eq(schema.surveys.transactionId, dealId)));
+      if (!survey) return res.status(404).json({ message: "Survey not found" });
+
+      const boundaries = await db.select().from(schema.surveyBoundaries).where(eq(schema.surveyBoundaries.surveyId, surveyId)).orderBy(schema.surveyBoundaries.orderIndex);
+      const easements = await db.select().from(schema.surveyEasements).where(eq(schema.surveyEasements.surveyId, surveyId));
+      const encroachments = await db.select().from(schema.surveyEncroachments).where(eq(schema.surveyEncroachments.surveyId, surveyId));
+      const improvements = await db.select().from(schema.surveyImprovements).where(eq(schema.surveyImprovements.surveyId, surveyId));
+      const discrepancies = await db.select().from(schema.surveyDiscrepancies).where(eq(schema.surveyDiscrepancies.surveyId, surveyId));
+
+      res.json({ ...survey, boundaries, easements, encroachments, improvements, discrepancies });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title/survey", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId } = req.params;
+      const parsed = insertSurveySchema.parse({ ...req.body, transactionId: dealId });
+      const [created] = await db.insert(schema.surveys).values(parsed).returning();
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  app.patch("/api/deals/:dealId/title/survey/:surveyId", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId, surveyId } = req.params;
+      const [existing] = await db.select().from(schema.surveys).where(and(eq(schema.surveys.id, surveyId), eq(schema.surveys.transactionId, dealId)));
+      if (!existing) return res.status(404).json({ message: "Survey not found" });
+      const updateSchema = insertSurveySchema.partial().omit({ transactionId: true });
+      const parsed = updateSchema.parse(req.body);
+      const [updated] = await db.update(schema.surveys).set({ ...parsed, updatedAt: new Date() }).where(eq(schema.surveys.id, surveyId)).returning();
+      res.json(updated);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  app.delete("/api/deals/:dealId/title/survey/:surveyId", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId, surveyId } = req.params;
+      const [existing] = await db.select().from(schema.surveys).where(and(eq(schema.surveys.id, surveyId), eq(schema.surveys.transactionId, dealId)));
+      if (!existing) return res.status(404).json({ message: "Survey not found" });
+      await db.delete(schema.surveys).where(eq(schema.surveys.id, surveyId));
+      res.json({ success: true });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  // Survey sub-table CRUD: boundaries
+  app.get("/api/deals/:dealId/title/survey/:surveyId/boundaries", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const rows = await db.select().from(schema.surveyBoundaries).where(eq(schema.surveyBoundaries.surveyId, req.params.surveyId)).orderBy(schema.surveyBoundaries.orderIndex);
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title/survey/:surveyId/boundaries", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const parsed = insertSurveyBoundarySchema.parse({ ...req.body, surveyId: req.params.surveyId });
+      const [created] = await db.insert(schema.surveyBoundaries).values(parsed).returning();
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  // Survey sub-table CRUD: easements
+  app.get("/api/deals/:dealId/title/survey/:surveyId/easements", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const rows = await db.select().from(schema.surveyEasements).where(eq(schema.surveyEasements.surveyId, req.params.surveyId));
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title/survey/:surveyId/easements", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const parsed = insertSurveyEasementSchema.parse({ ...req.body, surveyId: req.params.surveyId });
+      const [created] = await db.insert(schema.surveyEasements).values(parsed).returning();
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  // Survey sub-table CRUD: encroachments
+  app.get("/api/deals/:dealId/title/survey/:surveyId/encroachments", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const rows = await db.select().from(schema.surveyEncroachments).where(eq(schema.surveyEncroachments.surveyId, req.params.surveyId));
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title/survey/:surveyId/encroachments", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const parsed = insertSurveyEncroachmentSchema.parse({ ...req.body, surveyId: req.params.surveyId });
+      const [created] = await db.insert(schema.surveyEncroachments).values(parsed).returning();
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  // Survey sub-table CRUD: improvements
+  app.get("/api/deals/:dealId/title/survey/:surveyId/improvements", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const rows = await db.select().from(schema.surveyImprovements).where(eq(schema.surveyImprovements.surveyId, req.params.surveyId));
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title/survey/:surveyId/improvements", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const parsed = insertSurveyImprovementSchema.parse({ ...req.body, surveyId: req.params.surveyId });
+      const [created] = await db.insert(schema.surveyImprovements).values(parsed).returning();
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  // Survey sub-table CRUD: discrepancies
+  app.get("/api/deals/:dealId/title/survey/:surveyId/discrepancies", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const rows = await db.select().from(schema.surveyDiscrepancies).where(eq(schema.surveyDiscrepancies.surveyId, req.params.surveyId));
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title/survey/:surveyId/discrepancies", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const parsed = insertSurveyDiscrepancySchema.parse({ ...req.body, surveyId: req.params.surveyId });
+      const [created] = await db.insert(schema.surveyDiscrepancies).values(parsed).returning();
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  app.patch("/api/deals/:dealId/title/survey/:surveyId/discrepancies/:discrepancyId", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const updateSchema = insertSurveyDiscrepancySchema.partial().omit({ surveyId: true });
+      const parsed = updateSchema.parse(req.body);
+      const [updated] = await db.update(schema.surveyDiscrepancies).set({ ...parsed, updatedAt: new Date() }).where(eq(schema.surveyDiscrepancies.id, req.params.discrepancyId)).returning();
+      if (!updated) return res.status(404).json({ message: "Discrepancy not found" });
+      res.json(updated);
+    } catch (error: unknown) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  // ===== AI SURVEY ANALYSIS ENDPOINT =====
+
+  app.post("/api/deals/:dealId/title/survey/analyze", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId } = req.params;
+      const { surveyText, commitmentId } = req.body;
+      if (!surveyText) return res.status(400).json({ message: "surveyText is required" });
+
+      const extracted = await extractSurveyData(surveyText);
+
+      const surveyData: Record<string, unknown> = {
+        transactionId: dealId,
+        commitmentId: commitmentId || null,
+        surveyorCompany: extracted.surveyInfo.surveyorCompany || null,
+        surveyorName: extracted.surveyInfo.surveyorName || null,
+        surveyorLicense: extracted.surveyInfo.surveyorLicense || null,
+        certificationDate: extracted.surveyInfo.certificationDate || null,
+        propertyAddress: extracted.surveyInfo.propertyAddress || null,
+        legalDescription: extracted.surveyInfo.legalDescription || null,
+        totalAreaSqft: extracted.surveyInfo.totalAreaSqft?.toString() || null,
+        totalAreaAcres: extracted.surveyInfo.totalAreaAcres?.toString() || null,
+        floodZone: extracted.surveyInfo.floodZone || null,
+        floodMapNumber: extracted.surveyInfo.floodMapNumber || null,
+        aiAnalysisSummary: extracted.summary,
+        aiAnalysisJson: extracted,
+        status: "analyzed",
+      };
+      const parsed = insertSurveySchema.parse(surveyData);
+      const [survey] = await db.insert(schema.surveys).values(parsed).returning();
+
+      if (extracted.boundaries.length > 0) {
+        const boundaryRows = extracted.boundaries.map(b => insertSurveyBoundarySchema.parse({
+          surveyId: survey.id,
+          direction: b.direction || null,
+          bearing: b.bearing || null,
+          distanceFt: b.distanceFt?.toString() || null,
+          adjoinsDescription: b.adjoinsDescription || null,
+          monumentType: b.monumentType || null,
+          monumentFound: b.monumentFound ?? true,
+          orderIndex: b.orderIndex,
+        }));
+        await db.insert(schema.surveyBoundaries).values(boundaryRows);
+      }
+
+      const createdEasements: Array<{ id: string }> = [];
+      if (extracted.easements.length > 0) {
+        const easementRows = extracted.easements.map(e => insertSurveyEasementSchema.parse({
+          surveyId: survey.id,
+          easementType: e.easementType || null,
+          locationDescription: e.locationDescription || null,
+          holder: e.holder || null,
+          recordingReference: e.recordingReference || null,
+          widthFt: e.widthFt?.toString() || null,
+          notes: e.notes || null,
+        }));
+        const inserted = await db.insert(schema.surveyEasements).values(easementRows).returning();
+        createdEasements.push(...inserted);
+      }
+
+      if (extracted.encroachments.length > 0) {
+        const encroachmentRows = extracted.encroachments.map(e => insertSurveyEncroachmentSchema.parse({
+          surveyId: survey.id,
+          description: e.description || null,
+          severity: e.severity || "minor",
+          encroachmentDistanceFt: e.encroachmentDistanceFt?.toString() || null,
+          encroachmentDirection: e.encroachmentDirection || null,
+          encroachingElement: e.encroachingElement || null,
+          affectedBoundary: e.affectedBoundary || null,
+          recommendedAction: e.recommendedAction || null,
+        }));
+        await db.insert(schema.surveyEncroachments).values(encroachmentRows);
+      }
+
+      if (extracted.improvements.length > 0) {
+        const improvementRows = extracted.improvements.map(i => insertSurveyImprovementSchema.parse({
+          surveyId: survey.id,
+          improvementType: i.improvementType || null,
+          approxSqft: i.approxSqft?.toString() || null,
+          setbackFrontFt: i.setbackFrontFt?.toString() || null,
+          setbackRearFt: i.setbackRearFt?.toString() || null,
+          setbackLeftFt: i.setbackLeftFt?.toString() || null,
+          setbackRightFt: i.setbackRightFt?.toString() || null,
+          zoningCompliant: i.zoningCompliant ?? null,
+          notes: i.notes || null,
+        }));
+        await db.insert(schema.surveyImprovements).values(improvementRows);
+      }
+
+      // Cross-reference: detect discrepancies between survey easements and title exceptions
+      let discrepancyCount = 0;
+      if (createdEasements.length > 0) {
+        const allEasements = await db.select().from(schema.surveyEasements).where(eq(schema.surveyEasements.surveyId, survey.id));
+
+        const dealCommitments = await db.select().from(schema.titleCommitments).where(eq(schema.titleCommitments.transactionId, dealId));
+        const commitmentIds = dealCommitments.map(c => c.id);
+
+        if (commitmentIds.length > 0) {
+          const allExceptions = await db.select().from(schema.titleExceptions)
+            .where(sql`${schema.titleExceptions.commitmentId} = ANY(${commitmentIds})`);
+
+          const detected = detectDiscrepancies(allEasements, allExceptions);
+          if (detected.length > 0) {
+            const discRows = detected.map(d => insertSurveyDiscrepancySchema.parse({
+              surveyId: survey.id,
+              issueDescription: d.issueDescription,
+              severity: d.severity,
+              discrepancyType: d.discrepancyType,
+              relatedExceptionIds: d.relatedExceptionIds,
+              recommendedAction: d.recommendedAction,
+            }));
+            await db.insert(schema.surveyDiscrepancies).values(discRows);
+            discrepancyCount = detected.length;
+          }
+        }
+      }
+
+      res.json({
+        survey,
+        counts: {
+          boundaries: extracted.boundaries.length,
+          easements: extracted.easements.length,
+          encroachments: extracted.encroachments.length,
+          improvements: extracted.improvements.length,
+          discrepancies: discrepancyCount,
+        },
+        summary: extracted.summary,
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Survey analysis error:", msg);
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  // ===== AI EXCEPTION ANALYSIS ENDPOINT =====
+
+  app.post("/api/deals/:dealId/title/exceptions/:exceptionId/ai-analysis", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId, exceptionId } = req.params;
+
+      const [exception] = await db.select().from(schema.titleExceptions).where(eq(schema.titleExceptions.id, exceptionId));
+      if (!exception) return res.status(404).json({ message: "Exception not found" });
+      if (!exception.commitmentId) return res.status(400).json({ message: "Exception has no commitment" });
+
+      const ownerDealId = await getCommitmentDealId(exception.commitmentId);
+      if (ownerDealId !== dealId) return res.status(403).json({ message: "Exception does not belong to this deal" });
+
+      let surveyContext;
+      const dealSurveys = await db.select().from(schema.surveys).where(eq(schema.surveys.transactionId, dealId));
+      if (dealSurveys.length > 0) {
+        const surveyId = dealSurveys[0].id;
+        const easements = await db.select().from(schema.surveyEasements).where(eq(schema.surveyEasements.surveyId, surveyId));
+        const encroachments = await db.select().from(schema.surveyEncroachments).where(eq(schema.surveyEncroachments.surveyId, surveyId));
+        const boundaries = await db.select().from(schema.surveyBoundaries).where(eq(schema.surveyBoundaries.surveyId, surveyId));
+        surveyContext = { easements, encroachments, boundaries };
+      }
+
+      const analysis = await analyzeException(
+        {
+          type: exception.type || "unknown",
+          scheduleType: exception.scheduleType || "unknown",
+          description: exception.description || "",
+          status: exception.status || "open",
+        },
+        surveyContext,
+      );
+
+      res.json(analysis);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Exception AI analysis error:", msg);
       res.status(500).json({ message: msg });
     }
   });
