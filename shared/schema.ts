@@ -14755,3 +14755,68 @@ export const insertRonDocumentTemplateSchema = createInsertSchema(ronDocumentTem
 });
 export type InsertRonDocumentTemplate = z.infer<typeof insertRonDocumentTemplateSchema>;
 export type RonDocumentTemplate = typeof ronDocumentTemplates.$inferSelect;
+
+export const apiKeys = pgTable("api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  keyHash: varchar("key_hash", { length: 512 }).notNull(),
+  keyPrefix: varchar("key_prefix", { length: 20 }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  scopes: text("scopes").array().notNull().default(sql`ARRAY[]::text[]`),
+  rateLimitPerMinute: integer("rate_limit_per_minute").default(60),
+  isActive: boolean("is_active").default(true).notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at"),
+  revokedAt: timestamp("revoked_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdx: index("idx_api_keys_user").on(table.userId),
+  keyHashIdx: uniqueIndex("idx_api_keys_hash").on(table.keyHash),
+  activeIdx: index("idx_api_keys_active").on(table.isActive),
+}));
+
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
+  id: true, createdAt: true, lastUsedAt: true, revokedAt: true,
+});
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+export type ApiKey = typeof apiKeys.$inferSelect;
+
+export const apiKeyAuditLogs = pgTable("api_key_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  apiKeyId: varchar("api_key_id").references(() => apiKeys.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  method: varchar("method", { length: 10 }).notNull(),
+  path: varchar("path", { length: 1024 }).notNull(),
+  statusCode: integer("status_code"),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  apiKeyIdx: index("idx_api_key_audit_key").on(table.apiKeyId),
+  createdAtIdx: index("idx_api_key_audit_created").on(table.createdAt),
+}));
+
+export const insertApiKeyAuditLogSchema = createInsertSchema(apiKeyAuditLogs).omit({
+  id: true, createdAt: true,
+});
+export type InsertApiKeyAuditLog = z.infer<typeof insertApiKeyAuditLogSchema>;
+export type ApiKeyAuditLog = typeof apiKeyAuditLogs.$inferSelect;
+
+export const createApiKeyRequestSchema = z.object({
+  displayName: z.string().min(1).max(255),
+  scopes: z.array(z.string()).min(1),
+  rateLimitPerMinute: z.number().int().min(1).max(10000).optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+
+export const API_KEY_SCOPES = [
+  "deals:read",
+  "deals:write",
+  "documents:read",
+  "documents:write",
+  "cases:read",
+  "cases:write",
+  "analysis:trigger",
+  "communications:read",
+] as const;
+export type ApiKeyScope = typeof API_KEY_SCOPES[number];

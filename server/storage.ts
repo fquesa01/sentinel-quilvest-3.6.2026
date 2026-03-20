@@ -411,6 +411,12 @@ import {
   ronDocumentTemplates,
   type RonDocumentTemplate,
   type InsertRonDocumentTemplate,
+  apiKeys,
+  apiKeyAuditLogs,
+  type ApiKey,
+  type InsertApiKey,
+  type ApiKeyAuditLog,
+  type InsertApiKeyAuditLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, and, or, ilike, sql, inArray, gte, lte } from "drizzle-orm";
@@ -1149,6 +1155,21 @@ export interface IStorage {
   incrementRonTemplateUsage(id: string): Promise<void>;
 
   getRonDocumentByAsyncToken(token: string): Promise<RonDocument | undefined>;
+
+  // API Key operations
+  createApiKey(data: InsertApiKey): Promise<ApiKey>;
+  getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined>;
+  getApiKeysByUser(userId: string): Promise<ApiKey[]>;
+  getAllApiKeys(): Promise<ApiKey[]>;
+  getApiKey(id: string): Promise<ApiKey | undefined>;
+  revokeApiKey(id: string): Promise<ApiKey>;
+  updateApiKeyLastUsed(id: string): Promise<void>;
+
+  // API Key Audit Log operations
+  createApiKeyAuditLog(data: InsertApiKeyAuditLog): Promise<ApiKeyAuditLog>;
+  getApiKeyAuditLogs(filters?: { apiKeyId?: string; limit?: number; offset?: number }): Promise<ApiKeyAuditLog[]>;
+  getApiKeyAuditLogCount(apiKeyId?: string): Promise<number>;
+  getRecentApiKeyUsage(apiKeyId: string, windowMinutes: number): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -7190,6 +7211,80 @@ export class DatabaseStorage implements IStorage {
   async getRonDocumentByAsyncToken(token: string): Promise<RonDocument | undefined> {
     const [doc] = await db.select().from(ronDocuments).where(eq(ronDocuments.asyncSigningToken, token));
     return doc;
+  }
+
+  async createApiKey(data: InsertApiKey): Promise<ApiKey> {
+    const [created] = await db.insert(apiKeys).values(data).returning();
+    return created;
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKey | undefined> {
+    const [key] = await db.select().from(apiKeys).where(eq(apiKeys.keyHash, keyHash));
+    return key;
+  }
+
+  async getApiKeysByUser(userId: string): Promise<ApiKey[]> {
+    return db.select().from(apiKeys).where(eq(apiKeys.userId, userId)).orderBy(desc(apiKeys.createdAt));
+  }
+
+  async getAllApiKeys(): Promise<ApiKey[]> {
+    return db.select().from(apiKeys).orderBy(desc(apiKeys.createdAt));
+  }
+
+  async getApiKey(id: string): Promise<ApiKey | undefined> {
+    const [key] = await db.select().from(apiKeys).where(eq(apiKeys.id, id));
+    return key;
+  }
+
+  async revokeApiKey(id: string): Promise<ApiKey> {
+    const [revoked] = await db.update(apiKeys)
+      .set({ isActive: false, revokedAt: new Date() })
+      .where(eq(apiKeys.id, id))
+      .returning();
+    return revoked;
+  }
+
+  async updateApiKeyLastUsed(id: string): Promise<void> {
+    await db.update(apiKeys)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiKeys.id, id));
+  }
+
+  async createApiKeyAuditLog(data: InsertApiKeyAuditLog): Promise<ApiKeyAuditLog> {
+    const [created] = await db.insert(apiKeyAuditLogs).values(data).returning();
+    return created;
+  }
+
+  async getApiKeyAuditLogs(filters?: { apiKeyId?: string; limit?: number; offset?: number }): Promise<ApiKeyAuditLog[]> {
+    const conditions = [];
+    if (filters?.apiKeyId) conditions.push(eq(apiKeyAuditLogs.apiKeyId, filters.apiKeyId));
+    const query = db.select().from(apiKeyAuditLogs);
+    const whereQuery = conditions.length > 0 ? query.where(and(...conditions)) : query;
+    return whereQuery
+      .orderBy(desc(apiKeyAuditLogs.createdAt))
+      .limit(filters?.limit ?? 100)
+      .offset(filters?.offset ?? 0);
+  }
+
+  async getApiKeyAuditLogCount(apiKeyId?: string): Promise<number> {
+    const conditions = [];
+    if (apiKeyId) conditions.push(eq(apiKeyAuditLogs.apiKeyId, apiKeyId));
+    const query = db.select({ count: sql<number>`count(*)::int` }).from(apiKeyAuditLogs);
+    const whereQuery = conditions.length > 0 ? query.where(and(...conditions)) : query;
+    const [result] = await whereQuery;
+    return result?.count ?? 0;
+  }
+
+  async getRecentApiKeyUsage(apiKeyId: string, windowMinutes: number): Promise<number> {
+    const windowStart = new Date(Date.now() - windowMinutes * 60 * 1000);
+    const [result] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(apiKeyAuditLogs)
+      .where(and(
+        eq(apiKeyAuditLogs.apiKeyId, apiKeyId),
+        gte(apiKeyAuditLogs.createdAt, windowStart),
+      ));
+    return result?.count ?? 0;
   }
 }
 

@@ -89,6 +89,7 @@ import RonCompliance from "@/pages/ron-compliance";
 import RonQueue from "@/pages/ron-queue";
 import RonBrandingSettings from "@/pages/ron-branding-settings";
 import RonTemplates from "@/pages/ron-templates";
+import ApiKeysPage from "@/pages/api-keys";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { Button } from "@/components/ui/button";
@@ -209,6 +210,7 @@ function AuthenticatedApp() {
               <Route path="/ron/compliance" component={RonCompliance} />
               <Route path="/ron/branding" component={RonBrandingSettings} />
               <Route path="/ron/templates" component={RonTemplates} />
+              <Route path="/api-keys" component={ApiKeysPage} />
               <Route component={NotFound} />
             </Switch>
           </main>

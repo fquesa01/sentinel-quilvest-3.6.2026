@@ -66,6 +66,7 @@ import {
   Contact,
   FileEdit,
   Stamp,
+  KeyRound,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
@@ -263,6 +264,12 @@ export function AppSidebar() {
           title: "Role Management",
           url: "/roles",
           icon: UserCog,
+          roles: ["super_admin"],
+        },
+        {
+          title: "API Keys",
+          url: "/api-keys",
+          icon: KeyRound,
           roles: ["super_admin"],
         },
       ],
