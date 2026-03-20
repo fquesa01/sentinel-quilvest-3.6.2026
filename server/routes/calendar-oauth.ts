@@ -4,6 +4,7 @@ import { connectedCalendarAccounts, externalCalendarEvents, oauthNonces } from "
 import { eq, and, lt, isNull, sql } from "drizzle-orm";
 import { isAuthenticated } from "../replitAuth";
 import crypto from "crypto";
+import { getAppBaseUrl } from "../utils/getAppBaseUrl";
 
 const router = Router();
 
@@ -157,16 +158,11 @@ async function verifyStateAndConsumeNonce(state: string, userId: string, provide
 // Google Calendar OAuth Configuration
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CALENDAR_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
-const GOOGLE_REDIRECT_URI = process.env.REPLIT_DEV_DOMAIN 
-  ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/calendar/oauth/google/callback`
-  : `https://${process.env.REPLIT_DOMAINS?.split(',')[0]}/api/calendar/oauth/google/callback`;
+const GOOGLE_REDIRECT_URI = `${getAppBaseUrl()}/api/calendar/oauth/google/callback`;
 
-// Microsoft OAuth Configuration
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CALENDAR_CLIENT_ID;
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CALENDAR_CLIENT_SECRET;
-const MICROSOFT_REDIRECT_URI = process.env.REPLIT_DEV_DOMAIN 
-  ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/calendar/oauth/microsoft/callback`
-  : `https://${process.env.REPLIT_DOMAINS?.split(',')[0]}/api/calendar/oauth/microsoft/callback`;
+const MICROSOFT_REDIRECT_URI = `${getAppBaseUrl()}/api/calendar/oauth/microsoft/callback`;
 
 // Google Calendar Scopes
 const GOOGLE_SCOPES = [

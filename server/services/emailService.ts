@@ -4,6 +4,7 @@ import { db } from "../db";
 import { emailAccounts, syncedEmails, emailAttachmentsTable } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import crypto from "crypto";
+import { getAppBaseUrl } from "../utils/getAppBaseUrl";
 
 const ALGORITHM = "aes-256-gcm";
 
@@ -50,7 +51,7 @@ const MS_SCOPES = [
 
 export function getMicrosoftAuthUrl(state: string): string {
   const redirectUri = process.env.MICROSOFT_REDIRECT_URI || 
-    `${process.env.REPLIT_DEV_DOMAIN ? 'https://' + process.env.REPLIT_DEV_DOMAIN : 'http://localhost:5000'}/api/email/oauth/microsoft/callback`;
+    `${getAppBaseUrl()}/api/email/oauth/microsoft/callback`;
   
   const params = new URLSearchParams({
     client_id: process.env.MICROSOFT_CLIENT_ID || "",
@@ -65,7 +66,7 @@ export function getMicrosoftAuthUrl(state: string): string {
 
 export async function exchangeMicrosoftCode(code: string) {
   const redirectUri = process.env.MICROSOFT_REDIRECT_URI || 
-    `${process.env.REPLIT_DEV_DOMAIN ? 'https://' + process.env.REPLIT_DEV_DOMAIN : 'http://localhost:5000'}/api/email/oauth/microsoft/callback`;
+    `${getAppBaseUrl()}/api/email/oauth/microsoft/callback`;
 
   const response = await fetch(`${MS_AUTHORITY}/oauth2/v2.0/token`, {
     method: "POST",
@@ -122,7 +123,7 @@ const GOOGLE_SCOPES = [
 
 export function getGoogleAuthUrl(state: string): string {
   const redirectUri = process.env.GOOGLE_REDIRECT_URI || 
-    `${process.env.REPLIT_DEV_DOMAIN ? 'https://' + process.env.REPLIT_DEV_DOMAIN : 'http://localhost:5000'}/api/email/oauth/google/callback`;
+    `${getAppBaseUrl()}/api/email/oauth/google/callback`;
 
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -140,7 +141,7 @@ export function getGoogleAuthUrl(state: string): string {
 
 export async function exchangeGoogleCode(code: string) {
   const redirectUri = process.env.GOOGLE_REDIRECT_URI || 
-    `${process.env.REPLIT_DEV_DOMAIN ? 'https://' + process.env.REPLIT_DEV_DOMAIN : 'http://localhost:5000'}/api/email/oauth/google/callback`;
+    `${getAppBaseUrl()}/api/email/oauth/google/callback`;
 
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -154,7 +155,7 @@ export async function exchangeGoogleCode(code: string) {
 
 export async function refreshGoogleToken(refreshToken: string) {
   const redirectUri = process.env.GOOGLE_REDIRECT_URI || 
-    `${process.env.REPLIT_DEV_DOMAIN ? 'https://' + process.env.REPLIT_DEV_DOMAIN : 'http://localhost:5000'}/api/email/oauth/google/callback`;
+    `${getAppBaseUrl()}/api/email/oauth/google/callback`;
 
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,

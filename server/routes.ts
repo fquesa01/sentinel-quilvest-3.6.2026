@@ -72,7 +72,20 @@ import { registerRonRoutes } from "./routes/ron-routes";
 import { registerApiKeyRoutes } from "./routes/api-key-routes";
 import { registerExternalApiRoutes } from "./routes/external-api-routes";
 
-// Helper to extract email from various formats (e.g., "John Doe <john@example.com>" -> "john@example.com")
+function sanitizeReturnUrl(url: string | undefined): string {
+  const fallback = "/mailbox";
+  if (!url || typeof url !== "string") return fallback;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return fallback;
+  if (/[:\s]/.test(trimmed)) return fallback;
+  return trimmed;
+}
+
+function buildErrorRedirect(returnUrl: string, errorMessage: string): string {
+  const separator = returnUrl.includes("?") ? "&" : "?";
+  return returnUrl + separator + "error=" + encodeURIComponent(errorMessage);
+}
+
 function extractEmail(input: string): string | null {
   if (!input) return null;
   const emailMatch = input.match(/<([^>]+@[^>]+)>/);
@@ -29673,15 +29686,21 @@ Guidelines:
   // Start Microsoft OAuth flow
   app.get("/api/email/oauth/microsoft", isAuthenticated, (req: any, res) => {
     try {
+      const returnUrl = sanitizeReturnUrl(req.query.returnUrl as string);
+      if (!process.env.MICROSOFT_CLIENT_ID || !process.env.MICROSOFT_CLIENT_SECRET) {
+        return res.redirect(buildErrorRedirect(returnUrl, "Microsoft OAuth is not configured. Please set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET environment variables."));
+      }
+
       const state = Buffer.from(JSON.stringify({
         userId: req.user.id,
-        returnUrl: req.query.returnUrl || "/mailbox",
+        returnUrl,
       })).toString("base64");
       
       res.redirect(emailIntegrationService.getMicrosoftAuthUrl(state));
     } catch (error: any) {
       console.error("Microsoft OAuth init error:", error);
-      res.redirect("/mailbox?error=" + encodeURIComponent(error.message));
+      const returnUrl = sanitizeReturnUrl(req.query.returnUrl as string);
+      res.redirect(buildErrorRedirect(returnUrl, error.message));
     }
   });
   
@@ -29720,15 +29739,21 @@ Guidelines:
   // Start Google OAuth flow
   app.get("/api/email/oauth/google", isAuthenticated, (req: any, res) => {
     try {
+      const returnUrl = sanitizeReturnUrl(req.query.returnUrl as string);
+      if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        return res.redirect(buildErrorRedirect(returnUrl, "Google OAuth is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables."));
+      }
+
       const state = Buffer.from(JSON.stringify({
         userId: req.user.id,
-        returnUrl: req.query.returnUrl || "/mailbox",
+        returnUrl,
       })).toString("base64");
       
       res.redirect(emailIntegrationService.getGoogleAuthUrl(state));
     } catch (error: any) {
       console.error("Google OAuth init error:", error);
-      res.redirect("/mailbox?error=" + encodeURIComponent(error.message));
+      const returnUrl = sanitizeReturnUrl(req.query.returnUrl as string);
+      res.redirect(buildErrorRedirect(returnUrl, error.message));
     }
   });
   

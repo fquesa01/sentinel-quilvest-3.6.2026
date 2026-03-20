@@ -121,6 +121,19 @@ export default function MyDataLakePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("error");
+    if (error) {
+      toast({
+        title: "Connection Error",
+        description: error,
+        variant: "destructive",
+      });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [toast]);
+
   const { data: stats, isLoading: statsLoading } = useQuery<{
     totalItems: number;
     emailsIngested: number;
