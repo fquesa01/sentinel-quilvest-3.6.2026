@@ -28,7 +28,11 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileStack, Upload, Search, Trash2, Star, FileText, Eye, Download, Share2,
   Loader2, ArrowLeft, Plus, FolderOpen, Files, X, ChevronDown, Check, AlertCircle, XCircle,
+  Table2, List, LayoutGrid, MoreVertical,
 } from "lucide-react";
+import {
+  Tooltip, TooltipContent, TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Link, useLocation } from "wouter";
 import type { FirmFormTemplate } from "@shared/schema";
 import { ShareTemplateDialog } from "@/components/share-template-dialog";
@@ -242,8 +246,21 @@ export default function FormTemplatesPage() {
   const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [viewMode, setViewMode] = useState<"card" | "table" | "list">(() => {
+    try {
+      const saved = localStorage.getItem("forms-view-mode");
+      if (saved && ["card", "table", "list"].includes(saved)) return saved as "card" | "table" | "list";
+    } catch {}
+    return "card";
+  });
+
+  const handleViewModeChange = (mode: "card" | "table" | "list") => {
+    setViewMode(mode);
+    try { localStorage.setItem("forms-view-mode", mode); } catch {}
+  };
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [shareTemplate, setShareTemplate] = useState<FirmFormTemplate | null>(null);
+  const [templateToDelete, setTemplateToDelete] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploadForm, setUploadForm] = useState({
@@ -821,6 +838,50 @@ export default function FormTemplatesPage() {
               ))}
             </SelectContent>
           </Select>
+          <div className="flex items-center border rounded-md" data-testid="view-mode-toggle">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`rounded-none rounded-l-md px-2 ${viewMode === "card" ? "bg-primary/10 text-primary" : ""}`}
+                  onClick={() => handleViewModeChange("card")}
+                  data-testid="button-view-card"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Card View</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`rounded-none px-2 ${viewMode === "table" ? "bg-primary/10 text-primary" : ""}`}
+                  onClick={() => handleViewModeChange("table")}
+                  data-testid="button-view-table"
+                >
+                  <Table2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Table View</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`rounded-none rounded-r-md px-2 ${viewMode === "list" ? "bg-primary/10 text-primary" : ""}`}
+                  onClick={() => handleViewModeChange("list")}
+                  data-testid="button-view-list"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>List View</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
         {filteredTemplates.length === 0 ? (
@@ -855,7 +916,7 @@ export default function FormTemplatesPage() {
               )}
             </CardContent>
           </Card>
-        ) : (
+        ) : viewMode === "card" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredTemplates.map((template) => (
               <Card key={template.id} className="flex flex-col" data-testid={`template-card-${template.id}`}>
@@ -975,6 +1036,233 @@ export default function FormTemplatesPage() {
                   </div>
                 </CardContent>
               </Card>
+            ))}
+          </div>
+        ) : viewMode === "table" ? (
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full" data-testid="templates-table">
+                <thead>
+                  <tr className="border-b text-left text-sm text-muted-foreground">
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Document Type</th>
+                    <th className="px-4 py-3 font-medium">Deal Type</th>
+                    <th className="px-4 py-3 font-medium">File Size</th>
+                    <th className="px-4 py-3 font-medium">Upload Date</th>
+                    <th className="px-4 py-3 font-medium">Default</th>
+                    <th className="px-4 py-3 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTemplates.map((template) => (
+                    <tr key={template.id} className="border-b last:border-b-0 hover-elevate" data-testid={`template-row-${template.id}`}>
+                      <td className="px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate" data-testid={`text-name-${template.id}`}>{template.name}</p>
+                          {template.fileName && (
+                            <p className="text-xs text-muted-foreground truncate">{template.fileName}</p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="secondary" data-testid={`badge-doctype-${template.id}`}>{getDocTypeLabel(template.documentType)}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        {template.dealType ? (
+                          <Badge variant="outline" data-testid={`badge-dealtype-${template.id}`}>{getDealTypeLabel(template.dealType)}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground" data-testid={`text-size-${template.id}`}>
+                        {formatFileSize(template.fileSize)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground" data-testid={`text-date-${template.id}`}>
+                        {new Date(template.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {template.isDefault ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => removeDefaultMutation.mutate(template.id)}
+                            disabled={removeDefaultMutation.isPending}
+                            data-testid={`button-remove-default-${template.id}`}
+                          >
+                            <Star className="h-3 w-3 mr-1 fill-current" />
+                            Default
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDefaultMutation.mutate({ id: template.id, documentType: template.documentType, dealType: template.dealType })}
+                            disabled={setDefaultMutation.isPending}
+                            data-testid={`button-set-default-${template.id}`}
+                          >
+                            <Star className="h-3 w-3 mr-1" />
+                            Set
+                          </Button>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          {template.hasFileData && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => navigate(`/transactions/form-templates/${template.id}/view`)}
+                              title="Preview"
+                              data-testid={`button-preview-${template.id}`}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setShareTemplate(template)}
+                            title="Share"
+                            data-testid={`button-share-${template.id}`}
+                          >
+                            <Share2 className="h-4 w-4" />
+                          </Button>
+                          {template.hasFileData && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => window.open(`/api/form-templates/${template.id}/download`, "_blank")}
+                              title="Download"
+                              data-testid={`button-download-${template.id}`}
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" title="Delete" data-testid={`button-delete-${template.id}`}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Template</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete "{template.name}"? This cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteMutation.mutate(template.id)}
+                                  data-testid="button-confirm-delete"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ) : (
+          <div className="space-y-1" data-testid="templates-list">
+            {filteredTemplates.map((template) => (
+              <div
+                key={template.id}
+                className="flex items-center gap-3 px-4 py-2.5 rounded-md hover-elevate"
+                data-testid={`template-list-item-${template.id}`}
+              >
+                <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate" data-testid={`text-name-${template.id}`}>{template.name}</p>
+                </div>
+                <Badge variant="secondary" className="shrink-0" data-testid={`badge-doctype-${template.id}`}>{getDocTypeLabel(template.documentType)}</Badge>
+                {template.dealType && (
+                  <Badge variant="outline" className="shrink-0" data-testid={`badge-dealtype-${template.id}`}>{getDealTypeLabel(template.dealType)}</Badge>
+                )}
+                {template.isDefault && (
+                  <Star className="h-4 w-4 text-amber-500 fill-amber-500 shrink-0" />
+                )}
+                <span className="text-xs text-muted-foreground shrink-0 w-16 text-right" data-testid={`text-size-${template.id}`}>
+                  {formatFileSize(template.fileSize)}
+                </span>
+                <span className="text-xs text-muted-foreground shrink-0 w-24 text-right" data-testid={`text-date-${template.id}`}>
+                  {new Date(template.createdAt).toLocaleDateString()}
+                </span>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  {template.hasFileData && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => navigate(`/transactions/form-templates/${template.id}/view`)}
+                      title="Preview"
+                      data-testid={`button-preview-${template.id}`}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShareTemplate(template)}
+                    title="Share"
+                    data-testid={`button-share-${template.id}`}
+                  >
+                    <Share2 className="h-4 w-4" />
+                  </Button>
+                  {template.hasFileData && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => window.open(`/api/form-templates/${template.id}/download`, "_blank")}
+                      title="Download"
+                      data-testid={`button-download-${template.id}`}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" data-testid={`button-more-${template.id}`}>
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {template.isDefault ? (
+                        <DropdownMenuItem
+                          onClick={() => removeDefaultMutation.mutate(template.id)}
+                          data-testid={`menu-remove-default-${template.id}`}
+                        >
+                          <Star className="h-4 w-4 mr-2" />
+                          Remove Default
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => setDefaultMutation.mutate({ id: template.id, documentType: template.documentType, dealType: template.dealType })}
+                          data-testid={`menu-set-default-${template.id}`}
+                        >
+                          <Star className="h-4 w-4 mr-2" />
+                          Set as Default
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setTemplateToDelete(template.id)}
+                        data-testid={`menu-delete-${template.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
             ))}
           </div>
         )}
@@ -1223,6 +1511,29 @@ export default function FormTemplatesPage() {
             onOpenChange={(open) => { if (!open) setShareTemplate(null); }}
           />
         )}
+
+        <AlertDialog open={!!templateToDelete} onOpenChange={(open) => { if (!open) setTemplateToDelete(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Template</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this template? This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (templateToDelete) deleteMutation.mutate(templateToDelete);
+                  setTemplateToDelete(null);
+                }}
+                data-testid="button-confirm-list-delete"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <UploadProgressBar

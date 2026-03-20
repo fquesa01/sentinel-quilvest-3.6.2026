@@ -45,7 +45,15 @@ import {
   ExternalLink,
   Trash2,
   Share2,
+  Table2,
+  List,
+  LayoutGrid,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -159,6 +167,18 @@ export default function TransactionsDeals() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  type DealsViewMode = "table" | "card" | "list";
+  const [viewMode, setViewMode] = useState<DealsViewMode>(() => {
+    try {
+      const saved = localStorage.getItem("deals-view-mode");
+      if (saved && ["table", "card", "list"].includes(saved)) return saved as DealsViewMode;
+    } catch {}
+    return "table";
+  });
+  const handleViewModeChange = (mode: DealsViewMode) => {
+    setViewMode(mode);
+    try { localStorage.setItem("deals-view-mode", mode); } catch {}
+  };
   const [initParams] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const createDeal = params.get("createDeal");
@@ -567,67 +587,262 @@ export default function TransactionsDeals() {
             ))}
           </SelectContent>
         </Select>
+        <div className="flex items-center border rounded-md" data-testid="view-mode-toggle">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`rounded-none rounded-l-md px-2 ${viewMode === "table" ? "bg-primary/10 text-primary" : ""}`}
+                onClick={() => handleViewModeChange("table")}
+                data-testid="button-view-table"
+              >
+                <Table2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Table View</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`rounded-none px-2 ${viewMode === "card" ? "bg-primary/10 text-primary" : ""}`}
+                onClick={() => handleViewModeChange("card")}
+                data-testid="button-view-card"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Card View</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`rounded-none rounded-r-md px-2 ${viewMode === "list" ? "bg-primary/10 text-primary" : ""}`}
+                onClick={() => handleViewModeChange("list")}
+                data-testid="button-view-list"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>List View</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
-      <Card className="stagger-3">
-        <CardContent className="p-0">
-          {filteredDeals && filteredDeals.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Deal</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Value</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Target Close</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredDeals.map((deal) => (
-                  <TableRow key={deal.id} data-testid={`row-deal-${deal.id}`}>
-                    <TableCell>
-                      <div>
+      {filteredDeals && filteredDeals.length > 0 ? (
+        <>
+          {viewMode === "table" && (
+            <Card className="stagger-3">
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Deal</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Value</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Target Close</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredDeals.map((deal) => (
+                      <TableRow key={deal.id} data-testid={`row-deal-${deal.id}`}>
+                        <TableCell>
+                          <div>
+                            <Link href={`/transactions/deals/${deal.id}`}>
+                              <span className="font-medium hover:underline cursor-pointer">
+                                {deal.title}
+                              </span>
+                            </Link>
+                            <div className="text-sm text-muted-foreground">{deal.dealNumber}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <DollarSign className="h-3 w-3 text-muted-foreground" />
+                            {formatCurrency(deal.dealValue, deal.dealCurrency || "USD")}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={priorityColors[deal.priority || "medium"]}>
+                            {deal.priority}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={statusColors[deal.status || "active"]}>
+                            {deal.status?.replace(/_/g, " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {deal.closingTargetDate ? (
+                            <div className="flex items-center gap-1 text-sm">
+                              <Calendar className="h-3 w-3 text-muted-foreground" />
+                              {format(new Date(deal.closingTargetDate), "MMM d, yyyy")}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Link href={`/transactions/deals/${deal.id}`}>
+                              <Button variant="ghost" size="icon" data-testid={`button-view-deal-${deal.id}`}>
+                                <ExternalLink className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDealToShare(deal)}
+                              data-testid={`button-share-deal-${deal.id}`}
+                            >
+                              <Share2 className="h-4 w-4" />
+                            </Button>
+                            {isAdmin && (
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => setDealToDelete(deal)}
+                                disabled={deletedDealIds.has(deal.id) || deleteDealMutation.isPending}
+                                data-testid={`button-delete-deal-${deal.id}`}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {viewMode === "card" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 stagger-3">
+              {filteredDeals.map((deal) => (
+                <Card key={deal.id} className="hover-elevate" data-testid={`card-deal-${deal.id}`}>
+                  <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/transactions/deals/${deal.id}`}>
+                        <CardTitle className="text-base hover:underline cursor-pointer truncate" data-testid={`text-deal-title-${deal.id}`}>
+                          {deal.title}
+                        </CardTitle>
+                      </Link>
+                      <p className="text-sm text-muted-foreground mt-1" data-testid={`text-deal-number-${deal.id}`}>{deal.dealNumber}</p>
+                    </div>
+                    <Badge className={statusColors[deal.status || "active"]} data-testid={`badge-status-${deal.id}`}>
+                      {deal.status?.replace(/_/g, " ")}
+                    </Badge>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" data-testid={`badge-type-${deal.id}`}>
+                        {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}
+                      </Badge>
+                      <Badge className={priorityColors[deal.priority || "medium"]} data-testid={`badge-priority-${deal.id}`}>
+                        {deal.priority}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-1 text-sm">
+                      <DollarSign className="h-3 w-3 text-muted-foreground" />
+                      <span className="font-medium" data-testid={`text-deal-value-${deal.id}`}>
+                        {formatCurrency(deal.dealValue, deal.dealCurrency || "USD")}
+                      </span>
+                    </div>
+                    {deal.closingTargetDate && (
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <Calendar className="h-3 w-3" />
+                        <span data-testid={`text-close-date-${deal.id}`}>
+                          {format(new Date(deal.closingTargetDate), "MMM d, yyyy")}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1 pt-2 border-t">
+                      <Link href={`/transactions/deals/${deal.id}`}>
+                        <Button variant="ghost" size="icon" data-testid={`button-view-deal-${deal.id}`}>
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDealToShare(deal)}
+                        data-testid={`button-share-deal-${deal.id}`}
+                      >
+                        <Share2 className="h-4 w-4" />
+                      </Button>
+                      {isAdmin && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => setDealToDelete(deal)}
+                          disabled={deletedDealIds.has(deal.id) || deleteDealMutation.isPending}
+                          data-testid={`button-delete-deal-${deal.id}`}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {viewMode === "list" && (
+            <Card className="stagger-3">
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {filteredDeals.map((deal) => (
+                    <div
+                      key={deal.id}
+                      className="flex items-center gap-4 px-4 py-3 hover-elevate"
+                      data-testid={`list-deal-${deal.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
                         <Link href={`/transactions/deals/${deal.id}`}>
-                          <span className="font-medium hover:underline cursor-pointer">
+                          <span className="font-medium hover:underline cursor-pointer text-sm" data-testid={`text-deal-title-${deal.id}`}>
                             {deal.title}
                           </span>
                         </Link>
-                        <div className="text-sm text-muted-foreground">{deal.dealNumber}</div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
+                      <div className="hidden sm:block text-sm text-muted-foreground flex-shrink-0">
+                        {dealTypes.find(t => t.value === deal.dealType)?.label || deal.dealType}
+                      </div>
+                      <div className="hidden md:flex items-center gap-1 text-sm flex-shrink-0">
                         <DollarSign className="h-3 w-3 text-muted-foreground" />
                         {formatCurrency(deal.dealValue, deal.dealCurrency || "USD")}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={priorityColors[deal.priority || "medium"]}>
+                      <Badge className={`flex-shrink-0 ${priorityColors[deal.priority || "medium"]}`}>
                         {deal.priority}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={statusColors[deal.status || "active"]}>
+                      <Badge className={`flex-shrink-0 ${statusColors[deal.status || "active"]}`}>
                         {deal.status?.replace(/_/g, " ")}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {deal.closingTargetDate ? (
-                        <div className="flex items-center gap-1 text-sm">
-                          <Calendar className="h-3 w-3 text-muted-foreground" />
-                          {format(new Date(deal.closingTargetDate), "MMM d, yyyy")}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
+                      <div className="hidden lg:flex items-center gap-1 text-sm text-muted-foreground flex-shrink-0">
+                        {deal.closingTargetDate ? (
+                          <>
+                            <Calendar className="h-3 w-3" />
+                            {format(new Date(deal.closingTargetDate), "MMM d, yyyy")}
+                          </>
+                        ) : (
+                          <span>-</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
                         <Link href={`/transactions/deals/${deal.id}`}>
                           <Button variant="ghost" size="icon" data-testid={`button-view-deal-${deal.id}`}>
                             <ExternalLink className="h-4 w-4" />
@@ -654,12 +869,16 @@ export default function TransactionsDeals() {
                           </Button>
                         )}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : (
+        <Card className="stagger-3">
+          <CardContent className="p-0">
             <div className="text-center py-12">
               <Handshake className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
               <h3 className="text-lg font-medium">No deals found</h3>
@@ -679,9 +898,9 @@ export default function TransactionsDeals() {
                 </Button>
               )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {dealToShare && (
         <ShareDealDialog
