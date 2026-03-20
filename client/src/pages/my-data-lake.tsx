@@ -188,7 +188,14 @@ export default function MyDataLakePage() {
         body: formData,
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body?.message) detail = body.message;
+        } catch {}
+        throw new Error(detail);
+      }
       return res.json();
     },
     onSuccess: (data) => {
@@ -212,8 +219,9 @@ export default function MyDataLakePage() {
         setTimeout(() => clearInterval(pollInterval), maxPollDuration);
       }
     },
-    onError: () => {
-      toast({ title: "Upload failed", description: "Could not upload file. Please try again.", variant: "destructive" });
+    onError: (error: Error) => {
+      console.error("[DataLake] Upload error:", error);
+      toast({ title: "Upload failed", description: error.message || "Could not upload file. Please try again.", variant: "destructive" });
     },
   });
 
