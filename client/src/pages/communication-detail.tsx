@@ -8,8 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Clock, Mail, User, MessageSquare, Forward, Languages, Type, Check } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import { DocumentCoding } from "@/components/document-coding";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -69,7 +67,6 @@ export default function CommunicationDetail() {
   const [, params] = useRoute("/communications/:id");
   const commId = params?.id;
   const { toast } = useToast();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [notes, setNotes] = useState("");
   const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
   const [forwardData, setForwardData] = useState({
@@ -108,19 +105,6 @@ export default function CommunicationDetail() {
       console.error("Failed to save font size preference:", error);
     }
   }, [fontSize]);
-
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
-    }
-  }, [isAuthenticated, authLoading, toast]);
 
   const { data: communication, isLoading } = useQuery<Communication>({
     queryKey: ["/api/communications", commId],
@@ -162,17 +146,6 @@ export default function CommunicationDetail() {
       });
     },
     onError: (error: Error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: error.message,

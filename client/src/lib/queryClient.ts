@@ -1,7 +1,18 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+let redirectingTo401 = false;
+
+function handleUnauthorized() {
+  if (redirectingTo401) return;
+  redirectingTo401 = true;
+  window.location.href = "/api/login";
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    if (res.status === 401) {
+      handleUnauthorized();
+    }
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
   }
@@ -35,6 +46,10 @@ export const getQueryFn: <T>(options: {
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
+    }
+
+    if (res.status === 401) {
+      handleUnauthorized();
     }
 
     await throwIfResNotOk(res);

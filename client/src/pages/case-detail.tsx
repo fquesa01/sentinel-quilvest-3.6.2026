@@ -24,8 +24,6 @@ import { Label } from "@/components/ui/label";
 import { format, formatDistanceToNow } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import type { 
   Case, 
   CaseParty, 
@@ -72,7 +70,6 @@ export default function CaseDetail() {
   const [, params] = useRoute("/cases/:id");
   const caseId = params?.id;
   const { toast } = useToast();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const searchString = useSearch();
   
   // Parse URL query parameters for navigation with filters
@@ -169,19 +166,6 @@ export default function CaseDetail() {
   const [interviewDetailOpen, setInterviewDetailOpen] = useState(false);
   const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(null);
   const [mobileEmmaOpen, setMobileEmmaOpen] = useState(false);
-
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
-    }
-  }, [isAuthenticated, authLoading, toast]);
 
   // Fetch case data
   const { data: caseData, isLoading: isLoadingCase } = useQuery<Case>({
@@ -392,17 +376,6 @@ export default function CaseDetail() {
       });
     },
     onError: (error: Error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: error.message,
@@ -422,21 +395,9 @@ export default function CaseDetail() {
         title: "Description Saved",
         description: "Now generating AI analysis based on your summary...",
       });
-      // Automatically trigger AI analysis after saving
       generateAnalysisMutation.mutate();
     },
     onError: (error: Error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: error.message || "Failed to save description",
@@ -463,17 +424,6 @@ export default function CaseDetail() {
       });
     },
     onError: (error: Error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
       toast({
         title: "Error",
         description: error.message || "Failed to update AI analysis",
