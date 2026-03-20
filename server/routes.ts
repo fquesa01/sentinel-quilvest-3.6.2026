@@ -30986,8 +30986,8 @@ Guidelines:
       if (!fileName || !fileSize || !totalChunks) {
         return res.status(400).json({ message: "Missing fileName, fileSize, or totalChunks" });
       }
-      if (totalChunks > 500 || fileSize > 500 * 1024 * 1024) {
-        return res.status(400).json({ message: "File too large (max 500MB)" });
+      if (fileSize > 2 * 1024 * 1024 * 1024) {
+        return res.status(400).json({ message: "File too large (max 2GB)" });
       }
       const sessionId = nanoid();
       const sessionDir = `${CHUNK_DIR}/${sessionId}`;
