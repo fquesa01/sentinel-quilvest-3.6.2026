@@ -13336,6 +13336,8 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
                 description: a.description || "",
                 completed: false,
               })) || [];
+              const docs = summaryData.documentsReferenced as Array<{ title?: string; doc_id?: string; status?: string }> | null;
+              noteInsert.decisions = docs?.map(d => d.title || "").filter(Boolean) || [];
             }
             
             await db.insert(schema.dealMeetingNotes).values(noteInsert);
@@ -27921,6 +27923,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         if (meetingNote && summaryText) {
           interface SummaryActionItem { description: string; assignee?: string | null; dueDate?: string | null }
           interface SummaryKeyMoment { description: string; timestamp_ms?: number; type?: string }
+          interface SummaryDocRef { title?: string; doc_id?: string; status?: string }
           
           const typedActionItems = (actionItems || []) as SummaryActionItem[];
           const mappedActionItems: Array<{ description: string; completed: boolean }> = 
@@ -27931,12 +27934,18 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
             .map(m => m.description || "")
             .filter(Boolean);
           
+          const typedDocs = (documentsReferenced || []) as SummaryDocRef[];
+          const decisions: string[] = typedDocs
+            .map(d => d.title || "")
+            .filter(Boolean);
+          
           await db
             .update(schema.dealMeetingNotes)
             .set({
               summary: summaryText,
               keyPoints: topicDecisions,
               actionItems: mappedActionItems,
+              decisions,
               updatedAt: new Date(),
             })
             .where(eq(schema.dealMeetingNotes.id, meetingNote.id));
