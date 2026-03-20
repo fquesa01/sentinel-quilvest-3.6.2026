@@ -30975,8 +30975,18 @@ Guidelines:
     }
   });
 
-  app.post("/api/data-lake/upload", isAuthenticated, upload.single("file"), async (req: any, res) => {
+  app.post("/api/data-lake/upload", isAuthenticated, (req: any, res: any, next: any) => {
+    upload.single("file")(req, res, (err: any) => {
+      if (err) {
+        console.error(`[DataLake] Multer error during upload: ${err.message} (code: ${err.code || "N/A"})`);
+        const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+        return res.status(status).json({ message: err.code === "LIMIT_FILE_SIZE" ? "File too large (max 500MB)" : `Upload error: ${err.message}` });
+      }
+      next();
+    });
+  }, async (req: any, res: any) => {
     try {
+      console.log(`[DataLake] Upload request received: file="${req.file?.originalname || 'none'}" size=${req.file?.size || 0} bytes, user=${req.user?.id || 'unknown'}`);
       if (!req.file) {
         return res.status(400).json({ message: "No file provided" });
       }
