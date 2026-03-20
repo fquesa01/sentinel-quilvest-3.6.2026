@@ -8,7 +8,7 @@ import { z } from "zod";
 const commitmentUpdateSchema = insertTitleCommitmentSchema.partial().omit({ transactionId: true, commitmentNumber: true });
 const exceptionUpdateSchema = insertTitleExceptionSchema.partial().omit({ commitmentId: true });
 const vendorUpdateSchema = insertTitleSearchVendorSchema.partial().omit({ commitmentId: true });
-const claimUpdateSchema = insertTitleClaimSchema.partial().omit({ claimNumber: true });
+const claimUpdateSchema = insertTitleClaimSchema.partial().omit({ claimNumber: true, commitmentId: true });
 
 const validClaimTransitions: Record<string, string[]> = {
   filed: ["acknowledged"],
@@ -488,11 +488,13 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
       if (!ownership) return res.status(400).json({ message: "Commitment does not belong to this deal" });
 
       const year = new Date().getFullYear();
-      const countResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(schema.titleClaims);
-      const nextNum = (countResult[0]?.count || 0) + 1;
-      const claimNumber = `CLM-${year}-${String(nextNum).padStart(3, "0")}`;
+      const prefix = `CLM-${year}-`;
+      const maxResult = await db
+        .select({ maxNum: sql<number>`COALESCE(MAX(CAST(SUBSTRING(${schema.titleClaims.claimNumber} FROM ${prefix.length + 1}) AS INT)), 0)` })
+        .from(schema.titleClaims)
+        .where(sql`${schema.titleClaims.claimNumber} LIKE ${prefix + '%'}`);
+      const nextNum = (maxResult[0]?.maxNum || 0) + 1;
+      const claimNumber = `${prefix}${String(nextNum).padStart(3, "0")}`;
 
       const parsed = insertTitleClaimSchema.parse({
         ...req.body,
