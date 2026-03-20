@@ -147,7 +147,16 @@ ${surveyText}`;
   const systemPrompt = "You are an expert land surveyor and title insurance analyst. Extract structured data from survey documents and return valid JSON only, with no markdown formatting.";
   const text = await claudeGenerate(systemPrompt, prompt);
   const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-  return JSON.parse(cleaned) as ExtractedSurveyData;
+  const parsed = JSON.parse(cleaned);
+  const result: ExtractedSurveyData = {
+    surveyInfo: parsed.surveyInfo || {},
+    boundaries: Array.isArray(parsed.boundaries) ? parsed.boundaries : [],
+    easements: Array.isArray(parsed.easements) ? parsed.easements : [],
+    encroachments: Array.isArray(parsed.encroachments) ? parsed.encroachments : [],
+    improvements: Array.isArray(parsed.improvements) ? parsed.improvements : [],
+    summary: typeof parsed.summary === "string" ? parsed.summary : "AI analysis complete.",
+  };
+  return result;
 }
 
 export interface ExceptionAnalysis {
@@ -192,7 +201,15 @@ Return ONLY valid JSON, no markdown formatting.`;
 
   const text = await claudeGenerate(systemPrompt, userPrompt);
   const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-  return JSON.parse(cleaned) as ExceptionAnalysis;
+  const parsed = JSON.parse(cleaned);
+  const result: ExceptionAnalysis = {
+    riskLevel: typeof parsed.riskLevel === "string" ? parsed.riskLevel : "medium",
+    riskAssessment: typeof parsed.riskAssessment === "string" ? parsed.riskAssessment : "Analysis unavailable.",
+    recommendedActions: Array.isArray(parsed.recommendedActions) ? parsed.recommendedActions : [],
+    relatedConsiderations: Array.isArray(parsed.relatedConsiderations) ? parsed.relatedConsiderations : [],
+    surveyFindings: typeof parsed.surveyFindings === "string" ? parsed.surveyFindings : undefined,
+  };
+  return result;
 }
 
 export interface DiscrepancyResult {
@@ -405,7 +422,7 @@ export function detectDiscrepancies(
             discrepancies.push({
               issueDescription: `Legal description lot number mismatch: survey references Lot ${surveyLot[1]} but exception references Lot ${excLot[1]}`,
               severity: "critical",
-              discrepancyType: "area_discrepancy",
+              discrepancyType: "legal_description_mismatch",
               relatedExceptionIds: [exc.id],
               recommendedAction: "Verify correct lot identification in both survey and title commitment; may indicate wrong property or recording error",
             });

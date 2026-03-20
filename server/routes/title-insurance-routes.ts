@@ -887,6 +887,12 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
   app.post("/api/deals/:dealId/title/survey", isAuthenticated, async (req: any, res: any) => {
     try {
       const { dealId } = req.params;
+      if (req.body.commitmentId) {
+        const [commitment] = await db.select({ id: schema.titleCommitments.id })
+          .from(schema.titleCommitments)
+          .where(and(eq(schema.titleCommitments.id, req.body.commitmentId), eq(schema.titleCommitments.transactionId, dealId)));
+        if (!commitment) return res.status(400).json({ message: "Commitment does not belong to this deal" });
+      }
       const parsed = insertSurveySchema.parse({ ...req.body, transactionId: dealId });
       const [created] = await db.insert(schema.surveys).values(parsed).returning();
       res.status(201).json(created);
@@ -901,6 +907,12 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
       const { dealId, surveyId } = req.params;
       const [existing] = await db.select().from(schema.surveys).where(and(eq(schema.surveys.id, surveyId), eq(schema.surveys.transactionId, dealId)));
       if (!existing) return res.status(404).json({ message: "Survey not found" });
+      if (req.body.commitmentId) {
+        const [commitment] = await db.select({ id: schema.titleCommitments.id })
+          .from(schema.titleCommitments)
+          .where(and(eq(schema.titleCommitments.id, req.body.commitmentId), eq(schema.titleCommitments.transactionId, dealId)));
+        if (!commitment) return res.status(400).json({ message: "Commitment does not belong to this deal" });
+      }
       const updateSchema = insertSurveySchema.partial().omit({ transactionId: true });
       const parsed = updateSchema.parse(req.body);
       const [updated] = await db.update(schema.surveys).set({ ...parsed, updatedAt: new Date() }).where(eq(schema.surveys.id, surveyId)).returning();
