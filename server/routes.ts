@@ -1820,6 +1820,152 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
+  app.post("/api/data-room-documents/batch", isAuthenticated, async (req, res) => {
+    try {
+      const { ids, dealId } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.json([]);
+      }
+      
+      if (!dealId) {
+        return res.status(400).json({ message: "dealId is required for authorization" });
+      }
+      
+      const userId = (req as any).user?.id;
+      const userRole = (req as any).user?.role;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      
+      const hasAccess = await verifyDealAccess(userId, userRole, String(dealId));
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const limitedIds = (ids as string[]).slice(0, 20);
+      
+      const dealDataRooms = await db
+        .select({ id: schema.dataRooms.id })
+        .from(schema.dataRooms)
+        .where(eq(schema.dataRooms.dealId, dealId));
+      
+      if (dealDataRooms.length === 0) {
+        return res.json([]);
+      }
+      
+      const dataRoomIds = dealDataRooms.map(dr => dr.id);
+      
+      const docs = await db
+        .select({
+          id: schema.dataRoomDocuments.id,
+          fileName: schema.dataRoomDocuments.fileName,
+          fileType: schema.dataRoomDocuments.fileType,
+          fileSize: schema.dataRoomDocuments.fileSize,
+          description: schema.dataRoomDocuments.description,
+          documentCategory: schema.dataRoomDocuments.documentCategory,
+          tags: schema.dataRoomDocuments.tags,
+          aiSummary: schema.dataRoomDocuments.aiSummary,
+          uploadedAt: schema.dataRoomDocuments.uploadedAt,
+          dataRoomId: schema.dataRoomDocuments.dataRoomId,
+        })
+        .from(schema.dataRoomDocuments)
+        .where(and(
+          inArray(schema.dataRoomDocuments.id, limitedIds),
+          inArray(schema.dataRoomDocuments.dataRoomId, dataRoomIds)
+        ));
+      
+      res.json(docs);
+    } catch (error: unknown) {
+      console.error("Error batch fetching data room documents:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : "Internal error" });
+    }
+  });
+
+  app.post("/api/data-lake-items/batch", isAuthenticated, async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.json([]);
+      }
+      
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      
+      const limitedIds = ids.slice(0, 20);
+      
+      const items = await db
+        .select({
+          id: schema.dataLakeItems.id,
+          name: schema.dataLakeItems.name,
+          source: schema.dataLakeItems.source,
+          itemType: schema.dataLakeItems.itemType,
+          fileSize: schema.dataLakeItems.fileSize,
+          metadata: schema.dataLakeItems.metadata,
+          indexedAt: schema.dataLakeItems.indexedAt,
+        })
+        .from(schema.dataLakeItems)
+        .where(and(
+          inArray(schema.dataLakeItems.id, limitedIds),
+          eq(schema.dataLakeItems.userId, userId)
+        ));
+      
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error batch fetching data lake items:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/data-room-documents/:id/context-summarize", isAuthenticated, async (req, res) => {
+    try {
+      const { context } = req.body;
+      if (!context) {
+        return res.status(400).json({ error: "Context is required" });
+      }
+      
+      const userId = (req as any).user?.id;
+      const userRole = (req as any).user?.role;
+      if (!userId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+      
+      const [doc] = await db
+        .select({ 
+          id: schema.dataRoomDocuments.id,
+          dataRoomId: schema.dataRoomDocuments.dataRoomId 
+        })
+        .from(schema.dataRoomDocuments)
+        .where(eq(schema.dataRoomDocuments.id, req.params.id));
+      
+      if (!doc) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      
+      const [dataRoom] = await db
+        .select({ dealId: schema.dataRooms.dealId })
+        .from(schema.dataRooms)
+        .where(eq(schema.dataRooms.id, doc.dataRoomId));
+      
+      if (!dataRoom?.dealId) {
+        return res.status(403).json({ error: "Document not associated with a deal" });
+      }
+      
+      const hasAccess = await verifyDealAccess(userId, userRole, dataRoom.dealId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const { summarizeDataRoomDocumentWithContext } = await import("./services/ambient-ai-service");
+      const summary = await summarizeDataRoomDocumentWithContext(req.params.id, context);
+      res.json({ summary });
+    } catch (error: unknown) {
+      console.error("[AmbientAI] Data room context summarization failed:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to summarize document" });
+    }
+  });
+
   app.post("/api/communications", isAuthenticated, async (req, res) => {
     try {
       const validated = insertCommunicationSchema.parse(req.body);
@@ -27237,6 +27383,13 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         return res.status(400).json({ message: "Session name is required" });
       }
       
+      if (dealId) {
+        const hasAccess = await verifyDealAccess(req.user?.id, req.user?.role, String(dealId));
+        if (!hasAccess) {
+          return res.status(403).json({ message: "You do not have access to this deal" });
+        }
+      }
+      
       const [session] = await db
         .insert(schema.ambientSessions)
         .values({
@@ -27262,7 +27415,16 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   // Update ambient session (status, caseId, etc.)
   app.patch("/api/ambient-sessions/:id", isAuthenticated, async (req, res) => {
     try {
+      const userId = (req as any).user?.id;
+      const userRole = (req as any).user?.role;
       const { status, endedAt, durationSeconds, caseId, dealId, useDataLake } = req.body;
+      
+      if (dealId !== undefined && dealId !== null) {
+        const hasAccess = await verifyDealAccess(userId, userRole, String(dealId));
+        if (!hasAccess) {
+          return res.status(403).json({ message: "You do not have access to this deal" });
+        }
+      }
       
       const updateData: any = {
         updatedAt: new Date(),
@@ -27278,7 +27440,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
       const [session] = await db
         .update(schema.ambientSessions)
         .set(updateData)
-        .where(eq(schema.ambientSessions.id, req.params.id))
+        .where(and(eq(schema.ambientSessions.id, req.params.id), eq(schema.ambientSessions.createdBy, userId)))
         .returning();
       
       if (!session) {
@@ -27430,19 +27592,36 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
   app.post("/api/ambient-sessions/:id/boolean-search", isAuthenticated, async (req, res) => {
     try {
       const sessionId = req.params.id;
-      const { caseId, transcriptText } = req.body;
+      const userId = (req as any).user?.id;
+      const { transcriptText } = req.body;
       
       if (!transcriptText || transcriptText.length < 50) {
-        return res.json({ queries: [], results: [] });
+        return res.json({ queries: [], results: [], dataRoomResults: [] });
       }
       
-      const { generateBooleanSearchQueries, executeBooleanSearch } = await import("./services/ambient-ai-service");
+      const [session] = await db
+        .select({ 
+          caseId: schema.ambientSessions.caseId, 
+          dealId: schema.ambientSessions.dealId,
+          createdBy: schema.ambientSessions.createdBy,
+        })
+        .from(schema.ambientSessions)
+        .where(eq(schema.ambientSessions.id, sessionId));
+      
+      if (!session || session.createdBy !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const caseId = session.caseId || null;
+      const dealId = session.dealId || null;
+      
+      const { generateBooleanSearchQueries, executeBooleanSearch, executeBooleanSearchDataRoom } = await import("./services/ambient-ai-service");
       
       // Generate boolean queries from transcript using Claude
       const queries = await generateBooleanSearchQueries(transcriptText);
       
       if (queries.length === 0) {
-        return res.json({ queries: [], results: [] });
+        return res.json({ queries: [], results: [], dataRoomResults: [] });
       }
       
       // Execute each query and gather results
@@ -27460,6 +27639,20 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         }>;
       }> = [];
       
+      const allDataRoomResults: Array<{
+        query: string;
+        topic: string;
+        rationale: string;
+        riskLevel: string;
+        documents: Array<{
+          id: string;
+          fileName: string | null;
+          fileType: string | null;
+          description: string | null;
+          matchType: string;
+        }>;
+      }> = [];
+      
       for (const q of queries) {
         if (caseId) {
           const docs = await executeBooleanSearch(caseId, q.query);
@@ -27473,13 +27666,27 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
             });
           }
         }
+        
+        if (dealId) {
+          const drDocs = await executeBooleanSearchDataRoom(dealId, q.query);
+          if (drDocs.length > 0) {
+            allDataRoomResults.push({
+              query: q.query,
+              topic: q.topic,
+              rationale: q.rationale,
+              riskLevel: q.riskLevel,
+              documents: drDocs,
+            });
+          }
+        }
       }
       
-      console.log(`[AmbientAI] Boolean search: ${queries.length} queries, ${allResults.length} with results`);
+      console.log(`[AmbientAI] Boolean search: ${queries.length} queries, ${allResults.length} comm results, ${allDataRoomResults.length} data room results`);
       
       res.json({ 
         queries, 
-        results: allResults 
+        results: allResults,
+        dataRoomResults: allDataRoomResults,
       });
     } catch (error: any) {
       console.error("[AmbientAI] Boolean search failed:", error);

@@ -8,9 +8,12 @@ import {
   ambientSessionSummaries,
   cases,
   fileSearchStores,
-  communications
+  communications,
+  dataRooms,
+  dataRoomDocuments,
+  dataLakeItems
 } from "@shared/schema";
-import { eq, and, desc, gte, or, ilike, sql } from "drizzle-orm";
+import { eq, and, desc, gte, or, ilike, sql, inArray } from "drizzle-orm";
 import { queryFileSearchStore, getFileSearchStoreForCase } from "./file-search-service";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY! });
@@ -79,7 +82,12 @@ function extractKeywordsFromText(text: string): string[] {
     'quarterly', 'annual', 'report', 'reports', 'audit', 'audited', 'auditor', 'auditors',
     '990', 'budget', 'expense', 'expenses', 'revenue', 'income', 'statement',
     'invoice', 'invoices', 'payment', 'contract', 'agreement', 'records', 'books',
-    'kpmg', 'ey', 'deloitte', 'pwc', 'accountant', 'cpa', 'olympic', 'usopc', 'usoc'
+    'kpmg', 'ey', 'deloitte', 'pwc', 'accountant', 'cpa', 'olympic', 'usopc', 'usoc',
+    'title', 'escrow', 'deed', 'mortgage', 'lien', 'closing', 'hoa', 'condo',
+    'deposit', 'loi', 'appraisal', 'survey', 'inspection', 'zoning', 'easement',
+    'covenant', 'purchase', 'lease', 'tenant', 'landlord', 'property', 'parcel',
+    'plat', 'encumbrance', 'subordination', 'estoppel', 'addendum', 'amendment',
+    'disclosure', 'contingency', 'earnest', 'escrow', 'prorations', 'settlement'
   ];
   
   docKeywords.forEach(kw => {
@@ -432,6 +440,98 @@ export async function executeBooleanSearch(
   }
 }
 
+function buildDataRoomTermCondition(term: string) {
+  return or(
+    ilike(dataRoomDocuments.fileName, `%${term}%`),
+    ilike(dataRoomDocuments.description, `%${term}%`),
+    ilike(dataRoomDocuments.extractedText, `%${term}%`),
+    ilike(dataRoomDocuments.aiSummary, `%${term}%`),
+    ilike(dataRoomDocuments.comprehensiveSummary, `%${term}%`),
+    sql`${dataRoomDocuments.tags}::text ILIKE ${'%' + term + '%'}`
+  );
+}
+
+export async function executeBooleanSearchDataRoom(
+  dealId: string,
+  booleanQuery: string
+): Promise<Array<{ id: string; fileName: string | null; fileType: string | null; description: string | null; matchType: string }>> {
+  const results: Array<{ id: string; fileName: string | null; fileType: string | null; description: string | null; matchType: string }> = [];
+  
+  try {
+    console.log(`[AmbientAI] Executing boolean search in data room for deal ${dealId}: ${booleanQuery}`);
+    
+    const dealDataRooms = await db
+      .select({ id: dataRooms.id })
+      .from(dataRooms)
+      .where(eq(dataRooms.dealId, dealId));
+    
+    if (dealDataRooms.length === 0) return results;
+    
+    const dataRoomIds = dealDataRooms.map(dr => dr.id);
+    const parsed = parseBooleanQuery(booleanQuery);
+    
+    if (parsed.andGroups.length === 0 && parsed.phrases.length === 0) {
+      return results;
+    }
+    
+    const andConditions: any[] = [];
+    
+    for (const orGroup of parsed.andGroups) {
+      if (orGroup.length === 1) {
+        andConditions.push(buildDataRoomTermCondition(orGroup[0]));
+      } else if (orGroup.length > 1) {
+        const orConditions = orGroup.map(term => buildDataRoomTermCondition(term));
+        andConditions.push(or(...orConditions));
+      }
+    }
+    
+    for (const phrase of parsed.phrases) {
+      const alreadyIncluded = parsed.andGroups.some(group => group.includes(phrase));
+      if (!alreadyIncluded) {
+        andConditions.push(buildDataRoomTermCondition(phrase));
+      }
+    }
+    
+    if (andConditions.length === 0) return results;
+    
+    const combinedCondition = andConditions.length === 1 
+      ? andConditions[0] 
+      : and(...andConditions);
+    
+    const matchingDocs = await db
+      .select({ 
+        id: dataRoomDocuments.id, 
+        fileName: dataRoomDocuments.fileName,
+        fileType: dataRoomDocuments.fileType,
+        description: dataRoomDocuments.description,
+      })
+      .from(dataRoomDocuments)
+      .where(and(
+        inArray(dataRoomDocuments.dataRoomId, dataRoomIds),
+        combinedCondition
+      ))
+      .orderBy(desc(dataRoomDocuments.uploadedAt))
+      .limit(15);
+    
+    console.log(`[AmbientAI] Boolean search data room found ${matchingDocs.length} results`);
+    
+    const matchType = parsed.andGroups.length > 1 ? "all_groups" : 
+                      parsed.andGroups[0]?.length > 1 ? "any_term" : "exact";
+    
+    return matchingDocs.map(d => ({
+      id: d.id,
+      fileName: d.fileName,
+      fileType: d.fileType,
+      description: d.description,
+      matchType
+    }));
+    
+  } catch (error) {
+    console.error("[AmbientAI] Boolean search data room failed:", error);
+    return results;
+  }
+}
+
 async function extractSearchIntents(transcriptText: string): Promise<SearchIntent[]> {
   const prompt = `You are analyzing a live meeting transcript for a legal compliance platform.
 Extract specific entities and search terms that could help find relevant documents, emails, or records.
@@ -574,6 +674,118 @@ async function searchCaseDocuments(caseId: string, searchTerms: string[]): Promi
   return documentIds;
 }
 
+async function searchDealDataRoomDocuments(dealId: string, searchTerms: string[]): Promise<Array<{ id: string; source: 'dataroom' }>> {
+  const results: Array<{ id: string; source: 'dataroom' }> = [];
+  
+  if (searchTerms.length === 0) return results;
+  
+  try {
+    const validTerms = searchTerms.filter(t => t.length >= 2).slice(0, 8);
+    if (validTerms.length === 0) return results;
+    
+    console.log(`[AmbientAI] Searching data room for deal ${dealId}, terms: ${validTerms.join(', ')}`);
+    
+    const dealDataRooms = await db
+      .select({ id: dataRooms.id })
+      .from(dataRooms)
+      .where(eq(dataRooms.dealId, dealId));
+    
+    if (dealDataRooms.length === 0) {
+      console.log(`[AmbientAI] No data rooms found for deal ${dealId}`);
+      return results;
+    }
+    
+    const dataRoomIds = dealDataRooms.map(dr => dr.id);
+    
+    const termConditions = validTerms.map((term: string) =>
+      or(
+        ilike(dataRoomDocuments.fileName, `%${term}%`),
+        ilike(dataRoomDocuments.description, `%${term}%`),
+        ilike(dataRoomDocuments.extractedText, `%${term}%`),
+        ilike(dataRoomDocuments.aiSummary, `%${term}%`),
+        ilike(dataRoomDocuments.comprehensiveSummary, `%${term}%`),
+        sql`${dataRoomDocuments.tags}::text ILIKE ${'%' + term + '%'}`
+      )
+    );
+    
+    const combinedCondition = termConditions.length === 1 
+      ? termConditions[0]
+      : or(...termConditions);
+    
+    const matchingDocs = await db
+      .select({ 
+        id: dataRoomDocuments.id,
+        fileName: dataRoomDocuments.fileName,
+      })
+      .from(dataRoomDocuments)
+      .where(and(
+        inArray(dataRoomDocuments.dataRoomId, dataRoomIds),
+        combinedCondition
+      ))
+      .orderBy(desc(dataRoomDocuments.uploadedAt))
+      .limit(10);
+    
+    if (matchingDocs.length > 0) {
+      console.log(`[AmbientAI] Found ${matchingDocs.length} data room documents: ${matchingDocs.map(d => d.fileName).join(', ')}`);
+      return matchingDocs.map(d => ({ id: d.id, source: 'dataroom' as const }));
+    } else {
+      console.log(`[AmbientAI] No data room documents found for terms in deal ${dealId}`);
+    }
+  } catch (error) {
+    console.error("[AmbientAI] Data room document search failed:", error);
+  }
+  
+  return results;
+}
+
+async function searchDataLakeItems(userId: string, searchTerms: string[]): Promise<Array<{ id: string; source: 'datalake' }>> {
+  const results: Array<{ id: string; source: 'datalake' }> = [];
+  
+  if (searchTerms.length === 0) return results;
+  
+  try {
+    const validTerms = searchTerms.filter(t => t.length >= 2).slice(0, 8);
+    if (validTerms.length === 0) return results;
+    
+    console.log(`[AmbientAI] Searching data lake for user ${userId}, terms: ${validTerms.join(', ')}`);
+    
+    const termConditions = validTerms.map((term: string) =>
+      or(
+        ilike(dataLakeItems.name, `%${term}%`),
+        sql`${dataLakeItems.metadata}::text ILIKE ${'%' + term + '%'}`
+      )
+    );
+    
+    const combinedCondition = termConditions.length === 1
+      ? termConditions[0]
+      : or(...termConditions);
+    
+    const matchingItems = await db
+      .select({
+        id: dataLakeItems.id,
+        name: dataLakeItems.name,
+      })
+      .from(dataLakeItems)
+      .where(and(
+        eq(dataLakeItems.userId, userId),
+        combinedCondition
+      ))
+      .orderBy(desc(dataLakeItems.indexedAt))
+      .limit(10);
+    
+    if (matchingItems.length > 0) {
+      console.log(`[AmbientAI] Found ${matchingItems.length} data lake items: ${matchingItems.map(i => i.name).join(', ')}`);
+      return matchingItems.map(i => ({ id: i.id, source: 'datalake' as const }));
+    } else {
+      console.log(`[AmbientAI] No data lake items found for terms`);
+    }
+  } catch (error) {
+    console.error("[AmbientAI] Data lake search failed:", error);
+  }
+  
+  return results;
+}
+
 // Generate real-time summary insights from transcript chunk
 export async function generateRealtimeSummaryInsights(
   transcriptText: string
@@ -709,7 +921,10 @@ Rules:
 export async function analyzeTranscriptChunk(
   sessionId: string,
   recentTranscriptText: string,
-  caseId: string | null
+  caseId: string | null,
+  dealId: string | null = null,
+  useDataLake: boolean = false,
+  userId: string | null = null
 ): Promise<AnalysisResult> {
   const suggestions: AnalysisResult["suggestions"] = [];
   
@@ -740,15 +955,25 @@ export async function analyzeTranscriptChunk(
       return { suggestions };
     }
     
-    // Step 2: For each intent, search case documents
+    // Step 2: For each intent, search case documents, data room documents, and data lake items
     for (const intent of searchIntents) {
       let documentIds: string[] = [];
+      let dataRoomDocIds: Array<{ id: string; source: 'dataroom' }> = [];
+      let dataLakeDocIds: Array<{ id: string; source: 'datalake' }> = [];
       
       if (caseId) {
         documentIds = await searchCaseDocuments(caseId, intent.searchTerms);
       }
       
-      // Only add suggestion if we found documents
+      if (dealId) {
+        dataRoomDocIds = await searchDealDataRoomDocuments(dealId, intent.searchTerms);
+      }
+      
+      if (useDataLake && userId) {
+        dataLakeDocIds = await searchDataLakeItems(userId, intent.searchTerms);
+      }
+      
+      // Add suggestion for communications (existing behavior)
       if (documentIds.length > 0) {
         suggestions.push({
           suggestionType: "document",
@@ -759,7 +984,35 @@ export async function analyzeTranscriptChunk(
           documentIds,
           confidence: documentIds.length >= 3 ? "high" : documentIds.length >= 2 ? "medium" : "low",
         });
-        console.log(`[AmbientAI] Created suggestion for "${intent.topic}" with ${documentIds.length} docs`);
+        console.log(`[AmbientAI] Created suggestion for "${intent.topic}" with ${documentIds.length} comm docs`);
+      }
+      
+      // Add suggestion for data room documents
+      if (dataRoomDocIds.length > 0) {
+        suggestions.push({
+          suggestionType: "document",
+          triggerQuote: intent.topic,
+          explanation: `Data room: ${intent.rationale}`,
+          userPrompt: `Found ${dataRoomDocIds.length} data room document${dataRoomDocIds.length > 1 ? 's' : ''} for: "${intent.topic}"`,
+          searchQuery: intent.searchTerms.join(" "),
+          documentIds: dataRoomDocIds.map(d => `dr:${d.id}`),
+          confidence: dataRoomDocIds.length >= 3 ? "high" : dataRoomDocIds.length >= 2 ? "medium" : "low",
+        });
+        console.log(`[AmbientAI] Created data room suggestion for "${intent.topic}" with ${dataRoomDocIds.length} docs`);
+      }
+      
+      // Add suggestion for data lake items
+      if (dataLakeDocIds.length > 0) {
+        suggestions.push({
+          suggestionType: "document",
+          triggerQuote: intent.topic,
+          explanation: `Data lake: ${intent.rationale}`,
+          userPrompt: `Found ${dataLakeDocIds.length} data lake item${dataLakeDocIds.length > 1 ? 's' : ''} for: "${intent.topic}"`,
+          searchQuery: intent.searchTerms.join(" "),
+          documentIds: dataLakeDocIds.map(d => `dl:${d.id}`),
+          confidence: dataLakeDocIds.length >= 3 ? "high" : dataLakeDocIds.length >= 2 ? "medium" : "low",
+        });
+        console.log(`[AmbientAI] Created data lake suggestion for "${intent.topic}" with ${dataLakeDocIds.length} items`);
       }
     }
   } catch (error) {
@@ -773,9 +1026,12 @@ export async function processAndStoreSuggestions(
   sessionId: string,
   recentTranscriptText: string,
   caseId: string | null,
-  timestampMs: number
+  timestampMs: number,
+  dealId: string | null = null,
+  useDataLake: boolean = false,
+  userId: string | null = null
 ): Promise<number> {
-  const result = await analyzeTranscriptChunk(sessionId, recentTranscriptText, caseId);
+  const result = await analyzeTranscriptChunk(sessionId, recentTranscriptText, caseId, dealId, useDataLake, userId);
   
   if (result.suggestions.length === 0) {
     return 0;
@@ -945,6 +1201,55 @@ Be direct. No preamble. Start with "This is a..."`
   }
 }
 
+export async function summarizeDataRoomDocumentWithContext(
+  documentId: string,
+  context: string
+): Promise<string> {
+  const [doc] = await db
+    .select()
+    .from(dataRoomDocuments)
+    .where(eq(dataRoomDocuments.id, documentId));
+  
+  if (!doc) {
+    throw new Error("Data room document not found");
+  }
+  
+  const documentContent = doc.extractedText || doc.aiSummary || doc.comprehensiveSummary || doc.description || "(No content)";
+  const documentTitle = doc.fileName || "(Untitled)";
+  const truncatedContent = documentContent.substring(0, 3000);
+  
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 200,
+      messages: [{
+        role: "user",
+        content: `You are helping a professional during a live meeting. They heard "${context}" and need to quickly understand if this document is relevant.
+
+DOCUMENT: ${documentTitle}
+TYPE: ${doc.fileType || "unknown"}
+CATEGORY: ${doc.documentCategory || "Unknown"}
+TAGS: ${doc.tags?.join(', ') || "None"}
+CONTENT (first 3000 chars):
+${truncatedContent}
+
+Provide a 2-3 sentence summary that:
+1. States what this document IS (contract, title report, inspection, etc.)
+2. Highlights anything relevant to "${context}"
+3. Notes any red flags or key dates
+
+Be direct. No preamble. Start with "This is a..."`
+      }]
+    });
+    
+    const textContent = response.content.find(c => c.type === "text");
+    return textContent ? textContent.text : "Unable to generate summary.";
+  } catch (error) {
+    console.error("[AmbientAI] Error summarizing data room document:", error);
+    throw new Error("Failed to summarize data room document");
+  }
+}
+
 export async function triggerAnalysisForSession(
   sessionId: string
 ): Promise<{ suggestionsGenerated: number }> {
@@ -960,7 +1265,7 @@ export async function triggerAnalysisForSession(
     throw new Error("Session not found");
   }
   
-  console.log(`[AmbientAI] Session found, caseId: ${session.caseId}`);
+  console.log(`[AmbientAI] Session found, caseId: ${session.caseId}, dealId: ${session.dealId}, useDataLake: ${session.useDataLake}`);
   
   const recentText = await getRecentTranscriptText(sessionId, 120000);
   
@@ -977,7 +1282,10 @@ export async function triggerAnalysisForSession(
     sessionId,
     recentText,
     session.caseId,
-    Date.now()
+    Date.now(),
+    session.dealId,
+    session.useDataLake ?? false,
+    session.createdBy
   );
   
   console.log(`[AmbientAI] Analysis complete, generated ${count} suggestions`);

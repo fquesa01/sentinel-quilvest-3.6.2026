@@ -132,6 +132,53 @@ type SuggestionDocument = {
   body: string | null;
   sentAt: string | null;
   caseId: string | null;
+  docSource?: 'communication';
+};
+
+type DataRoomDoc = {
+  id: string;
+  fileName: string;
+  fileType: string | null;
+  fileSize: number | null;
+  description: string | null;
+  documentCategory: string | null;
+  tags: string[] | null;
+  aiSummary: string | null;
+  uploadedAt: string | null;
+  dataRoomId: string;
+  docSource: 'dataroom';
+};
+
+type DataLakeDoc = {
+  id: string;
+  name: string;
+  source: string;
+  itemType: string;
+  fileSize: number | null;
+  metadata: any;
+  indexedAt: string | null;
+  docSource: 'datalake';
+};
+
+type BooleanSearchQuery = {
+  query: string;
+  topic: string;
+  rationale: string;
+  riskLevel: string;
+};
+
+type BooleanDataRoomResult = {
+  query: string;
+  topic: string;
+  rationale: string;
+  riskLevel: "high" | "medium" | "low";
+  documents: Array<{
+    id: string;
+    fileName: string | null;
+    fileType: string | null;
+    description: string | null;
+    matchType: string;
+  }>;
 };
 
 type BooleanSearchResult = {
@@ -159,11 +206,12 @@ export default function AmbientSession() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [showEndDialog, setShowEndDialog] = useState(false);
-  const [suggestionDocs, setSuggestionDocs] = useState<Record<string, SuggestionDocument[]>>({});
+  const [suggestionDocs, setSuggestionDocs] = useState<Record<string, (SuggestionDocument | DataRoomDoc | DataLakeDoc)[]>>({});
   const [bulletSummaries, setBulletSummaries] = useState<Record<string, Array<{ text: string; category?: string }>>>({});
   const [failedSuggestionIds, setFailedSuggestionIds] = useState<Set<string>>(new Set());
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [booleanResults, setBooleanResults] = useState<BooleanSearchResult[]>([]);
+  const [booleanDataRoomResults, setBooleanDataRoomResults] = useState<BooleanDataRoomResult[]>([]);
   const [previousQueries, setPreviousQueries] = useState<Set<string>>(new Set());
   const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
   const [dismissedDocIds, setDismissedDocIds] = useState<Set<string>>(new Set());
@@ -369,19 +417,17 @@ export default function AmbientSession() {
   const booleanSearchMutation = useMutation({
     mutationFn: async (transcriptText: string) => {
       const response = await apiRequest("POST", `/api/ambient-sessions/${sessionId}/boolean-search`, {
-        dealId: session?.dealId,
         transcriptText,
       });
       return response.json();
     },
-    onSuccess: async (data: { queries: any[]; results: BooleanSearchResult[] }) => {
+    onSuccess: async (data: { queries: BooleanSearchQuery[]; results: BooleanSearchResult[]; dataRoomResults?: BooleanDataRoomResult[] }) => {
       if (data.results && data.results.length > 0) {
         const newResults = data.results.filter(r => !previousQueries.has(r.query));
         if (newResults.length > 0) {
           setBooleanResults(prev => [...newResults, ...prev].slice(0, 10));
           setPreviousQueries(prev => new Set(Array.from(prev).concat(newResults.map(r => r.query))));
           
-          // Fetch bullet summaries for new documents
           const docIds = newResults.flatMap(r => r.documents.map(d => d.id));
           if (docIds.length > 0) {
             try {
@@ -402,6 +448,14 @@ export default function AmbientSession() {
           }
         }
       }
+      
+      if (data.dataRoomResults && data.dataRoomResults.length > 0) {
+        const newDrResults = data.dataRoomResults.filter(r => !previousQueries.has(`dr:${r.query}`));
+        if (newDrResults.length > 0) {
+          setBooleanDataRoomResults(prev => [...newDrResults, ...prev].slice(0, 10));
+          setPreviousQueries(prev => new Set(Array.from(prev).concat(newDrResults.map(r => `dr:${r.query}`))));
+        }
+      }
     },
   });
   
@@ -417,8 +471,7 @@ export default function AmbientSession() {
 
   // Fetch document details and bullet summaries for suggestions with documentIds
   useEffect(() => {
-    // Wait for session to load with dealId before fetching documents
-    if (!session?.dealId && !session?.useDataLake) return;
+    if (!session) return;
     
     const fetchDocs = async () => {
       const suggestionsWithDocs = suggestions.filter(
@@ -427,16 +480,49 @@ export default function AmbientSession() {
       
       for (const suggestion of suggestionsWithDocs) {
         try {
-          const response = await apiRequest("POST", "/api/communications/batch", {
-            ids: suggestion.documentIds,
-            dealId: session.dealId,
-          });
-          if (response.ok) {
-            const docs = await response.json();
-            setSuggestionDocs((prev) => ({ ...prev, [suggestion.id]: docs }));
+          const allDocIds = suggestion.documentIds || [];
+          const commIds = allDocIds.filter(id => !id.startsWith('dr:') && !id.startsWith('dl:'));
+          const drIds = allDocIds.filter(id => id.startsWith('dr:')).map(id => id.substring(3));
+          const dlIds = allDocIds.filter(id => id.startsWith('dl:')).map(id => id.substring(3));
+          
+          let allDocs: (SuggestionDocument | DataRoomDoc | DataLakeDoc)[] = [];
+          
+          if (commIds.length > 0 && session.caseId) {
+            const response = await apiRequest("POST", "/api/communications/batch", {
+              ids: commIds,
+              caseId: session.caseId,
+            });
+            if (response.ok) {
+              const docs: Omit<SuggestionDocument, 'docSource'>[] = await response.json();
+              allDocs = allDocs.concat(docs.map((d) => ({ ...d, docSource: 'communication' as const })));
+            }
+          }
+          
+          if (drIds.length > 0 && session.dealId) {
+            const response = await apiRequest("POST", "/api/data-room-documents/batch", {
+              ids: drIds,
+              dealId: session.dealId,
+            });
+            if (response.ok) {
+              const docs: Omit<DataRoomDoc, 'docSource'>[] = await response.json();
+              allDocs = allDocs.concat(docs.map((d) => ({ ...d, docSource: 'dataroom' as const })));
+            }
+          }
+          
+          if (dlIds.length > 0) {
+            const response = await apiRequest("POST", "/api/data-lake-items/batch", {
+              ids: dlIds,
+            });
+            if (response.ok) {
+              const docs: Omit<DataLakeDoc, 'docSource'>[] = await response.json();
+              allDocs = allDocs.concat(docs.map((d) => ({ ...d, docSource: 'datalake' as const })));
+            }
+          }
+          
+          if (allDocs.length > 0) {
+            setSuggestionDocs((prev) => ({ ...prev, [suggestion.id]: allDocs }));
             
-            // Fetch bullet summaries for these documents
-            const docIds = docs.map((d: SuggestionDocument) => d.id);
+            const docIds = allDocs.map((d) => d.id);
             if (docIds.length > 0) {
               try {
                 const bulletResponse = await apiRequest("POST", "/api/bullet-summaries/batch", {
@@ -454,8 +540,7 @@ export default function AmbientSession() {
                 console.error("Error fetching bullet summaries:", bulletError);
               }
             }
-          } else {
-            // Mark as failed to prevent infinite retries
+          } else if (allDocIds.length > 0) {
             setFailedSuggestionIds((prev) => new Set(Array.from(prev).concat(suggestion.id)));
           }
         } catch (error) {
@@ -468,7 +553,7 @@ export default function AmbientSession() {
     if (suggestions.length > 0) {
       fetchDocs();
     }
-  }, [suggestions, session?.dealId, session?.useDataLake]);
+  }, [suggestions, session?.dealId, session?.caseId, session?.useDataLake]);
   // Track if this is a fresh recording start vs a resume
   const isFirstStartRef = useRef(true);
   
@@ -491,7 +576,7 @@ export default function AmbientSession() {
             triggerAnalysisMutation.mutate();
           }
           // Also trigger Claude-powered boolean search
-          if (!booleanSearchMutation.isPending && session?.dealId) {
+          if (!booleanSearchMutation.isPending && (session?.dealId || session?.caseId)) {
             const recentText = transcriptsRef.current
               .slice(-5)
               .map(t => t.content)
@@ -774,6 +859,51 @@ export default function AmbientSession() {
   
   const pendingSuggestions = suggestions.filter(s => s.status === "pending");
   
+  const transformDocForDisplay = (doc: SuggestionDocument | DataRoomDoc | DataLakeDoc) => {
+    if ('docSource' in doc && doc.docSource === 'dataroom') {
+      const drDoc = doc as DataRoomDoc;
+      return {
+        id: drDoc.id,
+        title: drDoc.fileName || "(Untitled)",
+        type: 'document' as const,
+        docSource: 'dataroom' as const,
+        sender: drDoc.documentCategory || drDoc.fileType || undefined,
+        date: drDoc.uploadedAt || "",
+        preview: drDoc.description || drDoc.aiSummary?.substring(0, 150) || "",
+        riskLevel: undefined,
+        bullets: bulletSummaries[drDoc.id] || undefined,
+        viewUrl: session?.dealId ? `/transactions/deals/${session.dealId}` : undefined,
+      };
+    }
+    if ('docSource' in doc && doc.docSource === 'datalake') {
+      const dlDoc = doc as DataLakeDoc;
+      return {
+        id: dlDoc.id,
+        title: dlDoc.name || "(Untitled)",
+        type: 'document' as const,
+        docSource: 'datalake' as const,
+        sender: `${dlDoc.source} - ${dlDoc.itemType}`,
+        date: dlDoc.indexedAt || "",
+        preview: "",
+        riskLevel: undefined,
+        bullets: bulletSummaries[dlDoc.id] || undefined,
+      };
+    }
+    const commDoc = doc as SuggestionDocument;
+    return {
+      id: commDoc.id,
+      title: commDoc.subject || "(No subject)",
+      type: 'email' as const,
+      docSource: 'communication' as const,
+      sender: commDoc.sender || undefined,
+      date: commDoc.sentAt || "",
+      preview: commDoc.body?.substring(0, 150) || "",
+      riskLevel: commDoc.riskLevel || undefined,
+      bullets: bulletSummaries[commDoc.id] || undefined,
+      viewUrl: `/communications/${commDoc.id}`,
+    };
+  };
+  
   // Transform booleanResults into glanceable SuggestionData format
   const transformedSuggestions = booleanResults.map((result, idx) => ({
     id: `bool-${idx}`,
@@ -786,10 +916,33 @@ export default function AmbientSession() {
         id: doc.id,
         title: doc.subject || "(No subject)",
         type: 'email' as const,
+        docSource: 'communication' as const,
         sender: doc.sender || undefined,
         date: "",
         preview: "",
         riskLevel: doc.riskLevel || undefined,
+        bullets: bulletSummaries[doc.id] || undefined,
+      })),
+    status: 'found' as const,
+  }));
+  
+  // Transform data room boolean search results
+  const transformedDrSuggestions = booleanDataRoomResults.map((result, idx) => ({
+    id: `bool-dr-${idx}`,
+    topic: `${result.topic} (Data Room)`,
+    triggerQuote: result.rationale,
+    confidence: result.riskLevel as 'high' | 'medium' | 'low',
+    results: result.documents
+      .filter(doc => !dismissedDocIds.has(doc.id))
+      .map(doc => ({
+        id: doc.id,
+        title: doc.fileName || "(Untitled)",
+        type: 'document' as const,
+        docSource: 'dataroom' as const,
+        sender: doc.fileType || undefined,
+        date: "",
+        preview: doc.description || "",
+        riskLevel: undefined,
         bullets: bulletSummaries[doc.id] || undefined,
       })),
     status: 'found' as const,
@@ -805,17 +958,7 @@ export default function AmbientSession() {
       confidence: (s.confidence || 'medium') as 'high' | 'medium' | 'low',
       results: (suggestionDocs[s.id] || [])
         .filter(doc => !dismissedDocIds.has(doc.id))
-        .map(doc => ({
-          id: doc.id,
-          title: doc.subject || "(No subject)",
-          type: 'email' as const,
-          sender: doc.sender || undefined,
-          date: doc.sentAt || "",
-          preview: doc.body?.substring(0, 150) || "",
-          riskLevel: doc.riskLevel || undefined,
-          bullets: bulletSummaries[doc.id] || undefined,
-          viewUrl: `/communications/${doc.id}`,
-        })),
+        .map(doc => transformDocForDisplay(doc)),
       status: 'found' as const,
     }));
   
@@ -834,7 +977,7 @@ export default function AmbientSession() {
       suggestionType: s.suggestionType,
     }));
   
-  const allGlanceableSuggestions = [...transformedSuggestions, ...transformedTraditionalSuggestions]
+  const allGlanceableSuggestions = [...transformedSuggestions, ...transformedDrSuggestions, ...transformedTraditionalSuggestions]
     .filter(s => s.results.length > 0);
   
   if (!sessionId || !match) {
