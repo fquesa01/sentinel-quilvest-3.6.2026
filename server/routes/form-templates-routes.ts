@@ -220,6 +220,55 @@ function wrapMulterSingle(req: any, res: any, next: any) {
   });
 }
 
+router.post("/form-templates/check-duplicates", isAuthenticated, async (req: any, res) => {
+  try {
+    const { files } = req.body;
+    if (!Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({ error: "files array is required" });
+    }
+
+    const dbUser = req.dbUser;
+    let visibleUserIds: string[] | null = null;
+    if (dbUser && dbUser.role !== "super_admin") {
+      if (dbUser.userType === "corporate") {
+        const org = await storage.getUserOrganization(dbUser.id);
+        if (org) {
+          visibleUserIds = await storage.getOrganizationMemberUserIds(org.id);
+        }
+      }
+      if (!visibleUserIds) {
+        visibleUserIds = [dbUser.id];
+      }
+    }
+
+    let whereClause;
+    if (visibleUserIds) {
+      whereClause = inArray(firmFormTemplates.uploadedBy, visibleUserIds);
+    }
+
+    const existingTemplates = await db.select({
+      fileName: firmFormTemplates.fileName,
+      fileSize: firmFormTemplates.fileSize,
+    }).from(firmFormTemplates).where(whereClause);
+
+    const existingSet = new Set(
+      existingTemplates.map(t => `${t.fileName}::${t.fileSize}`)
+    );
+
+    const duplicates: { fileName: string; fileSize: number }[] = [];
+    for (const f of files) {
+      const key = `${f.fileName}::${f.fileSize}`;
+      if (existingSet.has(key)) {
+        duplicates.push({ fileName: f.fileName, fileSize: f.fileSize });
+      }
+    }
+
+    res.json({ duplicates });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post("/form-templates", isAuthenticated, wrapMulterSingle, async (req: any, res) => {
   try {
     const { name, description, documentType, dealType, isDefault } = req.body;

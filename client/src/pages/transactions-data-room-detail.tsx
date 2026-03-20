@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams, useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { DuplicateConfirmDialog, type DuplicateFile } from "@/components/duplicate-confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -353,6 +354,8 @@ export default function TransactionsDataRoomDetail() {
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; fileName: string }>({ current: 0, total: 0, fileName: "" });
+  const [duplicateFiles, setDuplicateFiles] = useState<DuplicateFile[]>([]);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
   const [isAccessPanelOpen, setIsAccessPanelOpen] = useState(false);
   const [isActivityPanelOpen, setIsActivityPanelOpen] = useState(false);
   const [isFolderPermissionsOpen, setIsFolderPermissionsOpen] = useState(false);
@@ -660,20 +663,15 @@ export default function TransactionsDataRoomDetail() {
     return response.json();
   };
 
-  const handleFileUpload = async () => {
-    if (uploadFiles.length === 0) {
-      toast({ title: "Please select files to upload", variant: "destructive" });
-      return;
-    }
-
+  const performUpload = useCallback(async (filesToUpload: File[]) => {
     setIsUploading(true);
-    const total = uploadFiles.length;
+    const total = filesToUpload.length;
     let succeeded = 0;
     let failed = 0;
 
     try {
       for (let i = 0; i < total; i++) {
-        const file = uploadFiles[i];
+        const file = filesToUpload[i];
         setUploadProgress({ current: i + 1, total, fileName: file.name });
 
         try {
@@ -714,6 +712,36 @@ export default function TransactionsDataRoomDetail() {
       setIsUploading(false);
       setUploadProgress({ current: 0, total: 0, fileName: "" });
     }
+  }, [roomId, room?.dealId, selectedFolderId, toast]);
+
+  const handleFileUpload = async () => {
+    if (uploadFiles.length === 0) {
+      toast({ title: "Please select files to upload", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const checkRes = await fetch(`/api/data-rooms/${roomId}/check-duplicates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          files: uploadFiles.map(f => ({ fileName: f.name, fileSize: f.size })),
+          folderId: selectedFolderId || null,
+        }),
+      });
+      if (checkRes.ok) {
+        const { duplicates } = await checkRes.json();
+        if (duplicates.length > 0) {
+          setDuplicateFiles(duplicates);
+          setShowDuplicateDialog(true);
+          return;
+        }
+      }
+    } catch {
+    }
+
+    performUpload(uploadFiles);
   };
 
   const handleDownload = (docId: string) => {
@@ -1679,6 +1707,26 @@ export default function TransactionsDataRoomDetail() {
           </div>
         </DialogContent>
       </Dialog>
+      <DuplicateConfirmDialog
+        open={showDuplicateDialog}
+        onOpenChange={setShowDuplicateDialog}
+        duplicates={duplicateFiles}
+        onConfirm={() => {
+          setShowDuplicateDialog(false);
+          performUpload(uploadFiles);
+        }}
+        onCancel={() => {
+          setShowDuplicateDialog(false);
+          const dupSet = new Set(duplicateFiles.map(d => `${d.fileName}::${d.fileSize}`));
+          const nonDuplicates = uploadFiles.filter(f => !dupSet.has(`${f.name}::${f.size}`));
+          if (nonDuplicates.length > 0) {
+            setUploadFiles(nonDuplicates);
+            performUpload(nonDuplicates);
+          } else {
+            toast({ title: "Upload skipped", description: "All selected files were duplicates." });
+          }
+        }}
+      />
     </div>
   );
 }

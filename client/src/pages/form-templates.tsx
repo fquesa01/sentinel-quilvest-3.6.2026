@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import JSZip from "jszip";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { DuplicateConfirmDialog, type DuplicateFile } from "@/components/duplicate-confirm-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -285,6 +286,9 @@ export default function FormTemplatesPage() {
     isDefault: false,
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [duplicateFiles, setDuplicateFiles] = useState<DuplicateFile[]>([]);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [pendingUploadAction, setPendingUploadAction] = useState<(() => void) | null>(null);
 
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [reviewFiles, setReviewFiles] = useState<BulkFileEntry[]>([]);
@@ -545,7 +549,19 @@ export default function FormTemplatesPage() {
     setSelectedFile(null);
   };
 
-  const handleUpload = () => {
+  const performSingleUpload = () => {
+    if (!selectedFile) return;
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    formData.append("name", uploadForm.name);
+    formData.append("description", uploadForm.description);
+    formData.append("documentType", uploadForm.documentType);
+    formData.append("dealType", uploadForm.dealType);
+    formData.append("isDefault", uploadForm.isDefault ? "true" : "false");
+    uploadMutation.mutate(formData);
+  };
+
+  const handleUpload = async () => {
     if (!uploadForm.name || !uploadForm.documentType) {
       toast({ title: "Missing fields", description: "Name and document type are required.", variant: "destructive" });
       return;
@@ -555,14 +571,28 @@ export default function FormTemplatesPage() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-    formData.append("name", uploadForm.name);
-    formData.append("description", uploadForm.description);
-    formData.append("documentType", uploadForm.documentType);
-    formData.append("dealType", uploadForm.dealType);
-    formData.append("isDefault", uploadForm.isDefault ? "true" : "false");
-    uploadMutation.mutate(formData);
+    try {
+      const checkRes = await fetch("/api/form-templates/check-duplicates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          files: [{ fileName: selectedFile.name, fileSize: selectedFile.size }],
+        }),
+      });
+      if (checkRes.ok) {
+        const { duplicates } = await checkRes.json();
+        if (duplicates.length > 0) {
+          setDuplicateFiles(duplicates);
+          setPendingUploadAction(() => () => performSingleUpload());
+          setShowDuplicateDialog(true);
+          return;
+        }
+      }
+    } catch {
+    }
+
+    performSingleUpload();
   };
 
   const prepareFileEntries = useCallback(async (files: FileList | null) => {
@@ -689,8 +719,34 @@ export default function FormTemplatesPage() {
     setReviewFiles(prev => prev.map(f => f.id === id ? { ...f, [field]: value } : f));
   };
 
-  const handleStartBulkUpload = () => {
+  const handleStartBulkUpload = async () => {
     if (reviewFiles.length === 0) return;
+
+    try {
+      const checkRes = await fetch("/api/form-templates/check-duplicates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          files: reviewFiles.map(f => ({ fileName: f.file.name, fileSize: f.file.size })),
+        }),
+      });
+      if (checkRes.ok) {
+        const { duplicates } = await checkRes.json();
+        if (duplicates.length > 0) {
+          setDuplicateFiles(duplicates);
+          setPendingUploadAction(() => () => {
+            enqueueFiles(reviewFiles);
+            setReviewFiles([]);
+            setIsReviewOpen(false);
+          });
+          setShowDuplicateDialog(true);
+          return;
+        }
+      }
+    } catch {
+    }
+
     enqueueFiles(reviewFiles);
     setReviewFiles([]);
     setIsReviewOpen(false);
@@ -1591,6 +1647,35 @@ export default function FormTemplatesPage() {
         queue={uploadQueue}
         onDismiss={dismissProgress}
         onShowErrors={() => setShowErrorDialog(true)}
+      />
+      <DuplicateConfirmDialog
+        open={showDuplicateDialog}
+        onOpenChange={setShowDuplicateDialog}
+        duplicates={duplicateFiles}
+        onConfirm={() => {
+          setShowDuplicateDialog(false);
+          if (pendingUploadAction) {
+            pendingUploadAction();
+            setPendingUploadAction(null);
+          }
+        }}
+        onCancel={() => {
+          setShowDuplicateDialog(false);
+          const dupSet = new Set(duplicateFiles.map(d => `${d.fileName}::${d.fileSize}`));
+          if (reviewFiles.length > 0) {
+            const nonDupReview = reviewFiles.filter(f => !dupSet.has(`${f.file.name}::${f.file.size}`));
+            if (nonDupReview.length > 0) {
+              enqueueFiles(nonDupReview);
+              setReviewFiles([]);
+              setIsReviewOpen(false);
+            } else {
+              toast({ title: "Upload skipped", description: "All selected files were duplicates." });
+            }
+          } else if (selectedFile && dupSet.has(`${selectedFile.name}::${selectedFile.size}`)) {
+            toast({ title: "Upload skipped", description: "Duplicate file was not uploaded." });
+          }
+          setPendingUploadAction(null);
+        }}
       />
     </div>
   );

@@ -15017,6 +15017,51 @@ Guidelines:
   // ===== Data Room Documents API Endpoints =====
 
   // Upload documents to a data room (with file upload and ZIP extraction)
+  app.post("/api/data-rooms/:roomId/check-duplicates", isAuthenticated, async (req: any, res) => {
+    try {
+      const { roomId } = req.params;
+      const { files, folderId: rawFolderId } = req.body;
+      if (!Array.isArray(files) || files.length === 0) {
+        return res.status(400).json({ message: "files array is required" });
+      }
+      const folderId = (rawFolderId && rawFolderId !== "null" && rawFolderId !== "undefined" && String(rawFolderId).trim() !== "")
+        ? rawFolderId
+        : null;
+
+      const conditions = [eq(schema.dataRoomDocuments.dataRoomId, roomId)];
+      if (folderId) {
+        conditions.push(eq(schema.dataRoomDocuments.folderId, folderId));
+      } else {
+        conditions.push(isNull(schema.dataRoomDocuments.folderId));
+      }
+
+      const existingDocs = await db
+        .select({
+          fileName: schema.dataRoomDocuments.fileName,
+          fileSize: schema.dataRoomDocuments.fileSize,
+        })
+        .from(schema.dataRoomDocuments)
+        .where(and(...conditions));
+
+      const existingSet = new Set(
+        existingDocs.map(d => `${d.fileName}::${d.fileSize}`)
+      );
+
+      const duplicates: { fileName: string; fileSize: number }[] = [];
+      for (const f of files) {
+        const key = `${f.fileName}::${f.fileSize}`;
+        if (existingSet.has(key)) {
+          duplicates.push({ fileName: f.fileName, fileSize: f.fileSize });
+        }
+      }
+
+      res.json({ duplicates });
+    } catch (error: any) {
+      console.error("Error checking duplicates:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/data-rooms/:roomId/upload", isAuthenticated, upload.array("files", 100), async (req: any, res) => {
     try {
       const { roomId } = req.params;

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Upload, X, FileText, Check, Loader2, Plus, FolderOpen, FolderUp, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DuplicateConfirmDialog, type DuplicateFile } from "@/components/duplicate-confirm-dialog";
 
 function getDisplayName(file: File): string {
   return file.webkitRelativePath || file.name;
@@ -105,6 +106,9 @@ export default function UploadDocuments() {
   const [uploadComplete, setUploadComplete] = useState(false);
   const [uploadedRoomId, setUploadedRoomId] = useState<string>("");
   const [isDragging, setIsDragging] = useState(false);
+  const [duplicateFiles, setDuplicateFiles] = useState<DuplicateFile[]>([]);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const pendingUploadRef = useRef<{ roomId: string; dealId: string } | null>(null);
 
   const { data: deals = [], isLoading: dealsLoading } = useQuery<Deal[]>({
     queryKey: ["/api/deals"],
@@ -120,9 +124,9 @@ export default function UploadDocuments() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async ({ roomId, dealId }: { roomId: string; dealId: string }) => {
+    mutationFn: async ({ roomId, dealId, filesToUpload }: { roomId: string; dealId: string; filesToUpload: File[] }) => {
       const formData = new FormData();
-      files.forEach((file) => formData.append("files", file, getDisplayName(file)));
+      filesToUpload.forEach((file) => formData.append("files", file, getDisplayName(file)));
       const res = await fetch(`/api/data-rooms/${roomId}/upload`, {
         method: "POST",
         body: formData,
@@ -132,19 +136,23 @@ export default function UploadDocuments() {
         const text = await res.text();
         throw new Error(text || res.statusText);
       }
-      return { data: await res.json(), roomId, dealId };
+      return { data: await res.json(), roomId, dealId, count: filesToUpload.length };
     },
-    onSuccess: ({ roomId, dealId }) => {
+    onSuccess: ({ roomId, dealId, count }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/data-rooms"] });
       queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "data-rooms"] });
       setUploadedRoomId(roomId);
       setUploadComplete(true);
-      toast({ title: "Upload complete", description: `${files.length} file(s) uploaded successfully.` });
+      toast({ title: "Upload complete", description: `${count} file(s) uploaded successfully.` });
     },
     onError: (err: Error) => {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     },
   });
+
+  const proceedWithUpload = (roomId: string, dealId: string, filesToUpload?: File[]) => {
+    uploadMutation.mutate({ roomId, dealId, filesToUpload: filesToUpload || files });
+  };
 
   const handleUpload = async () => {
     if (files.length === 0) return;
@@ -182,7 +190,31 @@ export default function UploadDocuments() {
       toast({ title: "Error", description: "No data room found for this deal.", variant: "destructive" });
       return;
     }
-    uploadMutation.mutate({ roomId: rooms[0].id, dealId: targetDealId });
+
+    const roomId = rooms[0].id;
+
+    try {
+      const checkRes = await fetch(`/api/data-rooms/${roomId}/check-duplicates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          files: files.map(f => ({ fileName: getDisplayName(f), fileSize: f.size })),
+        }),
+      });
+      if (checkRes.ok) {
+        const { duplicates } = await checkRes.json();
+        if (duplicates.length > 0) {
+          setDuplicateFiles(duplicates);
+          pendingUploadRef.current = { roomId, dealId: targetDealId };
+          setShowDuplicateDialog(true);
+          return;
+        }
+      }
+    } catch {
+    }
+
+    proceedWithUpload(roomId, targetDealId);
   };
 
   const handleFileDrop = useCallback(async (e: React.DragEvent) => {
@@ -496,6 +528,30 @@ export default function UploadDocuments() {
           </Button>
         </div>
       </main>
+      <DuplicateConfirmDialog
+        open={showDuplicateDialog}
+        onOpenChange={setShowDuplicateDialog}
+        duplicates={duplicateFiles}
+        onConfirm={() => {
+          setShowDuplicateDialog(false);
+          if (pendingUploadRef.current) {
+            proceedWithUpload(pendingUploadRef.current.roomId, pendingUploadRef.current.dealId);
+            pendingUploadRef.current = null;
+          }
+        }}
+        onCancel={() => {
+          setShowDuplicateDialog(false);
+          const dupSet = new Set(duplicateFiles.map(d => `${d.fileName}::${d.fileSize}`));
+          const nonDuplicates = files.filter(f => !dupSet.has(`${getDisplayName(f)}::${f.size}`));
+          if (nonDuplicates.length > 0 && pendingUploadRef.current) {
+            setFiles(nonDuplicates);
+            proceedWithUpload(pendingUploadRef.current.roomId, pendingUploadRef.current.dealId, nonDuplicates);
+          } else {
+            toast({ title: "Upload skipped", description: "All selected files were duplicates." });
+          }
+          pendingUploadRef.current = null;
+        }}
+      />
     </div>
   );
 }
