@@ -132,6 +132,63 @@ app.get("/api/health", (_req, res) => {
     }
     await pool.query(`ALTER TABLE users ALTER COLUMN role SET DEFAULT 'individual_user'`);
 
+    // RON Notary Document & Invitation enums
+    await pool.query(`
+      DO $$ BEGIN
+        CREATE TYPE ron_notary_doc_type AS ENUM ('commission_cert', 'bond_cert', 'eo_insurance_cert', 'training_cert', 'background_check', 'seal_image', 'signature_image', 'other');
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$
+    `);
+    await pool.query(`
+      DO $$ BEGIN
+        CREATE TYPE ron_notary_doc_verification AS ENUM ('pending', 'verified', 'rejected');
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$
+    `);
+    await pool.query(`
+      DO $$ BEGIN
+        CREATE TYPE ron_notary_invitation_status AS ENUM ('pending', 'submitted', 'expired', 'cancelled');
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$
+    `);
+
+    // RON Notary Documents table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ron_notary_documents (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        notary_id VARCHAR NOT NULL REFERENCES ron_notaries(id) ON DELETE CASCADE,
+        document_type ron_notary_doc_type NOT NULL,
+        file_url VARCHAR(1000) NOT NULL,
+        file_name VARCHAR(500),
+        file_size INTEGER,
+        mime_type VARCHAR(200),
+        verification_status ron_notary_doc_verification NOT NULL DEFAULT 'pending',
+        verified_by VARCHAR REFERENCES users(id),
+        verified_at TIMESTAMP,
+        rejection_reason TEXT,
+        uploaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        metadata JSONB DEFAULT '{}'
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ron_notary_docs_notary ON ron_notary_documents(notary_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ron_notary_docs_type ON ron_notary_documents(document_type)`);
+
+    // RON Notary Invitations table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ron_notary_invitations (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        email VARCHAR(300) NOT NULL,
+        token VARCHAR(200) NOT NULL UNIQUE,
+        status ron_notary_invitation_status NOT NULL DEFAULT 'pending',
+        expires_at TIMESTAMP NOT NULL,
+        notary_id VARCHAR REFERENCES ron_notaries(id),
+        invited_by VARCHAR REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ron_notary_invitations_token ON ron_notary_invitations(token)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ron_notary_invitations_email ON ron_notary_invitations(email)`);
+
     console.log("[Startup] Database columns and role migration verified");
   } catch (err) {
     console.error("[Startup] Migration check error:", err);
