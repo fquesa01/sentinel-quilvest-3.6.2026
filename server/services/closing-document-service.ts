@@ -242,7 +242,7 @@ export async function autoGenerateClosingDocuments(
   return { documents: results, errors };
 }
 
-function buildTermsContext(deal: any, terms: any): string {
+export function buildTermsContext(deal: any, terms: any): string {
   const parts: string[] = [];
   parts.push(`Deal Title: ${deal.title}`);
   parts.push(`Deal Type: ${deal.dealType || "Not specified"}`);
@@ -282,7 +282,7 @@ function buildTermsContext(deal: any, terms: any): string {
   return parts.join("\n");
 }
 
-async function generateDocumentContent(
+export async function generateDocumentContent(
   docType: string,
   title: string,
   termsContext: string,

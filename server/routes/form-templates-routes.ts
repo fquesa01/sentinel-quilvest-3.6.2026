@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { db } from "../db";
 import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
-import { firmFormTemplates, organizationMembers } from "@shared/schema";
+import { firmFormTemplates, organizationMembers, deals, dealTerms, closingDocuments, closingDocumentVersions } from "@shared/schema";
 import { isAuthenticated } from "../replitAuth";
-import { getVisibleUserIds } from "./visibility-helper";
+import { getVisibleUserIds, checkDealVisibility } from "./visibility-helper";
 import multer from "multer";
 import { emailService } from "../services/email-service";
 import { storage } from "../storage";
+import { buildTermsContext, generateDocumentContent, exportDocumentToDocx } from "../services/closing-document-service";
 
 const router = Router();
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -701,5 +702,95 @@ function buildTemplateShareEmailHtml(data: {
     </html>
   `;
 }
+
+router.post("/form-templates/:id/apply", isAuthenticated, async (req: any, res) => {
+  try {
+    const { dealId } = req.body;
+    if (!dealId || typeof dealId !== "string") {
+      return res.status(400).json({ error: "dealId is required" });
+    }
+
+    const [template] = await db.select({
+      id: firmFormTemplates.id,
+      name: firmFormTemplates.name,
+      content: firmFormTemplates.content,
+      documentType: firmFormTemplates.documentType,
+      uploadedBy: firmFormTemplates.uploadedBy,
+    }).from(firmFormTemplates).where(eq(firmFormTemplates.id, req.params.id));
+    if (!template) return res.status(404).json({ error: "Template not found" });
+
+    const visibleIds = await getVisibleUserIds(req);
+    if (visibleIds && template.uploadedBy && !visibleIds.includes(template.uploadedBy)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (!template.content || template.content.trim().length < 10) {
+      return res.status(400).json({ error: "Template has no content to apply" });
+    }
+
+    const canAccessDeal = await checkDealVisibility(req, dealId);
+    if (!canAccessDeal) return res.status(403).json({ error: "Access denied to this deal" });
+
+    const [deal] = await db.select().from(deals).where(eq(deals.id, dealId));
+    if (!deal) return res.status(404).json({ error: "Deal not found" });
+
+    const [terms] = await db.select().from(dealTerms).where(eq(dealTerms.dealId, dealId));
+
+    const termsContext = buildTermsContext(deal, terms);
+    const userId = req.user?.claims?.sub || req.user?.id;
+    const docType = template.documentType || "other";
+    const title = `${template.name} - ${deal.title}`;
+
+    const content = await generateDocumentContent(docType, title, termsContext, deal, template.content);
+
+    const [doc] = await db.insert(closingDocuments).values({
+      dealId,
+      documentType: docType,
+      title,
+      content,
+      status: "draft",
+      representationRole: deal.representationRole,
+      generatedFromTerms: true,
+      currentVersion: 1,
+      createdBy: userId,
+    }).returning();
+
+    await db.insert(closingDocumentVersions).values({
+      closingDocumentId: doc.id,
+      versionNumber: 1,
+      content,
+      changeDescription: `Generated from template "${template.name}"`,
+      changedBy: userId,
+      source: "ai_generated",
+    });
+
+    console.log(`[FormTemplates] Applied template "${template.name}" to deal "${deal.title}" (${dealId})`);
+    res.json({ document: doc, content });
+  } catch (err: any) {
+    console.error("[FormTemplates] Apply template error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/form-templates/:id/applied-document/:docId/download-docx", isAuthenticated, async (req: any, res) => {
+  try {
+    const { docId } = req.params;
+
+    const [doc] = await db.select().from(closingDocuments).where(eq(closingDocuments.id, docId));
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    const canAccessDeal = await checkDealVisibility(req, doc.dealId);
+    if (!canAccessDeal) return res.status(403).json({ error: "Access denied" });
+
+    const buffer = await exportDocumentToDocx(docId);
+    const filename = `${doc.title.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "_")}.docx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (err: any) {
+    console.error("[FormTemplates] Download applied docx error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;

@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Download, Share2, FileText, Eye, Loader2, Check,
-  AlertTriangle,
+  AlertTriangle, Wand2,
 } from "lucide-react";
 import type { FirmFormTemplate } from "@shared/schema";
 import { ShareTemplateDialog } from "@/components/share-template-dialog";
@@ -75,6 +76,8 @@ export default function FormTemplateViewerPage() {
   const { toast } = useToast();
   const [shareOpen, setShareOpen] = useState(false);
   const [templateNotes, setTemplateNotes] = useState("");
+  const [selectedDealId, setSelectedDealId] = useState<string>("");
+  const [generatedDoc, setGeneratedDoc] = useState<{ id: string; content: string; title: string } | null>(null);
 
   const { data: template, isLoading, error } = useQuery<TemplateWithMeta>({
     queryKey: ["/api/form-templates", params.id],
@@ -101,6 +104,47 @@ export default function FormTemplateViewerPage() {
       toast({ title: "Error saving notes", description: err.message, variant: "destructive" });
     },
   });
+
+  const { data: dealsList } = useQuery<any[]>({
+    queryKey: ["/api/deals"],
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: async ({ templateId, dealId }: { templateId: string; dealId: string }) => {
+      const res = await apiRequest("POST", `/api/form-templates/${templateId}/apply`, { dealId });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setGeneratedDoc({
+        id: data.document.id,
+        content: data.content,
+        title: data.document.title,
+      });
+      toast({ title: "Document generated", description: `"${data.document.title}" has been created as a closing document.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Generation failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const sanitizedGeneratedContent = useMemo(() => {
+    if (!generatedDoc?.content) return "";
+    return DOMPurify.sanitize(generatedDoc.content, {
+      ALLOWED_TAGS: [
+        "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr",
+        "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
+        "strong", "b", "em", "i", "u", "s", "del", "ins", "sub", "sup",
+        "blockquote", "pre", "code", "a", "span", "div", "section", "article",
+        "dl", "dt", "dd", "abbr", "cite", "q", "small", "mark", "figure", "figcaption",
+        "caption", "col", "colgroup",
+      ],
+      ALLOWED_ATTR: [
+        "href", "title", "class", "id", "colspan", "rowspan", "scope",
+        "style", "align", "valign", "width", "height", "target", "rel",
+      ],
+      ALLOW_DATA_ATTR: false,
+    });
+  }, [generatedDoc?.content]);
 
   const sanitizedContent = useMemo(() => {
     if (!template?.content) return "";
@@ -317,6 +361,93 @@ export default function FormTemplateViewerPage() {
                 Save Notes
               </Button>
             </div>
+          </div>
+        </details>
+      </div>
+
+      <div className="border-t border-border px-4 py-3 bg-background">
+        <details className="group" open={!!generatedDoc}>
+          <summary className="flex items-center gap-2 cursor-pointer text-sm font-medium text-muted-foreground select-none" data-testid="toggle-apply-transaction">
+            <Wand2 className="h-4 w-4" />
+            <span>Apply to Transaction</span>
+          </summary>
+          <div className="mt-3 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select value={selectedDealId} onValueChange={(val) => { setSelectedDealId(val); setGeneratedDoc(null); }}>
+                <SelectTrigger className="w-[300px]" data-testid="select-deal-for-apply">
+                  <SelectValue placeholder="Select a transaction..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {dealsList && dealsList.length > 0 ? (
+                    dealsList.map((deal: any) => (
+                      <SelectItem key={deal.id} value={deal.id} data-testid={`select-deal-option-${deal.id}`}>
+                        {deal.title} ({deal.dealNumber})
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="__none" disabled>No transactions available</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                disabled={!selectedDealId || applyMutation.isPending}
+                onClick={() => applyMutation.mutate({ templateId: template.id, dealId: selectedDealId })}
+                data-testid="button-apply-template"
+              >
+                {applyMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="h-4 w-4 mr-1" />
+                    Generate Document
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {applyMutation.isPending && (
+              <div className="flex items-center gap-2 p-3 rounded-md bg-muted text-sm text-muted-foreground" data-testid="status-generating">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>AI is adapting the template to the selected transaction's details. This may take a moment...</span>
+              </div>
+            )}
+
+            {generatedDoc && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-xs">Draft</Badge>
+                    <span className="text-sm font-medium" data-testid="text-generated-doc-title">{generatedDoc.title}</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(`/api/form-templates/${template.id}/applied-document/${generatedDoc.id}/download-docx`, "_blank")}
+                    data-testid="button-download-generated-docx"
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Download Word
+                  </Button>
+                </div>
+                <div className="border border-border rounded-md overflow-auto max-h-[400px]">
+                  <article
+                    className="prose prose-sm dark:prose-invert max-w-none p-4
+                      prose-headings:font-semibold prose-headings:text-foreground
+                      prose-p:leading-relaxed prose-p:text-foreground/90
+                      prose-table:border prose-table:border-border
+                      prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2 prose-th:bg-muted
+                      prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2
+                      prose-li:text-foreground/90"
+                    dangerouslySetInnerHTML={{ __html: sanitizedGeneratedContent }}
+                    data-testid="content-generated-document"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </details>
       </div>
