@@ -105,7 +105,6 @@ router.get("/form-templates", isAuthenticated, async (req: any, res) => {
       description: firmFormTemplates.description,
       documentType: firmFormTemplates.documentType,
       dealType: firmFormTemplates.dealType,
-      content: firmFormTemplates.content,
       fileName: firmFormTemplates.fileName,
       fileSize: firmFormTemplates.fileSize,
       mimeType: firmFormTemplates.mimeType,
