@@ -166,6 +166,20 @@ type DataLakeDoc = {
   docSource: 'datalake';
 };
 
+type FormTemplateDoc = {
+  id: string;
+  name: string;
+  description: string | null;
+  documentType: string;
+  dealType: string | null;
+  fileName: string | null;
+  fileSize: number | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  docSource: 'form_template';
+};
+
 type BooleanSearchQuery = {
   query: string;
   topic: string;
@@ -212,7 +226,7 @@ export default function AmbientSession() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [showEndDialog, setShowEndDialog] = useState(false);
-  const [suggestionDocs, setSuggestionDocs] = useState<Record<string, (SuggestionDocument | DataRoomDoc | DataLakeDoc)[]>>({});
+  const [suggestionDocs, setSuggestionDocs] = useState<Record<string, (SuggestionDocument | DataRoomDoc | DataLakeDoc | FormTemplateDoc)[]>>({});
   const [bulletSummaries, setBulletSummaries] = useState<Record<string, Array<{ text: string; category?: string }>>>({});
   const [failedSuggestionIds, setFailedSuggestionIds] = useState<Set<string>>(new Set());
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -490,11 +504,12 @@ export default function AmbientSession() {
       for (const suggestion of suggestionsWithDocs) {
         try {
           const allDocIds = suggestion.documentIds || [];
-          const commIds = allDocIds.filter(id => !id.startsWith('dr:') && !id.startsWith('dl:'));
+          const commIds = allDocIds.filter(id => !id.startsWith('dr:') && !id.startsWith('dl:') && !id.startsWith('ft:'));
           const drIds = allDocIds.filter(id => id.startsWith('dr:')).map(id => id.substring(3));
           const dlIds = allDocIds.filter(id => id.startsWith('dl:')).map(id => id.substring(3));
+          const ftIds = allDocIds.filter(id => id.startsWith('ft:')).map(id => id.substring(3));
           
-          let allDocs: (SuggestionDocument | DataRoomDoc | DataLakeDoc)[] = [];
+          let allDocs: (SuggestionDocument | DataRoomDoc | DataLakeDoc | FormTemplateDoc)[] = [];
           
           if (commIds.length > 0 && session.caseId) {
             const response = await apiRequest("POST", "/api/communications/batch", {
@@ -525,6 +540,16 @@ export default function AmbientSession() {
             if (response.ok) {
               const docs: Omit<DataLakeDoc, 'docSource'>[] = await response.json();
               allDocs = allDocs.concat(docs.map((d) => ({ ...d, docSource: 'datalake' as const })));
+            }
+          }
+          
+          if (ftIds.length > 0) {
+            const response = await apiRequest("POST", "/api/form-templates/batch", {
+              ids: ftIds,
+            });
+            if (response.ok) {
+              const docs: Omit<FormTemplateDoc, 'docSource'>[] = await response.json();
+              allDocs = allDocs.concat(docs.map((d) => ({ ...d, docSource: 'form_template' as const })));
             }
           }
           
@@ -922,6 +947,12 @@ export default function AmbientSession() {
   };
   
   const handleViewDocument = (docId: string) => {
+    const allSuggestionDocEntries = Object.values(suggestionDocs).flat();
+    const matchedDoc = allSuggestionDocEntries.find(d => d.id === docId);
+    if (matchedDoc && 'docSource' in matchedDoc && matchedDoc.docSource === 'form_template') {
+      window.open(`/transactions/form-templates/${docId}/view`, "_blank");
+      return;
+    }
     if (session?.dealId) {
       window.open(`/transactions/deals/${session.dealId}`, "_blank");
     }
@@ -929,7 +960,22 @@ export default function AmbientSession() {
   
   const pendingSuggestions = suggestions.filter(s => s.status === "pending");
   
-  const transformDocForDisplay = (doc: SuggestionDocument | DataRoomDoc | DataLakeDoc) => {
+  const transformDocForDisplay = (doc: SuggestionDocument | DataRoomDoc | DataLakeDoc | FormTemplateDoc) => {
+    if ('docSource' in doc && doc.docSource === 'form_template') {
+      const ftDoc = doc as FormTemplateDoc;
+      return {
+        id: ftDoc.id,
+        title: ftDoc.name || "(Untitled Template)",
+        type: 'document' as const,
+        docSource: 'form_template' as const,
+        sender: `Template - ${ftDoc.documentType}${ftDoc.dealType ? ` (${ftDoc.dealType})` : ''}`,
+        date: ftDoc.updatedAt || ftDoc.createdAt || "",
+        preview: ftDoc.description || ftDoc.notes?.substring(0, 150) || "",
+        riskLevel: undefined,
+        bullets: bulletSummaries[ftDoc.id] || undefined,
+        viewUrl: `/transactions/form-templates/${ftDoc.id}/view`,
+      };
+    }
     if ('docSource' in doc && doc.docSource === 'dataroom') {
       const drDoc = doc as DataRoomDoc;
       return {

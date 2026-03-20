@@ -11,7 +11,10 @@ import {
   communications,
   dataRooms,
   dataRoomDocuments,
-  dataLakeItems
+  dataLakeItems,
+  firmFormTemplates,
+  organizationMembers,
+  users
 } from "@shared/schema";
 import { eq, and, desc, gte, or, ilike, sql, inArray } from "drizzle-orm";
 import { queryFileSearchStore, getFileSearchStoreForCase } from "./file-search-service";
@@ -786,6 +789,79 @@ async function searchDataLakeItems(userId: string, searchTerms: string[]): Promi
   return results;
 }
 
+async function getVisibleUserIdsForUser(userId: string): Promise<string[] | null> {
+  try {
+    const [user] = await db.select({ role: users.role, userType: users.userType }).from(users).where(eq(users.id, userId));
+    if (!user) return [userId];
+    if (user.role === 'super_admin') return null;
+    if (user.userType === 'corporate') {
+      const [membership] = await db.select().from(organizationMembers).where(eq(organizationMembers.userId, userId));
+      if (membership) {
+        const members = await db.select({ userId: organizationMembers.userId }).from(organizationMembers).where(eq(organizationMembers.organizationId, membership.organizationId));
+        return members.map(m => m.userId);
+      }
+    }
+    return [userId];
+  } catch {
+    return [userId];
+  }
+}
+
+async function searchFormTemplates(userId: string | null, searchTerms: string[]): Promise<Array<{ id: string; source: 'form_template' }>> {
+  const results: Array<{ id: string; source: 'form_template' }> = [];
+  
+  if (!userId) return results;
+  if (searchTerms.length === 0) return results;
+  
+  try {
+    const validTerms = searchTerms.filter(t => t.length >= 2).slice(0, 8);
+    if (validTerms.length === 0) return results;
+    
+    console.log(`[AmbientAI] Searching form templates for terms: ${validTerms.join(', ')}`);
+    
+    const termConditions = validTerms.map((term: string) =>
+      or(
+        ilike(firmFormTemplates.name, `%${term}%`),
+        ilike(firmFormTemplates.description, `%${term}%`),
+        ilike(firmFormTemplates.content, `%${term}%`),
+        ilike(firmFormTemplates.documentType, `%${term}%`),
+        ilike(firmFormTemplates.dealType, `%${term}%`),
+        ilike(firmFormTemplates.notes, `%${term}%`)
+      )
+    );
+    
+    const combinedCondition = termConditions.length === 1
+      ? termConditions[0]
+      : or(...termConditions);
+    
+    const visibleIds = await getVisibleUserIdsForUser(userId);
+    const whereClause = visibleIds
+      ? and(combinedCondition!, inArray(firmFormTemplates.uploadedBy, visibleIds))
+      : combinedCondition!;
+    
+    const matchingTemplates = await db
+      .select({
+        id: firmFormTemplates.id,
+        name: firmFormTemplates.name,
+      })
+      .from(firmFormTemplates)
+      .where(whereClause)
+      .orderBy(desc(firmFormTemplates.updatedAt))
+      .limit(10);
+    
+    if (matchingTemplates.length > 0) {
+      console.log(`[AmbientAI] Found ${matchingTemplates.length} form templates: ${matchingTemplates.map(t => t.name).join(', ')}`);
+      return matchingTemplates.map(t => ({ id: t.id, source: 'form_template' as const }));
+    } else {
+      console.log(`[AmbientAI] No form templates found for terms`);
+    }
+  } catch (error) {
+    console.error("[AmbientAI] Form template search failed:", error);
+  }
+  
+  return results;
+}
+
 // Generate real-time summary insights from transcript chunk
 export async function generateRealtimeSummaryInsights(
   transcriptText: string
@@ -955,11 +1031,12 @@ export async function analyzeTranscriptChunk(
       return { suggestions };
     }
     
-    // Step 2: For each intent, search case documents, data room documents, and data lake items
+    // Step 2: For each intent, search case documents, data room documents, data lake items, and form templates
     for (const intent of searchIntents) {
       let documentIds: string[] = [];
       let dataRoomDocIds: Array<{ id: string; source: 'dataroom' }> = [];
       let dataLakeDocIds: Array<{ id: string; source: 'datalake' }> = [];
+      let formTemplateIds: Array<{ id: string; source: 'form_template' }> = [];
       
       if (caseId) {
         documentIds = await searchCaseDocuments(caseId, intent.searchTerms);
@@ -972,6 +1049,8 @@ export async function analyzeTranscriptChunk(
       if (useDataLake && userId) {
         dataLakeDocIds = await searchDataLakeItems(userId, intent.searchTerms);
       }
+      
+      formTemplateIds = await searchFormTemplates(userId, intent.searchTerms);
       
       // Add suggestion for communications (existing behavior)
       if (documentIds.length > 0) {
@@ -1013,6 +1092,20 @@ export async function analyzeTranscriptChunk(
           confidence: dataLakeDocIds.length >= 3 ? "high" : dataLakeDocIds.length >= 2 ? "medium" : "low",
         });
         console.log(`[AmbientAI] Created data lake suggestion for "${intent.topic}" with ${dataLakeDocIds.length} items`);
+      }
+      
+      // Add suggestion for form templates
+      if (formTemplateIds.length > 0) {
+        suggestions.push({
+          suggestionType: "document",
+          triggerQuote: intent.topic,
+          explanation: `Template: ${intent.rationale}`,
+          userPrompt: `Found ${formTemplateIds.length} form template${formTemplateIds.length > 1 ? 's' : ''} for: "${intent.topic}"`,
+          searchQuery: intent.searchTerms.join(" "),
+          documentIds: formTemplateIds.map(t => `ft:${t.id}`),
+          confidence: formTemplateIds.length >= 3 ? "high" : formTemplateIds.length >= 2 ? "medium" : "low",
+        });
+        console.log(`[AmbientAI] Created form template suggestion for "${intent.topic}" with ${formTemplateIds.length} templates`);
       }
     }
   } catch (error) {

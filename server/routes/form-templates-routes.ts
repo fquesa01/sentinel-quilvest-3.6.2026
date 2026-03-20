@@ -80,6 +80,40 @@ async function extractContentRaw(buffer: Buffer, fileName: string, mimeType: str
   }
 }
 
+router.post("/form-templates/batch", isAuthenticated, async (req: any, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.json([]);
+    }
+    const visibleUserIds = await getVisibleUserIds(req);
+    let whereClause;
+    if (visibleUserIds) {
+      whereClause = and(
+        inArray(firmFormTemplates.id, ids),
+        inArray(firmFormTemplates.uploadedBy, visibleUserIds)
+      );
+    } else {
+      whereClause = inArray(firmFormTemplates.id, ids);
+    }
+    const templates = await db.select({
+      id: firmFormTemplates.id,
+      name: firmFormTemplates.name,
+      description: firmFormTemplates.description,
+      documentType: firmFormTemplates.documentType,
+      dealType: firmFormTemplates.dealType,
+      fileName: firmFormTemplates.fileName,
+      fileSize: firmFormTemplates.fileSize,
+      notes: firmFormTemplates.notes,
+      createdAt: firmFormTemplates.createdAt,
+      updatedAt: firmFormTemplates.updatedAt,
+    }).from(firmFormTemplates).where(whereClause);
+    res.json(templates);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/form-templates", isAuthenticated, async (req: any, res) => {
   try {
     const dbUser = req.dbUser;

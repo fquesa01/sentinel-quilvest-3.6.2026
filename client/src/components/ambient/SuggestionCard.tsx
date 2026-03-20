@@ -23,7 +23,7 @@ export interface DocumentResult {
   id: string;
   title: string;
   type: 'email' | 'document';
-  docSource?: 'communication' | 'dataroom' | 'datalake';
+  docSource?: 'communication' | 'dataroom' | 'datalake' | 'form_template';
   sender?: string;
   date: string;
   preview: string;
@@ -64,6 +64,10 @@ export function SuggestionCard({
     setSummarizing(docId);
     try {
       const doc = suggestion.results.find(r => r.id === docId);
+      if (doc?.docSource === 'form_template' || doc?.docSource === 'datalake') {
+        setSummarizing(null);
+        return;
+      }
       const isDataRoom = doc?.docSource === 'dataroom';
       const endpoint = isDataRoom 
         ? `/api/data-room-documents/${docId}/context-summarize`
@@ -156,7 +160,7 @@ export function SuggestionCard({
               </div>
 
               <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                {!doc.bullets?.length && doc.docSource !== 'datalake' && (
+                {!doc.bullets?.length && doc.docSource !== 'datalake' && doc.docSource !== 'form_template' && (
                   <Button
                     size="icon"
                     variant="outline"
