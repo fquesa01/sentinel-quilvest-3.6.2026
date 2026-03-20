@@ -13277,11 +13277,78 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
   });
 
   // Deal Meeting Notes CRUD
-  app.get("/api/deals/:dealId/meeting-notes", isAuthenticated, async (req, res) => {
+  app.get("/api/deals/:dealId/meeting-notes", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user?.id;
+      const dealId = req.params.dealId;
+      
+      try {
+        const unlinkedSessions = await db
+          .select()
+          .from(schema.ambientSessions)
+          .where(and(
+            eq(schema.ambientSessions.dealId, dealId),
+            eq(schema.ambientSessions.status, "completed"),
+          ));
+        
+        for (const session of unlinkedSessions) {
+          const existingNote = await db
+            .select({ id: schema.dealMeetingNotes.id })
+            .from(schema.dealMeetingNotes)
+            .where(eq(schema.dealMeetingNotes.ambientSessionId, session.id))
+            .limit(1);
+          
+          if (existingNote.length === 0) {
+            const transcripts = await db
+              .select()
+              .from(schema.ambientTranscripts)
+              .where(eq(schema.ambientTranscripts.sessionId, session.id))
+              .orderBy(schema.ambientTranscripts.timestampMs);
+            
+            const fullTranscript = transcripts.map(t => {
+              const timeLabel = t.speakerLabel ? `[${t.speakerLabel}]` : "";
+              return `${timeLabel} ${t.content}`.trim();
+            }).join("\n");
+            
+            const noteValues: any = {
+              dealId,
+              title: session.sessionName || "Ambient Intelligence Session",
+              meetingDate: session.startedAt || session.createdAt,
+              source: "ambient_intelligence" as const,
+              transcript: fullTranscript || null,
+              duration: session.durationSeconds ? Math.round(session.durationSeconds / 60) : null,
+              ambientSessionId: session.id,
+              uploadedBy: session.createdBy || userId,
+            };
+            
+            const [summaryData] = await db
+              .select()
+              .from(schema.ambientSessionSummaries)
+              .where(eq(schema.ambientSessionSummaries.sessionId, session.id))
+              .limit(1);
+            
+            if (summaryData) {
+              noteValues.summary = summaryData.summaryText;
+              noteValues.keyPoints = (summaryData.keyMoments as any[])?.map((m: any) =>
+                typeof m === "string" ? m : m.description || ""
+              ).filter(Boolean) || [];
+              noteValues.actionItems = (summaryData.actionItems as any[])?.map((a: any) => ({
+                description: typeof a === "string" ? a : a.description || "",
+                completed: false,
+              })) || [];
+            }
+            
+            await db.insert(schema.dealMeetingNotes).values(noteValues);
+            console.log(`[AmbientSync] Backfill: Created meeting note for session ${session.id}`);
+          }
+        }
+      } catch (backfillError) {
+        console.error("[AmbientSync] Backfill check failed:", backfillError);
+      }
+      
       const notes = await db.select()
         .from(schema.dealMeetingNotes)
-        .where(eq(schema.dealMeetingNotes.dealId, req.params.dealId))
+        .where(eq(schema.dealMeetingNotes.dealId, dealId))
         .orderBy(sql`${schema.dealMeetingNotes.meetingDate} DESC NULLS LAST`);
       res.json(notes);
     } catch (error: any) {
@@ -27447,7 +27514,7 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
         return res.status(404).json({ message: "Session not found" });
       }
       
-      if (status === "completed" && session.dealId) {
+      if (session.dealId && (status === "completed" || (dealId !== undefined && session.status === "completed"))) {
         try {
           const existingNote = await db
             .select({ id: schema.dealMeetingNotes.id })
@@ -27467,42 +27534,26 @@ Always be professional, precise, and cite specific regulations when relevant. Pr
               return `${timeLabel} ${t.content}`.trim();
             }).join("\n");
             
-            if (fullTranscript.length > 0) {
-              await db.insert(schema.dealMeetingNotes).values({
-                dealId: session.dealId,
-                title: session.sessionName || "Ambient Intelligence Session",
-                meetingDate: session.startedAt || session.createdAt,
-                source: "ambient_intelligence",
-                transcript: fullTranscript,
-                duration: session.durationSeconds ? Math.round(session.durationSeconds / 60) : null,
-                ambientSessionId: session.id,
-                uploadedBy: userId,
-              });
-              console.log(`[AmbientSync] Created deal meeting note for session ${session.id} on deal ${session.dealId}`);
-            }
-          }
-        } catch (syncError) {
-          console.error("[AmbientSync] Failed to create deal meeting note:", syncError);
-        }
-      }
-      
-      if (dealId !== undefined && dealId !== null && status !== "completed") {
-        try {
-          const existingNote = await db
-            .select({ id: schema.dealMeetingNotes.id })
-            .from(schema.dealMeetingNotes)
-            .where(eq(schema.dealMeetingNotes.ambientSessionId, req.params.id))
-            .limit(1);
-          
-          if (existingNote.length > 0) {
+            await db.insert(schema.dealMeetingNotes).values({
+              dealId: session.dealId,
+              title: session.sessionName || "Ambient Intelligence Session",
+              meetingDate: session.startedAt || session.createdAt,
+              source: "ambient_intelligence",
+              transcript: fullTranscript || null,
+              duration: session.durationSeconds ? Math.round(session.durationSeconds / 60) : null,
+              ambientSessionId: session.id,
+              uploadedBy: userId,
+            });
+            console.log(`[AmbientSync] Created deal meeting note for session ${session.id} on deal ${session.dealId}`);
+          } else if (dealId !== undefined) {
             await db
               .update(schema.dealMeetingNotes)
-              .set({ dealId: String(dealId), updatedAt: new Date() })
-              .where(eq(schema.dealMeetingNotes.ambientSessionId, req.params.id));
-            console.log(`[AmbientSync] Updated meeting note deal assignment for session ${req.params.id}`);
+              .set({ dealId: session.dealId, updatedAt: new Date() })
+              .where(eq(schema.dealMeetingNotes.ambientSessionId, session.id));
+            console.log(`[AmbientSync] Updated meeting note deal assignment for session ${session.id}`);
           }
         } catch (syncError) {
-          console.error("[AmbientSync] Failed to update meeting note deal:", syncError);
+          console.error("[AmbientSync] Failed to sync deal meeting note:", syncError);
         }
       }
       
