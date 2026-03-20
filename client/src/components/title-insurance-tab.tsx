@@ -202,6 +202,18 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assignee, setAssignee] = useState("");
+  const [editVendorId, setEditVendorId] = useState<string | null>(null);
+  const [editVendorForm, setEditVendorForm] = useState({
+    vendorName: "",
+    vendorType: "abstract_company" as string,
+    taskDescription: "",
+    orderedDate: "",
+    cost: "",
+    contactName: "",
+    contactEmail: "",
+    contactPhone: "",
+    notes: "",
+  });
   const [sortField, setSortField] = useState<SortField>("scheduleItem");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -565,6 +577,27 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
                         {v.status === "ordered" ? "Start" : "Complete"}
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditVendorId(v.id);
+                        setEditVendorForm({
+                          vendorName: v.vendorName || "",
+                          vendorType: v.vendorType || "abstract_company",
+                          taskDescription: v.taskDescription || "",
+                          orderedDate: v.orderedDate || "",
+                          cost: v.cost || "",
+                          contactName: v.contactName || "",
+                          contactEmail: v.contactEmail || "",
+                          contactPhone: v.contactPhone || "",
+                          notes: v.notes || "",
+                        });
+                      }}
+                      data-testid={`button-edit-vendor-${v.id}`}
+                    >
+                      Edit
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -1063,6 +1096,84 @@ export function TitleInsuranceTab({ dealId }: TitleInsuranceTabProps) {
             >
               {updateExceptionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Assign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editVendorId} onOpenChange={(open) => { if (!open) setEditVendorId(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Vendor</DialogTitle>
+            <DialogDescription>Update vendor details.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Vendor Name</Label>
+                <Input value={editVendorForm.vendorName} onChange={(e) => setEditVendorForm({ ...editVendorForm, vendorName: e.target.value })} data-testid="input-edit-vendor-name" />
+              </div>
+              <div>
+                <Label>Vendor Type</Label>
+                <Select value={editVendorForm.vendorType} onValueChange={(v) => setEditVendorForm({ ...editVendorForm, vendorType: v })}>
+                  <SelectTrigger data-testid="select-edit-vendor-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(vendorTypeLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Task Description</Label>
+              <Textarea value={editVendorForm.taskDescription} onChange={(e) => setEditVendorForm({ ...editVendorForm, taskDescription: e.target.value })} rows={2} data-testid="input-edit-vendor-task" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Date Ordered</Label>
+                <Input type="date" value={editVendorForm.orderedDate} onChange={(e) => setEditVendorForm({ ...editVendorForm, orderedDate: e.target.value })} data-testid="input-edit-vendor-date" />
+              </div>
+              <div>
+                <Label>Cost</Label>
+                <Input type="number" placeholder="0.00" value={editVendorForm.cost} onChange={(e) => setEditVendorForm({ ...editVendorForm, cost: e.target.value })} data-testid="input-edit-vendor-cost" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Contact Name</Label>
+                <Input value={editVendorForm.contactName} onChange={(e) => setEditVendorForm({ ...editVendorForm, contactName: e.target.value })} data-testid="input-edit-vendor-contact" />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input value={editVendorForm.contactEmail} onChange={(e) => setEditVendorForm({ ...editVendorForm, contactEmail: e.target.value })} data-testid="input-edit-vendor-email" />
+              </div>
+              <div>
+                <Label>Phone</Label>
+                <Input value={editVendorForm.contactPhone} onChange={(e) => setEditVendorForm({ ...editVendorForm, contactPhone: e.target.value })} data-testid="input-edit-vendor-phone" />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea value={editVendorForm.notes} onChange={(e) => setEditVendorForm({ ...editVendorForm, notes: e.target.value })} rows={2} data-testid="input-edit-vendor-notes" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditVendorId(null)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!editVendorId || !editVendorForm.vendorName.trim()) return;
+                const payload: Record<string, unknown> = { ...editVendorForm };
+                if (!editVendorForm.cost) delete payload.cost;
+                if (!editVendorForm.orderedDate) delete payload.orderedDate;
+                updateVendorMutation.mutate({ id: editVendorId, data: payload });
+                setEditVendorId(null);
+              }}
+              disabled={updateVendorMutation.isPending}
+              data-testid="button-submit-edit-vendor"
+            >
+              {updateVendorMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
