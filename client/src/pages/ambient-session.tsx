@@ -38,7 +38,10 @@ import {
   MoreVertical,
   FolderOpen,
   Link,
-  Unlink
+  Unlink,
+  Monitor,
+  MonitorOff,
+  Info
 } from "lucide-react";
 import {
   AlertDialog,
@@ -68,6 +71,9 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AISuggestionsPanel, InsightSuggestion } from "@/components/ambient/AISuggestionsPanel";
 import { FocusIssuesPanel } from "@/components/ambient/FocusIssuesPanel";
+import { captureSystemAudioPlayback, isSystemAudioSupported, type SystemAudioPlaybackResult } from "@/lib/systemAudioCapture";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { SuggestionData } from "@/components/ambient/SuggestionCard";
 
@@ -232,11 +238,14 @@ export default function AmbientSession() {
     focusIssueTitle: string;
   }>>([]);
   const [isFocusSearching, setIsFocusSearching] = useState(false);
+  const [captureVirtualAudio, setCaptureVirtualAudio] = useState(false);
+  const [isVirtualAudioActive, setIsVirtualAudioActive] = useState(false);
   
   const recognitionRef = useRef<any>(null);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const systemAudioRef = useRef<SystemAudioPlaybackResult | null>(null);
   
   const { data: session, isLoading: sessionLoading } = useQuery<AmbientSession>({
     queryKey: ["/api/ambient-sessions", sessionId],
@@ -705,7 +714,8 @@ export default function AmbientSession() {
   
   const startRecording = useCallback(async () => {
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStream.getTracks().forEach((t) => t.stop());
     } catch (err) {
       toast({
         title: "Microphone Access Required",
@@ -714,9 +724,53 @@ export default function AmbientSession() {
       });
       return;
     }
+
+    if (captureVirtualAudio) {
+      try {
+        const result = await captureSystemAudioPlayback();
+        systemAudioRef.current = result;
+        setIsVirtualAudioActive(true);
+        toast({
+          title: "Virtual Meeting Audio Connected",
+          description: "System audio is being played through speakers so your microphone can capture it for transcription.",
+        });
+      } catch (err: any) {
+        if (systemAudioRef.current) {
+          systemAudioRef.current.cleanup();
+          systemAudioRef.current = null;
+        }
+        setIsVirtualAudioActive(false);
+
+        if (err.name === "NotAllowedError") {
+          toast({
+            title: "System Audio Not Shared",
+            description: "Continuing with microphone only. You can try again by restarting the recording.",
+          });
+        } else if (err.message === "NO_SYSTEM_AUDIO") {
+          toast({
+            title: "No System Audio Detected",
+            description: "Make sure to select \"Share system audio\" or \"Share tab audio\" in the browser prompt. Continuing with microphone only.",
+          });
+        } else {
+          toast({
+            title: "System Audio Unavailable",
+            description: "Your browser may not support system audio capture. Continuing with microphone only.",
+          });
+        }
+      }
+    }
+    
+    const virtualAudioConnected = !!systemAudioRef.current;
     
     const recognition = initSpeechRecognition();
-    if (!recognition) return;
+    if (!recognition) {
+      if (systemAudioRef.current) {
+        systemAudioRef.current.cleanup();
+        systemAudioRef.current = null;
+        setIsVirtualAudioActive(false);
+      }
+      return;
+    }
     
     recognitionRef.current = recognition;
     startTimeRef.current = Date.now();
@@ -732,17 +786,24 @@ export default function AmbientSession() {
       
       toast({
         title: "Recording Started",
-        description: "Listening for speech...",
+        description: virtualAudioConnected
+          ? "Listening for speech (microphone + system audio)..."
+          : "Listening for speech...",
       });
     } catch (err) {
       console.error("Failed to start recognition:", err);
+      if (systemAudioRef.current) {
+        systemAudioRef.current.cleanup();
+        systemAudioRef.current = null;
+        setIsVirtualAudioActive(false);
+      }
       toast({
         title: "Error",
         description: "Failed to start recording. Please try again.",
         variant: "destructive",
       });
     }
-  }, [initSpeechRecognition, toast]);
+  }, [initSpeechRecognition, toast, captureVirtualAudio]);
   
   const pauseRecording = useCallback(() => {
     if (recognitionRef.current) {
@@ -794,10 +855,15 @@ export default function AmbientSession() {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (systemAudioRef.current) {
+      systemAudioRef.current.cleanup();
+      systemAudioRef.current = null;
+    }
     
     setIsRecording(false);
     setIsPaused(false);
     setInterimTranscript("");
+    setIsVirtualAudioActive(false);
     
     // Reset for potential future recording in same session
     isFirstStartRef.current = true;
@@ -827,6 +893,10 @@ export default function AmbientSession() {
       }
       if (timerRef.current) {
         clearInterval(timerRef.current);
+      }
+      if (systemAudioRef.current) {
+        systemAudioRef.current.cleanup();
+        systemAudioRef.current = null;
       }
     };
   }, []);
@@ -1050,16 +1120,46 @@ export default function AmbientSession() {
               </div>
               
               {!isRecording && session.status !== "completed" && (
-                <Button onClick={startRecording} data-testid="button-start-recording">
-                  <Mic className="h-4 w-4 mr-2" />
-                  Start Recording
-                </Button>
+                <div className="flex items-center gap-3">
+                  {isSystemAudioSupported() && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="virtual-audio-toggle"
+                            checked={captureVirtualAudio}
+                            onCheckedChange={setCaptureVirtualAudio}
+                            data-testid="switch-virtual-audio"
+                          />
+                          <Label htmlFor="virtual-audio-toggle" className="text-sm cursor-pointer whitespace-nowrap flex items-center gap-1">
+                            <Monitor className="h-3.5 w-3.5" />
+                            Virtual Meeting
+                          </Label>
+                          <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs">
+                        <p>Capture audio from Zoom, Teams, or Meet calls. System audio will play through your speakers so the microphone can pick it up for transcription. For best results, use external speakers rather than headphones. When prompted, select "Share system audio" or "Share tab audio."</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Button onClick={startRecording} data-testid="button-start-recording">
+                    <Mic className="h-4 w-4 mr-2" />
+                    Start Recording
+                  </Button>
+                </div>
               )}
               
               {isRecording && !isPaused && (
                 <div className="flex items-center gap-2">
                   <div className="recording-dot" />
                   <span className="text-sm text-red-500 font-medium">Recording</span>
+                  {isVirtualAudioActive && (
+                    <Badge variant="secondary" className="gap-1" data-testid="badge-virtual-audio-active">
+                      <Monitor className="h-3 w-3" />
+                      System Audio
+                    </Badge>
+                  )}
                   <Button variant="outline" onClick={pauseRecording} data-testid="button-pause">
                     <Pause className="h-4 w-4 mr-2" />
                     Pause

@@ -80,11 +80,13 @@ import {
 import { Link } from 'wouter';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sparkles, Volume2, PanelLeftClose, PanelLeft, Maximize2 } from 'lucide-react';
+import { Sparkles, Volume2, PanelLeftClose, PanelLeft, Maximize2, Monitor, Info } from 'lucide-react';
 import type { VideoMeeting } from '@shared/schema';
 import { AISuggestionsPanel } from '@/components/ambient/AISuggestionsPanel';
 import { FocusIssuesPanel } from '@/components/ambient/FocusIssuesPanel';
 import { SuggestionData } from '@/components/ambient/SuggestionCard';
+import { captureSystemAudio, isSystemAudioSupported, type SystemAudioCaptureResult } from '@/lib/systemAudioCapture';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Type for boolean search results from API
 type BooleanSearchResult = {
@@ -222,6 +224,8 @@ export default function VideoMeetingPage() {
   const [isHost, setIsHost] = useState(false);
   const [virtualBackgroundEnabled, setVirtualBackgroundEnabled] = useState(false);
   const [virtualBackgroundMode, setVirtualBackgroundMode] = useState<'blur' | 'none'>('none');
+  const [captureVirtualAudio, setCaptureVirtualAudio] = useState(false);
+  const [isVirtualAudioActive, setIsVirtualAudioActive] = useState(false);
   const virtualCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const virtualCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const virtualVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -1560,12 +1564,13 @@ export default function VideoMeetingPage() {
   };
 
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const systemAudioRef = useRef<SystemAudioCaptureResult | null>(null);
 
   const startScreenShare = async () => {
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: false,
+        audio: captureVirtualAudio,
       });
 
       screenStreamRef.current = screenStream;
@@ -1866,10 +1871,9 @@ export default function VideoMeetingPage() {
         const ws = new WebSocket(wsUrl);
         transcriptionWsRef.current = ws;
 
-        ws.onopen = () => {
+        ws.onopen = async () => {
           console.log('[Transcription] WebSocket connected successfully');
           
-          // Initialize timestamp reference if not already set (for transcript timing)
           if (recordingStartTimeRef.current === 0) {
             recordingStartTimeRef.current = Date.now();
           }
@@ -1883,15 +1887,51 @@ export default function VideoMeetingPage() {
             
             console.log(`[Transcription] Audio: resampling from ${inputSampleRate}Hz to ${outputSampleRate}Hz`);
 
-            // Create source from local audio track
             const audioTrack = localStream.getAudioTracks()[0];
             if (!audioTrack) {
               throw new Error('No audio track available');
             }
             
-            // Create a new stream with just the audio track
-            const audioOnlyStream = new MediaStream([audioTrack]);
-            const source = audioContext.createMediaStreamSource(audioOnlyStream);
+            let sourceStream: MediaStream;
+            const micOnlyStream = new MediaStream([audioTrack]);
+
+            if (captureVirtualAudio) {
+              try {
+                const sysResult = await captureSystemAudio(micOnlyStream);
+                systemAudioRef.current = sysResult;
+                sourceStream = sysResult.combinedStream;
+                setIsVirtualAudioActive(true);
+                console.log('[Transcription] System audio mixed with microphone');
+                toast({
+                  title: 'Virtual Meeting Audio Connected',
+                  description: 'System audio is being captured alongside your microphone for transcription.',
+                });
+              } catch (sysErr: any) {
+                console.warn('[Transcription] System audio capture failed, using mic only:', sysErr);
+                sourceStream = micOnlyStream;
+                setIsVirtualAudioActive(false);
+                if (sysErr.name === 'NotAllowedError') {
+                  toast({
+                    title: 'System Audio Not Shared',
+                    description: 'Continuing with microphone only. You can try again by restarting transcription.',
+                  });
+                } else if (sysErr.message === 'NO_SYSTEM_AUDIO') {
+                  toast({
+                    title: 'No System Audio Detected',
+                    description: 'Make sure to select "Share system audio" or "Share tab audio" in the browser prompt. Continuing with microphone only.',
+                  });
+                } else {
+                  toast({
+                    title: 'System Audio Unavailable',
+                    description: 'Your browser may not support system audio capture. Continuing with microphone only.',
+                  });
+                }
+              }
+            } else {
+              sourceStream = micOnlyStream;
+            }
+
+            const source = audioContext.createMediaStreamSource(sourceStream);
             transcriptionSourceRef.current = source;
 
             // Use ScriptProcessorNode for audio processing
@@ -2071,25 +2111,26 @@ export default function VideoMeetingPage() {
   };
 
   const stopTranscription = () => {
-    // Clean up ElevenLabs resources
     cleanupElevenLabsTranscription();
     
-    // Clean up Web Speech API if active
     if (webSpeechRecognitionRef.current) {
       webSpeechRecognitionRef.current.stop();
       webSpeechRecognitionRef.current = null;
     }
+
+    if (systemAudioRef.current) {
+      systemAudioRef.current.cleanup();
+      systemAudioRef.current = null;
+    }
     
-    // Reset timestamp reference for fresh start on next session
-    // Only reset if not recording (recording manages its own timestamp)
     if (!isRecording) {
       recordingStartTimeRef.current = 0;
     }
     
-    // Reset state
     setInterimTranscript('');
     setTranscriptionSource(null);
     setShowTranscription(false);
+    setIsVirtualAudioActive(false);
   };
 
   const startWebSpeechFallback = (): boolean => {
@@ -2697,6 +2738,12 @@ export default function VideoMeetingPage() {
                         </>
                       )}
                     </Button>
+                    {isVirtualAudioActive && (
+                      <Badge variant="secondary" className="gap-1 text-xs" data-testid="badge-virtual-audio-active">
+                        <Monitor className="h-3 w-3" />
+                        System Audio
+                      </Badge>
+                    )}
                     <Badge variant="secondary" className="ml-auto text-xs">{transcriptSegments.length}</Badge>
                   </div>
                 </div>
@@ -2844,6 +2891,12 @@ export default function VideoMeetingPage() {
                         </>
                       )}
                     </Button>
+                    {isVirtualAudioActive && (
+                      <Badge variant="secondary" className="gap-1 text-xs" data-testid="badge-virtual-audio-active-balanced">
+                        <Monitor className="h-3 w-3" />
+                        System Audio
+                      </Badge>
+                    )}
                     <Badge variant="secondary" className="ml-auto text-xs">{transcriptSegments.length}</Badge>
                   </div>
                 </div>
@@ -3046,6 +3099,26 @@ export default function VideoMeetingPage() {
             >
               {isScreenSharing ? <ScreenShareOff className="h-4 w-4 sm:h-6 sm:w-6" /> : <ScreenShare className="h-4 w-4 sm:h-6 sm:w-6" />}
             </Button>
+
+            {isSystemAudioSupported() && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={isVirtualAudioActive ? "secondary" : captureVirtualAudio ? "outline" : "outline"}
+                    size="icon"
+                    onClick={() => setCaptureVirtualAudio(!captureVirtualAudio)}
+                    className={`rounded-full w-10 h-10 sm:w-14 sm:h-14 shrink-0 ${isVirtualAudioActive ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+                    disabled={showTranscription}
+                    data-testid="button-toggle-virtual-audio"
+                  >
+                    <Monitor className={`h-4 w-4 sm:h-6 sm:w-6 ${captureVirtualAudio ? 'text-primary' : ''}`} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>{showTranscription ? 'Stop transcription first to change this setting' : captureVirtualAudio ? 'Disable virtual meeting audio capture' : 'Capture audio from Zoom, Teams, or Meet'}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
 
             <Button
               variant={virtualBackgroundEnabled ? "secondary" : "outline"}

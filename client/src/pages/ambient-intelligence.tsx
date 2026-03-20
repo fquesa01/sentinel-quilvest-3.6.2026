@@ -42,7 +42,8 @@ import {
   X,
   Loader2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Monitor
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -402,6 +403,14 @@ export default function AmbientIntelligence() {
                       <Brain className="h-3 w-3" />
                       AI Suggestions
                     </span>
+                    <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+                      selectedMode === "audio" 
+                        ? "bg-white/15 text-white/90" 
+                        : "bg-muted text-muted-foreground"
+                    }`}>
+                      <Monitor className="h-3 w-3" />
+                      Virtual Meeting
+                    </span>
                   </div>
                 </motion.button>
                 
@@ -474,6 +483,14 @@ export default function AmbientIntelligence() {
                     }`}>
                       <FileText className="h-3 w-3" />
                       Document Discovery
+                    </span>
+                    <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+                      selectedMode === "video" 
+                        ? "bg-white/15 text-white/90" 
+                        : "bg-muted text-muted-foreground"
+                    }`}>
+                      <Monitor className="h-3 w-3" />
+                      Virtual Meeting
                     </span>
                   </div>
                 </motion.button>
