@@ -506,6 +506,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Send sign-in link to user (super_admin only)
+  app.post("/api/users/:id/send-login-link", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      if (!user.email) {
+        return res.status(400).json({ message: "User does not have an email address" });
+      }
+
+      if (!emailService.isReady()) {
+        return res.status(503).json({ message: "Email service is not configured. Please set up SendGrid API key." });
+      }
+
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : `${req.protocol}://${req.get("host")}`;
+      const loginUrl = `${baseUrl}/login`;
+
+      const sent = await emailService.sendNotificationEmail({
+        recipientName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "User",
+        recipientEmail: user.email,
+        title: "Your Sign-In Link",
+        message: "You can sign in to Sentinel Counsel using the link below. If you did not expect this email, you can safely ignore it.",
+        actionUrl: loginUrl,
+        actionText: "Sign In Now",
+      });
+
+      if (!sent) {
+        return res.status(500).json({ message: "Failed to send email. Please try again later." });
+      }
+
+      await logAction(req, "login_link_sent", "user", user.id, { email: user.email });
+      res.json({ success: true, message: "Sign-in link sent successfully" });
+    } catch (error: any) {
+      console.error("Error sending login link:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Change user password (super_admin only)
+  app.patch("/api/users/:id/password", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
+    try {
+      const { password } = req.body;
+      if (!password || typeof password !== "string" || password.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      }
+
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      await db.update(schema.users).set({ passwordHash, updatedAt: new Date() }).where(eq(schema.users.id, req.params.id));
+
+      await logAction(req, "user_password_changed", "user", user.id, { changedBy: req.user?.id });
+      res.json({ success: true, message: "Password updated successfully" });
+    } catch (error: any) {
+      console.error("Error changing user password:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Create new user (admin only)
   app.post("/api/users", isAuthenticated, requireRole("super_admin"), async (req: any, res) => {
     try {

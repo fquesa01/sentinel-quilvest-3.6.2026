@@ -49,7 +49,7 @@ import { RoleBadge } from "@/components/role-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Users, UserPlus, Trash2, Building2, Plus, Pencil, UserMinus } from "lucide-react";
+import { Users, UserPlus, Trash2, Building2, Plus, Pencil, UserMinus, Mail, KeyRound } from "lucide-react";
 
 interface User {
   id: string;
@@ -93,6 +93,9 @@ export default function UserManagement() {
   const [assignOrgDialogOpen, setAssignOrgDialogOpen] = useState(false);
   const [userToAssignOrg, setUserToAssignOrg] = useState<User | null>(null);
   const [selectedOrgForAssign, setSelectedOrgForAssign] = useState("");
+  const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
+  const [userToChangePassword, setUserToChangePassword] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   const [newUser, setNewUser] = useState({
     email: "",
@@ -176,6 +179,34 @@ export default function UserManagement() {
     },
     onError: (error: any) => {
       toast({ title: "Deletion Failed", description: error.message || "Failed to delete user", variant: "destructive" });
+    },
+  });
+
+  const sendLoginLinkMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return apiRequest("POST", `/api/users/${userId}/send-login-link`);
+    },
+    onSuccess: async (response) => {
+      const data = await response.json();
+      toast({ title: "Sign-In Link Sent", description: data.message || "Sign-in link has been sent to the user" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Send Failed", description: error.message || "Failed to send sign-in link", variant: "destructive" });
+    },
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      return apiRequest("PATCH", `/api/users/${userId}/password`, { password });
+    },
+    onSuccess: () => {
+      toast({ title: "Password Changed", description: "User password has been updated successfully" });
+      setChangePasswordDialogOpen(false);
+      setUserToChangePassword(null);
+      setNewPassword("");
+    },
+    onError: (error: any) => {
+      toast({ title: "Update Failed", description: error.message || "Failed to change password", variant: "destructive" });
     },
   });
 
@@ -450,14 +481,39 @@ export default function UserManagement() {
                           {new Date(user.createdAt).toLocaleDateString()}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openDeleteDialog(user)}
-                            data-testid={`button-delete-user-${user.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => sendLoginLinkMutation.mutate(user.id)}
+                              disabled={sendLoginLinkMutation.isPending}
+                              data-testid={`button-send-login-link-${user.id}`}
+                              title="Send sign-in link"
+                            >
+                              <Mail className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setUserToChangePassword(user);
+                                setNewPassword("");
+                                setChangePasswordDialogOpen(true);
+                              }}
+                              data-testid={`button-change-password-${user.id}`}
+                              title="Change password"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openDeleteDialog(user)}
+                              data-testid={`button-delete-user-${user.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1000,6 +1056,50 @@ export default function UserManagement() {
               data-testid="button-confirm-assign-org"
             >
               {assignOrgMutation.isPending ? "Assigning..." : "Assign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Password Dialog */}
+      <Dialog open={changePasswordDialogOpen} onOpenChange={(open) => {
+        setChangePasswordDialogOpen(open);
+        if (!open) {
+          setUserToChangePassword(null);
+          setNewPassword("");
+        }
+      }}>
+        <DialogContent data-testid="dialog-change-password">
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>
+              Set a new password for {userToChangePassword?.firstName} {userToChangePassword?.lastName}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New Password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+                data-testid="input-new-password"
+              />
+              {newPassword.length > 0 && newPassword.length < 8 && (
+                <p className="text-sm text-destructive">Password must be at least 8 characters</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChangePasswordDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => userToChangePassword && changePasswordMutation.mutate({ userId: userToChangePassword.id, password: newPassword })}
+              disabled={changePasswordMutation.isPending || newPassword.length < 8}
+              data-testid="button-confirm-change-password"
+            >
+              {changePasswordMutation.isPending ? "Updating..." : "Update Password"}
             </Button>
           </DialogFooter>
         </DialogContent>
