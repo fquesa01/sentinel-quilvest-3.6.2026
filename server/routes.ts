@@ -30984,16 +30984,23 @@ Guidelines:
       const ext = file.originalname.split(".").pop()?.toLowerCase() || "other";
       const typeMap: Record<string, string> = {
         pdf: "pdf", docx: "docx", doc: "docx", xlsx: "xlsx", xls: "xlsx",
-        msg: "email", eml: "email", pst: "email",
+        msg: "email", eml: "email", pst: "email", mbox: "email",
       };
       const emailFormats: Record<string, SupportedFormat> = {
-        pst: "pst", msg: "msg", eml: "eml",
+        pst: "pst", msg: "msg", eml: "eml", mbox: "mbox",
       };
       const itemType = typeMap[ext] || "other";
       const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
       const storageKey = `${nanoid()}_${safeName}`;
-      await uploadFile(DATA_LAKE_BUCKET, storageKey, file.buffer, file.mimetype);
-      const filePath = storageKey;
+      let filePath: string;
+      try {
+        await uploadFile(DATA_LAKE_BUCKET, storageKey, file.buffer, file.mimetype);
+        filePath = storageKey;
+      } catch (supaErr: any) {
+        console.warn(`[DataLake] Supabase upload failed for "${file.originalname}", falling back to Object Storage:`, supaErr.message);
+        const objectStorageService = new ObjectStorageService();
+        filePath = await objectStorageService.uploadBuffer(`data-lake/${storageKey}`, file.buffer, file.mimetype);
+      }
 
       const isEmailArchive = ext in emailFormats;
       const isZipArchive = ext === "zip";
@@ -31102,7 +31109,7 @@ Guidelines:
 
             const extToItemType: Record<string, string> = {
               pdf: "pdf", docx: "docx", doc: "docx", xlsx: "xlsx", xls: "xlsx",
-              msg: "email", eml: "email", pst: "email", txt: "other", csv: "other",
+              msg: "email", eml: "email", pst: "email", mbox: "email", txt: "other", csv: "other",
               png: "other", jpg: "other", jpeg: "other", gif: "other", bmp: "other",
               html: "other", htm: "other", rtf: "other", json: "other", xml: "other",
             };
@@ -31127,8 +31134,14 @@ Guidelines:
                 try {
                   const safeName = extractedFileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
                   const childKey = `${nanoid()}_${safeName}`;
-                  await uploadFile(DATA_LAKE_BUCKET, childKey, extractedBuffer, 'application/octet-stream');
-                  extractedFilePath = childKey;
+                  try {
+                    await uploadFile(DATA_LAKE_BUCKET, childKey, extractedBuffer, 'application/octet-stream');
+                    extractedFilePath = childKey;
+                  } catch (supaErr: any) {
+                    console.warn(`[DataLake] ZIP: Supabase upload failed for "${extractedFileName}", falling back to Object Storage:`, supaErr.message);
+                    const objectStorageService = new ObjectStorageService();
+                    extractedFilePath = await objectStorageService.uploadBuffer(`data-lake/${childKey}`, extractedBuffer, 'application/octet-stream');
+                  }
                 } catch (uploadErr) {
                   console.error(`[DataLake] ZIP: Failed to upload extracted file ${extractedFileName}:`, uploadErr);
                 }
@@ -31359,14 +31372,32 @@ Guidelines:
       if (item && (item.itemType === "email_archive" || item.itemType === "zip_archive")) {
         const children = await storage.getDataLakeItemsByParent(req.params.id, req.user.id);
         for (const child of children) {
-          if (child.filePath && !child.filePath.startsWith("/objects/")) {
-            try { await deleteFile(DATA_LAKE_BUCKET, child.filePath); } catch (delErr) { console.warn(`[DataLake] Failed to delete child storage key "${child.filePath}":`, delErr); }
+          if (child.filePath) {
+            if (child.filePath.startsWith("/objects/")) {
+              try { await new ObjectStorageService().deleteObject(child.filePath); } catch (delErr) { console.warn(`[DataLake] Failed to delete child Object Storage file "${child.filePath}":`, delErr); }
+            } else {
+              try {
+                await deleteFile(DATA_LAKE_BUCKET, child.filePath);
+              } catch (delErr) {
+                console.warn(`[DataLake] Supabase delete failed for child "${child.filePath}", trying Object Storage fallback:`, delErr);
+                try { await new ObjectStorageService().deleteObject(`/objects/data-lake/${child.filePath}`); } catch {}
+              }
+            }
           }
           await storage.deleteDataLakeItem(child.id, req.user.id);
         }
       }
-      if (item?.filePath && !item.filePath.startsWith("/objects/")) {
-        try { await deleteFile(DATA_LAKE_BUCKET, item.filePath); } catch (delErr) { console.warn(`[DataLake] Failed to delete storage key "${item.filePath}":`, delErr); }
+      if (item?.filePath) {
+        if (item.filePath.startsWith("/objects/")) {
+          try { await new ObjectStorageService().deleteObject(item.filePath); } catch (delErr) { console.warn(`[DataLake] Failed to delete Object Storage file "${item.filePath}":`, delErr); }
+        } else {
+          try {
+            await deleteFile(DATA_LAKE_BUCKET, item.filePath);
+          } catch (delErr) {
+            console.warn(`[DataLake] Supabase delete failed for "${item.filePath}", trying Object Storage fallback:`, delErr);
+            try { await new ObjectStorageService().deleteObject(`/objects/data-lake/${item.filePath}`); } catch {}
+          }
+        }
       }
       await storage.deleteDataLakeItem(req.params.id, req.user.id);
       res.json({ success: true });

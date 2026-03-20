@@ -400,7 +400,7 @@ export default function MyDataLakePage() {
                   >
                     <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
                     <div className="text-sm font-medium mb-1">Drop files here or browse</div>
-                    <div className="text-xs text-muted-foreground">PDF, DOCX, XLSX, MSG, EML, PST, ZIP supported</div>
+                    <div className="text-xs text-muted-foreground">PDF, DOCX, XLSX, MSG, EML, PST, MBOX, ZIP supported</div>
                     <Button
                       size="sm"
                       className="mt-3"
@@ -413,7 +413,7 @@ export default function MyDataLakePage() {
                       ref={fileInputRef}
                       type="file"
                       className="hidden"
-                      accept=".pdf,.docx,.doc,.xlsx,.xls,.msg,.eml,.pst,.zip"
+                      accept=".pdf,.docx,.doc,.xlsx,.xls,.msg,.eml,.pst,.mbox,.zip"
                       multiple
                       onChange={handleFileSelect}
                       data-testid="input-file-upload"

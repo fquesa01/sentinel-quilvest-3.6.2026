@@ -264,6 +264,33 @@ export class ObjectStorageService {
     return !!localPath && fs.existsSync(localPath);
   }
 
+  deleteLocalFile(objectPath: string): boolean {
+    const localPath = this.safeLocalPath(objectPath);
+    if (!localPath) return false;
+    let deleted = false;
+    if (fs.existsSync(localPath)) {
+      fs.unlinkSync(localPath);
+      deleted = true;
+    }
+    const metaPath = localPath + ".meta";
+    if (fs.existsSync(metaPath)) {
+      fs.unlinkSync(metaPath);
+    }
+    return deleted;
+  }
+
+  async deleteObject(objectPath: string): Promise<void> {
+    const localDeleted = this.deleteLocalFile(objectPath);
+    if (localDeleted) return;
+    try {
+      const objectFile = await this.getObjectEntityFile(objectPath);
+      await objectFile.delete();
+    } catch (err: any) {
+      if (err instanceof ObjectNotFoundError) return;
+      console.warn(`[ObjectStorage] Failed to delete remote object "${objectPath}":`, err.message);
+    }
+  }
+
   normalizeObjectEntityPath(
     rawPath: string,
   ): string {
