@@ -119,9 +119,12 @@ export default function MyDataLakePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [fileFilter, setFileFilter] = useState("all");
   const [uploadDragging, setUploadDragging] = useState(false);
+  const [fullPageDragging, setFullPageDragging] = useState(false);
   const [quickSearch, setQuickSearch] = useState("");
   const [searchSource, setSearchSource] = useState("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const dragCounterRef = useRef(0);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -248,7 +251,11 @@ export default function MyDataLakePage() {
   const handleFileDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
       setUploadDragging(false);
+      dragCounterRef.current = 0;
+      setFullPageDragging(false);
       const files = Array.from(e.dataTransfer.files);
       files.forEach((file) => uploadMutation.mutate(file));
     },
@@ -263,8 +270,77 @@ export default function MyDataLakePage() {
     [uploadMutation]
   );
 
+  const handleFullPageDrop = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = 0;
+      setFullPageDragging(false);
+      const files = Array.from(e.dataTransfer?.files || []);
+      files.forEach((file) => uploadMutation.mutate(file));
+    },
+    [uploadMutation]
+  );
+
+  useEffect(() => {
+    const el = pageRef.current;
+    if (!el) return;
+
+    const handleDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current++;
+      if (e.dataTransfer?.types.includes("Files")) {
+        setFullPageDragging(true);
+      }
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current--;
+      if (dragCounterRef.current <= 0) {
+        dragCounterRef.current = 0;
+        setFullPageDragging(false);
+      }
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      handleFullPageDrop(e);
+    };
+
+    el.addEventListener("dragenter", handleDragEnter);
+    el.addEventListener("dragover", handleDragOver);
+    el.addEventListener("dragleave", handleDragLeave);
+    el.addEventListener("drop", handleDrop);
+
+    return () => {
+      el.removeEventListener("dragenter", handleDragEnter);
+      el.removeEventListener("dragover", handleDragOver);
+      el.removeEventListener("dragleave", handleDragLeave);
+      el.removeEventListener("drop", handleDrop);
+    };
+  }, [handleFullPageDrop]);
+
   return (
-    <div className="p-6 lg:p-8 space-y-6 overflow-auto h-full">
+    <div ref={pageRef} className="p-6 lg:p-8 space-y-6 overflow-auto h-full relative">
+      {fullPageDragging && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm transition-opacity duration-200"
+          data-testid="overlay-full-page-drop"
+        >
+          <div className="flex flex-col items-center gap-4 p-10 border-2 border-dashed border-primary rounded-md bg-background">
+            <Upload className="w-12 h-12 text-primary" />
+            <div className="text-lg font-semibold">Drop files to upload</div>
+            <div className="text-sm text-muted-foreground">PDF, DOCX, XLSX, MSG, EML, PST, ZIP supported</div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-md bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white">
           <Brain className="w-5 h-5" />
@@ -387,8 +463,9 @@ export default function MyDataLakePage() {
                 </CardHeader>
                 <CardContent>
                   <div
-                    onDragOver={(e) => { e.preventDefault(); setUploadDragging(true); }}
-                    onDragLeave={() => setUploadDragging(false)}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setUploadDragging(true); }}
+                    onDragEnter={(e) => { e.stopPropagation(); }}
+                    onDragLeave={(e) => { e.stopPropagation(); setUploadDragging(false); }}
                     onDrop={handleFileDrop}
                     onClick={() => fileInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-md p-6 text-center cursor-pointer transition-colors ${
