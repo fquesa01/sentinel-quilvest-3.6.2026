@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -18,6 +20,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Link } from "wouter";
 import {
@@ -31,13 +34,32 @@ import {
   CheckCircle2,
   Clock,
   X,
+  Plus,
+  Mail,
+  Copy,
+  FileText,
+  XCircle,
+  Loader2,
+  Link2,
 } from "lucide-react";
 import { format } from "date-fns";
-import type { RonNotary, RonSession } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { RonNotary, RonSession, RonNotaryDocument, RonNotaryInvitation } from "@shared/schema";
 
 const stateOptions = ["FL", "TX", "VA", "CA", "NY", "AZ", "CO", "GA", "IL", "NJ", "OH", "PA"];
-
 const languageOptions = ["English", "Spanish", "French", "Portuguese", "Mandarin", "Korean", "Japanese", "Vietnamese", "Arabic", "Russian", "German"];
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  commission_cert: "Commission Certificate",
+  bond_cert: "Surety Bond",
+  eo_insurance_cert: "E&O Insurance",
+  training_cert: "Training Certificate",
+  background_check: "Background Check",
+  seal_image: "Seal Image",
+  signature_image: "Signature Image",
+  other: "Other",
+};
 
 export default function RonNotaries() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -45,6 +67,27 @@ export default function RonNotaries() {
   const [languageFilter, setLanguageFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
   const [selectedNotary, setSelectedNotary] = useState<RonNotary | null>(null);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<RonNotaryDocument | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const { toast } = useToast();
+
+  const [addForm, setAddForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    commissionState: "",
+    commissionNumber: "",
+    commissionExpiration: "",
+    languages: ["English"],
+    notarizationType: "both",
+  });
+
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [generatedLink, setGeneratedLink] = useState("");
 
   const { data: notaries, isLoading } = useQuery<RonNotary[]>({
     queryKey: ["/api/ron/notaries"],
@@ -55,7 +98,84 @@ export default function RonNotaries() {
     enabled: !!selectedNotary,
   });
 
+  const { data: notaryDocs } = useQuery<RonNotaryDocument[]>({
+    queryKey: ["/api/ron/notaries", selectedNotary?.id, "documents"],
+    queryFn: async () => {
+      const res = await fetch(`/api/ron/notaries/${selectedNotary!.id}/documents`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedNotary,
+  });
+
+  const { data: invitations } = useQuery<RonNotaryInvitation[]>({
+    queryKey: ["/api/ron/notary-invitations"],
+  });
+
   const notarySessions = notaryDetail?.recentSessions ?? [];
+
+  const addNotaryMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/ron/notaries", {
+        firstName: addForm.firstName,
+        lastName: addForm.lastName,
+        email: addForm.email,
+        phone: addForm.phone || null,
+        commissionState: addForm.commissionState,
+        commissionNumber: addForm.commissionNumber || null,
+        commissionExpiration: addForm.commissionExpiration || null,
+        languages: addForm.languages,
+        status: "pending_onboarding",
+        metadata: { notarizationType: addForm.notarizationType },
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ron/notaries"] });
+      setAddDialogOpen(false);
+      setAddForm({ firstName: "", lastName: "", email: "", phone: "", commissionState: "", commissionNumber: "", commissionExpiration: "", languages: ["English"], notarizationType: "both" });
+      toast({ title: "Notary Added", description: "New notary has been added to the directory." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const inviteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/ron/notary-invitations", { email: inviteEmail });
+      return res.json();
+    },
+    onSuccess: (data: RonNotaryInvitation) => {
+      const link = `${window.location.origin}/notary/onboard/${data.token}`;
+      setGeneratedLink(link);
+      queryClient.invalidateQueries({ queryKey: ["/api/ron/notary-invitations"] });
+      toast({ title: "Invitation Created", description: "Share the link with the notary." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const verifyDocMutation = useMutation({
+    mutationFn: async ({ docId, status, reason }: { docId: string; status: string; reason?: string }) => {
+      const res = await apiRequest("PATCH", `/api/ron/notary-documents/${docId}/verify`, {
+        status,
+        rejectionReason: reason,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ron/notaries", selectedNotary?.id, "documents"] });
+      setVerifyDialogOpen(false);
+      setSelectedDoc(null);
+      setRejectionReason("");
+      toast({ title: "Document Updated", description: "Document verification status has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const filtered = notaries?.filter((n) => {
     const matchesSearch =
@@ -87,6 +207,13 @@ export default function RonNotaries() {
     setSearchTerm("");
   };
 
+  const pendingInvitations = invitations?.filter((inv) => inv.status === "pending" && new Date(inv.expiresAt) > new Date()) || [];
+
+  const copyLink = (link: string) => {
+    navigator.clipboard.writeText(link);
+    toast({ title: "Copied", description: "Link copied to clipboard." });
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 space-y-6">
@@ -100,19 +227,31 @@ export default function RonNotaries() {
 
   return (
     <div className="p-6 space-y-6" data-testid="ron-notaries-page">
-      <div className="flex items-center gap-3">
-        <Link href="/ron/dashboard">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Link href="/ron/dashboard">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-notaries-title">
+              Notary Directory
+            </h1>
+            <p className="text-muted-foreground">
+              {filtered?.length ?? 0} notaries
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setInviteDialogOpen(true)} data-testid="button-invite-notary">
+            <Mail className="h-4 w-4 mr-2" />
+            Invite Notary
           </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-notaries-title">
-            Notary Directory
-          </h1>
-          <p className="text-muted-foreground">
-            {filtered?.length ?? 0} notaries
-          </p>
+          <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-notary">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Notary
+          </Button>
         </div>
       </div>
 
@@ -165,6 +304,40 @@ export default function RonNotaries() {
           </Button>
         )}
       </div>
+
+      {pendingInvitations.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              Pending Invitations ({pendingInvitations.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingInvitations.map((inv) => (
+              <div key={inv.id} className="flex items-center justify-between gap-3 p-2 rounded border border-border text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{inv.email}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Expires {format(new Date(inv.expiresAt), "MMM d, yyyy")}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Badge variant="outline" className="text-xs">Pending</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => copyLink(`${window.location.origin}/notary/onboard/${inv.token}`)}
+                    data-testid={`button-copy-invite-${inv.id}`}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {filtered && filtered.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -240,6 +413,7 @@ export default function RonNotaries() {
         </Card>
       )}
 
+      {/* Notary Detail Dialog */}
       <Dialog open={!!selectedNotary} onOpenChange={() => setSelectedNotary(null)}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -323,6 +497,68 @@ export default function RonNotaries() {
               <Separator />
 
               <div>
+                <p className="font-medium text-sm mb-3">Credential Documents</p>
+                {notaryDocs && notaryDocs.length > 0 ? (
+                  <div className="space-y-2">
+                    {notaryDocs.map((doc) => (
+                      <div key={doc.id} className="flex items-center justify-between gap-2 p-2 rounded border border-border text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium">{DOC_TYPE_LABELS[doc.documentType] || doc.documentType}</p>
+                            {doc.fileName && (
+                              <p className="text-xs text-muted-foreground truncate">{doc.fileName}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${
+                              doc.verificationStatus === "verified"
+                                ? "border-green-500 text-green-700 dark:text-green-400"
+                                : doc.verificationStatus === "rejected"
+                                ? "border-red-500 text-red-700 dark:text-red-400"
+                                : ""
+                            }`}
+                          >
+                            {doc.verificationStatus === "verified" && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                            {doc.verificationStatus === "rejected" && <XCircle className="h-3 w-3 mr-1" />}
+                            {doc.verificationStatus === "pending" && <Clock className="h-3 w-3 mr-1" />}
+                            {doc.verificationStatus}
+                          </Badge>
+                          {doc.verificationStatus === "pending" && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => verifyDocMutation.mutate({ docId: doc.id, status: "verified" })}
+                                data-testid={`button-verify-doc-${doc.id}`}
+                              >
+                                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => { setSelectedDoc(doc); setVerifyDialogOpen(true); }}
+                                data-testid={`button-reject-doc-${doc.id}`}
+                              >
+                                <XCircle className="h-4 w-4 text-red-600" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No documents uploaded</p>
+                )}
+              </div>
+
+              <Separator />
+
+              <div>
                 <p className="font-medium text-sm mb-3">Session History</p>
                 {notarySessions.length > 0 ? (
                   <div className="space-y-2 max-h-[200px] overflow-y-auto">
@@ -348,6 +584,222 @@ export default function RonNotaries() {
                   <p className="text-sm text-muted-foreground">No session history available</p>
                 )}
               </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Notary Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Notary</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={(e) => { e.preventDefault(); addNotaryMutation.mutate(); }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">First Name *</Label>
+                <Input
+                  value={addForm.firstName}
+                  onChange={(e) => setAddForm({ ...addForm, firstName: e.target.value })}
+                  data-testid="input-add-first-name"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Last Name *</Label>
+                <Input
+                  value={addForm.lastName}
+                  onChange={(e) => setAddForm({ ...addForm, lastName: e.target.value })}
+                  data-testid="input-add-last-name"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">Email *</Label>
+                <Input
+                  type="email"
+                  value={addForm.email}
+                  onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                  data-testid="input-add-email"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Phone</Label>
+                <Input
+                  value={addForm.phone}
+                  onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                  data-testid="input-add-phone"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">Commission State *</Label>
+                <Select value={addForm.commissionState} onValueChange={(v) => setAddForm({ ...addForm, commissionState: v })}>
+                  <SelectTrigger data-testid="select-add-commission-state">
+                    <SelectValue placeholder="Select state" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stateOptions.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Commission Number</Label>
+                <Input
+                  value={addForm.commissionNumber}
+                  onChange={(e) => setAddForm({ ...addForm, commissionNumber: e.target.value })}
+                  data-testid="input-add-commission-number"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Commission Expiration</Label>
+              <Input
+                type="date"
+                value={addForm.commissionExpiration}
+                onChange={(e) => setAddForm({ ...addForm, commissionExpiration: e.target.value })}
+                data-testid="input-add-commission-expiration"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Notarization Type</Label>
+              <Select value={addForm.notarizationType} onValueChange={(v) => setAddForm({ ...addForm, notarizationType: v })}>
+                <SelectTrigger data-testid="select-add-notarization-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="in_person">In-Person Only</SelectItem>
+                  <SelectItem value="virtual">Virtual/RON Only</SelectItem>
+                  <SelectItem value="both">Both</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Languages</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {languageOptions.map((lang) => (
+                  <Badge
+                    key={lang}
+                    className={`cursor-pointer toggle-elevate ${addForm.languages.includes(lang) ? "toggle-elevated bg-primary text-primary-foreground" : ""}`}
+                    variant={addForm.languages.includes(lang) ? "default" : "outline"}
+                    onClick={() => setAddForm(prev => ({
+                      ...prev,
+                      languages: prev.languages.includes(lang) ? prev.languages.filter(l => l !== lang) : [...prev.languages, lang],
+                    }))}
+                    data-testid={`badge-add-lang-${lang.toLowerCase()}`}
+                  >
+                    {lang}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setAddDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={addNotaryMutation.isPending || !addForm.firstName || !addForm.lastName || !addForm.email || !addForm.commissionState}
+                data-testid="button-submit-add-notary"
+              >
+                {addNotaryMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Add Notary
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Notary Dialog */}
+      <Dialog open={inviteDialogOpen} onOpenChange={(open) => { setInviteDialogOpen(open); if (!open) { setInviteEmail(""); setGeneratedLink(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite Notary</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Enter the notary's email address to generate a unique credential submission link. The link expires after 7 days.
+            </p>
+            <div>
+              <Label className="text-xs">Email Address</Label>
+              <Input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => { setInviteEmail(e.target.value); setGeneratedLink(""); }}
+                placeholder="notary@example.com"
+                data-testid="input-invite-email"
+              />
+            </div>
+            {!generatedLink ? (
+              <Button
+                className="w-full"
+                onClick={() => inviteMutation.mutate()}
+                disabled={inviteMutation.isPending || !inviteEmail}
+                data-testid="button-generate-invite"
+              >
+                {inviteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Link2 className="h-4 w-4 mr-2" />}
+                Generate Invitation Link
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="p-3 rounded border border-border bg-muted/50">
+                  <p className="text-xs text-muted-foreground mb-1">Invitation Link</p>
+                  <p className="text-xs font-mono break-all" data-testid="text-generated-link">{generatedLink}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => copyLink(generatedLink)}
+                  data-testid="button-copy-generated-link"
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy Link
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Document Dialog */}
+      <Dialog open={verifyDialogOpen} onOpenChange={(open) => { setVerifyDialogOpen(open); if (!open) { setSelectedDoc(null); setRejectionReason(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject Document</DialogTitle>
+          </DialogHeader>
+          {selectedDoc && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Rejecting: <span className="font-medium text-foreground">{DOC_TYPE_LABELS[selectedDoc.documentType] || selectedDoc.documentType}</span>
+              </p>
+              <div>
+                <Label className="text-xs">Rejection Reason</Label>
+                <Textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Provide a reason for rejection..."
+                  className="resize-none"
+                  data-testid="input-rejection-reason"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setVerifyDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => verifyDocMutation.mutate({ docId: selectedDoc.id, status: "rejected", reason: rejectionReason })}
+                  disabled={verifyDocMutation.isPending}
+                  data-testid="button-confirm-reject"
+                >
+                  {verifyDocMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Reject Document
+                </Button>
+              </DialogFooter>
             </div>
           )}
         </DialogContent>

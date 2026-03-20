@@ -1,5 +1,6 @@
-import { Router } from "express";
+import { Router, type Express } from "express";
 import multer from "multer";
+import { randomBytes } from "crypto";
 import { isAuthenticated, requireRole } from "../replitAuth";
 import * as journalService from "../services/ron-journal-service";
 import * as complianceService from "../services/ron-compliance-service";
@@ -263,6 +264,89 @@ router.delete("/notaries/:id", requireRole("super_admin"), async (req: any, res)
 
     await storage.deleteRonNotary(req.params.id);
     res.json({ success: true });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// NOTARY DOCUMENTS
+// ============================================================================
+
+router.get("/notaries/:notaryId/documents", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const docs = await storage.getRonNotaryDocuments(req.params.notaryId);
+    res.json(docs);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.patch("/notary-documents/:id/verify", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const { status, rejectionReason } = req.body;
+    if (!["verified", "rejected"].includes(status)) {
+      return res.status(400).json({ message: "Status must be 'verified' or 'rejected'" });
+    }
+    const doc = await storage.updateRonNotaryDocument(req.params.id, {
+      verificationStatus: status,
+      verifiedBy: req.user.id,
+      verifiedAt: new Date(),
+      rejectionReason: status === "rejected" ? rejectionReason : null,
+    });
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+    res.json(doc);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.delete("/notary-documents/:id", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    await storage.deleteRonNotaryDocument(req.params.id);
+    res.json({ success: true });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+// ============================================================================
+// NOTARY INVITATIONS
+// ============================================================================
+
+router.get("/notary-invitations", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const invitations = await storage.getRonNotaryInvitations();
+    res.json(invitations);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+router.post("/notary-invitations", requireRole("super_admin"), async (req: any, res) => {
+  try {
+    const { email, expirationDays: rawDays } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+    const expirationDays = Math.min(Math.max(Number(rawDays) || 7, 1), 90);
+
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + expirationDays);
+
+    const invitation = await storage.createRonNotaryInvitation({
+      email,
+      token,
+      status: "pending",
+      expiresAt,
+      invitedBy: req.user.id,
+    });
+
+    res.status(201).json(invitation);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message: msg });
@@ -2003,7 +2087,149 @@ router.get("/dashboard/stats", async (req: any, res) => {
   }
 });
 
-export function registerRonRoutes(app: any) {
+const publicRouter = Router();
+const publicUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+publicRouter.get("/validate-invitation/:token", async (req: any, res) => {
+  try {
+    const invitation = await storage.getRonNotaryInvitationByToken(req.params.token);
+    if (!invitation) return res.status(404).json({ message: "Invitation not found" });
+    if (invitation.status === "submitted") return res.status(400).json({ message: "This invitation has already been used" });
+    if (invitation.status === "cancelled") return res.status(400).json({ message: "This invitation has been cancelled" });
+    if (new Date() > new Date(invitation.expiresAt)) {
+      await storage.updateRonNotaryInvitation(invitation.id, { status: "expired" });
+      return res.status(400).json({ message: "This invitation has expired" });
+    }
+    res.json({ email: invitation.email, expiresAt: invitation.expiresAt, status: invitation.status });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ message: msg });
+  }
+});
+
+publicRouter.post("/submit-credentials/:token", publicUpload.fields([
+  { name: "commission_cert", maxCount: 1 },
+  { name: "bond_cert", maxCount: 1 },
+  { name: "eo_insurance_cert", maxCount: 1 },
+  { name: "training_cert", maxCount: 1 },
+  { name: "background_check", maxCount: 1 },
+  { name: "seal_image", maxCount: 1 },
+  { name: "signature_image", maxCount: 1 },
+  { name: "other", maxCount: 1 },
+]), async (req: any, res) => {
+  try {
+    const invitation = await storage.getRonNotaryInvitationByToken(req.params.token);
+    if (!invitation) return res.status(404).json({ message: "Invitation not found" });
+    if (invitation.status === "submitted") return res.status(400).json({ message: "This invitation has already been used" });
+    if (invitation.status === "cancelled") return res.status(400).json({ message: "This invitation has been cancelled" });
+    if (new Date() > new Date(invitation.expiresAt)) {
+      await storage.updateRonNotaryInvitation(invitation.id, { status: "expired" });
+      return res.status(400).json({ message: "This invitation has expired" });
+    }
+
+    const {
+      firstName, lastName, email, phone, commissionState, commissionNumber,
+      commissionExpiration, notarizationType, languages, bondAmount, bondExpiration,
+      eoInsuranceAmount, eoInsuranceExpiration, ronTrainingCompleted, ronTrainingDate,
+    } = req.body;
+
+    if (!firstName || !lastName || !commissionState) {
+      return res.status(400).json({ message: "First name, last name, and commission state are required" });
+    }
+
+    const boundEmail = invitation.email;
+    if (email && email.toLowerCase() !== boundEmail.toLowerCase()) {
+      return res.status(400).json({ message: "Email does not match invitation" });
+    }
+
+    const filesMap = req.files as { [fieldname: string]: Express.Multer.File[] };
+    if (!filesMap?.commission_cert || filesMap.commission_cert.length === 0) {
+      return res.status(400).json({ message: "Commission certificate is required" });
+    }
+
+    let notary = await storage.getRonNotaryByEmail(boundEmail);
+
+    if (notary) {
+      notary = await storage.updateRonNotary(notary.id, {
+        firstName,
+        lastName,
+        phone: phone || notary.phone,
+        commissionState,
+        commissionNumber: commissionNumber || notary.commissionNumber,
+        commissionExpiration: commissionExpiration ? new Date(commissionExpiration) : notary.commissionExpiration,
+        languages: languages ? (typeof languages === "string" ? JSON.parse(languages) : languages) : notary.languages,
+        bondAmount: bondAmount || notary.bondAmount,
+        bondExpiration: bondExpiration ? new Date(bondExpiration) : notary.bondExpiration,
+        eoInsuranceAmount: eoInsuranceAmount || notary.eoInsuranceAmount,
+        eoInsuranceExpiration: eoInsuranceExpiration ? new Date(eoInsuranceExpiration) : notary.eoInsuranceExpiration,
+        ronTrainingCompleted: ronTrainingCompleted === "true" || ronTrainingCompleted === true,
+        ronTrainingDate: ronTrainingDate ? new Date(ronTrainingDate) : notary.ronTrainingDate,
+        status: "pending_onboarding",
+        metadata: { ...((notary.metadata && typeof notary.metadata === "object" ? notary.metadata : {}) as Record<string, unknown>), notarizationType: notarizationType || "both" },
+      });
+    } else {
+      notary = await storage.createRonNotary({
+        firstName,
+        lastName,
+        email: boundEmail,
+        phone: phone || null,
+        commissionState,
+        commissionNumber: commissionNumber || null,
+        commissionExpiration: commissionExpiration ? new Date(commissionExpiration) : null,
+        status: "pending_onboarding",
+        languages: languages ? (typeof languages === "string" ? JSON.parse(languages) : languages) : ["English"],
+        bondAmount: bondAmount || null,
+        bondExpiration: bondExpiration ? new Date(bondExpiration) : null,
+        eoInsuranceAmount: eoInsuranceAmount || null,
+        eoInsuranceExpiration: eoInsuranceExpiration ? new Date(eoInsuranceExpiration) : null,
+        ronTrainingCompleted: ronTrainingCompleted === "true" || ronTrainingCompleted === true,
+        ronTrainingDate: ronTrainingDate ? new Date(ronTrainingDate) : null,
+        timezone: "America/New_York",
+        metadata: { notarizationType: notarizationType || "both" },
+      });
+    }
+
+    const objectStorageService = new ObjectStorageService();
+    const docTypes = ["commission_cert", "bond_cert", "eo_insurance_cert", "training_cert", "background_check", "seal_image", "signature_image", "other"] as const;
+
+    const uploadedDocs: Array<{ docType: string; fileUrl: string; file: Express.Multer.File }> = [];
+
+    for (const docType of docTypes) {
+      if (filesMap[docType] && filesMap[docType].length > 0) {
+        const file = filesMap[docType][0];
+        const storageKey = `notary-documents/${notary.id}/${docType}_${Date.now()}_${file.originalname}`;
+        const fileUrl = await objectStorageService.uploadBuffer(storageKey, file.buffer, file.mimetype);
+        uploadedDocs.push({ docType, fileUrl, file });
+      }
+    }
+
+    for (const { docType, fileUrl, file } of uploadedDocs) {
+      await storage.createRonNotaryDocument({
+        notaryId: notary.id,
+        documentType: docType as "commission_cert" | "bond_cert" | "eo_insurance_cert" | "training_cert" | "background_check" | "seal_image" | "signature_image" | "other",
+        fileUrl,
+        fileName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        verificationStatus: "pending",
+      });
+    }
+
+    await storage.updateRonNotaryInvitation(invitation.id, {
+      status: "submitted",
+      notaryId: notary.id,
+    });
+
+    res.status(201).json({ success: true, notaryId: notary.id });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    console.error("[RON] Credential submission error:", error);
+    res.status(500).json({ message: msg });
+  }
+});
+
+export function registerRonRoutes(app: Express) {
+  app.use("/api/ron/public", publicRouter);
   app.use("/api/ron", router);
   console.log("[RON] Routes registered");
 }

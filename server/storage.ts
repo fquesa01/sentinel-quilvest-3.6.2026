@@ -371,10 +371,16 @@ import {
   ronJournalEntries,
   ronRecordings,
   ronComplianceChecks,
+  ronNotaryDocuments,
+  ronNotaryInvitations,
   type RonTransaction,
   type InsertRonTransaction,
   type RonNotary,
   type InsertRonNotary,
+  type RonNotaryDocument,
+  type InsertRonNotaryDocument,
+  type RonNotaryInvitation,
+  type InsertRonNotaryInvitation,
   type RonSession,
   type InsertRonSession,
   type RonSigner,
@@ -1035,9 +1041,23 @@ export interface IStorage {
   // RON Notary operations
   getRonNotaries(filters?: { state?: string; status?: string }): Promise<RonNotary[]>;
   getRonNotary(id: string): Promise<RonNotary | undefined>;
+  getRonNotaryByEmail(email: string): Promise<RonNotary | undefined>;
   createRonNotary(notary: InsertRonNotary): Promise<RonNotary>;
   updateRonNotary(id: string, updates: Partial<RonNotary>): Promise<RonNotary>;
   deleteRonNotary(id: string): Promise<void>;
+
+  // RON Notary Document operations
+  getRonNotaryDocuments(notaryId: string): Promise<RonNotaryDocument[]>;
+  getRonNotaryDocument(id: string): Promise<RonNotaryDocument | undefined>;
+  createRonNotaryDocument(doc: InsertRonNotaryDocument): Promise<RonNotaryDocument>;
+  updateRonNotaryDocument(id: string, updates: Partial<RonNotaryDocument>): Promise<RonNotaryDocument>;
+  deleteRonNotaryDocument(id: string): Promise<void>;
+
+  // RON Notary Invitation operations
+  getRonNotaryInvitations(): Promise<RonNotaryInvitation[]>;
+  getRonNotaryInvitationByToken(token: string): Promise<RonNotaryInvitation | undefined>;
+  createRonNotaryInvitation(invitation: InsertRonNotaryInvitation): Promise<RonNotaryInvitation>;
+  updateRonNotaryInvitation(id: string, updates: Partial<RonNotaryInvitation>): Promise<RonNotaryInvitation>;
 
   // RON Session operations
   getRonSessions(transactionId: string): Promise<RonSession[]>;
@@ -6805,6 +6825,55 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRonNotary(id: string): Promise<void> {
     await db.delete(ronNotaries).where(eq(ronNotaries.id, id));
+  }
+
+  async getRonNotaryByEmail(email: string): Promise<RonNotary | undefined> {
+    const [notary] = await db.select().from(ronNotaries).where(eq(ronNotaries.email, email));
+    return notary;
+  }
+
+  // RON Notary Document operations
+  async getRonNotaryDocuments(notaryId: string): Promise<RonNotaryDocument[]> {
+    return db.select().from(ronNotaryDocuments).where(eq(ronNotaryDocuments.notaryId, notaryId)).orderBy(desc(ronNotaryDocuments.uploadedAt));
+  }
+
+  async getRonNotaryDocument(id: string): Promise<RonNotaryDocument | undefined> {
+    const [doc] = await db.select().from(ronNotaryDocuments).where(eq(ronNotaryDocuments.id, id));
+    return doc;
+  }
+
+  async createRonNotaryDocument(doc: InsertRonNotaryDocument): Promise<RonNotaryDocument> {
+    const [created] = await db.insert(ronNotaryDocuments).values(doc).returning();
+    return created;
+  }
+
+  async updateRonNotaryDocument(id: string, updates: Partial<RonNotaryDocument>): Promise<RonNotaryDocument> {
+    const [updated] = await db.update(ronNotaryDocuments).set(updates).where(eq(ronNotaryDocuments.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRonNotaryDocument(id: string): Promise<void> {
+    await db.delete(ronNotaryDocuments).where(eq(ronNotaryDocuments.id, id));
+  }
+
+  // RON Notary Invitation operations
+  async getRonNotaryInvitations(): Promise<RonNotaryInvitation[]> {
+    return db.select().from(ronNotaryInvitations).orderBy(desc(ronNotaryInvitations.createdAt));
+  }
+
+  async getRonNotaryInvitationByToken(token: string): Promise<RonNotaryInvitation | undefined> {
+    const [invitation] = await db.select().from(ronNotaryInvitations).where(eq(ronNotaryInvitations.token, token));
+    return invitation;
+  }
+
+  async createRonNotaryInvitation(invitation: InsertRonNotaryInvitation): Promise<RonNotaryInvitation> {
+    const [created] = await db.insert(ronNotaryInvitations).values(invitation).returning();
+    return created;
+  }
+
+  async updateRonNotaryInvitation(id: string, updates: Partial<RonNotaryInvitation>): Promise<RonNotaryInvitation> {
+    const [updated] = await db.update(ronNotaryInvitations).set(updates).where(eq(ronNotaryInvitations.id, id)).returning();
+    return updated;
   }
 
   // RON Session operations

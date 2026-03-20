@@ -14439,3 +14439,64 @@ export const insertFirmFormTemplateSchema = createInsertSchema(firmFormTemplates
 });
 export type InsertFirmFormTemplate = z.infer<typeof insertFirmFormTemplateSchema>;
 export type FirmFormTemplate = typeof firmFormTemplates.$inferSelect;
+
+// RON Notary Document Types
+export const ronNotaryDocTypeEnum = pgEnum("ron_notary_doc_type", [
+  "commission_cert", "bond_cert", "eo_insurance_cert", "training_cert",
+  "background_check", "seal_image", "signature_image", "other"
+]);
+
+export const ronNotaryDocVerificationEnum = pgEnum("ron_notary_doc_verification", [
+  "pending", "verified", "rejected"
+]);
+
+export const ronNotaryInvitationStatusEnum = pgEnum("ron_notary_invitation_status", [
+  "pending", "submitted", "expired", "cancelled"
+]);
+
+// RON Notary Documents
+export const ronNotaryDocuments = pgTable("ron_notary_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  notaryId: varchar("notary_id").references(() => ronNotaries.id, { onDelete: "cascade" }).notNull(),
+  documentType: ronNotaryDocTypeEnum("document_type").notNull(),
+  fileUrl: varchar("file_url", { length: 1000 }).notNull(),
+  fileName: varchar("file_name", { length: 500 }),
+  fileSize: integer("file_size"),
+  mimeType: varchar("mime_type", { length: 200 }),
+  verificationStatus: ronNotaryDocVerificationEnum("verification_status").default("pending").notNull(),
+  verifiedBy: varchar("verified_by").references(() => users.id),
+  verifiedAt: timestamp("verified_at"),
+  rejectionReason: text("rejection_reason"),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  metadata: jsonb("metadata").default({}),
+}, (table) => ({
+  notaryIdx: index("idx_ron_notary_docs_notary").on(table.notaryId),
+  docTypeIdx: index("idx_ron_notary_docs_type").on(table.documentType),
+}));
+
+export const insertRonNotaryDocumentSchema = createInsertSchema(ronNotaryDocuments).omit({
+  id: true, uploadedAt: true,
+});
+export type InsertRonNotaryDocument = z.infer<typeof insertRonNotaryDocumentSchema>;
+export type RonNotaryDocument = typeof ronNotaryDocuments.$inferSelect;
+
+// RON Notary Invitations
+export const ronNotaryInvitations = pgTable("ron_notary_invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email", { length: 300 }).notNull(),
+  token: varchar("token", { length: 200 }).notNull().unique(),
+  status: ronNotaryInvitationStatusEnum("status").default("pending").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  notaryId: varchar("notary_id").references(() => ronNotaries.id),
+  invitedBy: varchar("invited_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tokenIdx: index("idx_ron_notary_invitations_token").on(table.token),
+  emailIdx: index("idx_ron_notary_invitations_email").on(table.email),
+}));
+
+export const insertRonNotaryInvitationSchema = createInsertSchema(ronNotaryInvitations).omit({
+  id: true, createdAt: true,
+});
+export type InsertRonNotaryInvitation = z.infer<typeof insertRonNotaryInvitationSchema>;
+export type RonNotaryInvitation = typeof ronNotaryInvitations.$inferSelect;

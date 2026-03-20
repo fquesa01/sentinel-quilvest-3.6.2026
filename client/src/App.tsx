@@ -77,6 +77,7 @@ import GuestPortal from "@/pages/guest-portal";
 import GuestLogin from "@/pages/guest-login";
 import GuestDeals from "@/pages/guest-deals";
 import GuestDealView from "@/pages/guest-deal-view";
+import NotaryCredentialSubmission from "@/pages/notary-credential-submission";
 import RonDashboard from "@/pages/ron-dashboard";
 import RonTransactions from "@/pages/ron-transactions";
 import RonTransactionDetail from "@/pages/ron-transaction-detail";
@@ -230,6 +231,8 @@ function App() {
         <Route path="/guest/login" component={GuestLogin} />
         <Route path="/guest/deals/:dealId" component={GuestDealView} />
         <Route path="/guest/deals" component={GuestDeals} />
+        {/* Public notary credential submission */}
+        <Route path="/notary/onboard/:token" component={NotaryCredentialSubmission} />
         {/* Video meeting room - accessible to guests without authentication */}
         <Route path="/video-meeting/:roomId" component={VideoMeetingPage} />
         {/* Start page - Emma-powered landing after login */}
