@@ -1278,8 +1278,45 @@ export default function FormTemplatesPage() {
             </div>
           </Card>
         ) : (
-          <div className="space-y-1" data-testid="templates-list">
-            {filteredTemplates.map((template) => (
+          <div data-testid="templates-list">
+            <div className="flex items-center gap-3 px-4 py-2 border-b text-sm text-muted-foreground">
+              <div className="h-5 w-5 shrink-0" />
+              <div
+                className="min-w-0 flex-1 cursor-pointer select-none hover:text-foreground transition-colors"
+                onClick={() => handleSort("name")}
+                data-testid="list-sort-name"
+              >
+                <span className="inline-flex items-center gap-1">
+                  Name
+                  {sortBy === "name" ? (
+                    sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="h-3 w-3 opacity-40" />
+                  )}
+                </span>
+              </div>
+              <span className="shrink-0 text-xs">Doc Type</span>
+              <span className="shrink-0 text-xs">Deal Type</span>
+              <span className="shrink-0 w-4 text-xs" title="Default"></span>
+              <span className="shrink-0 w-16 text-right text-xs">Size</span>
+              <div
+                className="shrink-0 w-24 text-right cursor-pointer select-none hover:text-foreground transition-colors"
+                onClick={() => handleSort("createdAt")}
+                data-testid="list-sort-date"
+              >
+                <span className="inline-flex items-center gap-1 justify-end w-full text-xs">
+                  Date
+                  {sortBy === "createdAt" ? (
+                    sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="h-3 w-3 opacity-40" />
+                  )}
+                </span>
+              </div>
+              <span className="shrink-0 text-xs" style={{ width: "calc(2.25rem * 4 + 0.125rem * 3)" }}>Actions</span>
+            </div>
+            <div className="space-y-1 mt-1">
+            {sortedTemplates.map((template) => (
               <div
                 key={template.id}
                 className="flex items-center gap-3 px-4 py-2.5 rounded-md hover-elevate"
@@ -1290,12 +1327,18 @@ export default function FormTemplatesPage() {
                   <p className="text-sm font-medium truncate" data-testid={`text-name-${template.id}`}>{template.name}</p>
                 </div>
                 <Badge variant="secondary" className="shrink-0" data-testid={`badge-doctype-${template.id}`}>{getDocTypeLabel(template.documentType)}</Badge>
-                {template.dealType && (
-                  <Badge variant="outline" className="shrink-0" data-testid={`badge-dealtype-${template.id}`}>{getDealTypeLabel(template.dealType)}</Badge>
-                )}
-                {template.isDefault && (
-                  <Star className="h-4 w-4 text-amber-500 fill-amber-500 shrink-0" />
-                )}
+                <span className="shrink-0">
+                  {template.dealType ? (
+                    <Badge variant="outline" data-testid={`badge-dealtype-${template.id}`}>{getDealTypeLabel(template.dealType)}</Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </span>
+                <span className="shrink-0 w-4 flex items-center justify-center">
+                  {template.isDefault && (
+                    <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
+                  )}
+                </span>
                 <span className="text-xs text-muted-foreground shrink-0 w-16 text-right" data-testid={`text-size-${template.id}`}>
                   {formatFileSize(template.fileSize)}
                 </span>
@@ -1371,6 +1414,7 @@ export default function FormTemplatesPage() {
                 </div>
               </div>
             ))}
+            </div>
           </div>
         )}
 
