@@ -31358,13 +31358,13 @@ Guidelines:
         const children = await storage.getDataLakeItemsByParent(req.params.id, req.user.id);
         for (const child of children) {
           if (child.filePath && !child.filePath.startsWith("/objects/")) {
-            try { await deleteFile(DATA_LAKE_BUCKET, child.filePath); } catch (_e) { /* best-effort */ }
+            try { await deleteFile(DATA_LAKE_BUCKET, child.filePath); } catch (delErr) { console.warn(`[DataLake] Failed to delete child storage key "${child.filePath}":`, delErr); }
           }
           await storage.deleteDataLakeItem(child.id, req.user.id);
         }
       }
       if (item?.filePath && !item.filePath.startsWith("/objects/")) {
-        try { await deleteFile(DATA_LAKE_BUCKET, item.filePath); } catch (_e) { /* best-effort */ }
+        try { await deleteFile(DATA_LAKE_BUCKET, item.filePath); } catch (delErr) { console.warn(`[DataLake] Failed to delete storage key "${item.filePath}":`, delErr); }
       }
       await storage.deleteDataLakeItem(req.params.id, req.user.id);
       res.json({ success: true });
