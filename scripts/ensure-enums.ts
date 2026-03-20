@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 
 const ENUMS: Record<string, string[]> = {
   chat_source_type: ["whatsapp", "sms_ios", "sms_android", "imessage", "telegram", "signal", "other_chat"],
+  client_type: ["individual", "corporation", "llc", "partnership", "government_entity", "nonprofit", "trust", "estate", "other"],
 };
 
 const ENUM_VALUES_TO_ADD: Record<string, string[]> = {

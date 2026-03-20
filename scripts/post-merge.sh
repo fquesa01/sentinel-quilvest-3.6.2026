@@ -2,13 +2,8 @@
 set -e
 npm install
 
-# Create any missing enums before drizzle push to avoid interactive prompts
+# Create any missing enums before server startup to avoid interactive prompts
 npx tsx scripts/ensure-enums.ts 2>/dev/null || true
-
-# Run db push with a timeout and auto-answer prompts to prevent hanging.
-# The 'yes' command feeds 'y' to any interactive prompts, and timeout kills
-# the process if it takes longer than 90 seconds.
-timeout 90 bash -c 'yes "" | npm run db:push --force 2>&1' || timeout 90 bash -c 'yes "" | npm run db:push 2>&1' || echo "db:push completed with warnings"
 
 # Ensure auto_generated column and unique index exist for closing auto-generation
 psql "$DATABASE_URL" -c "ALTER TABLE closing_transactions ADD COLUMN IF NOT EXISTS auto_generated BOOLEAN DEFAULT false;" 2>/dev/null || true
