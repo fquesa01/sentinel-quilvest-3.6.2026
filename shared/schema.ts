@@ -14820,3 +14820,443 @@ export const API_KEY_SCOPES = [
   "communications:read",
 ] as const;
 export type ApiKeyScope = typeof API_KEY_SCOPES[number];
+
+export const commitmentTypeEnum = pgEnum("commitment_type", [
+  "owner",
+  "lender",
+  "simultaneous",
+]);
+
+export const commitmentStatusEnum = pgEnum("commitment_status", [
+  "ordered",
+  "received",
+  "under_review",
+  "exceptions_clearing",
+  "ready_to_close",
+  "policy_issued",
+  "cancelled",
+]);
+
+export const exceptionScheduleSectionEnum = pgEnum("exception_schedule_section", [
+  "b1_requirements",
+  "b2_exceptions",
+]);
+
+export const exceptionTypeEnum = pgEnum("exception_type", [
+  "requirement",
+  "lien",
+  "easement",
+  "judgment",
+  "encumbrance",
+  "restriction",
+  "tax",
+  "survey",
+  "mortgage",
+  "covenant",
+  "other",
+]);
+
+export const exceptionStatusEnum = pgEnum("exception_status", [
+  "open",
+  "cleared",
+  "waived",
+  "partially_cleared",
+]);
+
+export const exceptionPriorityEnum = pgEnum("exception_priority", [
+  "critical",
+  "high",
+  "medium",
+  "low",
+]);
+
+export const titleVendorTypeEnum = pgEnum("title_vendor_type", [
+  "abstract_company",
+  "title_agent",
+  "tax_search",
+  "surveyor",
+  "municipal_search",
+  "judgment_search",
+]);
+
+export const titleVendorStatusEnum = pgEnum("title_vendor_status", [
+  "ordered",
+  "in_progress",
+  "completed",
+  "delayed",
+  "cancelled",
+]);
+
+export const titleClaimTypeEnum = pgEnum("title_claim_type", [
+  "lien_priority",
+  "boundary_dispute",
+  "easement_encroachment",
+  "forgery_fraud",
+  "missing_heir",
+  "mechanics_lien",
+  "tax_lien",
+  "judgment_lien",
+  "survey_defect",
+  "recording_error",
+]);
+
+export const titleClaimStatusEnum = pgEnum("title_claim_status", [
+  "filed",
+  "acknowledged",
+  "investigating",
+  "negotiating",
+  "litigating",
+  "resolved",
+  "closed",
+]);
+
+export const surveyStatusEnum = pgEnum("survey_status", [
+  "uploaded",
+  "processing",
+  "analyzed",
+  "reviewed",
+  "approved",
+]);
+
+export const surveyEasementTypeEnum = pgEnum("survey_easement_type", [
+  "utility",
+  "drainage",
+  "access",
+  "conservation",
+  "sidewalk",
+  "ingress_egress",
+  "other",
+]);
+
+export const surveyEasementMatchStatusEnum = pgEnum("survey_easement_match_status", [
+  "matched",
+  "unmatched",
+  "partial_match",
+  "pending_review",
+]);
+
+export const encroachmentSeverityEnum = pgEnum("encroachment_severity", [
+  "minor",
+  "moderate",
+  "major",
+  "critical",
+]);
+
+export const encroachmentStatusEnum = pgEnum("encroachment_status", [
+  "identified",
+  "under_review",
+  "resolved",
+  "accepted",
+  "exception_added",
+]);
+
+export const discrepancySeverityEnum = pgEnum("discrepancy_severity", [
+  "low",
+  "medium",
+  "high",
+  "critical",
+]);
+
+export const discrepancyTypeEnum = pgEnum("discrepancy_type", [
+  "exception_mismatch",
+  "legal_description_mismatch",
+  "boundary_conflict",
+  "easement_missing",
+  "encroachment_unaddressed",
+  "setback_violation",
+  "area_discrepancy",
+  "other",
+]);
+
+export const discrepancyStatusEnum = pgEnum("discrepancy_status", [
+  "identified",
+  "under_review",
+  "resolved",
+  "accepted_risk",
+]);
+
+export const titleCommitments = pgTable("title_commitments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: varchar("transaction_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  commitmentNumber: text("commitment_number").unique(),
+  underwriter: text("underwriter"),
+  effectiveDate: date("effective_date"),
+  policyAmount: numeric("policy_amount", { precision: 14, scale: 2 }),
+  premium: numeric("premium", { precision: 10, scale: 2 }),
+  commitmentType: commitmentTypeEnum("commitment_type"),
+  status: commitmentStatusEnum("status").default("ordered").notNull(),
+  legalDescription: text("legal_description"),
+  propertyAddress: text("property_address"),
+  county: text("county"),
+  state: text("state").default("FL"),
+  closerId: varchar("closer_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  txnIdx: index("idx_title_commitments_txn").on(table.transactionId),
+  statusIdx: index("idx_title_commitments_status").on(table.status),
+}));
+
+export const insertTitleCommitmentSchema = createInsertSchema(titleCommitments).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertTitleCommitment = z.infer<typeof insertTitleCommitmentSchema>;
+export type TitleCommitment = typeof titleCommitments.$inferSelect;
+
+export const titleExceptions = pgTable("title_exceptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  commitmentId: varchar("commitment_id").references(() => titleCommitments.id, { onDelete: "cascade" }).notNull(),
+  scheduleItem: text("schedule_item"),
+  scheduleSection: exceptionScheduleSectionEnum("schedule_section"),
+  exceptionType: exceptionTypeEnum("exception_type"),
+  description: text("description"),
+  status: exceptionStatusEnum("status").default("open").notNull(),
+  priority: exceptionPriorityEnum("priority").default("medium").notNull(),
+  assignedTo: varchar("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  dueDate: date("due_date"),
+  clearedDate: date("cleared_date"),
+  clearedBy: varchar("cleared_by").references(() => users.id, { onDelete: "set null" }),
+  waiverReason: text("waiver_reason"),
+  notes: text("notes"),
+  relatedDocumentIds: text("related_document_ids").array(),
+  aiAnalysis: jsonb("ai_analysis"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  commitmentIdx: index("idx_title_exceptions_commitment").on(table.commitmentId),
+  statusIdx: index("idx_title_exceptions_status").on(table.status),
+  priorityIdx: index("idx_title_exceptions_priority").on(table.priority),
+}));
+
+export const insertTitleExceptionSchema = createInsertSchema(titleExceptions).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertTitleException = z.infer<typeof insertTitleExceptionSchema>;
+export type TitleException = typeof titleExceptions.$inferSelect;
+
+export const titleSearchVendors = pgTable("title_search_vendors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  commitmentId: varchar("commitment_id").references(() => titleCommitments.id, { onDelete: "cascade" }).notNull(),
+  vendorName: text("vendor_name").notNull(),
+  vendorType: titleVendorTypeEnum("vendor_type"),
+  taskDescription: text("task_description"),
+  status: titleVendorStatusEnum("status").default("ordered").notNull(),
+  orderedDate: date("ordered_date"),
+  completedDate: date("completed_date"),
+  cost: numeric("cost", { precision: 10, scale: 2 }),
+  contactName: text("contact_name"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  commitmentIdx: index("idx_title_vendors_commitment").on(table.commitmentId),
+  statusIdx: index("idx_title_vendors_status").on(table.status),
+}));
+
+export const insertTitleSearchVendorSchema = createInsertSchema(titleSearchVendors).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertTitleSearchVendor = z.infer<typeof insertTitleSearchVendorSchema>;
+export type TitleSearchVendor = typeof titleSearchVendors.$inferSelect;
+
+export const titleClaims = pgTable("title_claims", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  claimNumber: text("claim_number").unique(),
+  commitmentId: varchar("commitment_id").references(() => titleCommitments.id, { onDelete: "set null" }),
+  policyNumber: text("policy_number"),
+  claimType: titleClaimTypeEnum("claim_type"),
+  status: titleClaimStatusEnum("status").default("filed").notNull(),
+  propertyAddress: text("property_address"),
+  insuredName: text("insured_name"),
+  claimantName: text("claimant_name"),
+  claimAmount: numeric("claim_amount", { precision: 14, scale: 2 }),
+  reserveAmount: numeric("reserve_amount", { precision: 14, scale: 2 }),
+  paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).default("0"),
+  filedDate: date("filed_date"),
+  acknowledgedDate: date("acknowledged_date"),
+  resolvedDate: date("resolved_date"),
+  closedDate: date("closed_date"),
+  adjusterId: varchar("adjuster_id").references(() => users.id, { onDelete: "set null" }),
+  description: text("description"),
+  resolutionNotes: text("resolution_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  commitmentIdx: index("idx_title_claims_commitment").on(table.commitmentId),
+  statusIdx: index("idx_title_claims_status").on(table.status),
+  claimTypeIdx: index("idx_title_claims_type").on(table.claimType),
+}));
+
+export const insertTitleClaimSchema = createInsertSchema(titleClaims).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertTitleClaim = z.infer<typeof insertTitleClaimSchema>;
+export type TitleClaim = typeof titleClaims.$inferSelect;
+
+export const claimActivityLog = pgTable("claim_activity_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  claimId: varchar("claim_id").references(() => titleClaims.id, { onDelete: "cascade" }).notNull(),
+  action: text("action").notNull(),
+  details: text("details"),
+  performedBy: varchar("performed_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  claimIdx: index("idx_claim_activity_claim").on(table.claimId),
+  createdIdx: index("idx_claim_activity_created").on(table.createdAt),
+}));
+
+export const insertClaimActivityLogSchema = createInsertSchema(claimActivityLog).omit({
+  id: true, createdAt: true,
+});
+export type InsertClaimActivityLog = z.infer<typeof insertClaimActivityLogSchema>;
+export type ClaimActivityLog = typeof claimActivityLog.$inferSelect;
+
+export const surveys = pgTable("surveys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  commitmentId: varchar("commitment_id").references(() => titleCommitments.id, { onDelete: "set null" }),
+  transactionId: varchar("transaction_id").references(() => deals.id, { onDelete: "cascade" }),
+  surveyNumber: text("survey_number"),
+  surveyorCompany: text("surveyor_company"),
+  surveyorName: text("surveyor_name"),
+  surveyorLicense: text("surveyor_license"),
+  certificationDate: date("certification_date"),
+  propertyAddress: text("property_address"),
+  legalDescription: text("legal_description"),
+  totalAreaSqft: numeric("total_area_sqft", { precision: 12, scale: 2 }),
+  totalAreaAcres: numeric("total_area_acres", { precision: 10, scale: 4 }),
+  floodZone: text("flood_zone"),
+  floodMapNumber: text("flood_map_number"),
+  aiAnalysisSummary: text("ai_analysis_summary"),
+  aiAnalysisJson: jsonb("ai_analysis_json"),
+  sourceDocumentId: varchar("source_document_id"),
+  status: surveyStatusEnum("status").default("uploaded").notNull(),
+  reviewedBy: varchar("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  reviewedDate: date("reviewed_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  commitmentIdx: index("idx_surveys_commitment").on(table.commitmentId),
+  txnIdx: index("idx_surveys_txn").on(table.transactionId),
+  statusIdx: index("idx_surveys_status").on(table.status),
+}));
+
+export const insertSurveySchema = createInsertSchema(surveys).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertSurvey = z.infer<typeof insertSurveySchema>;
+export type Survey = typeof surveys.$inferSelect;
+
+export const surveyBoundaries = pgTable("survey_boundaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").references(() => surveys.id, { onDelete: "cascade" }).notNull(),
+  direction: text("direction"),
+  bearing: text("bearing"),
+  distanceFt: numeric("distance_ft", { precision: 10, scale: 2 }),
+  adjoinsDescription: text("adjoins_description"),
+  monumentType: text("monument_type"),
+  monumentFound: boolean("monument_found").default(true),
+  orderIndex: integer("order_index"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  surveyIdx: index("idx_survey_boundaries_survey").on(table.surveyId),
+}));
+
+export const insertSurveyBoundarySchema = createInsertSchema(surveyBoundaries).omit({
+  id: true, createdAt: true,
+});
+export type InsertSurveyBoundary = z.infer<typeof insertSurveyBoundarySchema>;
+export type SurveyBoundary = typeof surveyBoundaries.$inferSelect;
+
+export const surveyEasements = pgTable("survey_easements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").references(() => surveys.id, { onDelete: "cascade" }).notNull(),
+  easementType: surveyEasementTypeEnum("easement_type"),
+  locationDescription: text("location_description"),
+  holder: text("holder"),
+  recordingReference: text("recording_reference"),
+  widthFt: numeric("width_ft", { precision: 6, scale: 2 }),
+  matchedExceptionId: varchar("matched_exception_id").references(() => titleExceptions.id, { onDelete: "set null" }),
+  matchStatus: surveyEasementMatchStatusEnum("match_status").default("pending_review"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  surveyIdx: index("idx_survey_easements_survey").on(table.surveyId),
+}));
+
+export const insertSurveyEasementSchema = createInsertSchema(surveyEasements).omit({
+  id: true, createdAt: true,
+});
+export type InsertSurveyEasement = z.infer<typeof insertSurveyEasementSchema>;
+export type SurveyEasement = typeof surveyEasements.$inferSelect;
+
+export const surveyEncroachments = pgTable("survey_encroachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").references(() => surveys.id, { onDelete: "cascade" }).notNull(),
+  description: text("description"),
+  severity: encroachmentSeverityEnum("severity"),
+  encroachmentDistanceFt: numeric("encroachment_distance_ft", { precision: 6, scale: 2 }),
+  encroachmentDirection: text("encroachment_direction"),
+  encroachingElement: text("encroaching_element"),
+  affectedBoundary: text("affected_boundary"),
+  matchedExceptionId: varchar("matched_exception_id").references(() => titleExceptions.id, { onDelete: "set null" }),
+  recommendedAction: text("recommended_action"),
+  status: encroachmentStatusEnum("status").default("identified").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  surveyIdx: index("idx_survey_encroachments_survey").on(table.surveyId),
+}));
+
+export const insertSurveyEncroachmentSchema = createInsertSchema(surveyEncroachments).omit({
+  id: true, createdAt: true,
+});
+export type InsertSurveyEncroachment = z.infer<typeof insertSurveyEncroachmentSchema>;
+export type SurveyEncroachment = typeof surveyEncroachments.$inferSelect;
+
+export const surveyImprovements = pgTable("survey_improvements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").references(() => surveys.id, { onDelete: "cascade" }).notNull(),
+  improvementType: text("improvement_type"),
+  approxSqft: numeric("approx_sqft", { precision: 10, scale: 2 }),
+  setbackFrontFt: numeric("setback_front_ft", { precision: 6, scale: 2 }),
+  setbackRearFt: numeric("setback_rear_ft", { precision: 6, scale: 2 }),
+  setbackLeftFt: numeric("setback_left_ft", { precision: 6, scale: 2 }),
+  setbackRightFt: numeric("setback_right_ft", { precision: 6, scale: 2 }),
+  zoningCompliant: boolean("zoning_compliant"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  surveyIdx: index("idx_survey_improvements_survey").on(table.surveyId),
+}));
+
+export const insertSurveyImprovementSchema = createInsertSchema(surveyImprovements).omit({
+  id: true, createdAt: true,
+});
+export type InsertSurveyImprovement = z.infer<typeof insertSurveyImprovementSchema>;
+export type SurveyImprovement = typeof surveyImprovements.$inferSelect;
+
+export const surveyDiscrepancies = pgTable("survey_discrepancies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyId: varchar("survey_id").references(() => surveys.id, { onDelete: "cascade" }).notNull(),
+  issueDescription: text("issue_description"),
+  severity: discrepancySeverityEnum("severity"),
+  discrepancyType: discrepancyTypeEnum("discrepancy_type"),
+  relatedExceptionIds: text("related_exception_ids").array(),
+  recommendedAction: text("recommended_action"),
+  status: discrepancyStatusEnum("status").default("identified").notNull(),
+  resolvedBy: varchar("resolved_by").references(() => users.id, { onDelete: "set null" }),
+  resolvedDate: date("resolved_date"),
+  resolutionNotes: text("resolution_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  surveyIdx: index("idx_survey_discrepancies_survey").on(table.surveyId),
+  statusIdx: index("idx_survey_discrepancies_status").on(table.status),
+}));
+
+export const insertSurveyDiscrepancySchema = createInsertSchema(surveyDiscrepancies).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertSurveyDiscrepancy = z.infer<typeof insertSurveyDiscrepancySchema>;
+export type SurveyDiscrepancy = typeof surveyDiscrepancies.$inferSelect;

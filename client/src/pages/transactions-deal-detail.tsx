@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams, Link } from "wouter";
 import { ClosingDocumentsTab } from "@/components/closing-documents-tab";
 import { CondoSummaryTab } from "@/components/condo-summary-tab";
+import { TitleInsuranceTab } from "@/components/title-insurance-tab";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1412,6 +1413,7 @@ export default function TransactionsDealDetail() {
                 <SelectItem value="issues">Issues</SelectItem>
                 <SelectItem value="research">Research</SelectItem>
                 <SelectItem value="title-history">Title History</SelectItem>
+                <SelectItem value="title-survey">Title & Survey</SelectItem>
                 <SelectItem value="closing-docs">Closing Docs</SelectItem>
                 <SelectItem value="closing">Closing</SelectItem>
                 <SelectItem value="condo-summary">Condo Summary</SelectItem>
@@ -1431,6 +1433,7 @@ export default function TransactionsDealDetail() {
             <TabsTrigger value="issues" data-testid="tab-issues">Issues</TabsTrigger>
             <TabsTrigger value="research" data-testid="tab-research">Research</TabsTrigger>
             <TabsTrigger value="title-history" data-testid="tab-title-history">Title History</TabsTrigger>
+            <TabsTrigger value="title-survey" data-testid="tab-title-survey">Title & Survey</TabsTrigger>
             <TabsTrigger value="closing-docs" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
             <TabsTrigger value="closing" data-testid="tab-closing">Closing</TabsTrigger>
             <TabsTrigger value="condo-summary" data-testid="tab-condo-summary">Condo Summary</TabsTrigger>
@@ -3184,6 +3187,10 @@ export default function TransactionsDealDetail() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          </TabsContent>
+
+          <TabsContent value="title-survey" className="mt-6">
+            <TitleInsuranceTab dealId={id!} />
           </TabsContent>
 
           <TabsContent value="condo-summary" className="mt-6">
