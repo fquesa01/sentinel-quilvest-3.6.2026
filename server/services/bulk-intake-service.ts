@@ -106,14 +106,37 @@ export async function processSessionDocument(docId: string) {
         });
         extractedText = result.text || "";
       } catch {
-        const pdfParse = (await import("pdf-parse")).default;
-        const parsed = await pdfParse(fileBuffer);
-        extractedText = parsed.text || "";
+        try {
+          const pdfParse = (await import("pdf-parse")).default;
+          const parsed = await pdfParse(fileBuffer);
+          extractedText = parsed.text || "";
+        } catch (pdfErr: any) {
+          console.warn(`[BulkIntake] PDF parse fallback failed for "${doc.fileName}": ${pdfErr.message}`);
+        }
       }
-    } else if (["docx", "doc"].includes(fileExt)) {
-      const mammoth = await import("mammoth");
-      const result = await mammoth.extractRawText({ buffer: fileBuffer });
-      extractedText = result.value || "";
+    } else if (fileExt === "docx") {
+      try {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer: fileBuffer });
+        extractedText = result.value || "";
+      } catch (docxErr: any) {
+        console.warn(`[BulkIntake] DOCX extraction failed for "${doc.fileName}": ${docxErr.message}`);
+      }
+    } else if (fileExt === "doc") {
+      try {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer: fileBuffer });
+        extractedText = result.value || "";
+      } catch {
+        console.warn(`[BulkIntake] Legacy .doc format not supported by mammoth for "${doc.fileName}", extracting as plain text`);
+        try {
+          const rawText = fileBuffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s{3,}/g, " ");
+          const cleanedText = rawText.split(/\s+/).filter(w => w.length > 2 && /[a-zA-Z]/.test(w)).join(" ");
+          if (cleanedText.length > 100) {
+            extractedText = cleanedText.slice(0, 50000);
+          }
+        } catch {}
+      }
     } else if (["xlsx", "xls", "csv"].includes(fileExt)) {
       const XLSX = await import("xlsx");
       const workbook = XLSX.read(fileBuffer, { type: "buffer" });
@@ -164,20 +187,24 @@ export async function processSessionDocument(docId: string) {
         aiSummary = result.text || null;
       } catch {}
 
-      const datePatterns = [
-        /(?:dated?|effective|as of|executed)[:\s]+(\w+ \d{1,2},?\s*\d{4})/i,
-        /(\d{1,2}\/\d{1,2}\/\d{4})/,
-        /(\w+ \d{1,2},?\s*\d{4})/,
-      ];
-      for (const pattern of datePatterns) {
-        const match = extractedText.match(pattern);
-        if (match) {
-          const parsed = new Date(match[1]);
-          if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) {
-            documentDate = parsed;
-            break;
+      try {
+        const datePatterns = [
+          /(?:dated?|effective|as of|executed)[:\s]+(\w+ \d{1,2},?\s*\d{4})/i,
+          /(\d{1,2}\/\d{1,2}\/\d{4})/,
+          /(\w+ \d{1,2},?\s*\d{4})/,
+        ];
+        for (const pattern of datePatterns) {
+          const match = extractedText.match(pattern);
+          if (match) {
+            const parsed = new Date(match[1]);
+            if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 1990 && parsed.getFullYear() <= 2100) {
+              documentDate = parsed;
+              break;
+            }
           }
         }
+      } catch (dateErr: any) {
+        console.warn(`[BulkIntake] Date extraction failed for "${doc.fileName}": ${dateErr.message}`);
       }
     }
 
@@ -185,11 +212,6 @@ export async function processSessionDocument(docId: string) {
       .update(bulkIntakeDocuments)
       .set({ ocrStatus: "completed", extractedText, aiSummary, documentDate })
       .where(eq(bulkIntakeDocuments.id, docId));
-
-    const [session] = await db
-      .select()
-      .from(bulkIntakeSessions)
-      .where(eq(bulkIntakeSessions.id, doc.sessionId));
 
     await db
       .update(bulkIntakeSessions)
