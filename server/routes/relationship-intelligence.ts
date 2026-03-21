@@ -447,6 +447,15 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
         return res.status(400).json({ message: "NEWS_API_KEY is not configured. Please add it to your environment variables." });
       }
 
+      try {
+        const syncResult = await syncDataLakeContactsForUser(userId, parseEmailContact, splitName, DOMAIN_TO_COMPANY, FILTERED_DOMAINS);
+        if (syncResult.imported > 0) {
+          console.log(`[RI] Pre-scan sync: imported ${syncResult.imported} new contacts from Data Lake`);
+        }
+      } catch (syncErr: any) {
+        console.warn(`[RI] Pre-scan contact sync failed (continuing with scan): ${syncErr.message}`);
+      }
+
       const sixHoursAgo = new Date(Date.now() - 6 * 3600000);
 
       let allContacts;
@@ -1685,6 +1694,22 @@ Example response format:
   });
 
   // =============================================
+  // AUTO-SYNC CONTACTS FROM DATA LAKE
+  // =============================================
+
+  app.post("/api/relationship-intelligence/sync-data-lake-contacts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.id;
+      const result = await syncDataLakeContactsForUser(userId, parseEmailContact, splitName, DOMAIN_TO_COMPANY, FILTERED_DOMAINS);
+      console.log(`[RI] Data Lake contact sync: ${result.imported} new contacts imported from ${result.total} total extracted`);
+      res.json({ imported: result.imported, totalExtracted: result.total });
+    } catch (error: any) {
+      console.error("[RI] Data Lake contact sync error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =============================================
   // IMPORT CONTACTS FROM CASE COMMUNICATIONS
   // =============================================
 
@@ -2557,5 +2582,163 @@ function parseCSVLine(line: string): string[] {
   }
   result.push(current.trim());
   return result;
+}
+
+async function syncDataLakeContactsForUser(userId: string, parseEmailContactFn: (raw: string) => { name: string; email: string } | null, splitNameFn: (name: string) => { firstName: string; lastName: string }, domainToCompany: Record<string, string>, filteredDomains: Set<string>): Promise<{ imported: number; total: number }> {
+  const orgResult = await pool.query(
+    `SELECT organization_id FROM organization_members WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  const orgId = orgResult.rows[0]?.organization_id;
+
+  let caseFilter: string;
+  let caseParams: any[];
+  if (orgId) {
+    caseFilter = `c.created_by IN (SELECT om.user_id FROM organization_members om WHERE om.organization_id = $1)`;
+    caseParams = [orgId];
+  } else {
+    caseFilter = `c.created_by = $1`;
+    caseParams = [userId];
+  }
+
+  const sendersResult = await pool.query(`
+    SELECT comm.sender, count(*)::int as cnt
+    FROM communications comm
+    INNER JOIN cases c ON comm.case_id = c.id
+    WHERE comm.sender IS NOT NULL AND comm.sender != ''
+      AND ${caseFilter}
+    GROUP BY comm.sender
+  `, caseParams);
+
+  const recipientsResult = await pool.query(`
+    SELECT comm.recipients
+    FROM communications comm
+    INNER JOIN cases c ON comm.case_id = c.id
+    WHERE comm.recipients IS NOT NULL
+      AND ${caseFilter}
+  `, caseParams);
+
+  const contactMap = new Map<string, { name: string; email: string; sendCount: number; recvCount: number }>();
+
+  for (const row of sendersResult.rows) {
+    const parsed = parseEmailContactFn(row.sender);
+    if (!parsed) continue;
+    const existing = contactMap.get(parsed.email);
+    if (existing) {
+      existing.sendCount += row.cnt;
+      if (parsed.name.length > existing.name.length && !parsed.name.includes("via")) {
+        existing.name = parsed.name;
+      }
+    } else {
+      contactMap.set(parsed.email, { name: parsed.name, email: parsed.email, sendCount: row.cnt, recvCount: 0 });
+    }
+  }
+
+  for (const row of recipientsResult.rows) {
+    let recipients: string[] = [];
+    if (Array.isArray(row.recipients)) {
+      recipients = row.recipients;
+    } else if (typeof row.recipients === "string") {
+      try { recipients = JSON.parse(row.recipients); } catch { recipients = [row.recipients]; }
+    }
+
+    for (const r of recipients) {
+      if (typeof r !== "string") continue;
+      const parts = r.split(/,\s*(?=")/);
+      for (const part of parts) {
+        const parsed = parseEmailContactFn(part.trim());
+        if (!parsed) continue;
+        const existing = contactMap.get(parsed.email);
+        if (existing) {
+          existing.recvCount += 1;
+          if (parsed.name.length > existing.name.length && !parsed.name.includes("via")) {
+            existing.name = parsed.name;
+          }
+        } else {
+          contactMap.set(parsed.email, { name: parsed.name, email: parsed.email, sendCount: 0, recvCount: 1 });
+        }
+      }
+    }
+  }
+
+  const contacts = Array.from(contactMap.values());
+  if (contacts.length === 0) return { imported: 0, total: 0 };
+
+  contacts.sort((a, b) => (b.sendCount + b.recvCount) - (a.sendCount + a.recvCount));
+
+  const totalContacts = contacts.length;
+  const vipThreshold = Math.ceil(totalContacts * 0.1);
+  const highThreshold = Math.ceil(totalContacts * 0.3);
+
+  const existingResult = await pool.query(
+    "SELECT email FROM relationship_contacts WHERE user_id = $1 AND is_active = true",
+    [userId]
+  );
+  const existingEmails = new Set(existingResult.rows.map((r: any) => r.email?.toLowerCase()));
+
+  const { nanoid } = await import("nanoid");
+  const toInsert: any[][] = [];
+
+  for (let i = 0; i < contacts.length; i++) {
+    const c = contacts[i];
+    if (existingEmails.has(c.email)) continue;
+
+    const { firstName, lastName } = splitNameFn(c.name);
+    const domain = c.email.split("@")[1];
+    const company = domainToCompany[domain] || domainToCompany[domain.toLowerCase()] || null;
+    const isPersonalDomain = filteredDomains.has(domain);
+
+    let priority = 3;
+    if (i < vipThreshold) priority = 1;
+    else if (i < highThreshold) priority = 2;
+
+    const tags: string[] = ["data_lake_auto"];
+    if (company) tags.push("organization");
+    if (isPersonalDomain) tags.push("personal_email");
+
+    const pgTags = `{${tags.map(t => `"${t.replace(/"/g, '\\"')}"`).join(",")}}`;
+    toInsert.push([nanoid(21), userId, firstName.slice(0, 255), lastName.slice(0, 255), c.name.slice(0, 255), c.email.slice(0, 255), company ? company.slice(0, 255) : null, pgTags, priority]);
+    existingEmails.add(c.email);
+  }
+
+  if (toInsert.length === 0) return { imported: 0, total: totalContacts };
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const BATCH_SIZE = 50;
+    for (let b = 0; b < toInsert.length; b += BATCH_SIZE) {
+      const batch = toInsert.slice(b, b + BATCH_SIZE);
+      const placeholders: string[] = [];
+      const values: any[] = [];
+      batch.forEach((row, idx) => {
+        const offset = idx * 9;
+        placeholders.push(`($${offset+1},$${offset+2},$${offset+3},$${offset+4},$${offset+5},$${offset+6},$${offset+7},$${offset+8},$${offset+9})`);
+        values.push(...row);
+      });
+      await client.query(
+        `INSERT INTO relationship_contacts (id,user_id,first_name,last_name,full_name,email,company,tags,priority_level) VALUES ${placeholders.join(",")}`,
+        values
+      );
+    }
+
+    const { nanoid: nid } = await import("nanoid");
+    const sourceId = nid(21);
+    await client.query(
+      `INSERT INTO contact_sources (id, user_id, source_type, last_synced_at, sync_status, contact_count)
+       VALUES ($1, $2, $3, NOW(), $4, $5)
+       ON CONFLICT DO NOTHING`,
+      [sourceId, userId, "data_lake_auto", "completed", toInsert.length]
+    );
+
+    await client.query("COMMIT");
+    client.release();
+  } catch (txError: any) {
+    await client.query("ROLLBACK");
+    client.release();
+    throw txError;
+  }
+
+  return { imported: toInsert.length, total: totalContacts };
 }
 

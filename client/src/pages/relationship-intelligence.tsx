@@ -2127,6 +2127,22 @@ export default function RelationshipIntelligence() {
     queryKey: ["/api/relationship-intelligence/contacts"],
   });
 
+  const syncRef = useRef(false);
+  useEffect(() => {
+    if (syncRef.current) return;
+    syncRef.current = true;
+    apiRequest("POST", "/api/relationship-intelligence/sync-data-lake-contacts")
+      .then(r => r.json())
+      .then((data: any) => {
+        if (data.imported > 0) {
+          queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/contacts"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/relationship-intelligence/stats"] });
+          toast({ title: "Contacts Synced", description: `Added ${data.imported} contacts from your Data Lake emails.` });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const updateAlertMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Record<string, boolean> }) => {
       await apiRequest("PATCH", `/api/relationship-intelligence/alerts/${id}`, updates);

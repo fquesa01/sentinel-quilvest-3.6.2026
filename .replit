@@ -46,3 +46,8 @@ timeoutMs = 120000
 
 [agent]
 integrations = ["google-calendar:1.0.0", "google-mail:1.0.0"]
+
+[userenv]
+
+[userenv.shared]
+event_registry = "fb36763f-d058-45a2-8d87-630e6f38fe3b"

@@ -12732,6 +12732,7 @@ export const contactSourceTypeEnum = pgEnum("contact_source_type", [
   "linkedin",
   "manual",
   "case_import",
+  "data_lake_auto",
 ]);
 
 export const newsSentimentEnum = pgEnum("news_sentiment", [
