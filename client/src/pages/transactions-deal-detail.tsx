@@ -77,12 +77,16 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { ShareDealDialog } from "@/components/share-deal-dialog";
 import type { Deal, DealMilestone, DealParticipant, DealIssue, DealMeetingNote, DealTitleEvent, ClosingTransaction } from "@shared/schema";
-import { History, FileSearch2, ArrowRightLeft } from "lucide-react";
+import { History, FileSearch2, ArrowRightLeft, Eye } from "lucide-react";
 import { format } from "date-fns";
 
 type DealWithRelations = Deal & {
   participants?: DealParticipant[];
   milestones?: DealMilestone[];
+};
+
+type DealTitleEventWithDoc = DealTitleEvent & {
+  sourceDocument?: { id: string; fileName: string; fileType: string | null } | null;
 };
 
 interface ExtractionPreview {
@@ -277,7 +281,7 @@ export default function TransactionsDealDetail() {
     staleTime: DEAL_DETAIL_STALE_TIME,
   });
 
-  const { data: titleEvents = [] } = useQuery<DealTitleEvent[]>({
+  const { data: titleEvents = [] } = useQuery<DealTitleEventWithDoc[]>({
     queryKey: ["/api/deals", id, "title-events"],
     enabled: !!id,
     staleTime: DEAL_DETAIL_STALE_TIME,
@@ -2847,12 +2851,12 @@ export default function TransactionsDealDetail() {
                   </div>
                 ) : (
                   <div className="relative">
-                    {[...titleEvents].sort((a: DealTitleEvent, b: DealTitleEvent) => {
+                    {[...titleEvents].sort((a: DealTitleEventWithDoc, b: DealTitleEventWithDoc) => {
                       if (!a.eventDate && !b.eventDate) return 0;
                       if (!a.eventDate) return 1;
                       if (!b.eventDate) return -1;
                       return new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime();
-                    }).map((evt: DealTitleEvent, idx: number, arr: DealTitleEvent[]) => {
+                    }).map((evt: DealTitleEventWithDoc, idx: number, arr: DealTitleEventWithDoc[]) => {
                       const isLast = idx === arr.length - 1;
                       const colors = titleEventTypeColors[evt.eventType || "other"] || titleEventTypeColors.other;
                       return (
@@ -2939,6 +2943,35 @@ export default function TransactionsDealDetail() {
                               <p className="text-xs text-muted-foreground mt-1">
                                 Recording: {evt.recordingInfo}
                               </p>
+                            )}
+                            {(evt.sourceDocument || evt.sourceDocumentId) && (
+                              <div className="flex items-center gap-2 flex-wrap mt-2">
+                                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <span className="text-sm text-muted-foreground truncate max-w-[200px]" data-testid={`text-source-doc-name-${evt.id}`}>
+                                  {evt.sourceDocument?.fileName || `Document ${evt.sourceDocumentId!.slice(0, 8)}...`}
+                                </span>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => window.open(`/api/data-room-documents/${evt.sourceDocument?.id || evt.sourceDocumentId}/preview`, '_blank')}
+                                  data-testid={`button-preview-source-doc-${evt.id}`}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    const a = document.createElement('a');
+                                    a.href = `/api/data-room-documents/${evt.sourceDocument?.id || evt.sourceDocumentId}/download`;
+                                    a.download = evt.sourceDocument?.fileName || 'document';
+                                    a.click();
+                                  }}
+                                  data-testid={`button-download-source-doc-${evt.id}`}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </div>

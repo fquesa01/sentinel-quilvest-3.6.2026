@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -386,6 +386,35 @@ export function TimelineSection({ caseId }: TimelineSectionProps) {
       return response.json();
     },
   });
+
+  const allSourceDocIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const evt of events) {
+      if (evt.sourceDocumentIds) {
+        for (const docId of evt.sourceDocumentIds) {
+          ids.add(docId);
+        }
+      }
+    }
+    return Array.from(ids);
+  }, [events]);
+
+  const { data: sourceDocMetadata = [] } = useQuery<{ id: string; fileName: string; fileType: string | null }[]>({
+    queryKey: ["/api/data-room-documents/batch-metadata", caseId, allSourceDocIds],
+    queryFn: async () => {
+      const response = await apiRequest("POST", "/api/data-room-documents/batch-metadata", { ids: allSourceDocIds, caseId });
+      return response.json();
+    },
+    enabled: allSourceDocIds.length > 0,
+  });
+
+  const sourceDocMap = useMemo(() => {
+    const map = new Map<string, { id: string; fileName: string; fileType: string | null }>();
+    for (const doc of sourceDocMetadata) {
+      map.set(doc.id, doc);
+    }
+    return map;
+  }, [sourceDocMetadata]);
 
   const createEventMutation = useMutation({
     mutationFn: async (eventData: Partial<CaseTimelineEvent>) => {
@@ -1084,12 +1113,39 @@ export function TimelineSection({ caseId }: TimelineSectionProps) {
                                 {(event.sourceDocumentIds && event.sourceDocumentIds.length > 0) && (
                                   <div>
                                     <h4 className="text-sm font-semibold mb-2">Source Documents</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                      {event.sourceDocumentIds.map((docId, idx) => (
-                                        <Badge key={idx} variant="outline">
-                                          Doc: {docId.slice(0, 8)}...
-                                        </Badge>
-                                      ))}
+                                    <div className="flex flex-col gap-2">
+                                      {event.sourceDocumentIds.map((docId, idx) => {
+                                        const doc = sourceDocMap.get(docId);
+                                        return (
+                                          <div key={idx} className="flex items-center gap-2 flex-wrap" data-testid={`source-doc-row-${docId}`}>
+                                            <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                            <span className="text-sm text-muted-foreground truncate max-w-[200px]" data-testid={`text-source-doc-name-${docId}`}>
+                                              {doc ? doc.fileName : `Document ${docId.slice(0, 8)}...`}
+                                            </span>
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              onClick={() => window.open(`/api/data-room-documents/${docId}/preview`, '_blank')}
+                                              data-testid={`button-preview-source-doc-${docId}`}
+                                            >
+                                              <Eye className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                              size="icon"
+                                              variant="ghost"
+                                              onClick={() => {
+                                                const a = document.createElement('a');
+                                                a.href = `/api/data-room-documents/${docId}/download`;
+                                                a.download = doc?.fileName || 'document';
+                                                a.click();
+                                              }}
+                                              data-testid={`button-download-source-doc-${docId}`}
+                                            >
+                                              <Download className="h-4 w-4" />
+                                            </Button>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   </div>
                                 )}

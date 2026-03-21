@@ -1993,6 +1993,55 @@ Return ONLY a valid JSON object with these fields. Only include fields that you 
     }
   });
 
+  app.post("/api/data-room-documents/batch-metadata", isAuthenticated, async (req: any, res) => {
+    try {
+      const { ids, caseId } = req.body;
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.json([]);
+      }
+      if (!caseId) {
+        return res.status(400).json({ message: "caseId is required for authorization" });
+      }
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+      const limitedIds = (ids as string[]).slice(0, 50);
+
+      const caseEvents = await db
+        .select({ sourceDocumentIds: schema.caseTimelineEvents.sourceDocumentIds })
+        .from(schema.caseTimelineEvents)
+        .where(eq(schema.caseTimelineEvents.caseId, caseId));
+
+      const allowedDocIds = new Set<string>();
+      for (const evt of caseEvents) {
+        if (evt.sourceDocumentIds) {
+          for (const docId of evt.sourceDocumentIds) {
+            allowedDocIds.add(docId);
+          }
+        }
+      }
+
+      const scopedIds = limitedIds.filter(id => allowedDocIds.has(id));
+      if (scopedIds.length === 0) {
+        return res.json([]);
+      }
+
+      const docs = await db
+        .select({
+          id: schema.dataRoomDocuments.id,
+          fileName: schema.dataRoomDocuments.fileName,
+          fileType: schema.dataRoomDocuments.fileType,
+        })
+        .from(schema.dataRoomDocuments)
+        .where(inArray(schema.dataRoomDocuments.id, scopedIds));
+      res.json(docs);
+    } catch (error: unknown) {
+      console.error("Error batch fetching document metadata:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : "Internal error" });
+    }
+  });
+
   app.post("/api/data-lake-items/batch", isAuthenticated, async (req, res) => {
     try {
       const { ids } = req.body;
@@ -13318,7 +13367,32 @@ ${conversationHistory.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n'
         .from(schema.dealTitleEvents)
         .where(eq(schema.dealTitleEvents.dealId, req.params.dealId))
         .orderBy(schema.dealTitleEvents.eventDate);
-      res.json(events);
+
+      const sourceDocIds = events
+        .map(e => e.sourceDocumentId)
+        .filter((id): id is string => !!id);
+
+      const docMap = new Map<string, { id: string; fileName: string; fileType: string | null }>();
+      if (sourceDocIds.length > 0) {
+        const docs = await db
+          .select({
+            id: schema.dataRoomDocuments.id,
+            fileName: schema.dataRoomDocuments.fileName,
+            fileType: schema.dataRoomDocuments.fileType,
+          })
+          .from(schema.dataRoomDocuments)
+          .where(inArray(schema.dataRoomDocuments.id, [...new Set(sourceDocIds)]));
+        for (const doc of docs) {
+          docMap.set(doc.id, doc);
+        }
+      }
+
+      const eventsWithSourceDoc = events.map(evt => ({
+        ...evt,
+        sourceDocument: evt.sourceDocumentId ? docMap.get(evt.sourceDocumentId) || null : null,
+      }));
+
+      res.json(eventsWithSourceDoc);
     } catch (error: any) {
       console.error("Error fetching deal title events:", error);
       res.status(500).json({ message: error.message });
