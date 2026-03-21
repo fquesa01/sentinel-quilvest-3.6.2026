@@ -82,7 +82,9 @@ export function registerBulkIntakeRoutes(app: Router, isAuthenticated: any, requ
 
       res.json({ message: "Processing started" });
 
-      bulkIntakeService.startProcessing(req.params.id).catch((err) => {
+      const rawCount = req.body?.targetDealCount ? parseInt(req.body.targetDealCount, 10) : undefined;
+      const targetDealCount = rawCount && Number.isInteger(rawCount) && rawCount >= 1 && rawCount <= 100 ? rawCount : undefined;
+      bulkIntakeService.startProcessing(req.params.id, targetDealCount).catch((err) => {
         console.error("[BulkIntake] Background processing error:", err.message);
       });
     } catch (error: any) {

@@ -6,6 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import {
@@ -24,6 +32,9 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  Pencil,
+  SplitSquareHorizontal,
+  Merge,
 } from "lucide-react";
 
 const SUPPORTED_EXTENSIONS = ["pdf", "doc", "docx", "xlsx", "xls", "csv", "png", "jpg", "jpeg", "gif", "webp", "tiff", "bmp", "txt"];
@@ -148,6 +159,11 @@ export default function BulkIntake() {
   const [editableClusters, setEditableClusters] = useState<ClusteringResult | null>(null);
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [targetDealCount, setTargetDealCount] = useState<string>("");
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [draggedDocId, setDraggedDocId] = useState<string | null>(null);
+  const [dragOverClusterId, setDragOverClusterId] = useState<string | null>(null);
+  const [mergingClusterId, setMergingClusterId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -250,7 +266,10 @@ export default function BulkIntake() {
         setUploadProgress(Math.min(100, Math.round(((i + batch.length) / selectedFiles.length) * 100)));
       }
 
-      await apiRequest("POST", `/api/bulk-intake/sessions/${sid}/process`);
+      const tdc = targetDealCount ? parseInt(targetDealCount, 10) : undefined;
+      await apiRequest("POST", `/api/bulk-intake/sessions/${sid}/process`, {
+        targetDealCount: tdc,
+      });
 
       setCurrentStep("processing");
       setIsUploading(false);
@@ -281,6 +300,30 @@ export default function BulkIntake() {
     }
 
     setEditableClusters(updated);
+  };
+
+  const handleMoveMultipleDocuments = (docIds: string[], toClusterId: string | null) => {
+    if (!editableClusters) return;
+
+    const updated = { ...editableClusters };
+    const idsToMove = new Set(docIds);
+    updated.clusters = updated.clusters.map((c) => ({
+      ...c,
+      documentIds: c.documentIds.filter((id) => !idsToMove.has(id)),
+    }));
+    updated.unclustered = (updated.unclustered || []).filter((id) => !idsToMove.has(id));
+
+    if (toClusterId) {
+      const targetCluster = updated.clusters.find((c) => c.clusterId === toClusterId);
+      if (targetCluster) {
+        targetCluster.documentIds.push(...docIds);
+      }
+    } else {
+      updated.unclustered.push(...docIds);
+    }
+
+    setEditableClusters(updated);
+    setSelectedDocs(new Set());
   };
 
   const handleRemoveCluster = (clusterId: string) => {
@@ -323,6 +366,108 @@ export default function BulkIntake() {
     });
     setExpandedClusters((prev) => new Set([...prev, newId]));
     setEditingTitle(newId);
+  };
+
+  const handleSplitGroup = (clusterId: string) => {
+    if (!editableClusters) return;
+
+    const cluster = editableClusters.clusters.find((c) => c.clusterId === clusterId);
+    if (!cluster || cluster.documentIds.length < 2) {
+      toast({ title: "Cannot split", description: "Need at least 2 documents to split a group." });
+      return;
+    }
+
+    const midpoint = Math.ceil(cluster.documentIds.length / 2);
+    const firstHalf = cluster.documentIds.slice(0, midpoint);
+    const secondHalf = cluster.documentIds.slice(midpoint);
+
+    const newId = `cluster_split_${Date.now()}`;
+    const updatedClusters = editableClusters.clusters.map((c) =>
+      c.clusterId === clusterId ? { ...c, documentIds: firstHalf } : c
+    );
+
+    const newCluster: ClusterGroup = {
+      clusterId: newId,
+      suggestedTitle: `${cluster.suggestedTitle} (Split)`,
+      suggestedDealType: cluster.suggestedDealType,
+      reasoning: "Split from " + cluster.suggestedTitle,
+      documentIds: secondHalf,
+    };
+
+    setEditableClusters({
+      ...editableClusters,
+      clusters: [...updatedClusters, newCluster],
+    });
+    setExpandedClusters((prev) => new Set([...prev, newId]));
+    toast({ title: "Group split", description: `Split into two groups with ${firstHalf.length} and ${secondHalf.length} documents.` });
+  };
+
+  const handleMergeGroups = (sourceClusterId: string, targetClusterId: string) => {
+    if (!editableClusters) return;
+
+    const source = editableClusters.clusters.find((c) => c.clusterId === sourceClusterId);
+    const target = editableClusters.clusters.find((c) => c.clusterId === targetClusterId);
+    if (!source || !target) return;
+
+    const updatedClusters = editableClusters.clusters
+      .filter((c) => c.clusterId !== sourceClusterId)
+      .map((c) =>
+        c.clusterId === targetClusterId
+          ? { ...c, documentIds: [...c.documentIds, ...source.documentIds] }
+          : c
+      );
+
+    setEditableClusters({
+      ...editableClusters,
+      clusters: updatedClusters,
+    });
+    setMergingClusterId(null);
+    toast({ title: "Groups merged", description: `Merged "${source.suggestedTitle}" into "${target.suggestedTitle}".` });
+  };
+
+  const handleDragStart = (e: React.DragEvent, docId: string) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", docId);
+    setDraggedDocId(docId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedDocId(null);
+    setDragOverClusterId(null);
+  };
+
+  const handleClusterDragOver = (e: React.DragEvent, clusterId: string | null) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverClusterId(clusterId);
+  };
+
+  const handleClusterDragLeave = () => {
+    setDragOverClusterId(null);
+  };
+
+  const handleClusterDrop = (e: React.DragEvent, toClusterId: string | null) => {
+    e.preventDefault();
+    const docId = e.dataTransfer.getData("text/plain");
+    if (docId) {
+      if (selectedDocs.has(docId) && selectedDocs.size > 1) {
+        handleMoveMultipleDocuments(Array.from(selectedDocs), toClusterId);
+      } else {
+        const fromCluster = editableClusters?.clusters.find((c) => c.documentIds.includes(docId));
+        handleMoveDocument(docId, fromCluster?.clusterId || null, toClusterId);
+      }
+    }
+    setDraggedDocId(null);
+    setDragOverClusterId(null);
+  };
+
+  const toggleDocSelection = (docId: string) => {
+    setSelectedDocs((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
   };
 
   const saveClustering = useMutation({
@@ -379,6 +524,66 @@ export default function BulkIntake() {
   ];
 
   const stepIndex = steps.findIndex((s) => s.key === currentStep);
+
+  const renderDocumentRow = (docId: string, currentClusterId: string | null) => {
+    const doc = getDocById(docId);
+    if (!doc) return null;
+    const isSelected = selectedDocs.has(docId);
+    const isDragged = draggedDocId === docId;
+
+    return (
+      <div
+        key={docId}
+        onDragEnd={handleDragEnd}
+        className={`flex items-center gap-2 py-1.5 px-2 rounded-md hover-elevate transition-opacity ${
+          isDragged ? "opacity-40" : ""
+        }`}
+        data-testid={`cluster-doc-${docId}`}
+      >
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => toggleDocSelection(docId)}
+          data-testid={`checkbox-doc-${docId}`}
+        />
+        <div
+          draggable
+          onDragStart={(e) => handleDragStart(e, docId)}
+          className="shrink-0 cursor-grab"
+        >
+          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+        </div>
+        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm truncate">{doc.fileName}</p>
+          {doc.aiSummary && (
+            <p className="text-xs text-muted-foreground truncate">{doc.aiSummary}</p>
+          )}
+        </div>
+        {doc.ocrStatus === "failed" && (
+          <Badge variant="destructive">OCR Failed</Badge>
+        )}
+        <Select
+          value={currentClusterId || "__unclustered"}
+          onValueChange={(value) => {
+            const target = value === "__unclustered" ? null : value;
+            handleMoveDocument(docId, currentClusterId, target);
+          }}
+        >
+          <SelectTrigger className="w-[160px] text-xs" data-testid={`select-move-doc-${docId}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {editableClusters?.clusters.map((c) => (
+              <SelectItem key={c.clusterId} value={c.clusterId}>
+                {c.suggestedTitle}
+              </SelectItem>
+            ))}
+            <SelectItem value="__unclustered">Ungrouped</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -493,20 +698,39 @@ export default function BulkIntake() {
                   ))}
                 </div>
 
-                {isUploading ? (
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm">Uploading... {uploadProgress}%</span>
-                    </div>
-                    <Progress value={uploadProgress} data-testid="progress-upload" />
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="text-sm text-muted-foreground whitespace-nowrap" htmlFor="target-deal-count">
+                      Expected number of deals (optional):
+                    </label>
+                    <Input
+                      id="target-deal-count"
+                      type="number"
+                      min="1"
+                      max="100"
+                      placeholder="e.g. 3"
+                      value={targetDealCount}
+                      onChange={(e) => setTargetDealCount(e.target.value)}
+                      className="w-24"
+                      data-testid="input-target-deal-count"
+                    />
                   </div>
-                ) : (
-                  <Button className="mt-4 w-full" onClick={handleUploadAndProcess} data-testid="button-upload-process">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload & Process {selectedFiles.length} Files
-                  </Button>
-                )}
+
+                  {isUploading ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-sm">Uploading... {uploadProgress}%</span>
+                      </div>
+                      <Progress value={uploadProgress} data-testid="progress-upload" />
+                    </div>
+                  ) : (
+                    <Button className="w-full" onClick={handleUploadAndProcess} data-testid="button-upload-process">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload & Process {selectedFiles.length} Files
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
@@ -564,7 +788,7 @@ export default function BulkIntake() {
                     AI grouped {session.documents?.length || 0} documents into {editableClusters.clusters.length} deals
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Drag documents between groups or remove groups as needed. Click a deal title to rename it.
+                    Drag documents between groups, use checkboxes for bulk moves, or use the dropdown to reassign. Click the pencil to rename a deal.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -591,116 +815,179 @@ export default function BulkIntake() {
             </CardContent>
           </Card>
 
-          {editableClusters.clusters.map((cluster) => (
-            <Card key={cluster.clusterId}>
-              <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
-                <div className="flex-1 min-w-0">
+          {selectedDocs.size > 0 && (
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Badge variant="secondary">{selectedDocs.size} selected</Badge>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <FolderOpen className="h-4 w-4 text-primary shrink-0" />
-                    {editingTitle === cluster.clusterId ? (
-                      <Input
-                        defaultValue={cluster.suggestedTitle}
-                        autoFocus
-                        className="max-w-sm"
-                        onBlur={(e) => handleUpdateTitle(cluster.clusterId, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleUpdateTitle(cluster.clusterId, (e.target as HTMLInputElement).value);
-                          if (e.key === "Escape") setEditingTitle(null);
-                        }}
-                        data-testid={`input-cluster-title-${cluster.clusterId}`}
-                      />
-                    ) : (
-                      <button
-                        className="text-left font-semibold hover:underline cursor-pointer"
-                        onClick={() => setEditingTitle(cluster.clusterId)}
-                        data-testid={`button-edit-title-${cluster.clusterId}`}
-                      >
-                        {cluster.suggestedTitle}
-                      </button>
-                    )}
-                    <Badge variant="secondary">{cluster.suggestedDealType}</Badge>
-                    <Badge variant="outline">{cluster.documentIds.length} docs</Badge>
+                    <span className="text-sm text-muted-foreground">Move to:</span>
+                    <Select
+                      onValueChange={(value) => {
+                        const target = value === "__unclustered" ? null : value;
+                        handleMoveMultipleDocuments(Array.from(selectedDocs), target);
+                      }}
+                    >
+                      <SelectTrigger className="w-[200px] text-sm" data-testid="select-bulk-move">
+                        <SelectValue placeholder="Choose group..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {editableClusters.clusters.map((c) => (
+                          <SelectItem key={c.clusterId} value={c.clusterId}>
+                            {c.suggestedTitle}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="__unclustered">Ungrouped</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {cluster.address && (
-                    <p className="text-xs text-muted-foreground mt-1">{cluster.address}</p>
-                  )}
-                  {cluster.reasoning && (
-                    <p className="text-xs text-muted-foreground mt-0.5 italic">{cluster.reasoning}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
-                    size="icon"
-                    onClick={() => toggleClusterExpand(cluster.clusterId)}
-                    data-testid={`button-toggle-cluster-${cluster.clusterId}`}
+                    size="sm"
+                    onClick={() => setSelectedDocs(new Set())}
+                    data-testid="button-clear-selection"
                   >
-                    {expandedClusters.has(cluster.clusterId) ? (
-                      <ChevronUp className="h-4 w-4" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemoveCluster(cluster.clusterId)}
-                    data-testid={`button-remove-cluster-${cluster.clusterId}`}
-                  >
-                    <X className="h-4 w-4" />
+                    Clear selection
                   </Button>
                 </div>
-              </CardHeader>
-              {expandedClusters.has(cluster.clusterId) && (
-                <CardContent className="pt-0">
-                  <div className="space-y-1">
-                    {cluster.documentIds.map((docId) => {
-                      const doc = getDocById(docId);
-                      if (!doc) return null;
-                      return (
-                        <div
-                          key={docId}
-                          className="flex items-center gap-2 py-1.5 px-2 rounded-md hover-elevate"
-                          data-testid={`cluster-doc-${docId}`}
-                        >
-                          <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate">{doc.fileName}</p>
-                            {doc.aiSummary && (
-                              <p className="text-xs text-muted-foreground truncate">{doc.aiSummary}</p>
-                            )}
-                          </div>
-                          {doc.ocrStatus === "failed" && (
-                            <Badge variant="destructive">OCR Failed</Badge>
-                          )}
-                          <select
-                            className="text-xs border rounded px-1.5 py-0.5 bg-background"
-                            value={cluster.clusterId}
-                            onChange={(e) => {
-                              const target = e.target.value === "__unclustered" ? null : e.target.value;
-                              handleMoveDocument(docId, cluster.clusterId, target);
-                            }}
-                            data-testid={`select-move-doc-${docId}`}
-                          >
-                            {editableClusters.clusters.map((c) => (
-                              <option key={c.clusterId} value={c.clusterId}>
-                                {c.suggestedTitle}
-                              </option>
-                            ))}
-                            <option value="__unclustered">Ungrouped</option>
-                          </select>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              )}
+              </CardContent>
             </Card>
-          ))}
+          )}
+
+          {editableClusters.clusters.map((cluster) => {
+            const isDropTarget = dragOverClusterId === cluster.clusterId && draggedDocId !== null;
+            return (
+              <Card
+                key={cluster.clusterId}
+                className={`transition-colors ${isDropTarget ? "ring-2 ring-primary ring-offset-2" : ""}`}
+                onDragOver={(e) => handleClusterDragOver(e, cluster.clusterId)}
+                onDragLeave={handleClusterDragLeave}
+                onDrop={(e) => handleClusterDrop(e, cluster.clusterId)}
+              >
+                <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <FolderOpen className="h-4 w-4 text-primary shrink-0" />
+                      {editingTitle === cluster.clusterId ? (
+                        <Input
+                          defaultValue={cluster.suggestedTitle}
+                          autoFocus
+                          className="max-w-sm"
+                          onBlur={(e) => handleUpdateTitle(cluster.clusterId, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleUpdateTitle(cluster.clusterId, (e.target as HTMLInputElement).value);
+                            if (e.key === "Escape") setEditingTitle(null);
+                          }}
+                          data-testid={`input-cluster-title-${cluster.clusterId}`}
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className="font-semibold">{cluster.suggestedTitle}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setEditingTitle(cluster.clusterId)}
+                            data-testid={`button-edit-title-${cluster.clusterId}`}
+                          >
+                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      )}
+                      <Badge variant="secondary">{cluster.suggestedDealType}</Badge>
+                      <Badge variant="outline">{cluster.documentIds.length} docs</Badge>
+                    </div>
+                    {cluster.address && (
+                      <p className="text-xs text-muted-foreground mt-1">{cluster.address}</p>
+                    )}
+                    {cluster.reasoning && (
+                      <p className="text-xs text-muted-foreground mt-0.5 italic">{cluster.reasoning}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleSplitGroup(cluster.clusterId)}
+                      title="Split group"
+                      data-testid={`button-split-cluster-${cluster.clusterId}`}
+                    >
+                      <SplitSquareHorizontal className="h-4 w-4" />
+                    </Button>
+                    {mergingClusterId === cluster.clusterId ? (
+                      <Select
+                        onValueChange={(value) => handleMergeGroups(cluster.clusterId, value)}
+                      >
+                        <SelectTrigger className="w-[140px] text-xs" data-testid={`select-merge-target-${cluster.clusterId}`}>
+                          <SelectValue placeholder="Merge into..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {editableClusters.clusters
+                            .filter((c) => c.clusterId !== cluster.clusterId)
+                            .map((c) => (
+                              <SelectItem key={c.clusterId} value={c.clusterId}>
+                                {c.suggestedTitle}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setMergingClusterId(cluster.clusterId)}
+                        title="Merge with another group"
+                        data-testid={`button-merge-cluster-${cluster.clusterId}`}
+                      >
+                        <Merge className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => toggleClusterExpand(cluster.clusterId)}
+                      data-testid={`button-toggle-cluster-${cluster.clusterId}`}
+                    >
+                      {expandedClusters.has(cluster.clusterId) ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveCluster(cluster.clusterId)}
+                      data-testid={`button-remove-cluster-${cluster.clusterId}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                {expandedClusters.has(cluster.clusterId) && (
+                  <CardContent className="pt-0">
+                    <div className="space-y-1">
+                      {cluster.documentIds.length === 0 && (
+                        <p className="text-sm text-muted-foreground py-4 text-center">
+                          No documents — drag documents here or use the dropdown to assign them.
+                        </p>
+                      )}
+                      {cluster.documentIds.map((docId) =>
+                        renderDocumentRow(docId, cluster.clusterId)
+                      )}
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
 
           {editableClusters.unclustered && editableClusters.unclustered.length > 0 && (
-            <Card>
+            <Card
+              className={`transition-colors ${dragOverClusterId === "__unclustered" && draggedDocId !== null ? "ring-2 ring-primary ring-offset-2" : ""}`}
+              onDragOver={(e) => handleClusterDragOver(e, "__unclustered")}
+              onDragLeave={handleClusterDragLeave}
+              onDrop={(e) => handleClusterDrop(e, null)}
+            >
               <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 text-muted-foreground" />
@@ -709,42 +996,9 @@ export default function BulkIntake() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-1">
-                  {editableClusters.unclustered.map((docId) => {
-                    const doc = getDocById(docId);
-                    if (!doc) return null;
-                    return (
-                      <div
-                        key={docId}
-                        className="flex items-center gap-2 py-1.5 px-2 rounded-md hover-elevate"
-                        data-testid={`unclustered-doc-${docId}`}
-                      >
-                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">{doc.fileName}</p>
-                          {doc.aiSummary && (
-                            <p className="text-xs text-muted-foreground truncate">{doc.aiSummary}</p>
-                          )}
-                        </div>
-                        <select
-                          className="text-xs border rounded px-1.5 py-0.5 bg-background"
-                          value="__unclustered"
-                          onChange={(e) => {
-                            if (e.target.value !== "__unclustered") {
-                              handleMoveDocument(docId, null, e.target.value);
-                            }
-                          }}
-                          data-testid={`select-move-unclustered-${docId}`}
-                        >
-                          <option value="__unclustered">Ungrouped</option>
-                          {editableClusters.clusters.map((c) => (
-                            <option key={c.clusterId} value={c.clusterId}>
-                              {c.suggestedTitle}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    );
-                  })}
+                  {editableClusters.unclustered.map((docId) =>
+                    renderDocumentRow(docId, null)
+                  )}
                 </div>
               </CardContent>
             </Card>

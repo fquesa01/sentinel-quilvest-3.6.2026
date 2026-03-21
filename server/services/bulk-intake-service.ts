@@ -233,7 +233,7 @@ export async function processSessionDocument(docId: string) {
   }
 }
 
-export async function startProcessing(sessionId: string) {
+export async function startProcessing(sessionId: string, targetDealCount?: number) {
   await db
     .update(bulkIntakeSessions)
     .set({ status: "processing" })
@@ -255,10 +255,10 @@ export async function startProcessing(sessionId: string) {
     await Promise.all(batch.map((d) => processSessionDocument(d.id)));
   }
 
-  await checkAndTriggerClustering(sessionId);
+  await checkAndTriggerClustering(sessionId, targetDealCount);
 }
 
-async function checkAndTriggerClustering(sessionId: string) {
+async function checkAndTriggerClustering(sessionId: string, targetDealCount?: number) {
   const [session] = await db
     .select()
     .from(bulkIntakeSessions)
@@ -274,10 +274,10 @@ async function checkAndTriggerClustering(sessionId: string) {
   const allDone = docs.every((d) => d.ocrStatus === "completed" || d.ocrStatus === "failed");
   if (!allDone) return;
 
-  await clusterDocuments(sessionId);
+  await clusterDocuments(sessionId, targetDealCount);
 }
 
-export async function clusterDocuments(sessionId: string): Promise<ClusteringResult> {
+export async function clusterDocuments(sessionId: string, targetDealCount?: number): Promise<ClusteringResult> {
   await db
     .update(bulkIntakeSessions)
     .set({ status: "clustering" })
@@ -315,8 +315,12 @@ export async function clusterDocuments(sessionId: string): Promise<ClusteringRes
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
 
-    const prompt = `You are a legal document analyst. Analyze these ${docSummaries.length} documents and group them into separate real estate deals/transactions.
+    const targetHint = targetDealCount && targetDealCount > 0
+      ? `\nIMPORTANT: The user expects approximately ${targetDealCount} deals. Try to group the documents into roughly ${targetDealCount} groups, but use your judgment if the documents clearly suggest a different number.\n`
+      : "";
 
+    const prompt = `You are a legal document analyst. Analyze these ${docSummaries.length} documents and group them into separate real estate deals/transactions.
+${targetHint}
 Group documents by:
 1. Property address — documents mentioning the same address belong together
 2. Party names — documents involving the same buyers, sellers, lenders, or borrowers
