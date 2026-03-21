@@ -2585,80 +2585,58 @@ function parseCSVLine(line: string): string[] {
 }
 
 async function syncDataLakeContactsForUser(userId: string, parseEmailContactFn: (raw: string) => { name: string; email: string } | null, splitNameFn: (name: string) => { firstName: string; lastName: string }, domainToCompany: Record<string, string>, filteredDomains: Set<string>): Promise<{ imported: number; total: number }> {
-  const orgResult = await pool.query(
-    `SELECT organization_id FROM organization_members WHERE user_id = $1 LIMIT 1`,
-    [userId]
-  );
-  const orgId = orgResult.rows[0]?.organization_id;
-
-  let caseFilter: string;
-  let caseParams: any[];
-  if (orgId) {
-    caseFilter = `c.created_by IN (SELECT om.user_id FROM organization_members om WHERE om.organization_id = $1)`;
-    caseParams = [orgId];
-  } else {
-    caseFilter = `c.created_by = $1`;
-    caseParams = [userId];
-  }
-
-  const sendersResult = await pool.query(`
-    SELECT comm.sender, count(*)::int as cnt
-    FROM communications comm
-    INNER JOIN cases c ON comm.case_id = c.id
-    WHERE comm.sender IS NOT NULL AND comm.sender != ''
-      AND ${caseFilter}
-    GROUP BY comm.sender
-  `, caseParams);
-
-  const recipientsResult = await pool.query(`
-    SELECT comm.recipients
-    FROM communications comm
-    INNER JOIN cases c ON comm.case_id = c.id
-    WHERE comm.recipients IS NOT NULL
-      AND ${caseFilter}
-  `, caseParams);
+  const emailsResult = await pool.query(`
+    SELECT metadata->>'sender' as sender,
+           metadata->'recipients' as recipients,
+           metadata->'cc' as cc
+    FROM data_lake_items
+    WHERE user_id = $1
+      AND item_type = 'email'
+      AND metadata IS NOT NULL
+  `, [userId]);
 
   const contactMap = new Map<string, { name: string; email: string; sendCount: number; recvCount: number }>();
 
-  for (const row of sendersResult.rows) {
-    const parsed = parseEmailContactFn(row.sender);
-    if (!parsed) continue;
+  function addContact(raw: string, isSender: boolean) {
+    const parsed = parseEmailContactFn(raw);
+    if (!parsed) return;
     const existing = contactMap.get(parsed.email);
     if (existing) {
-      existing.sendCount += row.cnt;
+      if (isSender) existing.sendCount += 1;
+      else existing.recvCount += 1;
       if (parsed.name.length > existing.name.length && !parsed.name.includes("via")) {
         existing.name = parsed.name;
       }
     } else {
-      contactMap.set(parsed.email, { name: parsed.name, email: parsed.email, sendCount: row.cnt, recvCount: 0 });
+      contactMap.set(parsed.email, {
+        name: parsed.name, email: parsed.email,
+        sendCount: isSender ? 1 : 0,
+        recvCount: isSender ? 0 : 1,
+      });
     }
   }
 
-  for (const row of recipientsResult.rows) {
-    let recipients: string[] = [];
-    if (Array.isArray(row.recipients)) {
-      recipients = row.recipients;
-    } else if (typeof row.recipients === "string") {
-      try { recipients = JSON.parse(row.recipients); } catch { recipients = [row.recipients]; }
+  function parseRecipientList(field: any) {
+    if (!field) return;
+    let items: string[] = [];
+    if (Array.isArray(field)) {
+      items = field;
+    } else if (typeof field === "string") {
+      try { items = JSON.parse(field); } catch { items = [field]; }
     }
-
-    for (const r of recipients) {
-      if (typeof r !== "string") continue;
-      const parts = r.split(/,\s*(?=")/);
+    for (const item of items) {
+      if (typeof item !== "string" || !item.trim()) continue;
+      const parts = item.split(/,\s*(?=[^<]*<|[^"]*")/);
       for (const part of parts) {
-        const parsed = parseEmailContactFn(part.trim());
-        if (!parsed) continue;
-        const existing = contactMap.get(parsed.email);
-        if (existing) {
-          existing.recvCount += 1;
-          if (parsed.name.length > existing.name.length && !parsed.name.includes("via")) {
-            existing.name = parsed.name;
-          }
-        } else {
-          contactMap.set(parsed.email, { name: parsed.name, email: parsed.email, sendCount: 0, recvCount: 1 });
-        }
+        addContact(part.trim(), false);
       }
     }
+  }
+
+  for (const row of emailsResult.rows) {
+    if (row.sender) addContact(row.sender, true);
+    parseRecipientList(row.recipients);
+    parseRecipientList(row.cc);
   }
 
   const contacts = Array.from(contactMap.values());
