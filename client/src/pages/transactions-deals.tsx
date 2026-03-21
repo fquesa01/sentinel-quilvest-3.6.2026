@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -48,6 +49,12 @@ import {
   Table2,
   List,
   LayoutGrid,
+  FileText,
+  FileSpreadsheet,
+  FileImage,
+  File,
+  X,
+  CloudUpload,
 } from "lucide-react";
 import {
   Tooltip,
@@ -161,6 +168,23 @@ const priorityColors: Record<string, string> = {
   low: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
 };
 
+function getFileIcon(fileName: string) {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  if (["pdf"].includes(ext)) return <FileText className="h-4 w-4 text-red-500" />;
+  if (["doc", "docx", "txt", "rtf"].includes(ext)) return <FileText className="h-4 w-4 text-blue-500" />;
+  if (["xls", "xlsx", "csv"].includes(ext)) return <FileSpreadsheet className="h-4 w-4 text-green-500" />;
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext)) return <FileImage className="h-4 w-4 text-purple-500" />;
+  return <File className="h-4 w-4 text-muted-foreground" />;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
 export default function TransactionsDeals() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -200,6 +224,49 @@ export default function TransactionsDeals() {
   const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
   const [dealToShare, setDealToShare] = useState<Deal | null>(null);
   const [deletedDealIds, setDeletedDealIds] = useState<Set<string>>(new Set());
+  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length > 0) {
+      setStagedFiles(prev => [...prev, ...droppedFiles]);
+    }
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length > 0) {
+      setStagedFiles(prev => [...prev, ...selectedFiles]);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const removeStagedFile = useCallback((index: number) => {
+    setStagedFiles(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const resetCreateDialog = useCallback(() => {
+    setNewDeal({
+      title: "",
+      dealType: "ma_asset",
+      representationRole: "",
+      status: "active",
+      priority: "medium",
+      dealValue: "",
+      dealCurrency: "USD",
+      description: "",
+      closingTargetDate: "",
+    });
+    setStagedFiles([]);
+    setUploadProgress(null);
+  }, []);
   const [newDeal, setNewDeal] = useState({
     title: "",
     dealType: "ma_asset",
@@ -226,30 +293,100 @@ export default function TransactionsDeals() {
 
   const createDealMutation = useMutation({
     mutationFn: async (data: typeof newDeal) => {
-      return apiRequest("POST", "/api/deals", {
+      const res = await apiRequest("POST", "/api/deals", {
         ...data,
         closingTargetDate: data.closingTargetDate ? new Date(data.closingTargetDate) : null,
       });
+      const deal = await res.json();
+      const filesToUpload = stagedFiles.length;
+
+      if (filesToUpload === 0) {
+        return { deal, uploaded: 0, failed: 0, totalFiles: 0, roomNotFound: false };
+      }
+
+      const dealId = deal.id;
+      let dataRoomId: string | null = null;
+
+      for (let attempt = 0; attempt < 3 && !dataRoomId; attempt++) {
+        if (attempt > 0) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        try {
+          const roomsRes = await fetch(`/api/data-rooms`, { credentials: "include" });
+          if (roomsRes.ok) {
+            const allRooms = await roomsRes.json();
+            if (Array.isArray(allRooms)) {
+              const matchingRoom = allRooms.find((r: { id: string; dealId: string | null }) => r.dealId === dealId);
+              if (matchingRoom) {
+                dataRoomId = matchingRoom.id;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (!dataRoomId) {
+        return { deal, uploaded: 0, failed: filesToUpload, totalFiles: filesToUpload, roomNotFound: true };
+      }
+
+      const BATCH_SIZE = 5;
+      let uploadedCount = 0;
+      const failedFiles: string[] = [];
+
+      for (let i = 0; i < filesToUpload; i += BATCH_SIZE) {
+        const batch = stagedFiles.slice(i, i + BATCH_SIZE);
+        const formData = new FormData();
+        batch.forEach(file => formData.append("files", file));
+
+        setUploadProgress({ current: uploadedCount, total: filesToUpload });
+
+        try {
+          const uploadRes = await fetch(`/api/data-rooms/${dataRoomId}/upload`, {
+            method: "POST",
+            body: formData,
+            credentials: "include",
+          });
+          if (!uploadRes.ok) {
+            batch.forEach(f => failedFiles.push(f.name));
+          } else {
+            uploadedCount += batch.length;
+          }
+        } catch {
+          batch.forEach(f => failedFiles.push(f.name));
+        }
+
+        setUploadProgress({ current: uploadedCount, total: filesToUpload });
+      }
+
+      return { deal, uploaded: uploadedCount, failed: failedFiles.length, totalFiles: filesToUpload, roomNotFound: false, failedFiles };
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/deals"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/transactions/dashboard"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/data-rooms"] });
       setIsCreateDialogOpen(false);
-      setNewDeal({
-        title: "",
-        dealType: "ma_asset",
-        representationRole: "",
-        status: "active",
-        priority: "medium",
-        dealValue: "",
-        dealCurrency: "USD",
-        description: "",
-        closingTargetDate: "",
-      });
-      toast({ title: "Deal created successfully" });
+      resetCreateDialog();
+
+      if (result.totalFiles === 0) {
+        toast({ title: "Deal created successfully" });
+      } else if (result.roomNotFound) {
+        toast({
+          title: "Deal created, but files could not be uploaded",
+          description: "Data room was not available. You can upload files from the deal's data room page.",
+          variant: "destructive",
+        });
+      } else if (result.failed > 0) {
+        toast({
+          title: `Deal created — ${result.uploaded} of ${result.totalFiles} files uploaded`,
+          description: (result.failedFiles?.slice(0, 5).join(", ") || "") + (result.failed > 5 ? ` and ${result.failed - 5} more failed` : " failed"),
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `Deal created with ${result.uploaded} file${result.uploaded !== 1 ? "s" : ""} uploaded` });
+      }
     },
     onError: (error: any) => {
+      setUploadProgress(null);
       toast({ 
         title: "Failed to create deal", 
         description: error.message,
@@ -386,7 +523,14 @@ export default function TransactionsDeals() {
               Bulk Upload
             </Button>
           </Link>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+              if (!open && !createDealMutation.isPending) {
+                resetCreateDialog();
+              }
+              if (!createDealMutation.isPending) {
+                setIsCreateDialogOpen(open);
+              }
+            }}>
           <DialogTrigger asChild>
             <Button data-testid="button-create-deal">
               <Plus className="h-4 w-4 mr-2" />
@@ -530,10 +674,89 @@ export default function TransactionsDeals() {
                     data-testid="input-deal-description"
                   />
                 </div>
+                <div className="col-span-2">
+                  <Label>Documents</Label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={handleFileSelect}
+                    data-testid="input-file-upload"
+                  />
+                  <div
+                    className={`mt-1 border-2 border-dashed rounded-md p-4 text-center transition-colors ${
+                      createDealMutation.isPending
+                        ? "opacity-50 cursor-not-allowed border-muted-foreground/15"
+                        : isDragOver
+                          ? "border-primary bg-primary/5 cursor-pointer"
+                          : "border-muted-foreground/25 hover:border-muted-foreground/50 cursor-pointer"
+                    }`}
+                    onDragOver={(e) => { e.preventDefault(); if (!createDealMutation.isPending) setIsDragOver(true); }}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={(e) => { if (!createDealMutation.isPending) handleFileDrop(e); else e.preventDefault(); }}
+                    onClick={() => { if (!createDealMutation.isPending) fileInputRef.current?.click(); }}
+                    data-testid="dropzone-files"
+                  >
+                    <CloudUpload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                    <p className="text-sm text-muted-foreground">
+                      Drag and drop files here, or click to browse
+                    </p>
+                  </div>
+                  {stagedFiles.length > 0 && (
+                    <div className="mt-2 space-y-1" data-testid="staged-files-list">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                        <span data-testid="text-file-count">{stagedFiles.length} file{stagedFiles.length !== 1 ? "s" : ""} selected</span>
+                        <span data-testid="text-total-size">{formatFileSize(stagedFiles.reduce((sum, f) => sum + f.size, 0))} total</span>
+                      </div>
+                      <div className="max-h-32 overflow-y-auto space-y-1">
+                        {stagedFiles.map((file, index) => (
+                          <div
+                            key={`${file.name}-${index}`}
+                            className="flex items-center gap-2 text-sm py-1 px-2 rounded-md bg-muted/50"
+                            data-testid={`staged-file-${index}`}
+                          >
+                            {getFileIcon(file.name)}
+                            <span className="flex-1 truncate">{file.name}</span>
+                            <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(file.size)}</span>
+                            {!createDealMutation.isPending && (
+                              <button
+                                type="button"
+                                className="shrink-0 p-0.5 rounded-md text-muted-foreground hover-elevate"
+                                onClick={(e) => { e.stopPropagation(); removeStagedFile(index); }}
+                                data-testid={`button-remove-file-${index}`}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+            {uploadProgress && (
+              <div className="space-y-2 px-1" data-testid="upload-progress">
+                <div className="flex items-center justify-between text-sm">
+                  <span>Uploading {uploadProgress.current} of {uploadProgress.total} files...</span>
+                  <span>{Math.round((uploadProgress.current / uploadProgress.total) * 100)}%</span>
+                </div>
+                <Progress value={(uploadProgress.current / uploadProgress.total) * 100} />
+              </div>
+            )}
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!createDealMutation.isPending) {
+                    setIsCreateDialogOpen(false);
+                    resetCreateDialog();
+                  }
+                }}
+                disabled={createDealMutation.isPending}
+              >
                 Cancel
               </Button>
               <Button 
@@ -541,7 +764,13 @@ export default function TransactionsDeals() {
                 disabled={createDealMutation.isPending}
                 data-testid="button-submit-deal"
               >
-                {createDealMutation.isPending ? "Creating..." : "Create Deal"}
+                {createDealMutation.isPending
+                  ? uploadProgress
+                    ? `Uploading ${uploadProgress.current}/${uploadProgress.total}...`
+                    : "Creating..."
+                  : stagedFiles.length > 0
+                    ? `Create Deal & Upload ${stagedFiles.length} File${stagedFiles.length !== 1 ? "s" : ""}`
+                    : "Create Deal"}
               </Button>
             </DialogFooter>
           </DialogContent>
