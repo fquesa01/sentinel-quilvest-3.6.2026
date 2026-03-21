@@ -69,6 +69,8 @@ import {
   BookmarkCheck,
   CalendarPlus,
   Sparkles,
+  ArrowLeft,
+  Loader2,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -228,6 +230,43 @@ function dataLakeItemToCommunication(item: any): Communication {
       folderPath: meta.folderPath,
       messageId: meta.messageId,
       importance: meta.importance,
+    },
+  };
+}
+
+function dataLakeItemToDocCommunication(item: any): Communication {
+  const ext = item.name?.split('.').pop()?.toLowerCase() || '';
+  const mimeMap: Record<string, string> = {
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    txt: 'text/plain',
+    csv: 'text/csv',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+  };
+  const meta = item.metadata || {};
+  return {
+    id: item.id,
+    communicationType: 'document',
+    subject: item.name || 'Untitled Document',
+    body: meta.extractedText || meta.bodyText || meta.summary || '',
+    sender: item.source || 'Data Lake',
+    recipients: [],
+    timestamp: item.indexedAt || item.lastSynced || new Date().toISOString(),
+    legalHold: null,
+    emailThreadId: null,
+    fileSize: item.fileSize,
+    fileExtension: ext || null,
+    mimeType: mimeMap[ext] || null,
+    filePath: item.filePath || null,
+    metadata: {
+      isDataLakeItem: true,
+      dataLakeItemId: item.id,
+      parentItemId: meta.parentItemId,
     },
   };
 }
@@ -770,7 +809,7 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
       if (!response.ok) throw new Error("Failed to fetch communications");
       return response.json();
     },
-    enabled: !searchResults && !selectedSetId, // Only fetch if not showing search results and not filtering by set
+    enabled: !searchResults && !selectedSetId && sourceResolved && !isDataLakeSource,
   });
 
   const { data: dataRoomDocs, isLoading: isLoadingDataRoomDocs } = useQuery<DataRoomDocument[]>({
@@ -780,10 +819,10 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
       if (!response.ok) return [];
       return response.json();
     },
-    enabled: !!effectiveCaseId && !searchResults && !selectedSetId,
+    enabled: !!effectiveCaseId && !searchResults && !selectedSetId && sourceResolved && !isDataLakeSource,
   });
 
-  const { data: dataLakeParentItem } = useQuery<any>({
+  const { data: dataLakeParentItem, isLoading: isLoadingDataLakeParent, isFetched: isDataLakeParentFetched } = useQuery<any>({
     queryKey: ["/api/data-lake/items", effectiveCaseId],
     queryFn: async () => {
       const response = await fetch(`/api/data-lake/items/${effectiveCaseId}`, { credentials: "include" });
@@ -793,7 +832,8 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
     enabled: !!effectiveCaseId && !searchResults && !selectedSetId,
   });
 
-  const isDataLakeSource = !!dataLakeParentItem && (dataLakeParentItem.itemType === 'email_archive' || dataLakeParentItem.itemType === 'email');
+  const isDataLakeSource = !!dataLakeParentItem && !!dataLakeParentItem.id;
+  const sourceResolved = !effectiveCaseId || isDataLakeParentFetched;
 
   const { data: dataLakeChildren, isLoading: isLoadingDataLakeChildren } = useQuery<any[]>({
     queryKey: ["/api/data-lake/items", effectiveCaseId, "children"],
@@ -802,15 +842,23 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
       if (!response.ok) return [];
       return response.json();
     },
-    enabled: isDataLakeSource && dataLakeParentItem?.itemType === 'email_archive',
+    enabled: isDataLakeSource && (dataLakeParentItem?.itemType === 'email_archive' || dataLakeParentItem?.itemType === 'zip_archive'),
   });
 
   const dataLakeAsCommunications = useMemo(() => {
-    if (isDataLakeSource && dataLakeParentItem?.itemType === 'email') {
+    if (!isDataLakeSource) return [];
+    const itemType = dataLakeParentItem?.itemType;
+    if (itemType === 'email_archive' || itemType === 'zip_archive') {
+      if (!dataLakeChildren || dataLakeChildren.length === 0) return [];
+      return dataLakeChildren.map((child: any) => {
+        if (child.itemType === 'email') return dataLakeItemToCommunication(child);
+        return dataLakeItemToDocCommunication(child);
+      });
+    }
+    if (itemType === 'email') {
       return [dataLakeItemToCommunication(dataLakeParentItem)];
     }
-    if (!dataLakeChildren || dataLakeChildren.length === 0) return [];
-    return dataLakeChildren.map(dataLakeItemToCommunication);
+    return [dataLakeItemToDocCommunication(dataLakeParentItem)];
   }, [dataLakeChildren, dataLakeParentItem, isDataLakeSource]);
 
   // Fetch available document sets
@@ -1439,7 +1487,7 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
   // Fetch current case details if we have a caseId
   const { data: currentCase } = useQuery<{ id: string; caseNumber: string; title: string; status: string }>({
     queryKey: ['/api/cases', effectiveCaseId],
-    enabled: !!effectiveCaseId,
+    enabled: !!effectiveCaseId && sourceResolved && !isDataLakeSource,
   });
 
   // Fetch deals for the selection picker
@@ -1727,7 +1775,8 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
   }
 
   // Show loading only when fetching and no search results present
-  if ((isLoading || isLoadingDataRoomDocs) && !searchResults) {
+  const isLoadingAnySource = !sourceResolved || isLoadingDataLakeParent || isLoading || isLoadingDataRoomDocs || (isDataLakeSource && isLoadingDataLakeChildren);
+  if (isLoadingAnySource && !searchResults) {
     return (
       <SidebarProvider 
         key="document-review-sidebar-loading"
@@ -1770,12 +1819,30 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
                     <X className="h-4 w-4" />
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setLocation('/document-review')}
+                  data-testid="button-back-to-sources-loading"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-1" />
+                  Sources
+                </Button>
                 <h1 className="text-lg font-semibold">Document Review</h1>
               </div>
               
-              {/* Loading content */}
               <div className="flex items-center justify-center flex-1">
-                <div className="text-lg text-muted-foreground">Loading documents...</div>
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <div className="text-lg text-muted-foreground">
+                    {isDataLakeSource ? "Loading emails and documents..." : "Loading documents..."}
+                  </div>
+                  {isDataLakeSource && dataLakeParentItem && (
+                    <div className="text-sm text-muted-foreground">
+                      Source: {dataLakeParentItem.name}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </SidebarInset>
@@ -1935,16 +2002,24 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
                 <h1 className="text-lg font-semibold">Document Review</h1>
               </div>
               
-              {/* Empty state content */}
               <div className="flex items-center justify-center flex-1">
                 <Card className="max-w-md">
                   <CardContent className="p-8 text-center space-y-4">
                     <FileText className="h-16 w-16 mx-auto text-muted-foreground" />
                     <h3 className="text-xl font-semibold">No documents available</h3>
                     <p className="text-sm text-muted-foreground">
-                      There are no communications or documents linked to this case yet. 
-                      Upload evidence or ingest communications to get started.
+                      {isDataLakeSource && dataLakeParentItem?.metadata?.processingStatus === 'processing'
+                        ? "This archive is still being processed. Please check back shortly."
+                        : "There are no communications or documents linked to this source yet."}
                     </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => setLocation('/document-review')}
+                      data-testid="button-back-to-sources"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back to Sources
+                    </Button>
                   </CardContent>
                 </Card>
               </div>
@@ -2049,22 +2124,49 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
               </Button>
             )}
             
-            {/* Case Context Indicator - Always visible when viewing a case */}
-            <div 
-              className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-md cursor-pointer hover-elevate"
-              onClick={() => setLocation(`/cases/${effectiveCaseId}`)}
-              data-testid="case-context-indicator"
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setLocation('/document-review')}
+              data-testid="button-back-to-sources"
             >
-              <Briefcase className="h-4 w-4 text-primary" />
-              <div className="flex flex-col">
-                <span className="text-xs font-medium text-primary leading-tight">
-                  {currentCase?.title || 'Loading...'}
-                </span>
-                <span className="text-xs text-muted-foreground leading-tight">
-                  {currentCase?.caseNumber || ''}
-                </span>
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Sources
+            </Button>
+
+            {isDataLakeSource ? (
+              <div 
+                className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-md cursor-pointer hover-elevate"
+                onClick={() => setLocation('/my-data-lake')}
+                data-testid="case-context-indicator"
+              >
+                <FileText className="h-4 w-4 text-primary" />
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium text-primary leading-tight">
+                    {dataLakeParentItem?.name || 'Data Lake'}
+                  </span>
+                  <span className="text-xs text-muted-foreground leading-tight">
+                    {dataLakeAsCommunications.length} items
+                  </span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div 
+                className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/20 rounded-md cursor-pointer hover-elevate"
+                onClick={() => setLocation(`/cases/${effectiveCaseId}`)}
+                data-testid="case-context-indicator"
+              >
+                <Briefcase className="h-4 w-4 text-primary" />
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium text-primary leading-tight">
+                    {currentCase?.title || 'Loading...'}
+                  </span>
+                  <span className="text-xs text-muted-foreground leading-tight">
+                    {currentCase?.caseNumber || ''}
+                  </span>
+                </div>
+              </div>
+            )}
             
             <Separator orientation="vertical" className="h-6" />
 
