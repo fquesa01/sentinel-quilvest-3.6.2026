@@ -27,3 +27,7 @@ psql "$DB_URL" -c "ALTER TYPE contact_source_type ADD VALUE IF NOT EXISTS 'data_
 
 # Add storage_key column for Supabase Storage migration
 psql "$DB_URL" -c "ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS storage_key varchar(1000);" 2>/dev/null || true
+
+# Add search_source and person_mentioned columns for Intelligence Feed filtering
+psql "$DB_URL" -c "ALTER TABLE news_alerts ADD COLUMN IF NOT EXISTS search_source varchar(20) DEFAULT 'news';" 2>/dev/null || true
+psql "$DB_URL" -c "ALTER TABLE news_alerts ADD COLUMN IF NOT EXISTS person_mentioned boolean DEFAULT false;" 2>/dev/null || true

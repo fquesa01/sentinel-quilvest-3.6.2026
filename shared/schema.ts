@@ -12868,6 +12868,8 @@ export const newsAlerts = pgTable("news_alerts", {
   outreachChannel: outreachChannelEnum("outreach_channel"),
   isHighPriority: boolean("is_high_priority").notNull().default(false),
   highPriorityAt: timestamp("high_priority_at"),
+  searchSource: varchar("search_source", { length: 20 }).default("news"),
+  personMentioned: boolean("person_mentioned").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   userDateIdx: index("idx_news_alerts_user_date").on(table.userId, table.createdAt),

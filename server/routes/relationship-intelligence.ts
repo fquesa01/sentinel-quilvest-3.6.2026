@@ -566,7 +566,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
         return fullNameMatch || lastNameMatch;
       }
 
-      async function processArticleForContact(contact: typeof contactsToScan[0], article: any, skipMatchFilter: boolean = false) {
+      async function processArticleForContact(contact: typeof contactsToScan[0], article: any, skipMatchFilter: boolean = false, source: string = "news") {
         let category: string = "general";
         let sentiment: string = "neutral";
         let summary = article.body || article.title;
@@ -611,6 +611,11 @@ Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "pr
 
         if (existingAlert.length > 0) return false;
 
+        const textToCheck = `${article.title || ""} ${article.body || ""}`.toLowerCase();
+        const nameParts = contact.fullName.toLowerCase().split(/\s+/).filter((p: string) => p.length > 2);
+        const isPersonMentioned = textToCheck.includes(contact.fullName.toLowerCase()) ||
+          (nameParts.length > 1 && nameParts.every((p: string) => textToCheck.includes(p)));
+
         await db.insert(newsAlerts).values({
           contactId: contact.id,
           userId,
@@ -622,6 +627,8 @@ Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "pr
           sentiment: sentiment as any,
           category: category as any,
           relevanceScore: 0.8,
+          searchSource: source,
+          personMentioned: isPersonMentioned,
         });
         return true;
       }
@@ -727,7 +734,40 @@ Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "pr
         }
       }
 
-      console.log(`[RI] Scan complete (mode=${searchMode}): ${contactsToScan.length} contacts, ${companyGroups.size} companies, ${totalAlerts} alerts created, ${totalApiCalls} API calls, ${skippedCount} skipped`);
+      let linkedinAlerts = 0;
+      let xAlerts = 0;
+      const linkedinApiKey = process.env.LINKEDIN_API_KEY;
+      const xApiKey = process.env.X_API_KEY || process.env.TWITTER_API_KEY;
+
+      if (linkedinApiKey) {
+        for (const contact of contactsToScan) {
+          try {
+            const articles = await fetchLinkedInPosts(contact.fullName, contact.company || "", linkedinApiKey);
+            for (const article of articles) {
+              const created = await processArticleForContact(contact, article, true, "linkedin");
+              if (created) { totalAlerts++; linkedinAlerts++; }
+            }
+          } catch (err) {
+            console.error(`[RI] LinkedIn scan error for ${contact.fullName}:`, err);
+          }
+        }
+      }
+
+      if (xApiKey) {
+        for (const contact of contactsToScan) {
+          try {
+            const articles = await fetchXPosts(contact.fullName, contact.company || "", xApiKey);
+            for (const article of articles) {
+              const created = await processArticleForContact(contact, article, true, "x");
+              if (created) { totalAlerts++; xAlerts++; }
+            }
+          } catch (err) {
+            console.error(`[RI] X.com scan error for ${contact.fullName}:`, err);
+          }
+        }
+      }
+
+      console.log(`[RI] Scan complete (mode=${searchMode}): ${contactsToScan.length} contacts, ${companyGroups.size} companies, ${totalAlerts} alerts created, ${totalApiCalls} API calls, ${skippedCount} skipped${linkedinAlerts ? `, ${linkedinAlerts} linkedin` : ""}${xAlerts ? `, ${xAlerts} x.com` : ""}`);
 
       res.json({
         scanned: contactsToScan.length,
@@ -735,6 +775,10 @@ Respond with JSON: { "match": true/false, "confidence": 0.0-1.0, "category": "pr
         alertsCreated: totalAlerts,
         skipped: skippedCount,
         apiCallsUsed: totalApiCalls,
+        linkedinAlerts,
+        xAlerts,
+        linkedinEnabled: !!linkedinApiKey,
+        xEnabled: !!xApiKey,
       });
     } catch (error: any) {
       console.error("[RI] Scan error:", error);
@@ -2557,6 +2601,14 @@ Return JSON: {"draft": "message text", "subjectLine": "subject"}`
     }
   });
 
+  app.get("/api/relationship-intelligence/social-status", isAuthenticated, async (_req: any, res) => {
+    res.json({
+      linkedinEnabled: !!process.env.LINKEDIN_API_KEY,
+      xEnabled: !!(process.env.X_API_KEY || process.env.TWITTER_API_KEY),
+      newsEnabled: !!(process.env.NEWS_API_KEY || process.env.NewsAPI_API),
+    });
+  });
+
   console.log("[RelationshipIntelligence] Routes registered");
 }
 
@@ -2718,5 +2770,69 @@ async function syncDataLakeContactsForUser(userId: string, parseEmailContactFn: 
   }
 
   return { imported: toInsert.length, total: totalContacts };
+}
+
+async function fetchLinkedInPosts(personName: string, company: string, apiKey: string): Promise<any[]> {
+  try {
+    const keywords = company ? `${personName} ${company}` : personName;
+    const params = new URLSearchParams({
+      q: "content",
+      keywords: keywords,
+      count: "10",
+    });
+    const response = await fetch(`https://api.linkedin.com/v2/search?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+      },
+    });
+    if (!response.ok) {
+      console.warn(`[RI] LinkedIn API returned ${response.status} for query "${keywords}" — API may not be configured yet`);
+      return [];
+    }
+    const data = await response.json();
+    const posts = data.elements || [];
+    return posts.slice(0, 10).map((post: any) => ({
+      title: post.commentary || post.text || `LinkedIn post by ${personName}`,
+      body: (post.commentary || post.text || "").substring(0, 500),
+      url: post.permalink || `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(keywords)}`,
+      sourceName: "LinkedIn",
+      publishedAt: post.createdAt ? new Date(post.createdAt).toISOString() : new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn("[RI] LinkedIn API not available:", err);
+    return [];
+  }
+}
+
+async function fetchXPosts(personName: string, company: string, apiKey: string): Promise<any[]> {
+  try {
+    const searchQuery = company ? `${personName} ${company}` : personName;
+    const response = await fetch(`https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(searchQuery)}&max_results=10&tweet.fields=created_at,author_id,text`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response.ok) {
+      console.warn(`[RI] X.com API returned ${response.status} — API may not be configured yet`);
+      return [];
+    }
+    const data = await response.json();
+    const tweets = data.data || [];
+    return tweets.slice(0, 10).map((tweet: any) => ({
+      title: (tweet.text || "").substring(0, 100),
+      body: tweet.text || "",
+      url: `https://x.com/i/status/${tweet.id}`,
+      sourceName: "X.com",
+      publishedAt: tweet.created_at || new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn("[RI] X.com API not available:", err);
+    return [];
+  }
 }
 

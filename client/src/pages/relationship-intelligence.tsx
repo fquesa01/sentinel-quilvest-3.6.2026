@@ -72,6 +72,7 @@ import {
   FileEdit,
   Zap,
   Flag,
+  User,
 } from "lucide-react";
 import type { NewsAlert, RelationshipContact } from "@shared/schema";
 
@@ -314,9 +315,26 @@ function AlertCard({
         )}
 
         {alert.sourceName && (
-          <p className="text-xs text-muted-foreground" data-testid={`text-source-${alert.id}`}>
-            {alert.sourceName} &middot; {timeAgo(alert.publishedAt)}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap" data-testid={`text-source-${alert.id}`}>
+            <p className="text-xs text-muted-foreground">
+              {alert.sourceName} &middot; {timeAgo(alert.publishedAt)}
+            </p>
+            {(alert as any).searchSource === "linkedin" && (
+              <Badge variant="outline" className="text-xs py-0">
+                <Linkedin className="h-3 w-3 mr-1" /> LinkedIn
+              </Badge>
+            )}
+            {(alert as any).searchSource === "x" && (
+              <Badge variant="outline" className="text-xs py-0">
+                X.com
+              </Badge>
+            )}
+            {(alert as any).personMentioned && (
+              <Badge variant="secondary" className="text-xs py-0">
+                <User className="h-3 w-3 mr-1" /> Named
+              </Badge>
+            )}
+          </div>
         )}
 
         <div className="flex items-center gap-2 flex-wrap pt-1">
@@ -2053,6 +2071,8 @@ export default function RelationshipIntelligence() {
   const [sentimentFilter, setSentimentFilter] = useState("all");
   const [contactFilter, setContactFilter] = useState("all");
   const [scanMode, setScanMode] = useState<"both" | "person" | "company">("both");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [personOnlyFilter, setPersonOnlyFilter] = useState(false);
   const [outreachDialog, setOutreachDialog] = useState<{
     open: boolean;
     alert: NewsAlert | null;
@@ -2253,14 +2273,25 @@ export default function RelationshipIntelligence() {
 
   const allAlerts = alertsData?.alerts || [];
 
-  const filteredAlerts = searchQuery
-    ? allAlerts.filter(
-        (a) =>
-          a.alert.headline.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          a.contact.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (a.contact.company && a.contact.company.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    : allAlerts;
+  const filteredAlerts = allAlerts.filter((a) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch =
+        a.alert.headline.toLowerCase().includes(q) ||
+        a.contact.fullName.toLowerCase().includes(q) ||
+        (a.contact.company && a.contact.company.toLowerCase().includes(q));
+      if (!matchesSearch) return false;
+    }
+    if (sourceFilter !== "all") {
+      const alertSource = (a.alert as any).searchSource || "news";
+      if (alertSource !== sourceFilter) return false;
+    }
+    if (personOnlyFilter) {
+      const mentioned = (a.alert as any).personMentioned;
+      if (!mentioned) return false;
+    }
+    return true;
+  });
 
   const highPriority = filteredAlerts.filter(
     (a) => a.contact.priorityLevel <= 2 || (a.alert.knowledgeBaseConnections as any)?.entries?.length > 0
@@ -2430,6 +2461,28 @@ export default function RelationshipIntelligence() {
                   ))}
                 </SelectContent>
               </Select>
+
+              <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                <SelectTrigger className="w-[140px]" data-testid="select-source-filter">
+                  <SelectValue placeholder="All Sources" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  <SelectItem value="news">News</SelectItem>
+                  <SelectItem value="linkedin">LinkedIn</SelectItem>
+                  <SelectItem value="x">X.com</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button
+                variant={personOnlyFilter ? "default" : "outline"}
+                size="sm"
+                onClick={() => setPersonOnlyFilter(!personOnlyFilter)}
+                data-testid="button-person-only-filter"
+              >
+                <User className="h-4 w-4 mr-1" />
+                Person Only
+              </Button>
             </div>
           </CardContent>
         </Card>
