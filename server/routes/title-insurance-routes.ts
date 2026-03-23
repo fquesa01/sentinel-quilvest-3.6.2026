@@ -1170,7 +1170,7 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
 
   // ===== AI SURVEY ANALYSIS ENDPOINTS =====
 
-  async function runSurveyAnalysis(dealId: string, surveyText: string, commitmentId: string | null) {
+  async function runSurveyAnalysis(dealId: string, surveyText: string, commitmentId: string | null, sourceDocumentId: string | null = null) {
     if (commitmentId) {
       const [commitment] = await db.select({ id: schema.titleCommitments.id })
         .from(schema.titleCommitments)
@@ -1195,6 +1195,7 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
       floodMapNumber: extracted.surveyInfo.floodMapNumber || null,
       aiAnalysisSummary: extracted.summary,
       aiAnalysisJson: extracted,
+      sourceDocumentId: sourceDocumentId || null,
       status: "analyzed",
     };
     const parsed = insertSurveySchema.parse(surveyData);
@@ -1436,7 +1437,7 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
         return res.status(422).json({ message: `Document "${doc.fileName}" has not been processed by OCR yet or contains insufficient text. Please wait for OCR processing to complete.` });
       }
 
-      const result = await runSurveyAnalysis(dealId, surveyText, commitmentId || null);
+      const result = await runSurveyAnalysis(dealId, surveyText, commitmentId || null, documentId);
       res.json(result);
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Unknown error";

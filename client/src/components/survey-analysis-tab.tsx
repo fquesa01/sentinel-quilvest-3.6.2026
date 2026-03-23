@@ -813,6 +813,317 @@ function DiscrepanciesSection({
 }
 
 function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
+  const hasSourceDoc = !!(survey?.sourceDocumentId);
+
+  if (!survey || (!hasSourceDoc && (!survey.boundaries || survey.boundaries.length === 0))) {
+    return <EmptyState icon={Eye} title="No Plat Data" description="Run AI analysis to generate the plat visual from survey boundaries." />;
+  }
+
+  if (hasSourceDoc) {
+    return <PlatImageViewer survey={survey} />;
+  }
+  return <PlatSvgDiagram survey={survey} />;
+}
+
+function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragPanStart, setDragPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [pdfImageUrl, setPdfImageUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(true);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [imgDimensions, setImgDimensions] = useState<{ w: number; h: number }>({ w: 900, h: 600 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const [showEasements, setShowEasements] = useState(true);
+  const [showEncroachments, setShowEncroachments] = useState(true);
+  const [showImprovements, setShowImprovements] = useState(true);
+  const [showSetbacks, setShowSetbacks] = useState(true);
+
+  const easements = survey.easements || [];
+  const encroachments = survey.encroachments || [];
+  const improvements = survey.improvements || [];
+
+  useEffect(() => {
+    let cancelled = false;
+    async function renderPdf() {
+      try {
+        setPdfLoading(true);
+        setPdfError(null);
+        const resp = await fetch(`/api/data-room-documents/${survey.sourceDocumentId}/preview`, { credentials: "include" });
+        if (!resp.ok) throw new Error("Failed to load document");
+        const blob = await resp.blob();
+        if (blob.type.startsWith("image/")) {
+          const url = URL.createObjectURL(blob);
+          if (!cancelled) {
+            setPdfImageUrl(url);
+            const img = new Image();
+            img.onload = () => { if (!cancelled) setImgDimensions({ w: img.naturalWidth, h: img.naturalHeight }); };
+            img.src = url;
+          }
+          setPdfLoading(false);
+          return;
+        }
+        const arrayBuffer = await blob.arrayBuffer();
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1);
+        const scale = 2.5;
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas not supported");
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const dataUrl = canvas.toDataURL("image/png");
+        if (!cancelled) {
+          setPdfImageUrl(dataUrl);
+          setImgDimensions({ w: viewport.width, h: viewport.height });
+        }
+      } catch (err) {
+        if (!cancelled) setPdfError(err instanceof Error ? err.message : "Failed to render document");
+      } finally {
+        if (!cancelled) setPdfLoading(false);
+      }
+    }
+    if (survey.sourceDocumentId) renderPdf();
+    return () => { cancelled = true; };
+  }, [survey.sourceDocumentId]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setDragPanStart({ x: panX, y: panY });
+  }, [panX, panY]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging || !dragStart) return;
+    setPanX(dragPanStart.x + (e.clientX - dragStart.x));
+    setPanY(dragPanStart.y + (e.clientY - dragStart.y));
+  }, [isDragging, dragStart, dragPanStart]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+    setDragStart(null);
+  }, []);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
+    setZoom(z => Math.min(Math.max(z + delta, 0.3), 5));
+  }, []);
+
+  if (pdfLoading) {
+    return (
+      <div className="space-y-3">
+        <h3 className="font-medium text-sm">Property Survey Document</h3>
+        <Card>
+          <CardContent className="p-6 flex flex-col items-center justify-center min-h-[400px] gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Rendering survey document...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (pdfError || !pdfImageUrl) {
+    return <PlatSvgDiagram survey={survey} />;
+  }
+
+  const overlayW = imgDimensions.w;
+  const overlayH = imgDimensions.h;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="font-medium text-sm">Property Survey Document</h3>
+        <div className="flex items-center gap-1">
+          <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.min(z + 0.25, 5))} data-testid="button-zoom-in">
+            <ZoomIn className="h-4 w-4" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.max(z - 0.25, 0.3))} data-testid="button-zoom-out">
+            <ZoomOut className="h-4 w-4" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} data-testid="button-zoom-reset">
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground ml-2">{Math.round(zoom * 100)}%</span>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-2">
+          <div
+            ref={containerRef}
+            className="relative border rounded-md bg-muted/30 select-none"
+            style={{ height: "600px", overflow: "hidden", cursor: isDragging ? "grabbing" : "grab" }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onWheel={handleWheel}
+            data-testid="plat-image-viewer"
+          >
+            <div
+              style={{
+                transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                transformOrigin: "0 0",
+                position: "relative",
+                display: "inline-block",
+              }}
+            >
+              <img
+                src={pdfImageUrl}
+                alt="Survey document"
+                style={{ display: "block", maxWidth: "none" }}
+                draggable={false}
+                data-testid="img-survey-document"
+              />
+
+              <svg
+                width={overlayW}
+                height={overlayH}
+                style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
+                data-testid="svg-ai-overlay"
+              >
+                {showEasements && easements.map((e, i) => {
+                  const yPos = overlayH * 0.15 + i * (overlayH * 0.06);
+                  const xStart = overlayW * 0.05;
+                  const xEnd = overlayW * 0.95;
+                  const widthPx = e.widthFt ? Math.max(Number(e.widthFt) * 2, 20) : 20;
+                  return (
+                    <g key={`ov-easement-${i}`}>
+                      <rect x={xStart} y={yPos - widthPx / 2} width={xEnd - xStart} height={widthPx}
+                        fill="rgba(234, 179, 8, 0.15)" stroke="rgba(234, 179, 8, 0.8)" strokeWidth={2} strokeDasharray="8 4" rx={2} />
+                      <rect x={xStart + 4} y={yPos - widthPx / 2 - 20} width="auto" height={18} fill="rgba(234, 179, 8, 0.9)" rx={3} style={{ width: "auto" }} />
+                      <text x={xStart + 8} y={yPos - widthPx / 2 - 6} fontSize={12} fontWeight="600" fill="#fff" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>
+                        {easementTypeLabels[e.easementType || ""] || "Easement"}: {e.locationDescription || `#${i + 1}`}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {showEncroachments && encroachments.map((enc, i) => {
+                  const cx = overlayW * (0.3 + (i % 3) * 0.2);
+                  const cy = overlayH * (0.5 + Math.floor(i / 3) * 0.15);
+                  const r = 35;
+                  return (
+                    <g key={`ov-encr-${i}`}>
+                      <circle cx={cx} cy={cy} r={r} fill="rgba(239, 68, 68, 0.15)" stroke="rgba(239, 68, 68, 0.8)" strokeWidth={3} strokeDasharray="6 3" />
+                      <circle cx={cx} cy={cy} r={r + 8} fill="none" stroke="rgba(239, 68, 68, 0.4)" strokeWidth={1} strokeDasharray="4 4" />
+                      <text x={cx} y={cy - r - 8} fontSize={11} fontWeight="600" fill="rgba(239, 68, 68, 1)" textAnchor="middle" style={{ textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
+                        {enc.encroachingElement || "Encroachment"}
+                      </text>
+                      {enc.encroachmentDistanceFt && (
+                        <text x={cx} y={cy + 4} fontSize={10} fill="rgba(239, 68, 68, 0.9)" textAnchor="middle" style={{ textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
+                          {enc.encroachmentDistanceFt}ft
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+
+                {showImprovements && improvements.map((imp, i) => {
+                  const iw = overlayW * 0.18;
+                  const ih = overlayH * 0.12;
+                  const ix = overlayW * 0.3 + (i % 3) * (iw + 20);
+                  const iy = overlayH * 0.4 + Math.floor(i / 3) * (ih + 20);
+                  return (
+                    <g key={`ov-impr-${i}`}>
+                      <rect x={ix} y={iy} width={iw} height={ih} fill="rgba(59, 130, 246, 0.12)" stroke="rgba(59, 130, 246, 0.7)" strokeWidth={2} rx={4} />
+                      <text x={ix + iw / 2} y={iy - 6} fontSize={11} fontWeight="600" fill="rgba(59, 130, 246, 1)" textAnchor="middle" style={{ textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
+                        {imp.improvementType || "Structure"}
+                      </text>
+                      {imp.approxSqft && (
+                        <text x={ix + iw / 2} y={iy + ih / 2 + 4} fontSize={10} fill="rgba(59, 130, 246, 0.8)" textAnchor="middle" style={{ textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
+                          ~{Number(imp.approxSqft).toLocaleString()} sqft
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+
+                {showSetbacks && improvements.map((imp, impIdx) => {
+                  const setbacks = [
+                    { val: imp.setbackFrontFt, label: "Front Setback", y: overlayH * 0.08, horizontal: true },
+                    { val: imp.setbackRearFt, label: "Rear Setback", y: overlayH * 0.92, horizontal: true },
+                    { val: imp.setbackLeftFt, label: "Left Setback", x: overlayW * 0.04, horizontal: false },
+                    { val: imp.setbackRightFt, label: "Right Setback", x: overlayW * 0.96, horizontal: false },
+                  ];
+                  return setbacks.map((sb, sbIdx) => {
+                    if (!sb.val || Number(sb.val) <= 0) return null;
+                    if (sb.horizontal) {
+                      return (
+                        <g key={`ov-setback-${impIdx}-${sbIdx}`}>
+                          <line x1={overlayW * 0.05} y1={sb.y!} x2={overlayW * 0.95} y2={sb.y!}
+                            stroke="rgba(34, 197, 94, 0.7)" strokeWidth={2} strokeDasharray="10 5" />
+                          <text x={overlayW * 0.5} y={sb.y! - 6} fontSize={11} fontWeight="600" fill="rgba(34, 197, 94, 1)" textAnchor="middle" style={{ textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
+                            {sb.label}: {sb.val}ft
+                          </text>
+                        </g>
+                      );
+                    }
+                    return (
+                      <g key={`ov-setback-${impIdx}-${sbIdx}`}>
+                        <line x1={sb.x!} y1={overlayH * 0.05} x2={sb.x!} y2={overlayH * 0.95}
+                          stroke="rgba(34, 197, 94, 0.7)" strokeWidth={2} strokeDasharray="10 5" />
+                        <text x={sb.x!} y={overlayH * 0.03} fontSize={11} fontWeight="600" fill="rgba(34, 197, 94, 1)" textAnchor="middle" style={{ textShadow: "0 0 4px rgba(255,255,255,0.9)" }}>
+                          {sb.label}: {sb.val}ft
+                        </text>
+                      </g>
+                    );
+                  });
+                })}
+              </svg>
+            </div>
+
+            <div className="absolute bottom-3 right-3 bg-background/95 border rounded-md p-3 shadow-md" style={{ zIndex: 10 }} data-testid="overlay-legend">
+              <p className="text-xs font-semibold mb-2">AI Overlay</p>
+              <div className="space-y-1.5">
+                {easements.length > 0 && (
+                  <label className="flex items-center gap-2 text-xs cursor-pointer" data-testid="toggle-easements">
+                    <input type="checkbox" checked={showEasements} onChange={e => setShowEasements(e.target.checked)} className="rounded" />
+                    <span className="inline-block w-3 h-0.5 bg-yellow-500" style={{ borderBottom: "2px dashed" }} />
+                    <span>Easements ({easements.length})</span>
+                  </label>
+                )}
+                {encroachments.length > 0 && (
+                  <label className="flex items-center gap-2 text-xs cursor-pointer" data-testid="toggle-encroachments">
+                    <input type="checkbox" checked={showEncroachments} onChange={e => setShowEncroachments(e.target.checked)} className="rounded" />
+                    <span className="inline-block w-3 h-3 rounded-full border-2 border-red-500" />
+                    <span>Encroachments ({encroachments.length})</span>
+                  </label>
+                )}
+                {improvements.length > 0 && (
+                  <label className="flex items-center gap-2 text-xs cursor-pointer" data-testid="toggle-improvements">
+                    <input type="checkbox" checked={showImprovements} onChange={e => setShowImprovements(e.target.checked)} className="rounded" />
+                    <span className="inline-block w-3 h-3 border-2 border-blue-500 bg-blue-500/20 rounded-sm" />
+                    <span>Improvements ({improvements.length})</span>
+                  </label>
+                )}
+                {improvements.some(i => i.setbackFrontFt || i.setbackRearFt || i.setbackLeftFt || i.setbackRightFt) && (
+                  <label className="flex items-center gap-2 text-xs cursor-pointer" data-testid="toggle-setbacks">
+                    <input type="checkbox" checked={showSetbacks} onChange={e => setShowSetbacks(e.target.checked)} className="rounded" />
+                    <span className="inline-block w-3 h-0.5 bg-green-500" style={{ borderBottom: "2px dashed" }} />
+                    <span>Setback Lines</span>
+                  </label>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PlatSvgDiagram({ survey }: { survey: SurveyWithDetails }) {
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -846,7 +1157,7 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
     setZoom(z => Math.min(Math.max(z + delta, 0.4), 3));
   }, []);
 
-  if (!survey || !survey.boundaries || survey.boundaries.length === 0) {
+  if (!survey.boundaries || survey.boundaries.length === 0) {
     return <EmptyState icon={Eye} title="No Plat Data" description="Run AI analysis to generate the plat visual from survey boundaries." />;
   }
 
