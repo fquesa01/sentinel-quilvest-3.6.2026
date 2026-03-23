@@ -985,6 +985,18 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
 
       <Card>
         <CardContent className="p-2">
+          <div className="flex items-center justify-end gap-1 mb-2 bg-muted/50 border rounded-md p-1">
+            <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.min(z + 0.25, 5))} data-testid="button-zoom-in">
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+            <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.max(z - 0.25, 0.3))} data-testid="button-zoom-out">
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <Button size="icon" variant="ghost" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} data-testid="button-zoom-reset">
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground px-2 tabular-nums">{Math.round(baseScale * zoom * 100)}%</span>
+          </div>
           <div
             ref={containerRef}
             className="relative border rounded-md bg-muted/30 select-none"
@@ -995,18 +1007,6 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
             onMouseLeave={handleMouseUp}
             data-testid="plat-image-viewer"
           >
-            <div className="absolute top-3 right-3 z-50 flex items-center gap-1 bg-background/90 backdrop-blur-sm border rounded-md p-1 shadow-sm">
-              <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.min(z + 0.25, 5))} data-testid="button-zoom-in">
-                <ZoomIn className="h-4 w-4" />
-              </Button>
-              <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.max(z - 0.25, 0.3))} data-testid="button-zoom-out">
-                <ZoomOut className="h-4 w-4" />
-              </Button>
-              <Button size="icon" variant="ghost" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} data-testid="button-zoom-reset">
-                <RotateCcw className="h-4 w-4" />
-              </Button>
-              <span className="text-xs text-muted-foreground px-2 tabular-nums">{Math.round(baseScale * zoom * 100)}%</span>
-            </div>
             <div
               style={{
                 transform: `translate(${panX}px, ${panY}px) scale(${baseScale * zoom})`,
