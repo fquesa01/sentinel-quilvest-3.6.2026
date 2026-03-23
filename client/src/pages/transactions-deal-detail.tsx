@@ -7,6 +7,7 @@ import { TitleInsuranceTab } from "@/components/title-insurance-tab";
 import { TitleClaimsTab } from "@/components/title-claims-tab";
 import { TitleUnderwriterDashboard } from "@/components/title-underwriter-dashboard";
 import { SurveyAnalysisTab } from "@/components/survey-analysis-tab";
+import { ZoningAnalysisTab } from "@/components/zoning-analysis-tab";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1456,6 +1457,7 @@ export default function TransactionsDealDetail() {
                 {titleApplicableDealTypes.has(deal.dealType) && <SelectItem value="title-claims">Claims</SelectItem>}
                 {titleApplicableDealTypes.has(deal.dealType) && <SelectItem value="underwriter-dashboard">Underwriter</SelectItem>}
                 {titleApplicableDealTypes.has(deal.dealType) && <SelectItem value="survey-analysis">Survey Analysis</SelectItem>}
+                {titleApplicableDealTypes.has(deal.dealType) && <SelectItem value="zoning-analysis">Zoning</SelectItem>}
                 <SelectItem value="closing-docs">Closing Docs</SelectItem>
                 <SelectItem value="closing">Closing</SelectItem>
                 <SelectItem value="condo-summary">Condo Summary</SelectItem>
@@ -1479,6 +1481,7 @@ export default function TransactionsDealDetail() {
             {titleApplicableDealTypes.has(deal.dealType) && <TabsTrigger value="title-claims" data-testid="tab-title-claims">Claims</TabsTrigger>}
             {titleApplicableDealTypes.has(deal.dealType) && <TabsTrigger value="underwriter-dashboard" data-testid="tab-underwriter-dashboard">Underwriter</TabsTrigger>}
             {titleApplicableDealTypes.has(deal.dealType) && <TabsTrigger value="survey-analysis" data-testid="tab-survey-analysis">Survey Analysis</TabsTrigger>}
+            {titleApplicableDealTypes.has(deal.dealType) && <TabsTrigger value="zoning-analysis" data-testid="tab-zoning-analysis">Zoning</TabsTrigger>}
             <TabsTrigger value="closing-docs" data-testid="tab-closing-docs">Closing Docs</TabsTrigger>
             <TabsTrigger value="closing" data-testid="tab-closing">Closing</TabsTrigger>
             <TabsTrigger value="condo-summary" data-testid="tab-condo-summary">Condo Summary</TabsTrigger>
@@ -3284,6 +3287,12 @@ export default function TransactionsDealDetail() {
           {titleApplicableDealTypes.has(deal.dealType) && (
             <TabsContent value="survey-analysis" className="mt-6">
               <SurveyAnalysisTab dealId={id!} />
+            </TabsContent>
+          )}
+
+          {titleApplicableDealTypes.has(deal.dealType) && (
+            <TabsContent value="zoning-analysis" className="mt-6">
+              <ZoningAnalysisTab dealId={id!} />
             </TabsContent>
           )}
 

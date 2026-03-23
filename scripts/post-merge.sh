@@ -28,6 +28,10 @@ psql "$DB_URL" -c "ALTER TYPE contact_source_type ADD VALUE IF NOT EXISTS 'data_
 # Add storage_key column for Supabase Storage migration
 psql "$DB_URL" -c "ALTER TABLE firm_form_templates ADD COLUMN IF NOT EXISTS storage_key varchar(1000);" 2>/dev/null || true
 
+# Create deal_zoning_analyses table for Zoning Analysis feature
+psql "$DB_URL" -c "CREATE TABLE IF NOT EXISTS deal_zoning_analyses (id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(), deal_id VARCHAR NOT NULL REFERENCES deals(id) ON DELETE CASCADE, property_address TEXT, jurisdiction JSONB, property_classification VARCHAR(50), zoning_district VARCHAR(255), future_designation VARCHAR(255), analysis_content JSONB, document_summaries JSONB, generated_at TIMESTAMP DEFAULT NOW() NOT NULL, updated_at TIMESTAMP DEFAULT NOW() NOT NULL);" 2>/dev/null || true
+psql "$DB_URL" -c "CREATE UNIQUE INDEX IF NOT EXISTS idx_deal_zoning_analyses_deal_unique ON deal_zoning_analyses(deal_id);" 2>/dev/null || true
+
 # Add search_source and person_mentioned columns for Intelligence Feed filtering
 psql "$DB_URL" -c "ALTER TABLE news_alerts ADD COLUMN IF NOT EXISTS search_source varchar(20) DEFAULT 'news';" 2>/dev/null || true
 psql "$DB_URL" -c "ALTER TABLE news_alerts ADD COLUMN IF NOT EXISTS person_mentioned boolean DEFAULT false;" 2>/dev/null || true

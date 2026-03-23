@@ -15264,3 +15264,25 @@ export const insertSurveyDiscrepancySchema = createInsertSchema(surveyDiscrepanc
 });
 export type InsertSurveyDiscrepancy = z.infer<typeof insertSurveyDiscrepancySchema>;
 export type SurveyDiscrepancy = typeof surveyDiscrepancies.$inferSelect;
+
+export const dealZoningAnalyses = pgTable("deal_zoning_analyses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }).notNull(),
+  propertyAddress: text("property_address"),
+  jurisdiction: jsonb("jurisdiction"),
+  propertyClassification: varchar("property_classification", { length: 50 }),
+  zoningDistrict: varchar("zoning_district", { length: 255 }),
+  futureDesignation: varchar("future_designation", { length: 255 }),
+  analysisContent: jsonb("analysis_content"),
+  documentSummaries: jsonb("document_summaries"),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  dealIdx: uniqueIndex("idx_deal_zoning_analyses_deal_unique").on(table.dealId),
+}));
+
+export const insertDealZoningAnalysisSchema = createInsertSchema(dealZoningAnalyses).omit({
+  id: true, generatedAt: true, updatedAt: true,
+});
+export type InsertDealZoningAnalysis = z.infer<typeof insertDealZoningAnalysisSchema>;
+export type DealZoningAnalysis = typeof dealZoningAnalyses.$inferSelect;
