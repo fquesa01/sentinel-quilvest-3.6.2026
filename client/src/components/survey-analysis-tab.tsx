@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +42,8 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  FileText,
+  FolderOpen,
 } from "lucide-react";
 import type {
   Survey,
@@ -123,12 +125,28 @@ const discrepancyStatusLabels: Record<string, string> = {
   accepted_risk: "Accepted Risk",
 };
 
+interface DataRoomDoc {
+  id: string;
+  fileName: string | null;
+  fileSize: number | null;
+  hasExtractedText: boolean;
+}
+
+const SURVEY_KEYWORDS = ["survey", "alta", "boundary survey", "plat survey", "as-built", "topographic survey"];
+
+function isSurveyDocument(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return SURVEY_KEYWORDS.some(kw => lower.includes(kw));
+}
+
 export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<string>("overview");
   const [analyzeDialogOpen, setAnalyzeDialogOpen] = useState(false);
   const [surveyText, setSurveyText] = useState("");
   const [commitmentIdForAnalysis, setCommitmentIdForAnalysis] = useState("");
+  const [selectedDocId, setSelectedDocId] = useState("");
+  const [autoDetectDismissed, setAutoDetectDismissed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: surveys = [], isLoading } = useQuery<Survey[]>({
@@ -141,6 +159,18 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
     queryKey: ["/api/deals", dealId, "title", "survey", activeSurveyId],
     enabled: !!activeSurveyId,
   });
+
+  const { data: dataRoomDocs = [] } = useQuery<DataRoomDoc[]>({
+    queryKey: ["/api/deals", dealId, "data-room-documents-list"],
+    queryFn: async () => {
+      const res = await fetch(`/api/deals/${dealId}/data-room-documents-list`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const detectedSurveyDoc = dataRoomDocs.find(d => d.fileName && isSurveyDocument(d.fileName) && d.hasExtractedText);
+  const showAutoDetect = !activeSurveyId && !autoDetectDismissed && !!detectedSurveyDoc && surveys.length === 0 && !isLoading;
 
   const analyzeMutation = useMutation({
     mutationFn: async (data: { surveyText: string; commitmentId?: string }) => {
@@ -186,6 +216,22 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
     },
   });
 
+  const dataRoomAnalyzeMutation = useMutation({
+    mutationFn: async (data: { documentId: string; commitmentId?: string }) => {
+      const res = await apiRequest("POST", `/api/deals/${dealId}/title/survey/analyze-from-dataroom`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deals", dealId, "title", "survey"] });
+      toast({ title: "Survey Analyzed", description: "AI has analyzed the data room document and extracted survey data." });
+      setAnalyzeDialogOpen(false);
+      setSelectedDocId("");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Analysis Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const updateDiscrepancyMutation = useMutation({
     mutationFn: async ({ discrepancyId, data }: { discrepancyId: string; data: Record<string, unknown> }) => {
       const res = await apiRequest("PATCH", `/api/deals/${dealId}/title/survey/${activeSurveyId}/discrepancies/${discrepancyId}`, data);
@@ -196,6 +242,8 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
       toast({ title: "Discrepancy Updated" });
     },
   });
+
+  const isAnyPending = analyzeMutation.isPending || pdfUploadMutation.isPending || dataRoomAnalyzeMutation.isPending;
 
   if (isLoading) {
     return (
@@ -239,6 +287,44 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
       <ScrollArea className="flex-1 p-4">
         {!surveyDetail && surveys.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
+            {showAutoDetect && detectedSurveyDoc ? (
+              <Card className="mb-6 max-w-lg w-full border-primary/30 bg-primary/5">
+                <CardContent className="py-4">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="text-left flex-1">
+                      <p className="text-sm font-medium" data-testid="text-auto-detect-title">Survey Document Detected</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Found <span className="font-medium">{detectedSurveyDoc.fileName}</span> in the data room. Would you like to analyze it automatically?
+                      </p>
+                      <div className="flex items-center gap-2 mt-3">
+                        <Button
+                          size="sm"
+                          onClick={() => dataRoomAnalyzeMutation.mutate({ documentId: detectedSurveyDoc.id })}
+                          disabled={isAnyPending}
+                          data-testid="button-auto-analyze-survey"
+                        >
+                          {dataRoomAnalyzeMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5 mr-1" />
+                          )}
+                          Analyze Now
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setAutoDetectDismissed(true)}
+                          data-testid="button-dismiss-auto-detect"
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
             <MapPin className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2" data-testid="text-no-survey">No Survey Analyzed Yet</h3>
             <p className="text-sm text-muted-foreground mb-4 max-w-md">
@@ -271,7 +357,7 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>AI Survey Analysis</DialogTitle>
-            <DialogDescription>Upload a survey PDF or paste the survey text below. AI will extract boundaries, easements, encroachments, improvements, and cross-reference against title exceptions.</DialogDescription>
+            <DialogDescription>Select a document from the data room, upload a survey PDF, or paste text below. AI will extract boundaries, easements, encroachments, improvements, and cross-reference against title exceptions.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -283,6 +369,65 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
                 data-testid="input-analysis-commitment"
               />
             </div>
+
+            {dataRoomDocs.length > 0 && (
+              <div>
+                <Label className="text-xs flex items-center gap-1">
+                  <FolderOpen className="h-3 w-3" />
+                  Select from Data Room
+                </Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Select value={selectedDocId} onValueChange={setSelectedDocId}>
+                    <SelectTrigger className="flex-1" data-testid="select-dataroom-doc">
+                      <SelectValue placeholder="Choose a document..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {dataRoomDocs.map(doc => (
+                        <SelectItem key={doc.id} value={doc.id} data-testid={`select-doc-${doc.id}`}>
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-3 w-3 flex-shrink-0" />
+                            <span className="truncate">{doc.fileName || "Untitled"}</span>
+                            {doc.fileSize && (
+                              <span className="text-xs text-muted-foreground flex-shrink-0">
+                                ({(doc.fileSize / 1024).toFixed(0)} KB)
+                              </span>
+                            )}
+                            {!doc.hasExtractedText && (
+                              <Badge variant="outline" className="text-[10px] flex-shrink-0">No OCR</Badge>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={() => dataRoomAnalyzeMutation.mutate({ documentId: selectedDocId, commitmentId: commitmentIdForAnalysis || undefined })}
+                    disabled={!selectedDocId || isAnyPending}
+                    data-testid="button-analyze-dataroom-doc"
+                  >
+                    {dataRoomAnalyzeMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-1" />
+                    )}
+                    Analyze
+                  </Button>
+                </div>
+                {dataRoomAnalyzeMutation.isPending && (
+                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Analyzing data room document...
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 border-t" />
+              <span className="text-xs text-muted-foreground">or upload / paste</span>
+              <div className="flex-1 border-t" />
+            </div>
+
             <div>
               <Label className="text-xs">Upload Survey PDF</Label>
               <Input
@@ -294,7 +439,7 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
                   const file = e.target.files?.[0];
                   if (file) pdfUploadMutation.mutate(file);
                 }}
-                disabled={pdfUploadMutation.isPending || analyzeMutation.isPending}
+                disabled={isAnyPending}
               />
               {pdfUploadMutation.isPending && (
                 <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
@@ -323,7 +468,7 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
             <Button variant="outline" onClick={() => setAnalyzeDialogOpen(false)} data-testid="button-cancel-analysis">Cancel</Button>
             <Button
               onClick={() => analyzeMutation.mutate({ surveyText, commitmentId: commitmentIdForAnalysis || undefined })}
-              disabled={!surveyText.trim() || analyzeMutation.isPending || pdfUploadMutation.isPending}
+              disabled={!surveyText.trim() || isAnyPending}
               data-testid="button-run-analysis"
             >
               {analyzeMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1" />}

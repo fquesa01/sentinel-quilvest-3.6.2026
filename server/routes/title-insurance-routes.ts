@@ -1379,6 +1379,72 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
     }
   });
 
+  app.get("/api/deals/:dealId/data-room-documents-list", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId } = req.params;
+      const rooms = await db.select({ id: schema.dataRooms.id })
+        .from(schema.dataRooms)
+        .where(eq(schema.dataRooms.dealId, dealId));
+
+      if (rooms.length === 0) return res.json([]);
+
+      const roomIds = rooms.map(r => r.id);
+      const docs = await db.select({
+        id: schema.dataRoomDocuments.id,
+        fileName: schema.dataRoomDocuments.fileName,
+        fileSize: schema.dataRoomDocuments.fileSize,
+        hasExtractedText: sql<boolean>`CASE WHEN length(${schema.dataRoomDocuments.extractedText}) > 50 THEN true ELSE false END`,
+      })
+        .from(schema.dataRoomDocuments)
+        .where(inArray(schema.dataRoomDocuments.dataRoomId, roomIds));
+
+      res.json(docs);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Data room docs list error:", msg);
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  app.post("/api/deals/:dealId/title/survey/analyze-from-dataroom", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId } = req.params;
+      const { documentId, commitmentId } = req.body;
+      if (!documentId) return res.status(400).json({ message: "documentId is required" });
+
+      const [doc] = await db.select({
+        id: schema.dataRoomDocuments.id,
+        extractedText: schema.dataRoomDocuments.extractedText,
+        fileName: schema.dataRoomDocuments.fileName,
+        dataRoomId: schema.dataRoomDocuments.dataRoomId,
+      })
+        .from(schema.dataRoomDocuments)
+        .where(eq(schema.dataRoomDocuments.id, documentId));
+
+      if (!doc) return res.status(404).json({ message: "Document not found" });
+
+      const [room] = await db.select({ dealId: schema.dataRooms.dealId })
+        .from(schema.dataRooms)
+        .where(eq(schema.dataRooms.id, doc.dataRoomId));
+
+      if (!room || room.dealId !== dealId) {
+        return res.status(403).json({ message: "Document does not belong to this deal" });
+      }
+
+      const surveyText = doc.extractedText;
+      if (!surveyText || surveyText.trim().length < 50) {
+        return res.status(422).json({ message: `Document "${doc.fileName}" has not been processed by OCR yet or contains insufficient text. Please wait for OCR processing to complete.` });
+      }
+
+      const result = await runSurveyAnalysis(dealId, surveyText, commitmentId || null);
+      res.json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Survey dataroom analysis error:", msg);
+      res.status(500).json({ message: msg });
+    }
+  });
+
   // ===== AI EXCEPTION ANALYSIS ENDPOINT =====
 
   app.post("/api/deals/:dealId/title/exceptions/:exceptionId/ai-analysis", isAuthenticated, async (req: any, res: any) => {
