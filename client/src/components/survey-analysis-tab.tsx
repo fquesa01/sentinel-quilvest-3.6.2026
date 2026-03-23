@@ -913,10 +913,16 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
     setDragStart(null);
   }, []);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.15 : 0.15;
-    setZoom(z => Math.min(Math.max(z + delta, 0.3), 5));
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.15 : 0.15;
+      setZoom(z => Math.min(Math.max(z + delta, 0.3), 5));
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
   }, []);
 
   if (pdfLoading) {
@@ -963,21 +969,7 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="font-medium text-sm">Property Survey Document</h3>
-        <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.min(z + 0.25, 5))} data-testid="button-zoom-in">
-            <ZoomIn className="h-4 w-4" />
-          </Button>
-          <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.max(z - 0.25, 0.3))} data-testid="button-zoom-out">
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <Button size="icon" variant="ghost" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} data-testid="button-zoom-reset">
-            <RotateCcw className="h-4 w-4" />
-          </Button>
-          <span className="text-xs text-muted-foreground ml-2">{Math.round(zoom * 100)}%</span>
-        </div>
-      </div>
+      <h3 className="font-medium text-sm">Property Survey Document</h3>
 
       <Card>
         <CardContent className="p-2">
@@ -989,9 +981,20 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            onWheel={handleWheel}
             data-testid="plat-image-viewer"
           >
+            <div className="absolute top-3 right-3 z-50 flex items-center gap-1 bg-background/90 backdrop-blur-sm border rounded-md p-1 shadow-sm">
+              <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.min(z + 0.25, 5))} data-testid="button-zoom-in">
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.max(z - 0.25, 0.3))} data-testid="button-zoom-out">
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} data-testid="button-zoom-reset">
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+              <span className="text-xs text-muted-foreground px-2 tabular-nums">{Math.round(zoom * 100)}%</span>
+            </div>
             <div
               style={{
                 transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
