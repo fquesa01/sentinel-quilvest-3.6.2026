@@ -980,23 +980,25 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
   const overlayH = imgDimensions.h;
 
   return (
-    <div className="space-y-3">
-      <h3 className="font-medium text-sm">Property Survey Document</h3>
+    <div className="space-y-3 max-w-full overflow-hidden">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="font-medium text-sm">Property Survey Document</h3>
+        <div className="flex items-center gap-1 bg-muted/50 border rounded-md p-1">
+          <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.min(z + 0.25, 5))} data-testid="button-zoom-in">
+            <ZoomIn className="h-4 w-4" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.max(z - 0.25, 0.3))} data-testid="button-zoom-out">
+            <ZoomOut className="h-4 w-4" />
+          </Button>
+          <Button size="icon" variant="ghost" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} data-testid="button-zoom-reset">
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground px-2 tabular-nums">{Math.round(baseScale * zoom * 100)}%</span>
+        </div>
+      </div>
 
       <Card>
         <CardContent className="p-2">
-          <div className="flex items-center justify-end gap-1 mb-2 bg-muted/50 border rounded-md p-1">
-            <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.min(z + 0.25, 5))} data-testid="button-zoom-in">
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="ghost" onClick={() => setZoom(z => Math.max(z - 0.25, 0.3))} data-testid="button-zoom-out">
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="ghost" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} data-testid="button-zoom-reset">
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-            <span className="text-xs text-muted-foreground px-2 tabular-nums">{Math.round(baseScale * zoom * 100)}%</span>
-          </div>
           <div
             ref={containerRef}
             className="relative border rounded-md bg-muted/30 select-none"
