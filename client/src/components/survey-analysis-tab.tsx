@@ -869,7 +869,8 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
         }
         const arrayBuffer = await blob.arrayBuffer();
         const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+        const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker.default;
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const page = await pdf.getPage(1);
         const scale = 2.5;
@@ -933,6 +934,27 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
   }
 
   if (pdfError || !pdfImageUrl) {
+    if (survey.sourceDocumentId) {
+      return (
+        <div className="space-y-3">
+          <h3 className="font-medium text-sm">Property Survey Document</h3>
+          <Card>
+            <CardContent className="p-6 flex flex-col items-center justify-center min-h-[300px] gap-4">
+              <AlertTriangle className="h-10 w-10 text-muted-foreground" />
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium">Survey document could not be loaded</p>
+                <p className="text-xs text-muted-foreground">
+                  {pdfError || "The source file may have been removed or is temporarily unavailable."}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Try re-uploading the survey PDF to the Data Room, then re-run the analysis.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
     return <PlatSvgDiagram survey={survey} />;
   }
 
