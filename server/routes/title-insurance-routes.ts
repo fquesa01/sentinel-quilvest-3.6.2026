@@ -1183,6 +1183,7 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
     const surveyData: Record<string, unknown> = {
       transactionId: dealId,
       commitmentId: commitmentId || null,
+      surveyNumber: extracted.surveyInfo.surveyNumber || null,
       surveyorCompany: extracted.surveyInfo.surveyorCompany || null,
       surveyorName: extracted.surveyInfo.surveyorName || null,
       surveyorLicense: extracted.surveyInfo.surveyorLicense || null,

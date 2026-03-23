@@ -26,6 +26,7 @@ async function claudeGenerate(systemPrompt: string, userPrompt: string): Promise
 
 export interface ExtractedSurveyData {
   surveyInfo: {
+    surveyNumber?: string;
     surveyorCompany?: string;
     surveyorName?: string;
     surveyorLicense?: string;
@@ -77,74 +78,117 @@ export interface ExtractedSurveyData {
 }
 
 export async function extractSurveyData(surveyText: string): Promise<ExtractedSurveyData> {
-  const prompt = `Extract ALL structured data from the following survey text and return a JSON object with these fields:
+  const systemPrompt = `You are an expert ALTA/NSPS land surveyor and title insurance analyst with decades of experience reading survey plats, site plans, and boundary surveys. You extract structured data from survey document text (often OCR-processed) with extreme precision.
+
+CRITICAL EXTRACTION RULES — read these carefully:
+
+1. SURVEY/PLAN NUMBERS: Look for plan numbers (e.g., "P19-101"), project numbers (e.g., "PSLUSD # 11-346-00"), drawing numbers (e.g., "S-1"), or any identifying survey/plan reference number. Return the primary plan/survey number in surveyNumber.
+
+2. MONUMENT FOUND STATUS — THIS IS THE MOST IMPORTANT RULE:
+   - The abbreviation "FND" in survey text means "FOUND" — the monument WAS located in the field.
+   - "FND 5/8" R/C LB 4842" means: a 5/8-inch rebar with cap, License Book 4842, was FOUND. Set monumentFound=true.
+   - "SET" means a new monument was placed. Set monumentFound=true (it exists).
+   - Only set monumentFound=false if the text explicitly says "NOT FOUND", "MISSING", "DESTROYED", or there is no monument reference at all for that corner.
+   - For monumentType, extract the full description: "5/8" R/C LB 4842", "iron rod", "concrete monument", "4x4 concrete", etc.
+
+3. BOUNDARY BEARINGS & DISTANCES — EXTRACT ALL OF THEM:
+   - Survey documents contain bearings in format like "S 62°07'10\" W" and distances like "86.11'" along each property line.
+   - Look for ALL dimension callouts along property boundaries, not just the first one.
+   - Dimension callouts may appear as standalone numbers near boundary lines (e.g., "42.18'", "251.86'").
+   - Curve data may include arc length, radius, chord bearing, and chord distance — extract what is available.
+   - If a boundary line has no explicit bearing/distance but the text mentions dimensions near it, attempt to associate them.
+
+4. IMPROVEMENTS — AVOID DOUBLE-COUNTING:
+   - Surveys often have a "Site Data" table with aggregate totals (e.g., "PROPOSED CANOPIES: 1,500 SF").
+   - If the survey labels individual items AND provides a Site Data aggregate total, check for consistency.
+   - If individual items sum to MORE than the Site Data total, the Site Data total is authoritative — adjust or consolidate the items.
+   - Example: if two individual canopy labels show 1,500 SF and 1,000 SF but Site Data says "PROPOSED CANOPIES: 1,500 total", list canopies matching the 1,500 SF total, not 2,500 SF.
+   - For each improvement, extract FFE (Finished Floor Elevation) values if present and include in notes (e.g., "FFE 12.19", "FFE = 12.40").
+
+5. SETBACK & ZONING DATA:
+   - Extract setbacks from the Site Data table: "FRONT", "SIDES", "REAR" setback values.
+   - Note any variance references (e.g., "Variance P19-242 for rear setback").
+   - If a setback is non-compliant, set zoningCompliant=false and explain in notes.
+
+6. SURVEYOR vs. LAND PLANNER:
+   - The "Surveyor" or "Surveyor of Record" is the surveyorCompany/surveyorName.
+   - A "Land Planner" or "Design" firm is NOT the surveyor — do not confuse them.
+   - Look for license numbers like "PSM" (Professional Surveyor & Mapper) or "PLS" (Professional Land Surveyor).
+
+7. SUMMARY:
+   - Write a comprehensive paragraph suitable for a title examiner covering: property identification, total area, zoning, impervious coverage, existing and proposed improvements, easements, encroachments (or lack thereof), setback compliance with specific measurements, parking compliance, stormwater/drainage features, adjacency, and any title review recommendations.
+
+Return ONLY valid JSON, no markdown formatting.`;
+
+  const prompt = `Extract ALL structured data from the following survey/site plan text. Return a JSON object with this exact structure:
 
 {
   "surveyInfo": {
-    "surveyorCompany": "string or null",
-    "surveyorName": "string or null",
-    "surveyorLicense": "string or null",
+    "surveyNumber": "Plan/survey/drawing number (e.g., P19-101, S-1) or null",
+    "surveyorCompany": "Surveyor firm name or null",
+    "surveyorName": "Individual surveyor name or null",
+    "surveyorLicense": "License number (PSM/PLS #) or null",
     "certificationDate": "YYYY-MM-DD or null",
-    "propertyAddress": "string or null",
-    "legalDescription": "string or null",
+    "propertyAddress": "Full street address or null",
+    "legalDescription": "Full legal description verbatim or null",
     "totalAreaSqft": number or null,
     "totalAreaAcres": number or null,
-    "floodZone": "string or null",
-    "floodMapNumber": "string or null"
+    "floodZone": "Flood zone designation or null",
+    "floodMapNumber": "FEMA flood map panel number or null"
   },
   "boundaries": [
     {
       "direction": "North/South/East/West/NE/NW/SE/SW",
-      "bearing": "N 45° 30' 15\" E format",
-      "distanceFt": number,
-      "adjoinsDescription": "what this boundary adjoins",
-      "monumentType": "iron pin/concrete monument/etc",
-      "monumentFound": true/false,
+      "bearing": "S 62°07'10\\" W format — extract exact bearing if available",
+      "distanceFt": number — extract exact distance in feet if available,
+      "adjoinsDescription": "What this boundary adjoins (road, lot, etc.) with details",
+      "monumentType": "Full monument description, e.g. 5/8\\" R/C LB 4842",
+      "monumentFound": true if FND/SET/found, false only if explicitly missing,
       "orderIndex": sequential number starting at 0
     }
   ],
   "easements": [
     {
       "easementType": "utility|drainage|access|conservation|sidewalk|ingress_egress|other",
-      "locationDescription": "where on the property",
-      "holder": "who holds the easement",
-      "recordingReference": "recording book/page info",
+      "locationDescription": "Where on the property and along which boundary",
+      "holder": "Entity the easement is reserved for",
+      "recordingReference": "Plat Book/Page or OR Book/Page reference",
       "widthFt": number or null,
-      "notes": "additional details"
+      "notes": "Additional details including any instrument numbers"
     }
   ],
   "encroachments": [
     {
-      "description": "what is encroaching",
+      "description": "What is encroaching and where",
       "severity": "minor|moderate|major|critical",
       "encroachmentDistanceFt": number,
-      "encroachmentDirection": "direction of encroachment",
-      "encroachingElement": "fence/structure/etc",
-      "affectedBoundary": "which boundary is affected",
-      "recommendedAction": "suggested resolution"
+      "encroachmentDirection": "Direction of encroachment",
+      "encroachingElement": "Specific element (fence/structure/etc)",
+      "affectedBoundary": "Which boundary line is affected",
+      "recommendedAction": "Suggested resolution"
     }
   ],
   "improvements": [
     {
-      "improvementType": "main dwelling/garage/shed/pool/driveway/fence/etc",
-      "approxSqft": number or null,
+      "improvementType": "Descriptive name (car wash, existing building, canopy, parking, etc.)",
+      "approxSqft": number or null — use Site Data totals if they conflict with individual labels,
       "setbackFrontFt": number or null,
       "setbackRearFt": number or null,
       "setbackLeftFt": number or null,
       "setbackRightFt": number or null,
-      "zoningCompliant": true/false/null,
-      "notes": "additional info"
+      "zoningCompliant": true/false/null — false if variance was needed,
+      "notes": "Include building type, stories, FFE values, materials, variance references, compliance notes"
     }
   ],
-  "summary": "A comprehensive paragraph summarizing the survey findings, key observations, potential issues, and recommendations for the title examiner."
+  "summary": "Comprehensive paragraph for title examiner — cover property ID, area, zoning, impervious area %, improvements, easements, encroachments, setback compliance with measurements, parking, drainage, adjacency, and recommendations."
 }
 
-Return ONLY valid JSON, no markdown formatting. If a field has no data, use null for scalar values or empty array for arrays.
+If no encroachments are visible, return an empty encroachments array. Do NOT invent encroachments that aren't in the text.
+Return ONLY valid JSON, no markdown formatting. Use null for missing scalar values, empty array [] for missing lists.
 
 SURVEY TEXT:
 ${surveyText}`;
 
-  const systemPrompt = "You are an expert land surveyor and title insurance analyst. Extract structured data from survey documents and return valid JSON only, with no markdown formatting.";
   const text = await claudeGenerate(systemPrompt, prompt);
   const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
   const parsed = JSON.parse(cleaned);
