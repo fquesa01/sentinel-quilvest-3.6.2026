@@ -827,6 +827,7 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
 
 function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
   const [zoom, setZoom] = useState(1);
+  const [baseScale, setBaseScale] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -837,6 +838,7 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [imgDimensions, setImgDimensions] = useState<{ w: number; h: number }>({ w: 900, h: 600 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const containerH = 600;
 
   const [showEasements, setShowEasements] = useState(true);
   const [showEncroachments, setShowEncroachments] = useState(true);
@@ -861,7 +863,14 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
           if (!cancelled) {
             setPdfImageUrl(url);
             const img = new Image();
-            img.onload = () => { if (!cancelled) setImgDimensions({ w: img.naturalWidth, h: img.naturalHeight }); };
+            img.onload = () => {
+              if (!cancelled) {
+                setImgDimensions({ w: img.naturalWidth, h: img.naturalHeight });
+                const cw = containerRef.current?.clientWidth || 800;
+                const fitScale = Math.min(cw / img.naturalWidth, containerH / img.naturalHeight);
+                setBaseScale(fitScale);
+              }
+            };
             img.src = url;
           }
           setPdfLoading(false);
@@ -885,6 +894,9 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
         if (!cancelled) {
           setPdfImageUrl(dataUrl);
           setImgDimensions({ w: viewport.width, h: viewport.height });
+          const cw = containerRef.current?.clientWidth || 800;
+          const fitScale = Math.min(cw / viewport.width, containerH / viewport.height);
+          setBaseScale(fitScale);
         }
       } catch (err) {
         if (!cancelled) setPdfError(err instanceof Error ? err.message : "Failed to render document");
@@ -993,11 +1005,11 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
               <Button size="icon" variant="ghost" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }} data-testid="button-zoom-reset">
                 <RotateCcw className="h-4 w-4" />
               </Button>
-              <span className="text-xs text-muted-foreground px-2 tabular-nums">{Math.round(zoom * 100)}%</span>
+              <span className="text-xs text-muted-foreground px-2 tabular-nums">{Math.round(baseScale * zoom * 100)}%</span>
             </div>
             <div
               style={{
-                transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                transform: `translate(${panX}px, ${panY}px) scale(${baseScale * zoom})`,
                 transformOrigin: "0 0",
                 position: "relative",
                 display: "inline-block",
