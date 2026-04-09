@@ -801,6 +801,19 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
     enabled: !!selectedSetId && !searchResults,
   });
 
+  const { data: dataLakeParentItem, isLoading: isLoadingDataLakeParent, isFetched: isDataLakeParentFetched } = useQuery<any>({
+    queryKey: ["/api/data-lake/items", effectiveCaseId],
+    queryFn: async () => {
+      const response = await fetch(`/api/data-lake/items/${effectiveCaseId}`, { credentials: "include" });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!effectiveCaseId && !searchResults && !selectedSetId,
+  });
+
+  const isDataLakeSource = !!dataLakeParentItem && !!dataLakeParentItem.id;
+  const sourceResolved = !effectiveCaseId || isDataLakeParentFetched;
+
   const { data: communications, isLoading } = useQuery<Communication[]>({
     queryKey: ["/api/communications", queryString],
     queryFn: async () => {
@@ -821,19 +834,6 @@ export default function DocumentReviewPage({ routeParams }: DocumentReviewPagePr
     },
     enabled: !!effectiveCaseId && !searchResults && !selectedSetId && sourceResolved && !isDataLakeSource,
   });
-
-  const { data: dataLakeParentItem, isLoading: isLoadingDataLakeParent, isFetched: isDataLakeParentFetched } = useQuery<any>({
-    queryKey: ["/api/data-lake/items", effectiveCaseId],
-    queryFn: async () => {
-      const response = await fetch(`/api/data-lake/items/${effectiveCaseId}`, { credentials: "include" });
-      if (!response.ok) return null;
-      return response.json();
-    },
-    enabled: !!effectiveCaseId && !searchResults && !selectedSetId,
-  });
-
-  const isDataLakeSource = !!dataLakeParentItem && !!dataLakeParentItem.id;
-  const sourceResolved = !effectiveCaseId || isDataLakeParentFetched;
 
   const { data: dataLakeChildren, isLoading: isLoadingDataLakeChildren } = useQuery<any[]>({
     queryKey: ["/api/data-lake/items", effectiveCaseId, "children"],
