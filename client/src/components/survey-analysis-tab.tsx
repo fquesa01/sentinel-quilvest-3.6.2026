@@ -132,7 +132,7 @@ interface DataRoomDoc {
   hasExtractedText: boolean;
 }
 
-const SURVEY_KEYWORDS = ["survey", "alta", "boundary survey", "plat survey", "as-built", "topographic survey"];
+const SURVEY_KEYWORDS = ["survey", "alta survey", "boundary survey", "plat survey", "as-built survey"];
 
 function isSurveyDocument(fileName: string): boolean {
   const lower = fileName.toLowerCase();

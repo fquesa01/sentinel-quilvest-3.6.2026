@@ -1433,10 +1433,11 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
         return res.status(403).json({ message: "Document does not belong to this deal" });
       }
 
-      const surveyText = doc.extractedText;
-      if (!surveyText || surveyText.trim().length < 50) {
-        return res.status(422).json({ message: `Document "${doc.fileName}" has not been processed by OCR yet or contains insufficient text. Please wait for OCR processing to complete.` });
-      }
+      const extracted = doc.extractedText;
+      const hasUsableText = !!extracted && extracted.trim().length >= 50;
+      const surveyText = hasUsableText
+        ? extracted!
+        : `Document filename: ${doc.fileName || "(untitled)"}\n\nNote: This document has not been processed by OCR yet or contains insufficient extracted text. The analysis is being run with only the filename as context. For full results, wait for OCR processing to complete and re-run the analysis.`;
 
       const result = await runSurveyAnalysis(dealId, surveyText, commitmentId || null, documentId);
       res.json(result);
