@@ -855,7 +855,7 @@ function PlatImageViewer({ survey, onReanalyze }: { survey: SurveyWithDetails; o
       try {
         setPdfLoading(true);
         setPdfError(null);
-        const resp = await fetch(`/api/data-room-documents/${survey.sourceDocumentId}/preview`, { credentials: "include" });
+        const resp = await fetch(`/api/deals/${survey.transactionId}/data-room-documents/${survey.sourceDocumentId}/image-preview`, { credentials: "include" });
         if (!resp.ok) throw new Error("Failed to load document");
         const blob = await resp.blob();
         if (blob.type.startsWith("image/")) {
@@ -904,9 +904,9 @@ function PlatImageViewer({ survey, onReanalyze }: { survey: SurveyWithDetails; o
         if (!cancelled) setPdfLoading(false);
       }
     }
-    if (survey.sourceDocumentId) renderPdf();
+    if (survey.sourceDocumentId && survey.transactionId) renderPdf();
     return () => { cancelled = true; };
-  }, [survey.sourceDocumentId]);
+  }, [survey.sourceDocumentId, survey.transactionId]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setIsDragging(true);

@@ -5,6 +5,7 @@ import { eq, and, desc, sql, count, sum, inArray } from "drizzle-orm";
 import { insertTitleCommitmentSchema, insertTitleExceptionSchema, insertTitleSearchVendorSchema, insertTitleClaimSchema, insertClaimActivityLogSchema, insertSurveySchema, insertSurveyBoundarySchema, insertSurveyEasementSchema, insertSurveyEncroachmentSchema, insertSurveyImprovementSchema, insertSurveyDiscrepancySchema } from "@shared/schema";
 import { z } from "zod";
 import { extractSurveyData, analyzeException, detectDiscrepancies } from "../services/title-survey-ai-service";
+import { ObjectStorageService } from "../objectStorage";
 import multer from "multer";
 import pdfParse from "pdf-parse";
 
@@ -1404,6 +1405,69 @@ export function registerTitleInsuranceRoutes(app: Express, isAuthenticated: any)
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Unknown error";
       console.error("Data room docs list error:", msg);
+      res.status(500).json({ message: msg });
+    }
+  });
+
+  // Inline image/PDF preview of a data room document used as the Plat Visual background.
+  // Verifies that the document belongs to the given deal before streaming it.
+  app.get("/api/deals/:dealId/data-room-documents/:docId/image-preview", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { dealId, docId } = req.params;
+
+      const [doc] = await db.select({
+        id: schema.dataRoomDocuments.id,
+        dataRoomId: schema.dataRoomDocuments.dataRoomId,
+        fileName: schema.dataRoomDocuments.fileName,
+        fileType: schema.dataRoomDocuments.fileType,
+        storagePath: schema.dataRoomDocuments.storagePath,
+      })
+        .from(schema.dataRoomDocuments)
+        .where(eq(schema.dataRoomDocuments.id, docId));
+
+      if (!doc) return res.status(404).json({ message: "Document not found" });
+
+      const [room] = await db.select({ dealId: schema.dataRooms.dealId })
+        .from(schema.dataRooms)
+        .where(eq(schema.dataRooms.id, doc.dataRoomId));
+
+      if (!room || room.dealId !== dealId) {
+        return res.status(403).json({ message: "Document does not belong to this deal" });
+      }
+
+      if (!doc.storagePath) {
+        return res.status(404).json({ message: "Document file not found" });
+      }
+
+      const ext = doc.fileName.split(".").pop()?.toLowerCase() || "";
+      const mimeTypes: Record<string, string> = {
+        pdf: "application/pdf",
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        bmp: "image/bmp",
+        webp: "image/webp",
+        svg: "image/svg+xml",
+      };
+      const contentType = mimeTypes[ext] || doc.fileType || "application/octet-stream";
+
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Disposition", `inline; filename="${doc.fileName}"`);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.setHeader("Cache-Control", "private, max-age=300");
+
+      const objectStorageService = new ObjectStorageService();
+      if (objectStorageService.downloadLocalObject(doc.storagePath, res)) return;
+      const objectFile = await objectStorageService.getObjectEntityFile(doc.storagePath);
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      console.error("Survey image-preview error:", msg);
+      if (error?.name === "ObjectNotFoundError") {
+        return res.status(404).json({ message: "Document file not found" });
+      }
       res.status(500).json({ message: msg });
     }
   });
