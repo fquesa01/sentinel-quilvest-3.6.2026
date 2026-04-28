@@ -183,8 +183,8 @@ export default function MyDataLakePage() {
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      const CHUNK_SIZE = 4 * 1024 * 1024;
-      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const CHUNK_SIZE = 5 * 1024 * 1024;
+      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
 
       setUploadProgress(0);
 

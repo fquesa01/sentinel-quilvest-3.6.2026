@@ -31062,8 +31062,13 @@ Guidelines:
       if (!fileName || !fileSize || !totalChunks) {
         return res.status(400).json({ message: "Missing fileName, fileSize, or totalChunks" });
       }
-      if (fileSize > 2 * 1024 * 1024 * 1024) {
+      const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
+      const MAX_TOTAL_CHUNKS = 1024;
+      if (fileSize > MAX_FILE_SIZE) {
         return res.status(400).json({ message: "File too large (max 2GB)" });
+      }
+      if (typeof totalChunks !== 'number' || totalChunks < 1 || totalChunks > MAX_TOTAL_CHUNKS) {
+        return res.status(400).json({ message: `Invalid totalChunks (must be 1-${MAX_TOTAL_CHUNKS})` });
       }
       const sessionId = nanoid();
       const sessionDir = `${CHUNK_DIR}/${sessionId}`;
@@ -31101,7 +31106,7 @@ Guidelines:
         return res.status(400).json({ message: "Invalid session ID" });
       }
       const idx = parseInt(chunkIndex, 10);
-      if (isNaN(idx) || idx < 0 || idx > 500) {
+      if (isNaN(idx) || idx < 0 || idx > 1023) {
         return res.status(400).json({ message: "Invalid chunk index" });
       }
       if (!req.file) {
@@ -31130,16 +31135,16 @@ Guidelines:
   });
 
   app.post("/api/data-lake/upload/finalize", isAuthenticated, async (req: any, res: any) => {
+    const { sessionId } = req.body || {};
+    const fsModule = await import('fs');
+    const { existsSync, readFileSync, unlinkSync, readdirSync, rmdirSync, createWriteStream, createReadStream, statSync } = fsModule;
     try {
-      const { sessionId } = req.body;
       if (!sessionId) {
         return res.status(400).json({ message: "Missing sessionId" });
       }
       if (!VALID_SESSION_ID.test(sessionId)) {
         return res.status(400).json({ message: "Invalid session ID" });
       }
-      const fsModule = await import('fs');
-      const { existsSync, readFileSync, unlinkSync, readdirSync, rmdirSync, createWriteStream, createReadStream, statSync } = fsModule;
       const metaPath = `${CHUNK_DIR}/${sessionId}/meta.json`;
       if (!existsSync(metaPath)) {
         return res.status(404).json({ message: "Upload session not found" });
