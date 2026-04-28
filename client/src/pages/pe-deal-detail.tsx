@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { RelatedContextPanel } from "@/components/related-context-panel";
 import { Link, useParams, useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft,
@@ -481,6 +482,10 @@ export default function PEDealDetail() {
           <TabsTrigger value="risks" data-testid="tab-risks">
             Risks ({risks?.length || 0})
           </TabsTrigger>
+          <TabsTrigger value="related" data-testid="tab-related">
+            <Sparkles className="h-4 w-4 mr-1" />
+            Related
+          </TabsTrigger>
           <TabsTrigger value="patterns" data-testid="tab-patterns">
             <Sparkles className="h-4 w-4 mr-1" />
             Patterns ({patterns?.length || 0})
@@ -838,6 +843,10 @@ export default function PEDealDetail() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="related" className="space-y-4">
+          <RelatedContextPanel dealId={id!} />
         </TabsContent>
 
         <TabsContent value="patterns" className="space-y-4">

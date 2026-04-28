@@ -74,6 +74,7 @@ import { registerExternalApiRoutes } from "./routes/external-api-routes";
 import { registerTitleInsuranceRoutes } from "./routes/title-insurance-routes";
 import { registerZoningAnalysisRoutes } from "./routes/zoning-analysis-routes";
 import { registerDealInterestProfileRoutes } from "./routes/deal-interest-profiles";
+import { registerRelatedContextRoutes } from "./routes/related-context";
 
 function sanitizeReturnUrl(url: string | undefined): string {
   const fallback = "/mailbox";
@@ -348,6 +349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerTitleInsuranceRoutes(app, isAuthenticated);
   registerZoningAnalysisRoutes(app, isAuthenticated);
   registerDealInterestProfileRoutes(app, isAuthenticated);
+  registerRelatedContextRoutes(app, isAuthenticated);
 
   // Investor memo engine routes
   app.use(investorMemoRouter);
