@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, handleUnauthorized } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -259,6 +259,9 @@ export default function BulkIntake() {
           credentials: "include",
         });
         if (!uploadRes.ok) {
+          if (uploadRes.status === 401 && handleUnauthorized()) {
+            return;
+          }
           const errData = await uploadRes.json().catch(() => ({ message: "Upload failed" }));
           throw new Error(errData.message || `Upload failed (${uploadRes.status})`);
         }
