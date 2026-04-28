@@ -31135,7 +31135,7 @@ Guidelines:
   });
 
   app.post("/api/data-lake/upload/finalize", isAuthenticated, async (req: any, res: any) => {
-    const { sessionId } = req.body || {};
+    const sessionId = req.body?.sessionId as string | undefined;
     const fsModule = await import('fs');
     const { existsSync, readFileSync, unlinkSync, readdirSync, rmdirSync, createWriteStream, createReadStream, statSync } = fsModule;
     try {
@@ -31161,24 +31161,43 @@ Guidelines:
       const assembledPath = `${CHUNK_DIR}/${sessionId}/assembled`;
       console.log(`[DataLake] Assembling ${meta.totalChunks} chunks to disk for "${meta.fileName}"`);
       const writeStream = createWriteStream(assembledPath);
-      for (let i = 0; i < meta.totalChunks; i++) {
-        const chunkPath = `${CHUNK_DIR}/${sessionId}/chunk_${i}`;
-        if (!existsSync(chunkPath)) {
-          writeStream.destroy();
-          return res.status(400).json({ message: `Missing chunk ${i}` });
-        }
-        const chunkReadStream = createReadStream(chunkPath);
-        await new Promise<void>((resolve, reject) => {
-          chunkReadStream.on('error', reject);
-          chunkReadStream.pipe(writeStream, { end: false });
-          chunkReadStream.on('end', resolve);
-        });
-      }
-      await new Promise<void>((resolve, reject) => {
-        writeStream.on('finish', resolve);
-        writeStream.on('error', reject);
-        writeStream.end();
+      // Persistent write-stream error tracking (e.g. ENOSPC mid-assembly)
+      let writeError: Error | null = null;
+      writeStream.on('error', (err) => {
+        if (!writeError) writeError = err;
       });
+      try {
+        for (let i = 0; i < meta.totalChunks; i++) {
+          if (writeError) throw writeError;
+          const chunkPath = `${CHUNK_DIR}/${sessionId}/chunk_${i}`;
+          if (!existsSync(chunkPath)) {
+            writeStream.destroy();
+            return res.status(400).json({ message: `Missing chunk ${i}` });
+          }
+          const chunkReadStream = createReadStream(chunkPath);
+          await new Promise<void>((resolve, reject) => {
+            const onWriteError = (err: Error) => reject(err);
+            writeStream.once('error', onWriteError);
+            chunkReadStream.on('error', (err) => {
+              writeStream.removeListener('error', onWriteError);
+              reject(err);
+            });
+            chunkReadStream.on('end', () => {
+              writeStream.removeListener('error', onWriteError);
+              resolve();
+            });
+            chunkReadStream.pipe(writeStream, { end: false });
+          });
+        }
+        await new Promise<void>((resolve, reject) => {
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
+          writeStream.end();
+        });
+      } catch (assembleErr) {
+        try { writeStream.destroy(); } catch {}
+        throw assembleErr;
+      }
       const fileStats = statSync(assembledPath);
       console.log(`[DataLake] Assembled file on disk: "${meta.fileName}" (${fileStats.size} bytes)`);
 
@@ -31283,37 +31302,41 @@ Guidelines:
         })();
       }
 
-      // Process email archives in background (streaming for large MBOX)
+      // Process email archives in background (streaming from disk — no full-file buffer)
       if (isEmailArchive) {
         const format = emailFormats[ext];
         const emailFilePath = assembledPath;
         (async () => {
           try {
-            console.log(`[DataLake] Parsing ${ext} file: ${meta.fileName} (${Math.round(fileStats.size / 1024 / 1024)}MB)`);
+            console.log(`[DataLake] Parsing ${ext} file from disk: ${meta.fileName} (${Math.round(fileStats.size / 1024 / 1024)}MB)`);
             let created = 0;
 
-            if (format === 'mbox' && fileStats.size > 100 * 1024 * 1024) {
-              console.log(`[DataLake] Using streaming MBOX parser for large file`);
-              const { streamParseMBOXFile } = await import('./ingestion/emailParsers');
-              const mboxStream = createReadStream(emailFilePath);
-              const result = await streamParseMBOXFile(mboxStream, meta.fileName, async (email) => {
-                try {
-                  const bodyPreview = email.bodyText ? email.bodyText.substring(0, 500) : email.bodyHtml ? email.bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500) : "";
-                  await storage.createDataLakeItem({ userId: req.user.id, source: "upload", itemType: "email", name: email.subject || "(No Subject)", filePath: null, fileSize: null, geminiIndexed: false, metadata: { parentItemId: parentItem.id, parentFileName: meta.fileName, subject: email.subject, sender: email.from ? `${email.from.name || ""} <${email.from.address}>`.trim() : null, senderAddress: email.from?.address || null, recipients: email.to.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), cc: email.cc.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), date: email.sentAt?.toISOString() || email.receivedAt?.toISOString() || null, bodyText: email.bodyText || "", bodyHtml: email.bodyHtml || "", bodyPreview, hasAttachments: email.hasAttachments, attachments: email.attachments, messageId: email.messageId } });
-                  created++;
-                } catch (e: any) { console.error(`[DataLake] Email item error: ${e.message}`); }
-              });
-              console.log(`[DataLake] Stream parsed: ${result.parsed} parsed, ${result.skipped} skipped, ${result.errors} errors`);
+            const insertEmailItem = async (email: any) => {
+              const bodyPreview = email.bodyText ? email.bodyText.substring(0, 500) : email.bodyHtml ? email.bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500) : "";
+              await storage.createDataLakeItem({ userId: req.user.id, source: "upload", itemType: "email", name: email.subject || "(No Subject)", filePath: null, fileSize: null, geminiIndexed: false, metadata: { parentItemId: parentItem.id, parentFileName: meta.fileName, subject: email.subject, sender: email.from ? `${email.from.name || ""} <${email.from.address}>`.trim() : null, senderAddress: email.from?.address || null, recipients: email.to.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), cc: email.cc.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), date: email.sentAt?.toISOString() || email.receivedAt?.toISOString() || null, bodyText: email.bodyText || "", bodyHtml: email.bodyHtml || "", bodyPreview, hasAttachments: email.hasAttachments, attachments: email.attachments, messageId: email.messageId } });
+            };
+
+            const { parseFileFromPath } = await import('./ingestion/emailParsers');
+            const result = await parseFileFromPath(emailFilePath, meta.fileName, format, async (email) => {
+              try {
+                await insertEmailItem(email);
+                created++;
+              } catch (e: any) {
+                console.error(`[DataLake] Email item error: ${e.message}`);
+              }
+            });
+
+            if (result.streamed) {
+              console.log(`[DataLake] Stream parsed: ${result.stats?.parsed} parsed, ${result.stats?.skipped} skipped, ${result.stats?.errors} errors`);
             } else {
-              const fileBuffer = readFileSync(emailFilePath);
-              const emails = await parseFile(fileBuffer, meta.fileName, format);
-              console.log(`[DataLake] Extracted ${emails.length} emails from ${meta.fileName}`);
-              for (const email of emails) {
+              console.log(`[DataLake] Extracted ${result.emails.length} emails from ${meta.fileName}`);
+              for (const email of result.emails) {
                 try {
-                  const bodyPreview = email.bodyText ? email.bodyText.substring(0, 500) : email.bodyHtml ? email.bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500) : "";
-                  await storage.createDataLakeItem({ userId: req.user.id, source: "upload", itemType: "email", name: email.subject || "(No Subject)", filePath: null, fileSize: null, geminiIndexed: false, metadata: { parentItemId: parentItem.id, parentFileName: meta.fileName, subject: email.subject, sender: email.from ? `${email.from.name || ""} <${email.from.address}>`.trim() : null, senderAddress: email.from?.address || null, recipients: email.to.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), cc: email.cc.map((r: any) => `${r.name || ""} <${r.address}>`.trim()), date: email.sentAt?.toISOString() || email.receivedAt?.toISOString() || null, bodyText: email.bodyText || "", bodyHtml: email.bodyHtml || "", bodyPreview, hasAttachments: email.hasAttachments, attachments: email.attachments, messageId: email.messageId } });
+                  await insertEmailItem(email);
                   created++;
-                } catch (e: any) { console.error(`[DataLake] Email item error: ${e.message}`); }
+                } catch (e: any) {
+                  console.error(`[DataLake] Email item error: ${e.message}`);
+                }
               }
             }
 
@@ -31361,13 +31384,17 @@ Guidelines:
     } catch (error: any) {
       console.error("[DataLake] Chunked finalize error:", error);
       // Clean up assembled file and session dir on error
-      try {
-        const sessionDir = `${CHUNK_DIR}/${sessionId}`;
-        if (existsSync(sessionDir)) {
-          for (const f of readdirSync(sessionDir)) { try { unlinkSync(`${sessionDir}/${f}`); } catch {} }
-          try { rmdirSync(sessionDir); } catch {}
-        }
-      } catch {}
+      if (sessionId) {
+        try {
+          const sessionDir = `${CHUNK_DIR}/${sessionId}`;
+          if (existsSync(sessionDir)) {
+            for (const f of readdirSync(sessionDir)) {
+              try { unlinkSync(`${sessionDir}/${f}`); } catch {}
+            }
+            try { rmdirSync(sessionDir); } catch {}
+          }
+        } catch {}
+      }
       res.status(500).json({ message: error.message });
     }
   });

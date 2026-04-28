@@ -137,20 +137,29 @@ export async function parseFile(
 
 /**
  * Parse PST/OST files using pst-extractor
+ * Accepts either a Buffer (which gets written to a temp file) or a file path
+ * (used directly, avoiding a full-file in-memory copy).
  */
 async function parsePSTFile(
-  buffer: Buffer,
+  bufferOrPath: Buffer | string,
   fileName: string,
   format: SupportedFormat
 ): Promise<EmailMessage[]> {
   const emails: EmailMessage[] = [];
-  
-  // Write buffer to temp file (pst-extractor requires file path)
-  const tempPath = `/tmp/temp-${Date.now()}.pst`;
+  let pstPath: string;
+  let cleanupTemp = false;
+
+  if (typeof bufferOrPath === "string") {
+    pstPath = bufferOrPath;
+  } else {
+    pstPath = `/tmp/temp-${Date.now()}.pst`;
+    cleanupTemp = true;
+    await fs.writeFile(pstPath, bufferOrPath);
+  }
+
   try {
-    await fs.writeFile(tempPath, buffer);
-    const pstFile = new PSTFile(tempPath);
-    
+    const pstFile = new PSTFile(pstPath);
+
     const processFolder = async (folder: PSTFolder, folderPath: string): Promise<void> => {
       if (folder.contentCount > 0) {
         let msg: PSTMessage | null = folder.getNextChild();
@@ -163,7 +172,7 @@ async function parsePSTFile(
           msg = folder.getNextChild();
         }
       }
-      
+
       if (folder.hasSubfolders) {
         const subfolders = folder.getSubFolders();
         for (const subfolder of subfolders) {
@@ -172,18 +181,64 @@ async function parsePSTFile(
         }
       }
     };
-    
+
     await processFolder(pstFile.getRootFolder(), "");
   } finally {
-    // Clean up temp file
-    try {
-      await fs.unlink(tempPath);
-    } catch (e) {
-      // Ignore cleanup errors
+    if (cleanupTemp) {
+      try {
+        await fs.unlink(pstPath);
+      } catch (e) {
+        // Ignore cleanup errors
+      }
     }
   }
-  
+
   return emails;
+}
+
+/**
+ * Parse an email-archive file directly from disk, avoiding a full-file
+ * in-memory buffer for large files. Streams MBOX, opens PST by path, and
+ * reads small text-based formats (EML/MSG/etc.) from disk into a buffer.
+ *
+ * For MBOX, callers should pass `onMessage` to receive emails one at a time.
+ * For all other formats, the resolved promise contains the full email list
+ * and `onMessage` is not invoked.
+ */
+export async function parseFileFromPath(
+  filePath: string,
+  fileName: string,
+  detectedFormat: SupportedFormat,
+  onMessage?: (email: EmailMessage) => Promise<void>
+): Promise<{ emails: EmailMessage[]; streamed: boolean; stats?: { parsed: number; skipped: number; errors: number } }> {
+  console.log(`[EmailParser] Parsing ${fileName} from disk as ${detectedFormat}`);
+
+  switch (detectedFormat) {
+    case "mbox":
+    case "mbx": {
+      if (!onMessage) {
+        throw new Error("MBOX parsing from path requires an onMessage callback");
+      }
+      const { createReadStream } = await import("fs");
+      const stream = createReadStream(filePath);
+      const stats = await streamParseMBOXFile(stream, fileName, onMessage);
+      return { emails: [], streamed: true, stats };
+    }
+
+    case "pst":
+    case "ost": {
+      const emails = await parsePSTFile(filePath, fileName, detectedFormat);
+      return { emails, streamed: false };
+    }
+
+    default: {
+      // Small text-based formats (eml, msg, mht, ics, vcf, etc.) — load
+      // from disk into a buffer and dispatch through the existing parser.
+      const buffer = await fs.readFile(filePath);
+      const emails = await parseFile(buffer, fileName, detectedFormat);
+      return { emails, streamed: false };
+    }
+  }
 }
 
 /**
@@ -306,21 +361,32 @@ export async function streamParseMBOXFile(
 ): Promise<{ parsed: number; skipped: number; errors: number }> {
   return new Promise((resolve, reject) => {
     const stats = { parsed: 0, skipped: 0, errors: 0 };
-    let messageQueue: Promise<void>[] = [];
+    const inFlight = new Set<Promise<void>>();
     const MAX_CONCURRENT = 10; // Process up to 10 messages concurrently
     let totalMessageBytes = 0;
+    let finished = false;
     const startTime = Date.now();
-    
+
     console.log(`[MBOX-Stream] Starting streaming parse from input stream`);
-    
+
     // Use MboxStream helper which properly creates the mbox parser
     // Important: Use 'data' event (not 'message') and 'finish' event (not 'end')
     const mbox = MboxStream(inputStream as any);
-    
+
+    const trackInFlight = (p: Promise<void>) => {
+      inFlight.add(p);
+      p.finally(() => {
+        inFlight.delete(p);
+        if (mbox.isPaused && mbox.isPaused() && inFlight.size < MAX_CONCURRENT) {
+          mbox.resume();
+        }
+      });
+    };
+
     // Process each email as it's extracted from the mbox
-    mbox.on('data', async (msg: Buffer) => {
+    mbox.on('data', (msg: Buffer) => {
       totalMessageBytes += msg.length;
-      
+
       // Log progress periodically based on messages processed
       const totalProcessed = stats.parsed + stats.skipped + stats.errors;
       if (totalProcessed > 0 && totalProcessed % 500 === 0) {
@@ -328,53 +394,55 @@ export async function streamParseMBOXFile(
         const mbProcessed = totalMessageBytes / 1024 / 1024;
         console.log(`[MBOX-Stream] Parsed ${stats.parsed} emails, ${stats.skipped} skipped, ${stats.errors} errors (${mbProcessed.toFixed(1)} MB, ${elapsed.toFixed(0)}s elapsed)`);
       }
-      
-      try {
-        // Parse the email message
-        const parsedMail = await simpleParser(msg);
-        
-        // Only process if it has meaningful content
-        if (parsedMail.subject || parsedMail.from || parsedMail.text) {
-          const normalized = normalizeMailparserMessage(parsedMail, fileName, "mbox");
-          
-          // Add to processing queue
-          const processPromise = onMessage(normalized).then(() => {
-            stats.parsed++;
-          }).catch((err) => {
-            stats.errors++;
-            if (stats.errors <= 10) {
-              console.error(`[MBOX-Stream] Error saving email:`, err);
+
+      const work = (async () => {
+        try {
+          const parsedMail = await simpleParser(msg);
+
+          if (parsedMail.subject || parsedMail.from || parsedMail.text) {
+            const normalized = normalizeMailparserMessage(parsedMail, fileName, "mbox");
+            try {
+              await onMessage(normalized);
+              stats.parsed++;
+            } catch (err) {
+              stats.errors++;
+              if (stats.errors <= 10) {
+                console.error(`[MBOX-Stream] Error saving email:`, err);
+              }
             }
-          });
-          
-          messageQueue.push(processPromise);
-          
-          // If queue is too large, wait for some to complete
-          if (messageQueue.length >= MAX_CONCURRENT) {
-            await Promise.race(messageQueue);
-            messageQueue = messageQueue.filter(p => p !== undefined);
+          } else {
+            stats.skipped++;
           }
-        } else {
-          stats.skipped++;
+        } catch (error) {
+          stats.errors++;
+          if (stats.errors <= 10) {
+            console.error(`[MBOX-Stream] Error parsing message:`, error);
+          }
         }
-      } catch (error) {
-        stats.errors++;
-        if (stats.errors <= 10) {
-          console.error(`[MBOX-Stream] Error parsing message:`, error);
-        }
+      })();
+
+      trackInFlight(work);
+
+      // Apply true backpressure: pause upstream while saturated
+      if (inFlight.size >= MAX_CONCURRENT && typeof mbox.pause === 'function') {
+        mbox.pause();
       }
     });
-    
+
     mbox.on('error', (err: Error) => {
       console.error(`[MBOX-Stream] Stream error:`, err);
       reject(err);
     });
-    
+
     // Use 'finish' event for MboxStream (not 'end')
     mbox.on('finish', async () => {
-      // Wait for all remaining messages to be processed
-      await Promise.all(messageQueue);
-      
+      if (finished) return;
+      finished = true;
+      // Wait for all remaining in-flight work to complete
+      while (inFlight.size > 0) {
+        await Promise.all(Array.from(inFlight));
+      }
+
       const elapsed = (Date.now() - startTime) / 1000;
       console.log(`[MBOX-Stream] ===== STREAMING COMPLETE =====`);
       console.log(`[MBOX-Stream] Time elapsed: ${elapsed.toFixed(1)} seconds`);
@@ -382,7 +450,7 @@ export async function streamParseMBOXFile(
       console.log(`[MBOX-Stream] Successfully parsed: ${stats.parsed}`);
       console.log(`[MBOX-Stream] Skipped (empty/no content): ${stats.skipped}`);
       console.log(`[MBOX-Stream] Errors: ${stats.errors}`);
-      
+
       resolve(stats);
     });
   });
