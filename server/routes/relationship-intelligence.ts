@@ -19,6 +19,181 @@ import { sendEmail } from "../services/emailService";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// =============================================
+// SHARED HELPERS (module-scope so internal helpers
+// like the auto-sync hook can reuse them from outside
+// the route registration closure).
+// =============================================
+
+const DOMAIN_TO_COMPANY: Record<string, string> = {
+  "usawaterpolo.org": "USA Water Polo",
+  "morganlewis.com": "Morgan Lewis & Bockius",
+  "mckinsey.com": "McKinsey & Company",
+  "warburgpincus.com": "Warburg Pincus",
+  "falconfund.net": "Falcon Fund Management",
+  "freepoint.com": "Freepoint Commodities",
+  "hbs.edu": "Harvard Business School",
+  "roarmedia.com": "Roar Media",
+  "sierracap.com": "Sierra Capital",
+  "crown-chicago.com": "Crown Chicago Industries",
+  "manningllp.com": "Manning LLP",
+  "TysonMendes.com": "Tyson & Mendes",
+  "tysonmendes.com": "Tyson & Mendes",
+  "whitecase.com": "White & Case LLP",
+  "qvlaw.net": "QV Law",
+  "villanova.edu": "Villanova University",
+  "ey.com": "Ernst & Young",
+  "citi.com": "Citigroup",
+  "brown.edu": "Brown University",
+  "stanford.edu": "Stanford University",
+  "belenjesuit.org": "Belen Jesuit Preparatory",
+  "msprecovery.com": "MSP Recovery",
+  "msprecoverylawfirm.com": "MSP Recovery Law Firm",
+};
+
+const FILTERED_DOMAINS = new Set([
+  "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com",
+  "sbcglobal.net", "msn.com", "icloud.com", "me.com", "live.com",
+  "protonmail.com", "zoho.com", "mail.com",
+]);
+
+const SYSTEM_EMAILS = new Set([
+  "noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon",
+  "notifications", "subscriptions", "info@", "support@", "membership",
+  "reporting@usawaterpolo.org", "ethicschair@usawaterpolo.org",
+  "membership@usawaterpolo.org", "mmm@usawaterpolo.org",
+]);
+
+const BOT_SENDERS = [
+  "via google docs", "reddit", "bloomberg", "wordpress.com",
+  "sport80.com", "replit.com", "bloomerang", "comment-reply@",
+  "drive-shares-dm-noreply@", "noreply@sport80.com",
+];
+
+function parseEmailContact(raw: string): { name: string; email: string } | null {
+  if (!raw || raw.trim().length === 0) return null;
+  raw = raw.trim();
+
+  let name = "";
+  let email = "";
+
+  const angleMatch = raw.match(/<([^>]+)>/);
+  if (angleMatch) {
+    email = angleMatch[1].trim().toLowerCase();
+    name = raw.substring(0, raw.indexOf("<")).trim();
+    name = name.replace(/^["']+|["']+$/g, "").trim();
+  } else if (raw.includes("@")) {
+    email = raw.trim().toLowerCase();
+  }
+
+  if (!email || !email.includes("@") || email.length > 254) return null;
+
+  const viaMatch = name.match(/^'?(.+?)'?\s+via\s+/i);
+  if (viaMatch) {
+    name = viaMatch[1].trim().replace(/^'|'$/g, "");
+  }
+
+  name = name.replace(/^["']+|["']+$/g, "").trim();
+
+  const localPart = email.split("@")[0];
+  const lowerLocal = localPart.toLowerCase();
+
+  if (SYSTEM_EMAILS.has(lowerLocal) || SYSTEM_EMAILS.has(email)) return null;
+  if (lowerLocal.startsWith("noreply") || lowerLocal.startsWith("no-reply") || lowerLocal.startsWith("donotreply") || lowerLocal.startsWith("do-not-reply") || lowerLocal.startsWith("mailer-daemon")) return null;
+
+  const lowerRaw = raw.toLowerCase();
+  for (const bot of BOT_SENDERS) {
+    if (lowerRaw.includes(bot) || email.includes(bot)) return null;
+  }
+
+  if (!name || name.length < 2) {
+    const parts = localPart.split(/[._-]/);
+    if (parts.length >= 2) {
+      name = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
+    } else {
+      return null;
+    }
+  }
+
+  if (/^\w{10,}$/.test(name) || /^[0-9]+$/.test(name)) return null;
+
+  return { name, email };
+}
+
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const cleaned = fullName.replace(/\s+/g, " ").trim();
+  const parts = cleaned.split(" ");
+
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+
+  if (parts[parts.length - 1].includes(",")) {
+    const last = parts[parts.length - 1].replace(",", "");
+    return { firstName: parts.slice(0, -1).join(" "), lastName: last };
+  }
+
+  const lastComma = cleaned.match(/^([^,]+),\s*(.+)$/);
+  if (lastComma) {
+    return { firstName: lastComma[2].trim(), lastName: lastComma[1].trim() };
+  }
+
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+// Coalesce per-user auto-sync invocations so a burst of bulk uploads doesn't
+// trigger overlapping syncs. Tracks in-flight promises and last-run timestamps.
+const inFlightAutoSyncs = new Map<string, Promise<{ imported: number; total: number; skipped?: boolean }>>();
+
+/**
+ * Throttled auto-sync of monitored contacts from Data Lake emails.
+ *
+ * - Skips if a `data_lake_auto` sync ran within the throttle window
+ *   (default 1 hour) unless `force: true`.
+ * - Coalesces concurrent calls per user (returns the in-flight promise).
+ * - Safe to call fire-and-forget from request handlers.
+ */
+export async function autoSyncDataLakeContacts(
+  userId: string,
+  options: { force?: boolean; throttleMs?: number } = {}
+): Promise<{ imported: number; total: number; skipped?: boolean }> {
+  if (!userId) return { imported: 0, total: 0, skipped: true };
+  const force = options.force === true;
+  const throttleMs = options.throttleMs ?? 60 * 60 * 1000;
+
+  // Coalesce concurrent calls. The in-flight promise is registered
+  // SYNCHRONOUSLY (before any await) to close the race window where
+  // a second caller could slip past the throttle check while the
+  // first is still inside the contact_sources query.
+  const inFlight = inFlightAutoSyncs.get(userId);
+  if (inFlight) return inFlight;
+
+  const run = (async () => {
+    if (!force) {
+      try {
+        const recent = await pool.query(
+          `SELECT last_synced_at FROM contact_sources
+           WHERE user_id = $1 AND source_type = 'data_lake_auto'
+           ORDER BY last_synced_at DESC NULLS LAST
+           LIMIT 1`,
+          [userId]
+        );
+        const lastRow = recent.rows[0];
+        const lastTs = lastRow?.last_synced_at ? new Date(lastRow.last_synced_at).getTime() : 0;
+        if (lastTs && Date.now() - lastTs < throttleMs) {
+          return { imported: 0, total: 0, skipped: true };
+        }
+      } catch (err: any) {
+        console.warn(`[RI] Auto-sync throttle check failed (continuing): ${err.message}`);
+      }
+    }
+    return syncDataLakeContactsForUser(userId, parseEmailContact, splitName, DOMAIN_TO_COMPANY, FILTERED_DOMAINS);
+  })().finally(() => {
+    inFlightAutoSyncs.delete(userId);
+  });
+
+  inFlightAutoSyncs.set(userId, run);
+  return run;
+}
+
 export function registerRelationshipIntelligenceRoutes(app: Express) {
 
   // =============================================
@@ -448,7 +623,7 @@ export function registerRelationshipIntelligenceRoutes(app: Express) {
       }
 
       try {
-        const syncResult = await syncDataLakeContactsForUser(userId, parseEmailContact, splitName, DOMAIN_TO_COMPANY, FILTERED_DOMAINS);
+        const syncResult = await autoSyncDataLakeContacts(userId, { force: true });
         if (syncResult.imported > 0) {
           console.log(`[RI] Pre-scan sync: imported ${syncResult.imported} new contacts from Data Lake`);
         }
@@ -1744,9 +1919,14 @@ Example response format:
   app.post("/api/relationship-intelligence/sync-data-lake-contacts", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.id;
-      const result = await syncDataLakeContactsForUser(userId, parseEmailContact, splitName, DOMAIN_TO_COMPANY, FILTERED_DOMAINS);
-      console.log(`[RI] Data Lake contact sync: ${result.imported} new contacts imported from ${result.total} total extracted`);
-      res.json({ imported: result.imported, totalExtracted: result.total });
+      const force = req.body?.force === true || req.query?.force === "true";
+      const result = await autoSyncDataLakeContacts(userId, { force });
+      if (result.skipped) {
+        console.log(`[RI] Data Lake contact sync skipped (recent sync within throttle window) for user ${userId}`);
+      } else {
+        console.log(`[RI] Data Lake contact sync: ${result.imported} new contacts imported from ${result.total} total extracted`);
+      }
+      res.json({ imported: result.imported, totalExtracted: result.total, skipped: result.skipped === true });
     } catch (error: any) {
       console.error("[RI] Data Lake contact sync error:", error);
       res.status(500).json({ message: error.message });
@@ -1756,121 +1936,6 @@ Example response format:
   // =============================================
   // IMPORT CONTACTS FROM CASE COMMUNICATIONS
   // =============================================
-
-  const DOMAIN_TO_COMPANY: Record<string, string> = {
-    "usawaterpolo.org": "USA Water Polo",
-    "morganlewis.com": "Morgan Lewis & Bockius",
-    "mckinsey.com": "McKinsey & Company",
-    "warburgpincus.com": "Warburg Pincus",
-    "falconfund.net": "Falcon Fund Management",
-    "freepoint.com": "Freepoint Commodities",
-    "hbs.edu": "Harvard Business School",
-    "roarmedia.com": "Roar Media",
-    "sierracap.com": "Sierra Capital",
-    "crown-chicago.com": "Crown Chicago Industries",
-    "manningllp.com": "Manning LLP",
-    "TysonMendes.com": "Tyson & Mendes",
-    "tysonmendes.com": "Tyson & Mendes",
-    "whitecase.com": "White & Case LLP",
-    "qvlaw.net": "QV Law",
-    "villanova.edu": "Villanova University",
-    "ey.com": "Ernst & Young",
-    "citi.com": "Citigroup",
-    "brown.edu": "Brown University",
-    "stanford.edu": "Stanford University",
-    "belenjesuit.org": "Belen Jesuit Preparatory",
-    "msprecovery.com": "MSP Recovery",
-    "msprecoverylawfirm.com": "MSP Recovery Law Firm",
-  };
-
-  const FILTERED_DOMAINS = new Set([
-    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com",
-    "sbcglobal.net", "msn.com", "icloud.com", "me.com", "live.com",
-    "protonmail.com", "zoho.com", "mail.com",
-  ]);
-
-  const SYSTEM_EMAILS = new Set([
-    "noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon",
-    "notifications", "subscriptions", "info@", "support@", "membership",
-    "reporting@usawaterpolo.org", "ethicschair@usawaterpolo.org",
-    "membership@usawaterpolo.org", "mmm@usawaterpolo.org",
-  ]);
-
-  const BOT_SENDERS = [
-    "via google docs", "reddit", "bloomberg", "wordpress.com",
-    "sport80.com", "replit.com", "bloomerang", "comment-reply@",
-    "drive-shares-dm-noreply@", "noreply@sport80.com",
-  ];
-
-  function parseEmailContact(raw: string): { name: string; email: string } | null {
-    if (!raw || raw.trim().length === 0) return null;
-    raw = raw.trim();
-
-    let name = "";
-    let email = "";
-
-    const angleMatch = raw.match(/<([^>]+)>/);
-    if (angleMatch) {
-      email = angleMatch[1].trim().toLowerCase();
-      name = raw.substring(0, raw.indexOf("<")).trim();
-      name = name.replace(/^["']+|["']+$/g, "").trim();
-    } else if (raw.includes("@")) {
-      email = raw.trim().toLowerCase();
-    }
-
-    if (!email || !email.includes("@") || email.length > 254) return null;
-
-    const viaMatch = name.match(/^'?(.+?)'?\s+via\s+/i);
-    if (viaMatch) {
-      name = viaMatch[1].trim().replace(/^'|'$/g, "");
-    }
-
-    name = name.replace(/^["']+|["']+$/g, "").trim();
-
-    const localPart = email.split("@")[0];
-    const lowerLocal = localPart.toLowerCase();
-    const domain = email.split("@")[1];
-
-    if (SYSTEM_EMAILS.has(lowerLocal) || SYSTEM_EMAILS.has(email)) return null;
-    if (lowerLocal.startsWith("noreply") || lowerLocal.startsWith("no-reply") || lowerLocal.startsWith("donotreply") || lowerLocal.startsWith("do-not-reply") || lowerLocal.startsWith("mailer-daemon")) return null;
-
-    const lowerRaw = raw.toLowerCase();
-    for (const bot of BOT_SENDERS) {
-      if (lowerRaw.includes(bot) || email.includes(bot)) return null;
-    }
-
-    if (!name || name.length < 2) {
-      const parts = localPart.split(/[._-]/);
-      if (parts.length >= 2) {
-        name = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
-      } else {
-        return null;
-      }
-    }
-
-    if (/^\w{10,}$/.test(name) || /^[0-9]+$/.test(name)) return null;
-
-    return { name, email };
-  }
-
-  function splitName(fullName: string): { firstName: string; lastName: string } {
-    const cleaned = fullName.replace(/\s+/g, " ").trim();
-    const parts = cleaned.split(" ");
-
-    if (parts.length === 1) return { firstName: parts[0], lastName: "" };
-
-    if (parts[parts.length - 1].includes(",")) {
-      const last = parts[parts.length - 1].replace(",", "");
-      return { firstName: parts.slice(0, -1).join(" "), lastName: last };
-    }
-
-    const lastComma = cleaned.match(/^([^,]+),\s*(.+)$/);
-    if (lastComma) {
-      return { firstName: lastComma[2].trim(), lastName: lastComma[1].trim() };
-    }
-
-    return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
-  }
 
   app.get("/api/relationship-intelligence/cases-with-comms", isAuthenticated,  async (req: any, res) => {
     try {
@@ -2731,27 +2796,29 @@ async function syncDataLakeContactsForUser(userId: string, parseEmailContactFn: 
     existingEmails.add(c.email);
   }
 
-  if (toInsert.length === 0) return { imported: 0, total: totalContacts };
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const BATCH_SIZE = 50;
-    for (let b = 0; b < toInsert.length; b += BATCH_SIZE) {
-      const batch = toInsert.slice(b, b + BATCH_SIZE);
-      const placeholders: string[] = [];
-      const values: any[] = [];
-      batch.forEach((row, idx) => {
-        const offset = idx * 9;
-        placeholders.push(`($${offset+1},$${offset+2},$${offset+3},$${offset+4},$${offset+5},$${offset+6},$${offset+7},$${offset+8},$${offset+9})`);
-        values.push(...row);
-      });
-      await client.query(
-        `INSERT INTO relationship_contacts (id,user_id,first_name,last_name,full_name,email,company,tags,priority_level) VALUES ${placeholders.join(",")}`,
-        values
-      );
+    if (toInsert.length > 0) {
+      const BATCH_SIZE = 50;
+      for (let b = 0; b < toInsert.length; b += BATCH_SIZE) {
+        const batch = toInsert.slice(b, b + BATCH_SIZE);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        batch.forEach((row, idx) => {
+          const offset = idx * 9;
+          placeholders.push(`($${offset+1},$${offset+2},$${offset+3},$${offset+4},$${offset+5},$${offset+6},$${offset+7},$${offset+8},$${offset+9})`);
+          values.push(...row);
+        });
+        await client.query(
+          `INSERT INTO relationship_contacts (id,user_id,first_name,last_name,full_name,email,company,tags,priority_level) VALUES ${placeholders.join(",")}`,
+          values
+        );
+      }
     }
 
+    // Always record the sync attempt so the throttle window in
+    // autoSyncDataLakeContacts can suppress duplicate page-load syncs.
     const { nanoid: nid } = await import("nanoid");
     const sourceId = nid(21);
     await client.query(
@@ -2762,11 +2829,11 @@ async function syncDataLakeContactsForUser(userId: string, parseEmailContactFn: 
     );
 
     await client.query("COMMIT");
-    client.release();
   } catch (txError: any) {
     await client.query("ROLLBACK");
-    client.release();
     throw txError;
+  } finally {
+    client.release();
   }
 
   return { imported: toInsert.length, total: totalContacts };

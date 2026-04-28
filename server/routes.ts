@@ -62,7 +62,7 @@ import dueDiligenceRouter from "./routes-due-diligence";
 import { parseFile } from "./ingestion/emailParsers";
 import type { SupportedFormat } from "./ingestion/fileDetector";
 import calendarOAuthRouter from "./routes/calendar-oauth";
-import { registerRelationshipIntelligenceRoutes } from "./routes/relationship-intelligence";
+import { registerRelationshipIntelligenceRoutes, autoSyncDataLakeContacts } from "./routes/relationship-intelligence";
 import { registerClosingRoutes } from "./routes/closing-routes";
 import { registerClosingDocumentsRoutes } from "./routes/closing-documents-routes";
 import formTemplatesRouter from "./routes/form-templates-routes";
@@ -31319,6 +31319,17 @@ Guidelines:
 
             await db.update(schema.dataLakeItems).set({ metadata: { ...(parentItem.metadata as any || {}), processingStatus: "completed", childCount: created } }).where(eq(schema.dataLakeItems.id, parentItem.id));
             console.log(`[DataLake] Processed ${created} emails from ${meta.fileName}`);
+
+            // Fire-and-forget: refresh monitored Intelligence Feed contacts from
+            // the newly ingested emails. Forced because we just changed the
+            // underlying email corpus.
+            autoSyncDataLakeContacts(req.user.id, { force: true })
+              .then((r) => {
+                if (!r.skipped && r.imported > 0) {
+                  console.log(`[DataLake] Post-ingest contact sync: imported ${r.imported} new contacts`);
+                }
+              })
+              .catch((err) => console.warn(`[DataLake] Post-ingest contact sync failed: ${err.message}`));
           } catch (e: any) {
             console.error(`[DataLake] Email parse error: ${e.message}`);
             await db.update(schema.dataLakeItems).set({ metadata: { ...(parentItem.metadata as any || {}), processingStatus: "failed", error: e.message } }).where(eq(schema.dataLakeItems.id, parentItem.id)).catch(() => {});
@@ -31653,6 +31664,17 @@ Guidelines:
                 .where(eq(schema.dataLakeItems.id, parentItem.id));
             }
             console.log(`[DataLake] Successfully processed ${created} emails from ${file.originalname}`);
+
+            // Fire-and-forget: refresh monitored Intelligence Feed contacts from
+            // the newly ingested emails. Forced because we just changed the
+            // underlying email corpus.
+            autoSyncDataLakeContacts(req.user.id, { force: true })
+              .then((r) => {
+                if (!r.skipped && r.imported > 0) {
+                  console.log(`[DataLake] Post-ingest contact sync: imported ${r.imported} new contacts`);
+                }
+              })
+              .catch((err) => console.warn(`[DataLake] Post-ingest contact sync failed: ${err.message}`));
           } catch (parseErr) {
             console.error(`[DataLake] Error parsing email file ${file.originalname}:`, parseErr);
             try {
