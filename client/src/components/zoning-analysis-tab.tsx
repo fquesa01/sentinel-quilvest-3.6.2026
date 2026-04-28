@@ -303,12 +303,9 @@ function OverviewSection({ content, analysis, docCount }: { content: AnalysisCon
           <CardContent className="py-3">
             <div className="flex items-center gap-2 text-sm">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">
-                {docCount} zoning/land use document{docCount !== 1 ? "s" : ""} found in the deal file.
+              <span className="text-muted-foreground" data-testid="text-zoning-doc-count">
+                {docCount} zoning/land use document{docCount !== 1 ? "s" : ""} found in the deal file. See the Documents on File tab below for summaries.
               </span>
-              <Button variant="link" size="sm" className="p-0 h-auto" onClick={() => {}} data-testid="link-view-zoning-docs">
-                View in Documents tab
-              </Button>
             </div>
           </CardContent>
         </Card>
