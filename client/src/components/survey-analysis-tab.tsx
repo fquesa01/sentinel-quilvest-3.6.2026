@@ -348,7 +348,7 @@ export function SurveyAnalysisTab({ dealId }: { dealId: string }) {
                 onUpdateStatus={(id, status) => updateDiscrepancyMutation.mutate({ discrepancyId: id, data: { status } })}
               />
             )}
-            {activeSection === "plat" && <PlatVisualSection survey={surveyDetail} />}
+            {activeSection === "plat" && <PlatVisualSection survey={surveyDetail} onReanalyze={() => setAnalyzeDialogOpen(true)} />}
           </>
         )}
       </ScrollArea>
@@ -812,7 +812,7 @@ function DiscrepanciesSection({
   );
 }
 
-function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
+function PlatVisualSection({ survey, onReanalyze }: { survey?: SurveyWithDetails | null; onReanalyze?: () => void }) {
   const hasSourceDoc = !!(survey?.sourceDocumentId);
 
   if (!survey || (!hasSourceDoc && (!survey.boundaries || survey.boundaries.length === 0))) {
@@ -820,12 +820,12 @@ function PlatVisualSection({ survey }: { survey?: SurveyWithDetails | null }) {
   }
 
   if (hasSourceDoc) {
-    return <PlatImageViewer survey={survey} />;
+    return <PlatImageViewer survey={survey} onReanalyze={onReanalyze} />;
   }
   return <PlatSvgDiagram survey={survey} />;
 }
 
-function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
+function PlatImageViewer({ survey, onReanalyze }: { survey: SurveyWithDetails; onReanalyze?: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [baseScale, setBaseScale] = useState(1);
   const [panX, setPanX] = useState(0);
@@ -958,16 +958,41 @@ function PlatImageViewer({ survey }: { survey: SurveyWithDetails }) {
           <h3 className="font-medium text-sm">Property Survey Document</h3>
           <Card>
             <CardContent className="p-6 flex flex-col items-center justify-center min-h-[300px] gap-4">
-              <AlertTriangle className="h-10 w-10 text-muted-foreground" />
-              <div className="text-center space-y-1">
-                <p className="text-sm font-medium">Survey document could not be loaded</p>
-                <p className="text-xs text-muted-foreground">
-                  {pdfError || "The source file may have been removed or is temporarily unavailable."}
+              <AlertTriangle className="h-10 w-10 text-amber-500" />
+              <div className="text-center space-y-1 max-w-md">
+                <p className="text-sm font-medium" data-testid="text-plat-error-title">
+                  Survey document could not be loaded
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Try re-uploading the survey PDF to the Data Room, then re-run the analysis.
+                <p className="text-xs text-muted-foreground" data-testid="text-plat-error-detail">
+                  The source file may need to be re-uploaded.
                 </p>
+                {pdfError && (
+                  <p className="text-[11px] text-muted-foreground/80 italic">
+                    Error: {pdfError}
+                  </p>
+                )}
               </div>
+              {onReanalyze && (
+                <div className="flex items-center gap-2 flex-wrap justify-center">
+                  <Button
+                    size="sm"
+                    onClick={onReanalyze}
+                    data-testid="button-plat-reupload"
+                  >
+                    <Upload className="h-3.5 w-3.5 mr-1" />
+                    Re-upload Survey PDF
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onReanalyze}
+                    data-testid="button-plat-select-dataroom"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 mr-1" />
+                    Select from Data Room
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
