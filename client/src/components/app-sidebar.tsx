@@ -65,6 +65,7 @@ import {
   Radar,
   Contact,
   FileEdit,
+  Target,
   Stamp,
   KeyRound,
 } from "lucide-react";
@@ -220,6 +221,11 @@ export function AppSidebar() {
           title: "Drafts",
           url: "/relationship-drafts",
           icon: FileEdit,
+        },
+        {
+          title: "Interest Profiles",
+          url: "/deal-interest-profiles",
+          icon: Target,
         },
       ],
     },

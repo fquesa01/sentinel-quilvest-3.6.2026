@@ -72,6 +72,7 @@ import InvestorMemoBuilder from "@/pages/investor-memo-builder";
 import RelationshipIntelligence from "@/pages/relationship-intelligence";
 import RelationshipContacts from "@/pages/relationship-contacts";
 import RelationshipDrafts from "@/pages/relationship-drafts";
+import DealInterestProfilesPage from "@/pages/deal-interest-profiles";
 import DealChat from "@/pages/deal-chat";
 import GuestPortal from "@/pages/guest-portal";
 import GuestLogin from "@/pages/guest-login";
@@ -198,6 +199,7 @@ function AuthenticatedApp() {
               <Route path="/relationship-intelligence" component={RelationshipIntelligence} />
               <Route path="/relationship-contacts" component={RelationshipContacts} />
               <Route path="/relationship-drafts" component={RelationshipDrafts} />
+              <Route path="/deal-interest-profiles" component={DealInterestProfilesPage} />
               <Route path="/deal-chat" component={DealChat} />
               <Route path="/ron/dashboard" component={RonDashboard} />
               <Route path="/ron/transactions/new" component={RonCreateTransaction} />
