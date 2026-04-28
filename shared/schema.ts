@@ -13029,6 +13029,127 @@ export const outreachLogRelations = relations(outreachLog, ({ one }) => ({
 }));
 
 // =============================================
+// RELATIONSHIP INTELLIGENCE v2
+//   - dealInterestProfiles:      user-defined deal/contact preferences
+//   - contactDealAssociations:   junction relationship_contacts <-> knowledge_base_entries
+// See migrations/0006_relationship_intelligence_v2.sql for DDL + backfill.
+// =============================================
+
+export const dealStageEnum = pgEnum("deal_stage", [
+  "sourced",
+  "evaluated",
+  "passed",
+  "in_diligence",
+  "closed",
+  "lost",
+  "current",
+]);
+
+export const contactDealRoleEnum = pgEnum("contact_deal_role", [
+  "principal",
+  "advisor",
+  "broker",
+  "lender",
+  "counsel",
+  "sponsor",
+  "investor",
+  "target",
+  "intermediary",
+  "mentioned",
+  "other",
+]);
+
+export const contactDealSourceEnum = pgEnum("contact_deal_source", [
+  "manual",
+  "backfill_kb_mentions",
+  "email_thread",
+  "llm_extracted",
+  "csv_import",
+]);
+
+export const dealInterestProfiles = pgTable("deal_interest_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  industries: text("industries").array().notNull().default(sql`'{}'::text[]`),
+  geographies: text("geographies").array().notNull().default(sql`'{}'::text[]`),
+  states: text("states").array().notNull().default(sql`'{}'::text[]`),
+  dealTypes: text("deal_types").array().notNull().default(sql`'{}'::text[]`),
+  keywords: text("keywords").array().notNull().default(sql`'{}'::text[]`),
+  excludedTerms: text("excluded_terms").array().notNull().default(sql`'{}'::text[]`),
+  minDealValue: numeric("min_deal_value", { precision: 15, scale: 2 }),
+  maxDealValue: numeric("max_deal_value", { precision: 15, scale: 2 }),
+  priority: integer("priority").notNull().default(3),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  userActiveIdx: index("idx_dip_user_active").on(table.userId, table.isActive),
+  uniqUserName: unique("unique_dip_user_name").on(table.userId, table.name),
+  // GIN indexes for keywords/industries/states are declared in
+  // migrations/0006 (drizzle-kit doesn't emit GIN ops on text[] yet).
+}));
+
+export type DealInterestProfile = typeof dealInterestProfiles.$inferSelect;
+export const insertDealInterestProfileSchema = createInsertSchema(dealInterestProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertDealInterestProfile = z.infer<typeof insertDealInterestProfileSchema>;
+
+export const contactDealAssociations = pgTable("contact_deal_associations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").notNull().references(() => relationshipContacts.id, { onDelete: "cascade" }),
+  kbEntryId: varchar("kb_entry_id").notNull().references(() => knowledgeBaseEntries.id, { onDelete: "cascade" }),
+  role: contactDealRoleEnum("role").notNull().default("mentioned"),
+  stage: dealStageEnum("stage"),
+  source: contactDealSourceEnum("source").notNull().default("manual"),
+  confidence: real("confidence").notNull().default(1.0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdx: index("idx_cda_user").on(table.userId),
+  contactIdx: index("idx_cda_contact").on(table.contactId),
+  kbEntryIdx: index("idx_cda_kb_entry").on(table.kbEntryId),
+  userStageIdx: index("idx_cda_user_stage").on(table.userId, table.stage),
+  uniqContactKbRole: unique("unique_cda_contact_kb_role").on(table.contactId, table.kbEntryId, table.role),
+}));
+
+export type ContactDealAssociation = typeof contactDealAssociations.$inferSelect;
+export const insertContactDealAssociationSchema = createInsertSchema(contactDealAssociations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertContactDealAssociation = z.infer<typeof insertContactDealAssociationSchema>;
+
+export const dealInterestProfilesRelations = relations(dealInterestProfiles, ({ one }) => ({
+  user: one(users, {
+    fields: [dealInterestProfiles.userId],
+    references: [users.id],
+  }),
+}));
+
+export const contactDealAssociationsRelations = relations(contactDealAssociations, ({ one }) => ({
+  user: one(users, {
+    fields: [contactDealAssociations.userId],
+    references: [users.id],
+  }),
+  contact: one(relationshipContacts, {
+    fields: [contactDealAssociations.contactId],
+    references: [relationshipContacts.id],
+  }),
+  kbEntry: one(knowledgeBaseEntries, {
+    fields: [contactDealAssociations.kbEntryId],
+    references: [knowledgeBaseEntries.id],
+  }),
+}));
+
+// =============================================
 // INVESTOR MEMO ENGINE
 // =============================================
 
