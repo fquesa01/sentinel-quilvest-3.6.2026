@@ -79,104 +79,125 @@ export async function processSessionDocument(docId: string) {
     .set({ ocrStatus: "processing" })
     .where(eq(bulkIntakeDocuments.id, docId));
 
+  let extractedText = "";
+  let aiSummary: string | null = null;
+  let documentDate: Date | null = null;
+  let fatalError: string | null = null;
+
+  let fileBuffer: Buffer | null = null;
   try {
     const { ObjectStorageService } = await import("../objectStorage");
     const objectStorageService = new ObjectStorageService();
-    const fileBuffer = await objectStorageService.downloadAsBuffer(doc.storageKey);
+    fileBuffer = await objectStorageService.downloadAsBuffer(doc.storageKey);
+  } catch (downloadErr: any) {
+    fatalError = `download failed: ${downloadErr?.message || "unknown error"}`;
+    console.error(`[BulkIntake] Download failed for "${doc.fileName}":`, fatalError);
+  }
 
+  if (fileBuffer) {
     const fileExt = doc.fileName.toLowerCase().split(".").pop() || "";
-    let extractedText = "";
 
-    if (["pdf"].includes(fileExt)) {
-      try {
-        const { GoogleGenAI } = await import("@google/genai");
-        const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
-        const base64 = fileBuffer.toString("base64");
-        const result = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [
-            {
+    try {
+      if (["pdf"].includes(fileExt)) {
+        try {
+          const { GoogleGenAI } = await import("@google/genai");
+          const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
+          const base64 = fileBuffer.toString("base64");
+          const result = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { inlineData: { mimeType: "application/pdf", data: base64 } },
+                  { text: "Extract ALL text from this document. Return only the extracted text, no commentary." },
+                ],
+              },
+            ],
+          });
+          extractedText = result.text || "";
+        } catch {
+          try {
+            const pdfParse = (await import("pdf-parse")).default;
+            const parsed = await pdfParse(fileBuffer);
+            extractedText = parsed.text || "";
+          } catch (pdfErr: any) {
+            console.warn(`[BulkIntake] PDF parse fallback failed for "${doc.fileName}": ${pdfErr.message}`);
+          }
+        }
+      } else if (fileExt === "docx") {
+        try {
+          const mammoth = await import("mammoth");
+          const result = await mammoth.extractRawText({ buffer: fileBuffer });
+          extractedText = result.value || "";
+        } catch (docxErr: any) {
+          console.warn(`[BulkIntake] DOCX extraction failed for "${doc.fileName}": ${docxErr.message}`);
+        }
+      } else if (fileExt === "doc") {
+        try {
+          const mammoth = await import("mammoth");
+          const result = await mammoth.extractRawText({ buffer: fileBuffer });
+          extractedText = result.value || "";
+        } catch {
+          console.warn(`[BulkIntake] Legacy .doc format not supported by mammoth for "${doc.fileName}", extracting as plain text`);
+          try {
+            const rawText = fileBuffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s{3,}/g, " ");
+            const cleanedText = rawText.split(/\s+/).filter(w => w.length > 2 && /[a-zA-Z]/.test(w)).join(" ");
+            if (cleanedText.length > 100) {
+              extractedText = cleanedText.slice(0, 50000);
+            }
+          } catch (rawErr: any) {
+            console.warn(`[BulkIntake] Plain-text fallback failed for "${doc.fileName}": ${rawErr?.message || "unknown error"}`);
+          }
+        }
+      } else if (["xlsx", "xls", "csv"].includes(fileExt)) {
+        try {
+          const XLSX = await import("xlsx");
+          const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+          const texts: string[] = [];
+          for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            texts.push(`Sheet: ${sheetName}\n${XLSX.utils.sheet_to_csv(sheet)}`);
+          }
+          extractedText = texts.join("\n\n");
+        } catch (xlsxErr: any) {
+          console.warn(`[BulkIntake] Spreadsheet parse failed for "${doc.fileName}": ${xlsxErr?.message || "unknown error"}`);
+        }
+      } else if (["png", "jpg", "jpeg", "gif", "webp", "tiff", "bmp"].includes(fileExt)) {
+        try {
+          const { GoogleGenAI } = await import("@google/genai");
+          const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
+          const base64 = fileBuffer.toString("base64");
+          const mimeMap: Record<string, string> = {
+            png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+            gif: "image/gif", webp: "image/webp", tiff: "image/tiff", bmp: "image/bmp",
+          };
+          const result = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [{
               role: "user",
               parts: [
-                { inlineData: { mimeType: "application/pdf", data: base64 } },
-                { text: "Extract ALL text from this document. Return only the extracted text, no commentary." },
+                { inlineData: { mimeType: mimeMap[fileExt] || "image/png", data: base64 } },
+                { text: "Extract ALL text from this image. Return only the extracted text." },
               ],
-            },
-          ],
-        });
-        extractedText = result.text || "";
-      } catch {
+            }],
+          });
+          extractedText = result.text || "";
+        } catch {
+          extractedText = "";
+        }
+      } else {
         try {
-          const pdfParse = (await import("pdf-parse")).default;
-          const parsed = await pdfParse(fileBuffer);
-          extractedText = parsed.text || "";
-        } catch (pdfErr: any) {
-          console.warn(`[BulkIntake] PDF parse fallback failed for "${doc.fileName}": ${pdfErr.message}`);
+          extractedText = fileBuffer.toString("utf-8").slice(0, 50000);
+        } catch (textErr: any) {
+          console.warn(`[BulkIntake] Plain-text decode failed for "${doc.fileName}": ${textErr?.message || "unknown error"}`);
         }
       }
-    } else if (fileExt === "docx") {
-      try {
-        const mammoth = await import("mammoth");
-        const result = await mammoth.extractRawText({ buffer: fileBuffer });
-        extractedText = result.value || "";
-      } catch (docxErr: any) {
-        console.warn(`[BulkIntake] DOCX extraction failed for "${doc.fileName}": ${docxErr.message}`);
-      }
-    } else if (fileExt === "doc") {
-      try {
-        const mammoth = await import("mammoth");
-        const result = await mammoth.extractRawText({ buffer: fileBuffer });
-        extractedText = result.value || "";
-      } catch {
-        console.warn(`[BulkIntake] Legacy .doc format not supported by mammoth for "${doc.fileName}", extracting as plain text`);
-        try {
-          const rawText = fileBuffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s{3,}/g, " ");
-          const cleanedText = rawText.split(/\s+/).filter(w => w.length > 2 && /[a-zA-Z]/.test(w)).join(" ");
-          if (cleanedText.length > 100) {
-            extractedText = cleanedText.slice(0, 50000);
-          }
-        } catch {}
-      }
-    } else if (["xlsx", "xls", "csv"].includes(fileExt)) {
-      const XLSX = await import("xlsx");
-      const workbook = XLSX.read(fileBuffer, { type: "buffer" });
-      const texts: string[] = [];
-      for (const sheetName of workbook.SheetNames) {
-        const sheet = workbook.Sheets[sheetName];
-        texts.push(`Sheet: ${sheetName}\n${XLSX.utils.sheet_to_csv(sheet)}`);
-      }
-      extractedText = texts.join("\n\n");
-    } else if (["png", "jpg", "jpeg", "gif", "webp", "tiff", "bmp"].includes(fileExt)) {
-      try {
-        const { GoogleGenAI } = await import("@google/genai");
-        const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
-        const base64 = fileBuffer.toString("base64");
-        const mimeMap: Record<string, string> = {
-          png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-          gif: "image/gif", webp: "image/webp", tiff: "image/tiff", bmp: "image/bmp",
-        };
-        const result = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [{
-            role: "user",
-            parts: [
-              { inlineData: { mimeType: mimeMap[fileExt] || "image/png", data: base64 } },
-              { text: "Extract ALL text from this image. Return only the extracted text." },
-            ],
-          }],
-        });
-        extractedText = result.text || "";
-      } catch {
-        extractedText = "";
-      }
-    } else {
-      extractedText = fileBuffer.toString("utf-8").slice(0, 50000);
+    } catch (extractErr: any) {
+      console.warn(`[BulkIntake] Text extraction error for "${doc.fileName}": ${extractErr?.message || "unknown error"}`);
     }
 
-    let aiSummary: string | null = null;
-    let documentDate: Date | null = null;
-
-    if (extractedText.length > 50) {
+    if (extractedText && extractedText.length > 50) {
       try {
         const { GoogleGenAI } = await import("@google/genai");
         const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || "" });
@@ -185,52 +206,83 @@ export async function processSessionDocument(docId: string) {
           contents: `Summarize this document in 2-3 sentences. Include the property address, parties involved, and document type if apparent:\n\n${extractedText.slice(0, 10000)}`,
         });
         aiSummary = result.text || null;
-      } catch {}
+      } catch (summaryErr: any) {
+        console.warn(`[BulkIntake] AI summary failed for "${doc.fileName}": ${summaryErr?.message || "unknown error"}`);
+      }
 
       try {
-        const datePatterns = [
-          /(?:dated?|effective|as of|executed)[:\s]+(\w+ \d{1,2},?\s*\d{4})/i,
-          /(\d{1,2}\/\d{1,2}\/\d{4})/,
-          /(\w+ \d{1,2},?\s*\d{4})/,
-        ];
-        for (const pattern of datePatterns) {
-          const match = extractedText.match(pattern);
-          if (match) {
-            const parsed = new Date(match[1]);
-            if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 1990 && parsed.getFullYear() <= 2100) {
-              documentDate = parsed;
-              break;
-            }
-          }
-        }
+        documentDate = extractDocumentDate(extractedText);
       } catch (dateErr: any) {
-        console.warn(`[BulkIntake] Date extraction failed for "${doc.fileName}": ${dateErr.message}`);
+        console.warn(`[BulkIntake] Date extraction failed for "${doc.fileName}": ${dateErr?.message || "unknown error"}`);
+        documentDate = null;
       }
     }
-
-    await db
-      .update(bulkIntakeDocuments)
-      .set({ ocrStatus: "completed", extractedText, aiSummary, documentDate })
-      .where(eq(bulkIntakeDocuments.id, docId));
-
-    await db
-      .update(bulkIntakeSessions)
-      .set({ processedFiles: sql`${bulkIntakeSessions.processedFiles} + 1` })
-      .where(eq(bulkIntakeSessions.id, doc.sessionId));
-
-    console.log(`[BulkIntake] Processed document "${doc.fileName}" (${extractedText.length} chars)`);
-  } catch (err: any) {
-    console.error(`[BulkIntake] OCR failed for "${doc.fileName}":`, err.message);
-    await db
-      .update(bulkIntakeDocuments)
-      .set({ ocrStatus: "failed" })
-      .where(eq(bulkIntakeDocuments.id, docId));
-
-    await db
-      .update(bulkIntakeSessions)
-      .set({ processedFiles: sql`${bulkIntakeSessions.processedFiles} + 1` })
-      .where(eq(bulkIntakeSessions.id, doc.sessionId));
   }
+
+  try {
+    if (fatalError) {
+      await db
+        .update(bulkIntakeDocuments)
+        .set({ ocrStatus: "failed" })
+        .where(eq(bulkIntakeDocuments.id, docId));
+    } else {
+      await db
+        .update(bulkIntakeDocuments)
+        .set({ ocrStatus: "completed", extractedText, aiSummary, documentDate })
+        .where(eq(bulkIntakeDocuments.id, docId));
+    }
+  } catch (writeErr: any) {
+    console.error(`[BulkIntake] DB write failed for "${doc.fileName}": ${writeErr?.message || "unknown error"}. Retrying without optional fields.`);
+    try {
+      await db
+        .update(bulkIntakeDocuments)
+        .set({ ocrStatus: fatalError ? "failed" : "completed", extractedText, aiSummary: null, documentDate: null })
+        .where(eq(bulkIntakeDocuments.id, docId));
+    } catch (retryErr: any) {
+      console.error(`[BulkIntake] DB retry failed for "${doc.fileName}": ${retryErr?.message || "unknown error"}`);
+      try {
+        await db
+          .update(bulkIntakeDocuments)
+          .set({ ocrStatus: "failed" })
+          .where(eq(bulkIntakeDocuments.id, docId));
+      } catch {}
+    }
+  }
+
+  try {
+    await db
+      .update(bulkIntakeSessions)
+      .set({ processedFiles: sql`${bulkIntakeSessions.processedFiles} + 1` })
+      .where(eq(bulkIntakeSessions.id, doc.sessionId));
+  } catch (counterErr: any) {
+    console.error(`[BulkIntake] Failed to increment processedFiles for session ${doc.sessionId}: ${counterErr?.message || "unknown error"}`);
+  }
+
+  console.log(
+    `[BulkIntake] ${fatalError ? "Failed" : "Processed"} document "${doc.fileName}" (${extractedText.length} chars)${fatalError ? ` — ${fatalError}` : ""}`
+  );
+}
+
+function extractDocumentDate(text: string): Date | null {
+  const datePatterns = [
+    /(?:dated?|effective|as of|executed)[:\s]+(\w+ \d{1,2},?\s*\d{4})/i,
+    /(\d{1,2}\/\d{1,2}\/\d{4})/,
+    /(\w+ \d{1,2},?\s*\d{4})/,
+  ];
+  for (const pattern of datePatterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    try {
+      const parsed = new Date(match[1]);
+      if (isNaN(parsed.getTime())) continue;
+      const year = parsed.getFullYear();
+      if (year < 1990 || year > 2100) continue;
+      return parsed;
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 export async function startProcessing(sessionId: string, targetDealCount?: number) {
